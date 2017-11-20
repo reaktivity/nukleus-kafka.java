@@ -593,6 +593,8 @@ public final class ClientStreamFactory implements StreamFactory
                         break;
                     }
 
+                    // assumes partitions "discovered" is numerical order
+                    // currently guaranteed only for single partition topics
                     this.fetchOffsets.put(partitionId, nextFetchAt);
 
                     doKafkaData(applicationReply, applicationReplyId, value, fetchOffsets.values().iterator());
