@@ -476,30 +476,38 @@ public final class ClientStreamFactory implements StreamFactory
             final String applicationName = begin.source().asString();
             final long applicationCorrelationId = begin.correlationId();
             final OctetsFW extension = begin.extension();
-            final KafkaBeginExFW beginEx = extension.get(beginExRO::wrap);
 
-            final String replyName = applicationName;
-            final long newReplyId = supplyStreamId.getAsLong();
-            final MessageConsumer newReply = router.supplyTarget(replyName);
+            if (extension.sizeof() == 0)
+            {
+                doReset(applicationThrottle, applicationId);
+            }
+            else
+            {
+                final KafkaBeginExFW beginEx = extension.get(beginExRO::wrap);
 
-            final String topicName = beginEx.topicName().asString();
-            final ArrayFW<Varint64FW> fetchOffsets = beginEx.fetchOffsets();
+                final String replyName = applicationName;
+                final long newReplyId = supplyStreamId.getAsLong();
+                final MessageConsumer newReply = router.supplyTarget(replyName);
 
-            this.fetchOffsets.clear();
-            fetchOffsets.forEach(v -> this.fetchOffsets.put(this.fetchOffsets.size(), v.value()));
+                final String topicName = beginEx.topicName().asString();
+                final ArrayFW<Varint64FW> fetchOffsets = beginEx.fetchOffsets();
 
-            final long newNetworkAttachId =
-                    networkPool.doAttach(topicName, this.fetchOffsets, this::onPartitionResponse, this::writeableBytes);
+                this.fetchOffsets.clear();
+                fetchOffsets.forEach(v -> this.fetchOffsets.put(this.fetchOffsets.size(), v.value()));
 
-            doKafkaBegin(newReply, newReplyId, 0L, applicationCorrelationId, extension);
-            router.setThrottle(applicationName, newReplyId, this::handleThrottle);
+                final long newNetworkAttachId =
+                        networkPool.doAttach(topicName, this.fetchOffsets, this::onPartitionResponse, this::writeableBytes);
 
-            doWindow(applicationThrottle, applicationId, 0, 0);
+                doKafkaBegin(newReply, newReplyId, 0L, applicationCorrelationId, extension);
+                router.setThrottle(applicationName, newReplyId, this::handleThrottle);
 
-            this.networkAttachId = newNetworkAttachId;
-            this.streamState = this::afterBegin;
-            this.applicationReply = newReply;
-            this.applicationReplyId = newReplyId;
+                doWindow(applicationThrottle, applicationId, 0, 0);
+
+                this.networkAttachId = newNetworkAttachId;
+                this.streamState = this::afterBegin;
+                this.applicationReply = newReply;
+                this.applicationReplyId = newReplyId;
+            }
         }
 
         private void handleThrottle(

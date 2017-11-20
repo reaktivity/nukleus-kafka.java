@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.streams;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.DisableOnDebug;
@@ -47,6 +48,16 @@ public class FetchIT
 
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
+
+    @Ignore("BEGIN vs RESET read order not yet guaranteed to match write order")
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/begin.ext.missing/client"})
+    public void shouldRejectWhenBeginExtMissing() throws Exception
+    {
+        k3po.finish();
+    }
 
     @Test
     @Specification({
