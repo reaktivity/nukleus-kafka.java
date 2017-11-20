@@ -240,7 +240,7 @@ public final class ClientStreamFactory implements StreamFactory
         {
             final RouteFW route = routeRO.wrap(b, o, l);
             final OctetsFW extension = route.extension();
-            Predicate<String> topicMatch = s -> false;
+            Predicate<String> topicMatch = s -> true;
             if (extension.sizeof() > 0)
             {
                 final KafkaRouteExFW routeEx = extension.get(routeExRO::wrap);
