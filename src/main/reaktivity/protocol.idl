@@ -31,7 +31,6 @@ scope protocol
         struct ResponseHeader
         {
           int32 size;
-          int32 correlationId;
         }
 
         scope fetch
@@ -62,6 +61,7 @@ scope protocol
             
             struct FetchResponse
             {
+              int32 correlationId;
               int32 throttleTimeMillis;
               int32 topicCount;
             }

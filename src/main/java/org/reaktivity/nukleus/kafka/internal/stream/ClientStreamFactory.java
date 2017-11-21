@@ -559,8 +559,8 @@ public final class ClientStreamFactory implements StreamFactory
             final PartitionResponseFW partition = partitionResponseRO.wrap(buffer, offset, maxLimit);
             final int partitionId = partition.partitionId();
 
-            // BUG: generated limit() ignores fixed width fields after dynamic width fields
-            final RecordBatchFW records = recordBatchRO.wrap(buffer, partition.limit() + BitUtil.SIZE_OF_INT, maxLimit);
+            final RecordSetFW recordSet = recordSetRO.wrap(buffer, partition.limit(), maxLimit);
+            final RecordBatchFW records = recordBatchRO.wrap(buffer, recordSet.limit(), maxLimit);
             long nextFetchAt = records.firstOffset();
             long lastFetchAt = nextFetchAt + records.recordCount();
             long firstFetchAt = fetchOffsets.get(partitionId);
@@ -571,8 +571,7 @@ public final class ClientStreamFactory implements StreamFactory
                 final RecordFW record = recordRO.wrap(buffer, nextRecordAt, maxLimit);
                 final int headerCount = record.headerCount();
 
-                // BUG: generated limit() ignores fixed width fields after dynamic width fields
-                int nextHeaderAt = record.limit() + BitUtil.SIZE_OF_INT;
+                int nextHeaderAt = record.limit();
 
                 for (int headerIndex = 0; headerIndex < headerCount; headerIndex++)
                 {
@@ -954,8 +953,7 @@ public final class ClientStreamFactory implements StreamFactory
                                     .partitionCount(0)
                                     .build();
 
-                            // BUG: generated limit() ignores fixed width fields after dynamic width fields
-                            encodeLimit = topicRequest.limit() + BitUtil.SIZE_OF_INT;
+                            encodeLimit = topicRequest.limit();
 
                             NetworkTopic topic = topicsByName.get(topicName);
                             int maxPartitionBytes = topic.maximumWritableBytes();
@@ -982,8 +980,7 @@ public final class ClientStreamFactory implements StreamFactory
                                 }
                             }
 
-                            // BUG: generated limit() ignores fixed width fields after dynamic width fields
-                            topicRequestRW.wrap(encodeBuffer, topicRequest.offset(), topicRequest.limit() + BitUtil.SIZE_OF_INT)
+                            topicRequestRW.wrap(encodeBuffer, topicRequest.offset(), topicRequest.limit())
                                           .name(topicRequest.name())
                                           .partitionCount(partitionCount)
                                           .build();
@@ -1176,7 +1173,7 @@ public final class ClientStreamFactory implements StreamFactory
                         }
 
                         ResponseHeaderFW response = null;
-                        if (networkOffset + BitUtil.SIZE_OF_INT + BitUtil.SIZE_OF_INT <= networkLimit)
+                        if (networkOffset + BitUtil.SIZE_OF_INT <= networkLimit)
                         {
                             response = responseRO.wrap(networkBuffer, networkOffset, networkLimit);
                             networkOffset = response.limit();
@@ -1246,8 +1243,7 @@ public final class ClientStreamFactory implements StreamFactory
                     final String topicName = topicResponse.name().asString();
                     final int partitionCount = topicResponse.partitionCount();
 
-                    // BUG: generated limit() ignores fixed width fields after dynamic width fields
-                    networkOffset = topicResponse.limit() + BitUtil.SIZE_OF_INT;
+                    networkOffset = topicResponse.limit();
 
                     final NetworkTopic topic = topicsByName.get(topicName);
                     for (int partitionIndex = 0; partitionIndex < partitionCount; partitionIndex++)
