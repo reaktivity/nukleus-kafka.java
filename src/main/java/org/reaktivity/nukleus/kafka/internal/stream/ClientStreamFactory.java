@@ -493,7 +493,12 @@ public final class ClientStreamFactory implements StreamFactory
                 final ArrayFW<Varint64FW> fetchOffsets = beginEx.fetchOffsets();
 
                 this.fetchOffsets.clear();
-                fetchOffsets.forEach(v -> this.fetchOffsets.put(this.fetchOffsets.size(), v.value()));
+
+                // default to single partition at zero offset until we use Metadata API
+                this.fetchOffsets.put(0L, 0L);
+                int defaultsSize = this.fetchOffsets.size();
+
+                fetchOffsets.forEach(v -> this.fetchOffsets.put(this.fetchOffsets.size() - defaultsSize, v.value()));
 
                 final long newNetworkAttachId =
                         networkPool.doAttach(topicName, this.fetchOffsets, this::onPartitionResponse, this::writeableBytes);
@@ -556,53 +561,90 @@ public final class ClientStreamFactory implements StreamFactory
         {
             final int maxLimit = offset + length;
 
-            final PartitionResponseFW partition = partitionResponseRO.wrap(buffer, offset, maxLimit);
+            int networkOffset = offset;
+
+            final PartitionResponseFW partition = partitionResponseRO.wrap(buffer, networkOffset, maxLimit);
             final int partitionId = partition.partitionId();
 
-            final RecordSetFW recordSet = recordSetRO.wrap(buffer, partition.limit(), maxLimit);
-            final RecordBatchFW records = recordBatchRO.wrap(buffer, recordSet.limit(), maxLimit);
-            long nextFetchAt = records.firstOffset();
-            long lastFetchAt = nextFetchAt + records.recordCount();
-            long firstFetchAt = fetchOffsets.get(partitionId);
-            int nextRecordAt = records.limit();
-
-            while (nextFetchAt < lastFetchAt && nextRecordAt < maxLimit)
+            // TODO: determine appropriate reaction to different non-zero error codes
+            if (partition.errorCode() == 0)
             {
-                final RecordFW record = recordRO.wrap(buffer, nextRecordAt, maxLimit);
-                final int headerCount = record.headerCount();
+                networkOffset = partition.limit();
 
-                int nextHeaderAt = record.limit();
+                final RecordSetFW recordSet = recordSetRO.wrap(buffer, networkOffset, maxLimit);
+                networkOffset = recordSet.limit();
 
-                for (int headerIndex = 0; headerIndex < headerCount; headerIndex++)
+                final int recordSetLimit = networkOffset + recordSet.recordBatchSize();
+                if (recordSetLimit <= maxLimit)
                 {
-                    final HeaderFW headerRO = new HeaderFW();
-                    final HeaderFW header = headerRO.wrap(buffer, nextHeaderAt, maxLimit);
-                    nextHeaderAt = header.limit();
-                }
-
-                nextRecordAt = nextHeaderAt;
-                nextFetchAt++;
-
-                if (nextFetchAt > firstFetchAt)
-                {
-                    final OctetsFW value = record.value();
-
-                    if (applicationReplyBudget < value.sizeof() + applicationReplyPadding)
+                    loop:
+                    while (networkOffset < recordSetLimit)
                     {
-                        break;
+                        final RecordBatchFW recordBatch = recordBatchRO.wrap(buffer, networkOffset, recordSetLimit);
+                        networkOffset = recordBatch.limit();
+
+                        final int recordBatchLimit = recordBatch.offset() +
+                                RecordBatchFW.FIELD_OFFSET_LENGTH + BitUtil.SIZE_OF_INT + recordBatch.length();
+                        if (recordBatchLimit > recordSetLimit)
+                        {
+                            break loop;
+                        }
+
+                        final long firstFetchAt = fetchOffsets.get(partitionId);
+                        final long firstOffset = recordBatch.firstOffset();
+
+                        long nextFetchAt = firstFetchAt;
+
+                        while (networkOffset < recordBatchLimit)
+                        {
+                            final RecordFW record = recordRO.wrap(buffer, networkOffset, recordBatchLimit);
+                            networkOffset = record.limit();
+
+                            final int recordLimit = record.offset() +
+                                    RecordFW.FIELD_OFFSET_ATTRIBUTES + record.length();
+                            if (recordLimit > recordSetLimit)
+                            {
+                                break loop;
+                            }
+
+                            final int headerCount = record.headerCount();
+
+                            for (int headerIndex = 0; headerIndex < headerCount; headerIndex++)
+                            {
+                                final HeaderFW headerRO = new HeaderFW();
+                                final HeaderFW header = headerRO.wrap(buffer, networkOffset, recordBatchLimit);
+                                networkOffset = header.limit();
+                            }
+
+                            final long currentFetchAt = firstOffset + record.offsetDelta();
+
+                            if (currentFetchAt >= firstFetchAt)
+                            {
+                                final OctetsFW value = record.value();
+
+                                if (applicationReplyBudget < value.sizeof() + applicationReplyPadding)
+                                {
+                                    break loop;
+                                }
+
+                                nextFetchAt = currentFetchAt + 1;
+
+                                // assumes partitions "discovered" is numerical order
+                                // currently guaranteed only for single partition topics
+                                this.fetchOffsets.put(partitionId, nextFetchAt);
+
+                                doKafkaData(applicationReply, applicationReplyId, value, fetchOffsets.values().iterator());
+                                applicationReplyBudget -= value.sizeof() + applicationReplyPadding;
+                            }
+                        }
+
+                        if (nextFetchAt > firstFetchAt)
+                        {
+                            progressHandler.handle(partitionId, firstFetchAt, nextFetchAt);
+                        }
                     }
-
-                    // assumes partitions "discovered" is numerical order
-                    // currently guaranteed only for single partition topics
-                    this.fetchOffsets.put(partitionId, nextFetchAt);
-
-                    doKafkaData(applicationReply, applicationReplyId, value, fetchOffsets.values().iterator());
-                    applicationReplyBudget -= value.sizeof() + applicationReplyPadding;
                 }
             }
-
-
-            progressHandler.handle(partitionId, firstFetchAt, nextFetchAt);
         }
 
         private int writeableBytes()
@@ -699,10 +741,13 @@ public final class ClientStreamFactory implements StreamFactory
             int index,
             int length)
         {
+            // TODO: parse here, callback for individual records only
+            //       via RecordConsumer.accept(buffer, index, length, baseOffset, progressHandler)
+
             // TODO: eliminate iterator allocation
             for (PartitionResponseConsumer recordsConsumer : recordConsumers)
             {
-                recordsConsumer.accept(buffer, index, index + length, progressHandler);
+                recordsConsumer.accept(buffer, index, length, progressHandler);
             }
 
             partitions.removeIf(p -> p.refs == 0);
@@ -1258,7 +1303,11 @@ public final class ClientStreamFactory implements StreamFactory
 
                         if (topic != null)
                         {
-                            topic.onPartitionResponse(partitionResponse.buffer(), partitionResponse.offset(), networkOffset);
+                            int partitionResponseSize = networkOffset - partitionResponse.offset();
+
+                            topic.onPartitionResponse(partitionResponse.buffer(),
+                                                      partitionResponse.offset(),
+                                                      partitionResponseSize);
                         }
                     }
                 }

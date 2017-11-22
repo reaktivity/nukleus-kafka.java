@@ -120,7 +120,7 @@ scope protocol
               octets[keyLen] key = null;
               varint32 valueLen;
               octets[valueLen] value;
-              int32 headerCount;
+              varint32 headerCount;
             }
             
             struct Header
