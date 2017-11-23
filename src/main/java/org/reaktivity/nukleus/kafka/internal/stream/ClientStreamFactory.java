@@ -406,6 +406,7 @@ public final class ClientStreamFactory implements StreamFactory
         private long networkAttachId;
 
         private MessageConsumer streamState;
+        private int writeableBytesMinimum;
 
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
@@ -564,13 +565,16 @@ public final class ClientStreamFactory implements StreamFactory
             int networkOffset = offset;
 
             final PartitionResponseFW partition = partitionResponseRO.wrap(buffer, networkOffset, maxLimit);
+            networkOffset = partition.limit();
+
             final int partitionId = partition.partitionId();
+            final long firstFetchAt = fetchOffsets.get(partitionId);
+
+            long nextFetchAt = firstFetchAt;
 
             // TODO: determine appropriate reaction to different non-zero error codes
-            if (partition.errorCode() == 0)
+            if (partition.errorCode() == 0 && networkOffset < maxLimit - BitUtil.SIZE_OF_INT)
             {
-                networkOffset = partition.limit();
-
                 final RecordSetFW recordSet = recordSetRO.wrap(buffer, networkOffset, maxLimit);
                 networkOffset = recordSet.limit();
 
@@ -578,7 +582,7 @@ public final class ClientStreamFactory implements StreamFactory
                 if (recordSetLimit <= maxLimit)
                 {
                     loop:
-                    while (networkOffset < recordSetLimit)
+                    while (networkOffset < recordSetLimit - RecordBatchFW.FIELD_OFFSET_RECORD_COUNT - BitUtil.SIZE_OF_INT)
                     {
                         final RecordBatchFW recordBatch = recordBatchRO.wrap(buffer, networkOffset, recordSetLimit);
                         networkOffset = recordBatch.limit();
@@ -590,12 +594,9 @@ public final class ClientStreamFactory implements StreamFactory
                             break loop;
                         }
 
-                        final long firstFetchAt = fetchOffsets.get(partitionId);
                         final long firstOffset = recordBatch.firstOffset();
 
-                        long nextFetchAt = firstFetchAt;
-
-                        while (networkOffset < recordBatchLimit)
+                        while (networkOffset < recordBatchLimit - 7 /* minimum RecordFW size */)
                         {
                             final RecordFW record = recordRO.wrap(buffer, networkOffset, recordBatchLimit);
                             networkOffset = record.limit();
@@ -624,6 +625,7 @@ public final class ClientStreamFactory implements StreamFactory
 
                                 if (applicationReplyBudget < value.sizeof() + applicationReplyPadding)
                                 {
+                                    writeableBytesMinimum = value.sizeof() + applicationReplyPadding;
                                     break loop;
                                 }
 
@@ -635,13 +637,14 @@ public final class ClientStreamFactory implements StreamFactory
 
                                 doKafkaData(applicationReply, applicationReplyId, value, fetchOffsets.values().iterator());
                                 applicationReplyBudget -= value.sizeof() + applicationReplyPadding;
+                                writeableBytesMinimum = 0;
                             }
                         }
+                    }
 
-                        if (nextFetchAt > firstFetchAt)
-                        {
-                            progressHandler.handle(partitionId, firstFetchAt, nextFetchAt);
-                        }
+                    if (nextFetchAt > firstFetchAt)
+                    {
+                        progressHandler.handle(partitionId, firstFetchAt, nextFetchAt);
                     }
                 }
             }
@@ -649,7 +652,8 @@ public final class ClientStreamFactory implements StreamFactory
 
         private int writeableBytes()
         {
-            return applicationReplyBudget - applicationReplyPadding;
+            final int writeableBytes = applicationReplyBudget - applicationReplyPadding;
+            return writeableBytes > writeableBytesMinimum ? writeableBytes : 0;
         }
     }
 
