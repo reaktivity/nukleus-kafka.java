@@ -148,7 +148,7 @@ scope protocol
               int32 brokerCount;
             }
 
-            struct BrokerResponse
+            struct BrokerMetadata
             {
               int32 nodeId;
               string16 host;
