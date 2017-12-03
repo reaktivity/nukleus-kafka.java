@@ -375,7 +375,7 @@ public final class ClientStreamFactory implements StreamFactory
         private int applicationReplyBudget;
         private int applicationReplyPadding;
 
-        private long networkAttachId;
+        private int networkAttachId;
 
         private MessageConsumer streamState;
         private int writeableBytesMinimum;
@@ -473,7 +473,7 @@ public final class ClientStreamFactory implements StreamFactory
 
                 fetchOffsets.forEach(v -> this.fetchOffsets.put(this.fetchOffsets.size() - defaultsSize, v.value()));
 
-                final long newNetworkAttachId =
+                final int newNetworkAttachId =
                         networkPool.doAttach(topicName, this.fetchOffsets, this::onPartitionResponse, this::writeableBytes);
 
                 doKafkaBegin(newReply, newReplyId, 0L, applicationCorrelationId, extension);

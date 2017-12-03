@@ -77,6 +77,11 @@ final class NetworkConnectionPool
     private final BufferPool bufferPool;
     private final NetworkConnection connection;
 
+    private final Map<String, NetworkTopic> topicsByName;
+    private final Int2ObjectHashMap<Consumer<Long2LongHashMap>> detachersById;
+
+    private int nextAttachId;
+
     NetworkConnectionPool(
         ClientStreamFactory clientStreamFactory,
         String networkName,
@@ -89,52 +94,51 @@ final class NetworkConnectionPool
         this.bufferPool = bufferPool;
         this.connection = new NetworkConnection();
         this.encodeBuffer = new UnsafeBuffer(new byte[clientStreamFactory.bufferPool.slotCapacity()]);
+        this.topicsByName = new LinkedHashMap<>();
+        this.detachersById = new Int2ObjectHashMap<>();
     }
 
-    long doAttach(
+    int doAttach(
         String topicName,
         Long2LongHashMap fetchOffsets,
         PartitionResponseConsumer consumeRecords,
         IntSupplier supplyWindow)
     {
-        // TODO: get topic metadata, split fetchOffsets into one set per broker (connection),
-        final int connectionId = 0;
-        final int connectionAttachId = connection.doAttach(topicName, fetchOffsets, consumeRecords, supplyWindow);
+        // TODO: get topic metadata, split fetchOffsets into one set per broker (connection)
+        final NetworkTopic topic = topicsByName.computeIfAbsent(topicName, NetworkTopic::new);
+        topic.doAttach(fetchOffsets, consumeRecords, supplyWindow);
 
-        return ((long) connectionId) << 32 | connectionAttachId;
+        final int newAttachId = nextAttachId++;
+
+        detachersById.put(newAttachId, f -> topic.doDetach(f, consumeRecords, supplyWindow));
+
+        connection.doFetchIfNotInFlight();
+
+        return newAttachId;
     }
 
     void doFlush(
         long connectionPoolAttachId)
     {
-        int connectionId = (int)((connectionPoolAttachId >> 32) & 0xFFFF_FFFF);
-
-        // TODO: connection pool size > 1
-        assert connectionId == 0;
-
-        connection.doFlush();
+        // TODO: walk through all connections
+        connection.doFetchIfNotInFlight();
     }
 
     void doDetach(
-        long connectionPoolAttachId,
+        int attachId,
         Long2LongHashMap fetchOffsets)
     {
-        int connectionId = (int)((connectionPoolAttachId >> 32) & 0xFFFF_FFFF);
-        int connectionAttachId = (int)(connectionPoolAttachId & 0xFFFF_FFFF);
-
-        // TODO: connection pool size > 1
-        assert connectionId == 0;
-
-        connection.doDetach(connectionAttachId, fetchOffsets);
+        final Consumer<Long2LongHashMap> detacher = detachersById.remove(attachId);
+        if (detacher != null)
+        {
+            detacher.accept(fetchOffsets);
+        }
     }
 
     final class NetworkConnection
     {
         private final MessageConsumer networkTarget;
-        private final Map<String, NetworkTopic> topicsByName;
-        private final Int2ObjectHashMap<Consumer<Long2LongHashMap>> detachersById;
 
-        private int nextAttachId;
         private int nextRequestId;
         private int nextResponseId;
 
@@ -157,8 +161,6 @@ final class NetworkConnectionPool
         private NetworkConnection()
         {
             this.networkTarget = NetworkConnectionPool.this.clientStreamFactory.router.supplyTarget(networkName);
-            this.topicsByName = new LinkedHashMap<>();
-            this.detachersById = new Int2ObjectHashMap<>();
         }
 
         @Override
@@ -176,40 +178,6 @@ final class NetworkConnectionPool
             this.streamState = this::beforeBegin;
 
             return this::handleStream;
-        }
-
-        private int doAttach(
-            String topicName,
-            Long2LongHashMap fetchOffsets,
-            PartitionResponseConsumer consumeRecords,
-            IntSupplier supplyWindow)
-        {
-            final NetworkTopic topic = topicsByName.computeIfAbsent(topicName, NetworkTopic::new);
-            topic.doAttach(fetchOffsets, consumeRecords, supplyWindow);
-
-            final int newAttachId = nextAttachId++;
-
-            detachersById.put(newAttachId, f -> topic.doDetach(f, consumeRecords, supplyWindow));
-
-            doFetchIfNotInFlight();
-
-            return newAttachId;
-        }
-
-        private void doFlush()
-        {
-            doFetchIfNotInFlight();
-        }
-
-        private void doDetach(
-            int attachId,
-            Long2LongHashMap fetchOffsets)
-        {
-            final Consumer<Long2LongHashMap> detacher = detachersById.remove(attachId);
-            if (detacher != null)
-            {
-                detacher.accept(fetchOffsets);
-            }
         }
 
         private void doFetchIfNotInFlight()
