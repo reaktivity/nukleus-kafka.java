@@ -317,7 +317,7 @@ public final class ClientStreamFactory implements StreamFactory
         final long targetId,
         final long targetRef,
         final long correlationId,
-        final OctetsFW extension)
+        final byte[] extension)
     {
         final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
@@ -370,6 +370,9 @@ public final class ClientStreamFactory implements StreamFactory
         private final NetworkConnectionPool networkPool;
         private final Long2LongHashMap fetchOffsets;
 
+        private String applicationName;
+        private long applicationCorrelationId;
+        private byte[] applicationBeginExtension;
         private MessageConsumer applicationReply;
         private long applicationReplyId;
         private int applicationReplyBudget;
@@ -446,8 +449,8 @@ public final class ClientStreamFactory implements StreamFactory
         private void handleBegin(
             BeginFW begin)
         {
-            final String applicationName = begin.source().asString();
-            final long applicationCorrelationId = begin.correlationId();
+            applicationName = begin.source().asString();
+            applicationCorrelationId = begin.correlationId();
             final OctetsFW extension = begin.extension();
 
             if (extension.sizeof() == 0)
@@ -456,36 +459,44 @@ public final class ClientStreamFactory implements StreamFactory
             }
             else
             {
-                final KafkaBeginExFW beginEx = extension.get(beginExRO::wrap);
+                applicationBeginExtension = new byte[extension.sizeof()];
+                extension.buffer().getBytes(extension.offset(), applicationBeginExtension);
 
-                final String replyName = applicationName;
-                final long newReplyId = supplyStreamId.getAsLong();
-                final MessageConsumer newReply = router.supplyTarget(replyName);
+                final KafkaBeginExFW beginEx = extension.get(beginExRO::wrap);
 
                 final String topicName = beginEx.topicName().asString();
                 final ArrayFW<Varint64FW> fetchOffsets = beginEx.fetchOffsets();
 
                 this.fetchOffsets.clear();
 
-                // default to single partition at zero offset until we use Metadata API
-                this.fetchOffsets.put(0L, 0L);
-                int defaultsSize = this.fetchOffsets.size();
+                fetchOffsets.forEach(v -> this.fetchOffsets.put(this.fetchOffsets.size(), v.value()));
 
-                fetchOffsets.forEach(v -> this.fetchOffsets.put(this.fetchOffsets.size() - defaultsSize, v.value()));
-
-                final int newNetworkAttachId =
-                        networkPool.doAttach(topicName, this.fetchOffsets, this::onPartitionResponse, this::writeableBytes);
-
-                doKafkaBegin(newReply, newReplyId, 0L, applicationCorrelationId, extension);
-                router.setThrottle(applicationName, newReplyId, this::handleThrottle);
-
-                doWindow(applicationThrottle, applicationId, 0, 0);
-
-                this.networkAttachId = newNetworkAttachId;
+                networkPool.doAttach(topicName, this.fetchOffsets, this::onPartitionResponse, this::writeableBytes,
+                        this::onAttached, this::onMetadataError);
                 this.streamState = this::afterBegin;
-                this.applicationReply = newReply;
-                this.applicationReplyId = newReplyId;
             }
+        }
+
+        private void onAttached(int newNetworkAttachId)
+        {
+            final long newReplyId = supplyStreamId.getAsLong();
+            final String replyName = applicationName;
+            final MessageConsumer newReply = router.supplyTarget(replyName);
+
+            // TODO:
+            doKafkaBegin(newReply, newReplyId, 0L, applicationCorrelationId, applicationBeginExtension);
+            router.setThrottle(applicationName, newReplyId, this::handleThrottle);
+
+            doWindow(applicationThrottle, applicationId, 0, 0);
+
+            this.networkAttachId = newNetworkAttachId;
+            this.applicationReply = newReply;
+            this.applicationReplyId = newReplyId;
+        }
+
+        private void onMetadataError(int errorCode)
+        {
+            doReset(applicationThrottle, applicationId);
         }
 
         private void handleThrottle(

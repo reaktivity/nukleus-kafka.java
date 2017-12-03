@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -24,6 +25,7 @@ import java.util.NavigableSet;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Consumer;
+import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 
 import org.agrona.BitUtil;
@@ -77,6 +79,7 @@ final class NetworkConnectionPool
     private final BufferPool bufferPool;
     private final NetworkConnection connection;
 
+    private final Map<String, TopicMetadata> topicMetadataByName;
     private final Map<String, NetworkTopic> topicsByName;
     private final Int2ObjectHashMap<Consumer<Long2LongHashMap>> detachersById;
 
@@ -95,16 +98,32 @@ final class NetworkConnectionPool
         this.connection = new NetworkConnection();
         this.encodeBuffer = new UnsafeBuffer(new byte[clientStreamFactory.bufferPool.slotCapacity()]);
         this.topicsByName = new LinkedHashMap<>();
+        this.topicMetadataByName = new HashMap<>();
         this.detachersById = new Int2ObjectHashMap<>();
     }
 
-    int doAttach(
+    void doAttach(
         String topicName,
         Long2LongHashMap fetchOffsets,
         PartitionResponseConsumer consumeRecords,
-        IntSupplier supplyWindow)
+        IntSupplier supplyWindow,
+        IntConsumer newAttachIdConsumer,
+        IntConsumer onMetadataError)
     {
-        // TODO: get topic metadata, split fetchOffsets into one set per broker (connection)
+        // TODO: get topic metadata if necessary, moving the rest of the processing below into
+        // a separate method called by handleMetadataResponse, or immediately if metadata already available
+        doAttach(topicName, fetchOffsets, consumeRecords, supplyWindow, newAttachIdConsumer, new TopicMetadata(1));
+    }
+
+    void doAttach(
+        String topicName,
+        Long2LongHashMap fetchOffsets,
+        PartitionResponseConsumer consumeRecords,
+        IntSupplier supplyWindow,
+        IntConsumer newAttachIdConsumer,
+        TopicMetadata topicMetadata)
+    {
+        // TODO: expand fetchOffsets to number of partitions from metadata
         final NetworkTopic topic = topicsByName.computeIfAbsent(topicName, NetworkTopic::new);
         topic.doAttach(fetchOffsets, consumeRecords, supplyWindow);
 
@@ -112,9 +131,10 @@ final class NetworkConnectionPool
 
         detachersById.put(newAttachId, f -> topic.doDetach(f, consumeRecords, supplyWindow));
 
+        // TODO: walk-through all (relevant) connections
         connection.doFetchIfNotInFlight();
 
-        return newAttachId;
+        newAttachIdConsumer.accept(newAttachId);
     }
 
     void doFlush(
@@ -133,6 +153,7 @@ final class NetworkConnectionPool
         {
             detacher.accept(fetchOffsets);
         }
+        // TODO: If the topic now has no partitions, remove from topicsByName and topicMetadataByName
     }
 
     final class NetworkConnection
@@ -588,7 +609,7 @@ final class NetworkConnectionPool
         }
     }
 
-    final class NetworkTopic
+    private final class NetworkTopic
     {
         private final String topicName;
         private final Set<PartitionResponseConsumer> recordConsumers;
@@ -725,7 +746,7 @@ final class NetworkConnectionPool
         }
     }
 
-    static final class NetworkTopicPartition implements Comparable<NetworkTopicPartition>
+    private static final class NetworkTopicPartition implements Comparable<NetworkTopicPartition>
     {
         int id;
         long offset;
@@ -755,5 +776,16 @@ final class NetworkConnectionPool
         {
             return String.format("id=%d, offset=%d, refs=%d", id, offset, refs);
         }
+    }
+
+    private static final class TopicMetadata
+    {
+        final int[] brokersByPartition;
+
+        TopicMetadata(int partitionCount)
+        {
+            brokersByPartition = new int[partitionCount];
+        }
+
     }
 }

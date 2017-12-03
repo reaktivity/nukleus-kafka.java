@@ -167,7 +167,6 @@ scope protocol
             {
               int16 errorCode;
               string16 topic;
-              int64 lastStableOffset;
               int8 isInternal; // boolean
               int32 partitionCount;
             }
