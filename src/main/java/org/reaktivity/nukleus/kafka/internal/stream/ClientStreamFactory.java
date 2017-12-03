@@ -847,7 +847,7 @@ public final class ClientStreamFactory implements StreamFactory
             PartitionResponseConsumer consumeRecords,
             IntSupplier supplyWindow)
         {
-            // TODO: connection pool size > 1
+            // TODO: get topic metadata, split fetchOffsets into one set per broker (connection),
             final int connectionId = 0;
             final int connectionAttachId = connection.doAttach(topicName, fetchOffsets, consumeRecords, supplyWindow);
 
@@ -914,7 +914,7 @@ public final class ClientStreamFactory implements StreamFactory
             @Override
             public String toString()
             {
-                return String.format("[budget=%d, paddng=%d]", networkRequestBudget, networkRequestPadding);
+                return String.format("[budget=%d, padding=%d]", networkRequestBudget, networkRequestPadding);
             }
 
             private MessageConsumer onCorrelated(

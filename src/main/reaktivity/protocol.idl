@@ -50,7 +50,7 @@ scope protocol
               string16 name;
               int32 partitionCount;
             }
-            
+
             struct PartitionRequest
             {
               int32 partitionId;
@@ -58,20 +58,20 @@ scope protocol
               int64 logStartOffset = -1;
               int32 maxBytes;
             }
-            
+
             struct FetchResponse
             {
               int32 correlationId;
               int32 throttleTimeMillis;
               int32 topicCount;
             }
-            
+
             struct TopicResponse
             {
               string16 name;
               int32 partitionCount;
             }
-            
+
             struct PartitionResponse
             {
               int32 partitionId;
@@ -81,18 +81,18 @@ scope protocol
               int64 logStartOffset;
               int32 abortedTransactionCount;
             }
-            
+
             struct TransactionResponse
             {
               int64 producerId;
               int64 firstOffset;
             }
-            
+
             struct RecordSet
             {
               int32 recordBatchSize;
             }
-            
+
             struct RecordBatch
             {
               int64 firstOffset;
@@ -122,13 +122,64 @@ scope protocol
               octets[valueLen] value;
               varint32 headerCount;
             }
-            
+
             struct Header
             {
               varint32 keyLen;
               octets[keyLen] key; // interpreted as UTF-8 string
               varint32 valueLen;
               octets[valueLen] value;
+            }
+        }
+
+        scope metadata
+        {
+            struct MetadataRequest
+            {
+              int32 topicCount = 1; // only allow 1 till we have string array
+              string16 topicName;   // later: should be an array
+              int8 allow_auto_topic_creation = 0; // boolean
+            }
+
+            struct MetadataResponse
+            {
+              int32 correlationId;
+              int32 throttleTimeMillis;
+              int32 brokerCount;
+            }
+
+            struct BrokerResponse
+            {
+              int32 nodeId;
+              string16 host;
+              int32 port;
+              string16 rack; // = null
+            }
+
+            struct MetadataResponsePart2
+            {
+              string16 clusterId;
+              int32 controllerId;
+              int32 topicCount;
+            }
+
+            struct TopicMetadata
+            {
+              int16 errorCode;
+              string16 topic;
+              int64 lastStableOffset;
+              int8 isInternal; // boolean
+              int32 partitionCount;
+            }
+
+            struct PartitionMetadata
+            {
+              int16 errorCode;
+              int32 partitionId;
+              int32 leader;
+              int32 replicas;
+              int32 inSyncReplicas;
+              int32 offlineReplicas;
             }
         }
     }
