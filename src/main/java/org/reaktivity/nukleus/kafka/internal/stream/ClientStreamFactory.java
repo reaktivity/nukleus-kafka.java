@@ -57,9 +57,6 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class ClientStreamFactory implements StreamFactory
 {
-    static final short FETCH_API_VERSION = 0x05;
-    static final short FETCH_API_KEY = 0x01;
-
     private final RouteFW routeRO = new RouteFW();
 
     final BeginFW beginRO = new BeginFW();
@@ -238,13 +235,15 @@ public final class ClientStreamFactory implements StreamFactory
         final MessageConsumer target,
         final long targetId,
         final long targetRef,
-        final long correlationId)
+        final long correlationId,
+        final Flyweight.Builder.Visitor visitor)
     {
         final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
                 .source("kafka")
                 .sourceRef(targetRef)
                 .correlationId(correlationId)
+                .extension(b -> b.set(visitor))
                 .build();
 
         target.accept(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
@@ -483,7 +482,6 @@ public final class ClientStreamFactory implements StreamFactory
             final String replyName = applicationName;
             final MessageConsumer newReply = router.supplyTarget(replyName);
 
-            // TODO:
             doKafkaBegin(newReply, newReplyId, 0L, applicationCorrelationId, applicationBeginExtension);
             router.setThrottle(applicationName, newReplyId, this::handleThrottle);
 

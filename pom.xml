@@ -56,7 +56,8 @@
     <nukleus.plugin.version>0.20</nukleus.plugin.version>
     <nukleus.version>0.12</nukleus.version>
 
-    <nukleus.kafka.spec.version>0.5</nukleus.kafka.spec.version>
+    <nukleus.kafka.spec.version>develop-SNAPSHOT</nukleus.kafka.spec.version>
+    <nukleus.tcp.spec.version>0.24</nukleus.tcp.spec.version>
     <reaktor.version>0.32</reaktor.version>
   </properties>
 
@@ -71,6 +72,12 @@
       <groupId>org.reaktivity</groupId>
       <artifactId>nukleus-kafka.spec</artifactId>
       <version>${nukleus.kafka.spec.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.reaktivity</groupId>
+      <artifactId>nukleus-tcp.spec</artifactId>
+      <version>${nukleus.tcp.spec.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>

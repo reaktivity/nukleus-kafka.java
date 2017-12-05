@@ -16,12 +16,19 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
+import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.INVALID_TOPIC_EXCEPTION;
+import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.LEADER_NOT_AVAILABLE;
+import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
+import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.UNKNOWN_TOPIC_OR_PARTITION;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.NavigableSet;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Consumer;
@@ -39,6 +46,7 @@ import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionResponseConsumer;
+import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.RequestHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.ResponseHeaderFW;
@@ -49,35 +57,57 @@ import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.PartitionResponse
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordSetFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TopicRequestFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TopicResponseFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.BrokerMetadataFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.MetadataRequestFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.MetadataResponseFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.MetadataResponsePart2FW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.PartitionMetadataFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.TopicMetadataFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.AbortFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.DataFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
+import org.reaktivity.specification.tcp.internal.types.stream.TcpBeginExFW;
 
 final class NetworkConnectionPool
 {
+    static final short FETCH_API_VERSION = 0x05;
+    static final short FETCH_API_KEY = 0x01;
+    static final short METADATA_API_VERSION = 0x05;
+    static final short METADATA_API_KEY = 0x03;
+
     final RequestHeaderFW.Builder requestRW = new RequestHeaderFW.Builder();
     final FetchRequestFW.Builder fetchRequestRW = new FetchRequestFW.Builder();
     final TopicRequestFW.Builder topicRequestRW = new TopicRequestFW.Builder();
     final PartitionRequestFW.Builder partitionRequestRW = new PartitionRequestFW.Builder();
-    final OctetsFW.Builder payloadRW = new OctetsFW.Builder();
-    final MutableDirectBuffer encodeBuffer;
+    final MetadataRequestFW.Builder metadataRequestRW = new MetadataRequestFW.Builder();
 
     final WindowFW windowRO = new WindowFW();
+    final OctetsFW.Builder payloadRW = new OctetsFW.Builder();
+    final TcpBeginExFW.Builder tcpBeginExRW = new TcpBeginExFW.Builder();
+
     final ResponseHeaderFW responseRO = new ResponseHeaderFW();
     final FetchResponseFW fetchResponseRO = new FetchResponseFW();
     final TopicResponseFW topicResponseRO = new TopicResponseFW();
     final PartitionResponseFW partitionResponseRO = new PartitionResponseFW();
     final RecordSetFW recordSetRO = new RecordSetFW();
 
+    final MetadataResponseFW metadataResponseRO = new MetadataResponseFW();
+    final BrokerMetadataFW brokerMetadataRO = new BrokerMetadataFW();
+    final MetadataResponsePart2FW metadataResponsePart2RO = new MetadataResponsePart2FW();
+    final TopicMetadataFW topicMetadataRO = new TopicMetadataFW();
+    final PartitionMetadataFW partitionMetadataRO = new PartitionMetadataFW();
+
+    final MutableDirectBuffer encodeBuffer;
 
     private final ClientStreamFactory clientStreamFactory;
     private final String networkName;
     private final long networkRef;
     private final BufferPool bufferPool;
-    private final NetworkConnection connection;
+    private final Int2ObjectHashMap<FetchConnection> connectionsByNodeId;
+    private final MetadataConnection metadataConnection;
 
     private final Map<String, TopicMetadata> topicMetadataByName;
     private final Map<String, NetworkTopic> topicsByName;
@@ -95,7 +125,8 @@ final class NetworkConnectionPool
         this.networkName = networkName;
         this.networkRef = networkRef;
         this.bufferPool = bufferPool;
-        this.connection = new NetworkConnection();
+        this.connectionsByNodeId = new Int2ObjectHashMap<>();
+        this.metadataConnection = new MetadataConnection();
         this.encodeBuffer = new UnsafeBuffer(new byte[clientStreamFactory.bufferPool.slotCapacity()]);
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
@@ -110,38 +141,64 @@ final class NetworkConnectionPool
         IntConsumer newAttachIdConsumer,
         IntConsumer onMetadataError)
     {
-        // TODO: get topic metadata if necessary, moving the rest of the processing below into
-        // a separate method called by handleMetadataResponse, or immediately if metadata already available
-        doAttach(topicName, fetchOffsets, consumeRecords, supplyWindow, newAttachIdConsumer, new TopicMetadata(1));
+        // TODO: error handling (onMetadataError)
+        final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
+        metadata.doAttach((m) ->
+        {
+            doAttach(topicName, fetchOffsets, consumeRecords, supplyWindow, newAttachIdConsumer, onMetadataError, m);
+        });
+
+        metadataConnection.doRequestIfNeeded();
     }
 
-    void doAttach(
+    private void doAttach(
         String topicName,
         Long2LongHashMap fetchOffsets,
         PartitionResponseConsumer consumeRecords,
         IntSupplier supplyWindow,
         IntConsumer newAttachIdConsumer,
+        IntConsumer onMetadataError,
         TopicMetadata topicMetadata)
     {
-        // TODO: expand fetchOffsets to number of partitions from metadata
-        final NetworkTopic topic = topicsByName.computeIfAbsent(topicName, NetworkTopic::new);
-        topic.doAttach(fetchOffsets, consumeRecords, supplyWindow);
+        short errorCode = topicMetadata.errorCode();
+        switch(errorCode)
+        {
+        case UNKNOWN_TOPIC_OR_PARTITION:
+            onMetadataError.accept(errorCode);
+            break;
+        case INVALID_TOPIC_EXCEPTION:
+            onMetadataError.accept(errorCode);
+            break;
+        case LEADER_NOT_AVAILABLE:
+            // recoverable
+            break;
+        case NONE:
+            while(fetchOffsets.size() < topicMetadata.partitionCount())
+            {
+                fetchOffsets.put(fetchOffsets.size(), 0L);
+            }
+            final NetworkTopic topic = topicsByName.computeIfAbsent(topicName, NetworkTopic::new);
+            topic.doAttach(fetchOffsets, consumeRecords, supplyWindow);
 
-        final int newAttachId = nextAttachId++;
+            final int newAttachId = nextAttachId++;
 
-        detachersById.put(newAttachId, f -> topic.doDetach(f, consumeRecords, supplyWindow));
+            detachersById.put(newAttachId, f -> topic.doDetach(f, consumeRecords, supplyWindow));
 
-        // TODO: walk-through all (relevant) connections
-        connection.doFetchIfNotInFlight();
+            topicMetadata.visitBrokers(broker ->
+                    connectionsByNodeId.computeIfAbsent(broker.nodeId,
+                            (i) -> new FetchConnection(broker.host, broker.port)).doRequestIfNeeded());
 
-        newAttachIdConsumer.accept(newAttachId);
+            newAttachIdConsumer.accept(newAttachId);
+            break;
+        default:
+            break;
+        }
     }
 
     void doFlush(
         long connectionPoolAttachId)
     {
-        // TODO: walk through all connections
-        connection.doFetchIfNotInFlight();
+        connectionsByNodeId.values().forEach(connection  -> connection.doRequestIfNeeded());
     }
 
     void doDetach(
@@ -156,28 +213,28 @@ final class NetworkConnectionPool
         // TODO: If the topic now has no partitions, remove from topicsByName and topicMetadataByName
     }
 
-    final class NetworkConnection
+    abstract class NetworkConnection
     {
-        private final MessageConsumer networkTarget;
+        final MessageConsumer networkTarget;
 
-        private int nextRequestId;
-        private int nextResponseId;
+        long networkId;
 
-        private long networkId;
+        int networkRequestBudget;
+        int networkRequestPadding;
 
-        private int networkRequestBudget;
-        private int networkRequestPadding;
+        int networkResponseBudget;
+        int networkResponsePadding;
 
-        private int networkResponseBudget;
-        private int networkResponsePadding;
-
-        private MessageConsumer networkReplyThrottle;
-        private long networkReplyId;
+        MessageConsumer networkReplyThrottle;
+        long networkReplyId;
 
         private MessageConsumer streamState;
 
-        private int networkSlot = NO_SLOT;
-        private int networkSlotOffset;
+        int networkSlot = NO_SLOT;
+        int networkSlotOffset;
+
+        int nextRequestId;
+        int nextResponseId;
 
         private NetworkConnection()
         {
@@ -201,11 +258,295 @@ final class NetworkConnectionPool
             return this::handleStream;
         }
 
-        private void doFetchIfNotInFlight()
+        void doBeginIfNotConnected()
+        {
+            doBeginIfNotConnected((b, o, m) ->
+            {
+                return 0;
+            });
+        }
+
+        void doBeginIfNotConnected(Flyweight.Builder.Visitor extensionVisitor)
+        {
+            if (networkId == 0L)
+            {
+                // TODO: progressive back-off before reconnect
+                //       if choose to give up, say after maximum retry attempts,
+                //       then send END to each consumer to clean up
+
+                final long newNetworkId = NetworkConnectionPool.this.clientStreamFactory.supplyStreamId.getAsLong();
+                final long newCorrelationId = NetworkConnectionPool.this.clientStreamFactory.supplyCorrelationId.getAsLong();
+
+                NetworkConnectionPool.this.clientStreamFactory.correlations.put(newCorrelationId, NetworkConnection.this);
+
+                NetworkConnectionPool.this.clientStreamFactory
+                    .doBegin(networkTarget, newNetworkId, networkRef, newCorrelationId, extensionVisitor);
+                NetworkConnectionPool.this.clientStreamFactory.router.setThrottle(
+                        networkName, newNetworkId, this::handleThrottle);
+
+                this.networkId = newNetworkId;
+            }
+        }
+
+        abstract void doRequestIfNeeded();
+
+        private void handleThrottle(
+            int msgTypeId,
+            DirectBuffer buffer,
+            int index,
+            int length)
+        {
+            switch (msgTypeId)
+            {
+            case WindowFW.TYPE_ID:
+                final WindowFW window = NetworkConnectionPool.this.windowRO.wrap(buffer, index, index + length);
+                handleWindow(window);
+                break;
+            case ResetFW.TYPE_ID:
+                final ResetFW reset = NetworkConnectionPool.this.clientStreamFactory.resetRO.wrap(buffer, index, index + length);
+                handleReset(reset);
+                break;
+            default:
+                // ignore
+                break;
+            }
+        }
+
+        private void handleWindow(
+            final WindowFW window)
+        {
+            final int networkWindowCredit = window.credit();
+            final int networkWindowPadding = window.padding();
+
+            this.networkRequestBudget += networkWindowCredit;
+            this.networkRequestPadding = networkWindowPadding;
+
+            doRequestIfNeeded();
+        }
+
+        private void handleReset(
+            ResetFW reset)
+        {
+            doReinitialize();
+            doRequestIfNeeded();
+        }
+
+        private void handleStream(
+            int msgTypeId,
+            DirectBuffer buffer,
+            int index,
+            int length)
+        {
+            streamState.accept(msgTypeId, buffer, index, length);
+        }
+
+        private void beforeBegin(
+            int msgTypeId,
+            DirectBuffer buffer,
+            int index,
+            int length)
+        {
+            if (msgTypeId == BeginFW.TYPE_ID)
+            {
+                final BeginFW begin = NetworkConnectionPool.this.clientStreamFactory.beginRO.wrap(buffer, index, index + length);
+                handleBegin(begin);
+            }
+            else
+            {
+                NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
+            }
+        }
+
+        private void afterBegin(
+            int msgTypeId,
+            DirectBuffer buffer,
+            int index,
+            int length)
+        {
+            switch (msgTypeId)
+            {
+            case DataFW.TYPE_ID:
+                final DataFW data = NetworkConnectionPool.this.clientStreamFactory.dataRO.wrap(buffer, index, index + length);
+                handleData(data);
+                break;
+            case EndFW.TYPE_ID:
+                final EndFW end = NetworkConnectionPool.this.clientStreamFactory.endRO.wrap(buffer, index, index + length);
+                handleEnd(end);
+                break;
+            case AbortFW.TYPE_ID:
+                final AbortFW abort = NetworkConnectionPool.this.clientStreamFactory.abortRO.wrap(buffer, index, index + length);
+                handleAbort(abort);
+                break;
+            default:
+                NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
+                break;
+            }
+        }
+
+        private void handleBegin(
+            BeginFW begin)
+        {
+            doOfferResponseBudget();
+
+            this.streamState = this::afterBegin;
+        }
+
+
+        private void handleData(
+            DataFW data)
+        {
+            final OctetsFW payload = data.payload();
+
+            networkResponseBudget -= payload.sizeof() + networkResponsePadding;
+
+            if (networkResponseBudget < 0)
+            {
+                NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
+            }
+            else
+            {
+                try
+                {
+                    DirectBuffer networkBuffer = payload.buffer();
+                    int networkOffset = payload.offset();
+                    int networkLimit = payload.limit();
+
+                    if (networkSlot != NO_SLOT)
+                    {
+                        final MutableDirectBuffer bufferSlot =
+                                NetworkConnectionPool.this.clientStreamFactory.bufferPool.buffer(networkSlot);
+                        final int networkRemaining = networkLimit - networkOffset;
+
+                        bufferSlot.putBytes(networkSlotOffset, networkBuffer, networkOffset, networkRemaining);
+                        networkSlotOffset += networkRemaining;
+
+                        networkBuffer = bufferSlot;
+                        networkOffset = 0;
+                        networkLimit = networkSlotOffset;
+                    }
+
+                    ResponseHeaderFW response = null;
+                    if (networkOffset + BitUtil.SIZE_OF_INT <= networkLimit)
+                    {
+                        response = NetworkConnectionPool.this.responseRO.wrap(networkBuffer, networkOffset, networkLimit);
+                        networkOffset = response.limit();
+                    }
+
+                    if (response == null || networkOffset + response.size() > networkLimit)
+                    {
+                        if (networkSlot == NO_SLOT)
+                        {
+                            networkSlot = NetworkConnectionPool.this.clientStreamFactory.bufferPool.acquire(networkReplyId);
+
+                            final MutableDirectBuffer bufferSlot =
+                                    NetworkConnectionPool.this.clientStreamFactory.bufferPool.buffer(networkSlot);
+                            bufferSlot.putBytes(networkSlotOffset, payload.buffer(), payload.offset(), payload.sizeof());
+                            networkSlotOffset += payload.sizeof();
+                        }
+                    }
+                    else
+                    {
+                        handleResponse(networkBuffer, networkOffset, networkLimit);
+                        networkOffset += response.size();
+                        nextResponseId++;
+
+                        if (networkOffset < networkLimit)
+                        {
+                            if (networkSlot == NO_SLOT)
+                            {
+                                networkSlot = NetworkConnectionPool.this.clientStreamFactory.bufferPool.acquire(networkReplyId);
+                            }
+
+                            final MutableDirectBuffer bufferSlot =
+                                    NetworkConnectionPool.this.clientStreamFactory.bufferPool.buffer(networkSlot);
+                            bufferSlot.putBytes(0, networkBuffer, networkOffset, networkLimit - networkOffset);
+                            networkSlotOffset = networkLimit - networkOffset;
+                        }
+                        else
+                        {
+                            assert networkOffset == networkLimit;
+                            networkSlotOffset = 0;
+                        }
+
+                        doOfferResponseBudget();
+                        doRequestIfNeeded();
+                    }
+                }
+                finally
+                {
+                    if (networkSlotOffset == 0 && networkSlot != NO_SLOT)
+                    {
+                        NetworkConnectionPool.this.clientStreamFactory.bufferPool.release(networkSlot);
+                        networkSlot = NO_SLOT;
+                    }
+                }
+            }
+        }
+
+        abstract void handleResponse(
+            DirectBuffer networkBuffer,
+            int networkOffset,
+            int networkLimit);
+
+        private void handleEnd(
+            EndFW end)
+        {
+            doReinitialize();
+            doRequestIfNeeded();
+        }
+
+        private void handleAbort(
+            AbortFW abort)
+        {
+            doReinitialize();
+            doRequestIfNeeded();
+        }
+
+        void doOfferResponseBudget()
+        {
+            final int networkResponseCredit =
+                    Math.max(NetworkConnectionPool.this.bufferPool.slotCapacity() - networkSlotOffset - networkResponseBudget, 0);
+
+            NetworkConnectionPool.this.clientStreamFactory.doWindow(
+                    networkReplyThrottle, networkReplyId, networkResponseCredit, networkResponsePadding);
+
+            this.networkResponseBudget += networkResponseCredit;
+        }
+
+        private void doReinitialize()
+        {
+            networkRequestBudget = 0;
+            networkRequestPadding = 0;
+            networkId = 0L;
+            nextRequestId = 0;
+            nextResponseId = 0;
+        }
+    }
+
+    final class FetchConnection extends NetworkConnection
+    {
+        private final String host;
+        private final int port;
+
+        private FetchConnection(String host, int port)
+        {
+            super();
+            this.host = host;
+            this.port = port;
+        }
+
+        @Override
+        void doRequestIfNeeded()
         {
             if (nextRequestId == nextResponseId)
             {
-                doBeginIfNotConnected();
+                doBeginIfNotConnected((b, o, m) ->
+                {
+                    return tcpBeginExRW.wrap(b, o, m)
+                                      .remoteAddress(ab -> ab.host(host))
+                                      .remotePort(port)
+                                      .limit();
+                });
 
                 if (networkRequestBudget > networkRequestPadding)
                 {
@@ -216,14 +557,13 @@ final class NetworkConnectionPool
                             NetworkConnectionPool.this.encodeBuffer, encodeLimit,
                             NetworkConnectionPool.this.encodeBuffer.capacity())
                             .size(0)
-                            .apiKey(ClientStreamFactory.FETCH_API_KEY)
-                            .apiVersion(ClientStreamFactory.FETCH_API_VERSION)
+                            .apiKey(FETCH_API_KEY)
+                            .apiVersion(FETCH_API_VERSION)
                             .correlationId(0)
                             .clientId((String) null)
                             .build();
 
                     encodeLimit = request.limit();
-
                     FetchRequestFW fetchRequest = fetchRequestRW.wrap(
                             NetworkConnectionPool.this.encodeBuffer, encodeLimit,
                             NetworkConnectionPool.this.encodeBuffer.capacity())
@@ -300,8 +640,8 @@ final class NetworkConnectionPool
                         NetworkConnectionPool.this.requestRW
                                  .wrap(NetworkConnectionPool.this.encodeBuffer, request.offset(), request.limit())
                                  .size(encodeLimit - encodeOffset - RequestHeaderFW.FIELD_OFFSET_API_KEY)
-                                 .apiKey(ClientStreamFactory.FETCH_API_KEY)
-                                 .apiVersion(ClientStreamFactory.FETCH_API_VERSION)
+                                 .apiKey(FETCH_API_KEY)
+                                 .apiVersion(FETCH_API_VERSION)
                                  .correlationId(newCorrelationId)
                                  .clientId((String) null)
                                  .build();
@@ -318,220 +658,8 @@ final class NetworkConnectionPool
             }
         }
 
-        private void doBeginIfNotConnected()
-        {
-            if (networkId == 0L)
-            {
-                // TODO: progressive back-off before reconnect
-                //       if choose to give up, say after maximum retry attempts,
-                //       then send END to each consumer to clean up
-
-                final long newNetworkId = NetworkConnectionPool.this.clientStreamFactory.supplyStreamId.getAsLong();
-                final long newCorrelationId = NetworkConnectionPool.this.clientStreamFactory.supplyCorrelationId.getAsLong();
-
-                NetworkConnectionPool.this.clientStreamFactory.correlations.put(newCorrelationId, NetworkConnection.this);
-
-                NetworkConnectionPool.this.clientStreamFactory.doBegin(networkTarget, newNetworkId, networkRef, newCorrelationId);
-                NetworkConnectionPool.this.clientStreamFactory.router.setThrottle(
-                        networkName, newNetworkId, this::handleThrottle);
-
-                this.networkId = newNetworkId;
-            }
-        }
-
-        private void handleThrottle(
-            int msgTypeId,
-            DirectBuffer buffer,
-            int index,
-            int length)
-        {
-            switch (msgTypeId)
-            {
-            case WindowFW.TYPE_ID:
-                final WindowFW window = NetworkConnectionPool.this.windowRO.wrap(buffer, index, index + length);
-                handleWindow(window);
-                break;
-            case ResetFW.TYPE_ID:
-                final ResetFW reset = NetworkConnectionPool.this.clientStreamFactory.resetRO.wrap(buffer, index, index + length);
-                handleReset(reset);
-                break;
-            default:
-                // ignore
-                break;
-            }
-        }
-
-        private void handleWindow(
-            final WindowFW window)
-        {
-            final int networkWindowCredit = window.credit();
-            final int networkWindowPadding = window.padding();
-
-            this.networkRequestBudget += networkWindowCredit;
-            this.networkRequestPadding = networkWindowPadding;
-
-            doFetchIfNotInFlight();
-        }
-
-        private void handleReset(
-            ResetFW reset)
-        {
-            doReinitialize();
-            doFetchIfNotInFlight();
-        }
-
-        private void handleStream(
-            int msgTypeId,
-            DirectBuffer buffer,
-            int index,
-            int length)
-        {
-            streamState.accept(msgTypeId, buffer, index, length);
-        }
-
-        private void beforeBegin(
-            int msgTypeId,
-            DirectBuffer buffer,
-            int index,
-            int length)
-        {
-            if (msgTypeId == BeginFW.TYPE_ID)
-            {
-                final BeginFW begin = NetworkConnectionPool.this.clientStreamFactory.beginRO.wrap(buffer, index, index + length);
-                handleBegin(begin);
-            }
-            else
-            {
-                NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
-            }
-        }
-
-        private void afterBegin(
-            int msgTypeId,
-            DirectBuffer buffer,
-            int index,
-            int length)
-        {
-            switch (msgTypeId)
-            {
-            case DataFW.TYPE_ID:
-                final DataFW data = NetworkConnectionPool.this.clientStreamFactory.dataRO.wrap(buffer, index, index + length);
-                handleData(data);
-                break;
-            case EndFW.TYPE_ID:
-                final EndFW end = NetworkConnectionPool.this.clientStreamFactory.endRO.wrap(buffer, index, index + length);
-                handleEnd(end);
-                break;
-            case AbortFW.TYPE_ID:
-                final AbortFW abort = NetworkConnectionPool.this.clientStreamFactory.abortRO.wrap(buffer, index, index + length);
-                handleAbort(abort);
-                break;
-            default:
-                NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
-                break;
-            }
-        }
-
-        private void handleBegin(
-            BeginFW begin)
-        {
-            doOfferResponseBudget();
-
-            this.streamState = this::afterBegin;
-        }
-
-        private void handleData(
-            DataFW data)
-        {
-            final OctetsFW payload = data.payload();
-
-            networkResponseBudget -= payload.sizeof() + networkResponsePadding;
-
-            if (networkResponseBudget < 0)
-            {
-                NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
-            }
-            else
-            {
-                try
-                {
-                    DirectBuffer networkBuffer = payload.buffer();
-                    int networkOffset = payload.offset();
-                    int networkLimit = payload.limit();
-
-                    if (networkSlot != NO_SLOT)
-                    {
-                        final MutableDirectBuffer bufferSlot =
-                                NetworkConnectionPool.this.clientStreamFactory.bufferPool.buffer(networkSlot);
-                        final int networkRemaining = networkLimit - networkOffset;
-
-                        bufferSlot.putBytes(networkSlotOffset, networkBuffer, networkOffset, networkRemaining);
-                        networkSlotOffset += networkRemaining;
-
-                        networkBuffer = bufferSlot;
-                        networkOffset = 0;
-                        networkLimit = networkSlotOffset;
-                    }
-
-                    ResponseHeaderFW response = null;
-                    if (networkOffset + BitUtil.SIZE_OF_INT <= networkLimit)
-                    {
-                        response = NetworkConnectionPool.this.responseRO.wrap(networkBuffer, networkOffset, networkLimit);
-                        networkOffset = response.limit();
-                    }
-
-                    if (response == null || networkOffset + response.size() > networkLimit)
-                    {
-                        if (networkSlot == NO_SLOT)
-                        {
-                            networkSlot = NetworkConnectionPool.this.clientStreamFactory.bufferPool.acquire(networkReplyId);
-
-                            final MutableDirectBuffer bufferSlot =
-                                    NetworkConnectionPool.this.clientStreamFactory.bufferPool.buffer(networkSlot);
-                            bufferSlot.putBytes(networkSlotOffset, payload.buffer(), payload.offset(), payload.sizeof());
-                            networkSlotOffset += payload.sizeof();
-                        }
-                    }
-                    else
-                    {
-                        handleFetchResponse(networkBuffer, networkOffset, networkLimit);
-                        networkOffset += response.size();
-                        nextResponseId++;
-
-                        if (networkOffset < networkLimit)
-                        {
-                            if (networkSlot == NO_SLOT)
-                            {
-                                networkSlot = NetworkConnectionPool.this.clientStreamFactory.bufferPool.acquire(networkReplyId);
-                            }
-
-                            final MutableDirectBuffer bufferSlot =
-                                    NetworkConnectionPool.this.clientStreamFactory.bufferPool.buffer(networkSlot);
-                            bufferSlot.putBytes(0, networkBuffer, networkOffset, networkLimit - networkOffset);
-                            networkSlotOffset = networkLimit - networkOffset;
-                        }
-                        else
-                        {
-                            assert networkOffset == networkLimit;
-                            networkSlotOffset = 0;
-                        }
-
-                        doOfferResponseBudget();
-                        doFetchIfNotInFlight();
-                    }
-                }
-                finally
-                {
-                    if (networkSlotOffset == 0 && networkSlot != NO_SLOT)
-                    {
-                        NetworkConnectionPool.this.clientStreamFactory.bufferPool.release(networkSlot);
-                        networkSlot = NO_SLOT;
-                    }
-                }
-            }
-        }
-
-        private void handleFetchResponse(
+        @Override
+        void handleResponse(
             DirectBuffer networkBuffer,
             int networkOffset,
             int networkLimit)
@@ -573,39 +701,130 @@ final class NetworkConnectionPool
                 }
             }
         }
+    }
 
-        private void handleEnd(
-            EndFW end)
+    private final class MetadataConnection extends NetworkConnection
+    {
+        TopicMetadata pendingTopicMetadata;
+
+        @Override
+        void doRequestIfNeeded()
         {
-            doReinitialize();
-            doFetchIfNotInFlight();
+            Optional<TopicMetadata> topicMetadata;
+            if (nextRequestId == nextResponseId && (topicMetadata = topicMetadataByName.values().stream()
+                    .filter(m -> m.brokerIndexesByPartition == null).findFirst()).isPresent())
+            {
+                pendingTopicMetadata = topicMetadata.get();
+                doBeginIfNotConnected();
+
+                if (networkRequestBudget > networkRequestPadding)
+                {
+                    final int encodeOffset = 0;
+                    int encodeLimit = encodeOffset;
+
+                    RequestHeaderFW request = requestRW.wrap(
+                            NetworkConnectionPool.this.encodeBuffer, encodeLimit,
+                            NetworkConnectionPool.this.encodeBuffer.capacity())
+                            .size(0)
+                            .apiKey(METADATA_API_KEY)
+                            .apiVersion(METADATA_API_VERSION)
+                            .correlationId(0)
+                            .clientId((String) null)
+                            .build();
+
+                    encodeLimit = request.limit();
+
+                    MetadataRequestFW metadataRequest = metadataRequestRW.wrap(
+                            NetworkConnectionPool.this.encodeBuffer, encodeLimit,
+                            NetworkConnectionPool.this.encodeBuffer.capacity())
+                            .topicCount(1)
+                            .topicName(topicMetadata.get().topicName)
+                            .build();
+
+                    encodeLimit = metadataRequest.limit();
+
+                    // TODO: stream large requests in multiple DATA frames as needed
+                    if (encodeLimit - encodeOffset + networkRequestPadding <= networkRequestBudget)
+                    {
+                        int newCorrelationId = nextRequestId++;
+
+                        NetworkConnectionPool.this.requestRW
+                                 .wrap(NetworkConnectionPool.this.encodeBuffer, request.offset(), request.limit())
+                                 .size(encodeLimit - encodeOffset - RequestHeaderFW.FIELD_OFFSET_API_KEY)
+                                 .apiKey(METADATA_API_KEY)
+                                 .apiVersion(METADATA_API_VERSION)
+                                 .correlationId(newCorrelationId)
+                                 .clientId((String) null)
+                                 .build();
+
+                        OctetsFW payload = NetworkConnectionPool.this.payloadRW
+                                .wrap(NetworkConnectionPool.this.encodeBuffer, encodeOffset, encodeLimit)
+                                .set((b, o, m) -> m - o)
+                                .build();
+
+                        NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId, payload);
+                        networkRequestBudget -= payload.sizeof() + networkRequestPadding;
+                    }
+                }
+            }
+
         }
 
-        private void handleAbort(
-            AbortFW abort)
+        @Override
+        void handleResponse(
+            DirectBuffer networkBuffer,
+            int networkOffset,
+            final int networkLimit)
         {
-            doReinitialize();
-            doFetchIfNotInFlight();
-        }
+            final MetadataResponseFW metadataResponse =
+                    NetworkConnectionPool.this.metadataResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
+            final int brokerCount = metadataResponse.brokerCount();
+            pendingTopicMetadata.initializeBrokers(brokerCount);
+            networkOffset = metadataResponse.limit();
+            for (int brokerIndex=0; brokerIndex < brokerCount; brokerIndex++)
+            {
+                final BrokerMetadataFW broker =
+                        NetworkConnectionPool.this.brokerMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
+                pendingTopicMetadata.addBroker(broker.nodeId(), broker.host().asString(), broker.port());
+                networkOffset = broker.limit();
+            }
 
-        private void doReinitialize()
-        {
-            networkRequestBudget = 0;
-            networkRequestPadding = 0;
-            networkId = 0L;
-            nextRequestId = 0;
-            nextResponseId = 0;
-        }
+            final MetadataResponsePart2FW metadataResponsePart2 =
+                    NetworkConnectionPool.this.metadataResponsePart2RO.wrap(networkBuffer, networkOffset, networkLimit);
+            final int topicCount = metadataResponsePart2.topicCount();
+            assert topicCount == 1;
+            networkOffset = metadataResponsePart2.limit();
+            short errorCode = NONE;
+            for (int topicIndex = 0; topicIndex < topicCount; topicIndex++)
+            {
+                final TopicMetadataFW topicMetadata =
+                        NetworkConnectionPool.this.topicMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
+                final String topicName = topicMetadata.topic().asString();
+                assert topicName.equals(pendingTopicMetadata.topicName);
+                errorCode = topicMetadata.errorCode();
+                final int partitionCount = topicMetadata.partitionCount();
+                networkOffset = topicMetadata.limit();
 
-        private void doOfferResponseBudget()
-        {
-            final int networkResponseCredit =
-                    Math.max(NetworkConnectionPool.this.bufferPool.slotCapacity() - networkSlotOffset - networkResponseBudget, 0);
-
-            NetworkConnectionPool.this.clientStreamFactory.doWindow(
-                    networkReplyThrottle, networkReplyId, networkResponseCredit, networkResponsePadding);
-
-            this.networkResponseBudget += networkResponseCredit;
+                pendingTopicMetadata.initializePartitions(partitionCount);
+                for (int partitionIndex = 0; partitionIndex < partitionCount && errorCode == NONE; partitionIndex++)
+                {
+                    final PartitionMetadataFW partition =
+                            NetworkConnectionPool.this.partitionMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
+                    errorCode = partition.errorCode();
+                    pendingTopicMetadata.addPartition(partition.partitionId(), partition.leader());
+                    networkOffset = partition.limit();
+                }
+            }
+            if (KafkaErrors.isRecoverable(errorCode))
+            {
+                pendingTopicMetadata.reset();
+                doRequestIfNeeded();
+            }
+            else
+            {
+                pendingTopicMetadata.setErrorCode(errorCode);
+                pendingTopicMetadata.flush();
+            }
         }
     }
 
@@ -778,13 +997,109 @@ final class NetworkConnectionPool
         }
     }
 
+    private static final class BrokerMetadata
+    {
+        final int nodeId;
+        final String host;
+        final int port;
+
+        BrokerMetadata(int nodeId, String host, int port)
+        {
+            this.nodeId = nodeId;
+            this.host = host;
+            this.port = port;
+        }
+
+    }
+
     private static final class TopicMetadata
     {
-        final int[] brokersByPartition;
+        private final String topicName;
+        private short errorCode;
+        BrokerMetadata[] brokers;
+        private int nextBrokerIndex;
+        private int[] brokerIndexesByPartition;
+        private List<Consumer<TopicMetadata>> consumers = new ArrayList<>();
 
-        TopicMetadata(int partitionCount)
+        TopicMetadata(String topicName)
         {
-            brokersByPartition = new int[partitionCount];
+            this.topicName = topicName;
+        }
+
+        void setErrorCode(
+            short errorCode)
+        {
+            this.errorCode = errorCode;
+        }
+
+        void initializeBrokers(int brokerCount)
+        {
+            brokers = new BrokerMetadata[brokerCount];
+        }
+
+        void addBroker(int nodeId, String host, int port)
+        {
+            brokers[nextBrokerIndex++] = new BrokerMetadata(nodeId, host, port);
+        }
+
+        void initializePartitions(int partitionCount)
+        {
+            brokerIndexesByPartition = new int[partitionCount];
+        }
+
+        void addPartition(int partitionId, int nodeId)
+        {
+            for (int i=0; i < brokers.length; i++)
+            {
+                if (brokers[i].nodeId == nodeId)
+                {
+                    brokerIndexesByPartition[partitionId] = i;
+                    break;
+                }
+            }
+        }
+
+        void doAttach(
+            Consumer<TopicMetadata> consumer)
+        {
+            consumers.add(consumer);
+            if (brokerIndexesByPartition != null)
+            {
+                flush();
+            }
+        }
+
+        void flush()
+        {
+            for (Consumer<TopicMetadata> consumer: consumers)
+            {
+                consumer.accept(this);
+            }
+            consumers.clear();
+        }
+
+        short errorCode()
+        {
+            return errorCode;
+        }
+
+        void visitBrokers(Consumer<BrokerMetadata> visitor)
+        {
+            for (BrokerMetadata broker : brokers)
+            {
+                visitor.accept(broker);
+            }
+        }
+
+        int partitionCount()
+        {
+            return brokerIndexesByPartition.length;
+        }
+
+        void reset()
+        {
+            brokers = null;
+            brokerIndexesByPartition = null;
         }
 
     }
