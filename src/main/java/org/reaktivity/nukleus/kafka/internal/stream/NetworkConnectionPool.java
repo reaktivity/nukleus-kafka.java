@@ -73,10 +73,12 @@ import org.reaktivity.specification.tcp.internal.types.stream.TcpBeginExFW;
 
 final class NetworkConnectionPool
 {
-    static final short FETCH_API_VERSION = 0x05;
-    static final short FETCH_API_KEY = 0x01;
-    static final short METADATA_API_VERSION = 0x05;
-    static final short METADATA_API_KEY = 0x03;
+    private static final short FETCH_API_VERSION = 0x05;
+    private static final short FETCH_API_KEY = 0x01;
+    private static final short METADATA_API_VERSION = 0x05;
+    private static final short METADATA_API_KEY = 0x03;
+
+    private static final byte[] ANY_IP_ADDR = new byte[4];
 
     final RequestHeaderFW.Builder requestRW = new RequestHeaderFW.Builder();
     final FetchRequestFW.Builder fetchRequestRW = new FetchRequestFW.Builder();
@@ -141,7 +143,6 @@ final class NetworkConnectionPool
         IntConsumer newAttachIdConsumer,
         IntConsumer onMetadataError)
     {
-        // TODO: error handling (onMetadataError)
         final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
         metadata.doAttach((m) ->
         {
@@ -186,7 +187,7 @@ final class NetworkConnectionPool
 
             topicMetadata.visitBrokers(broker ->
                     connectionsByNodeId.computeIfAbsent(broker.nodeId,
-                            (i) -> new FetchConnection(broker.host, broker.port)).doRequestIfNeeded());
+                            (i) -> new FetchConnection(i, broker.host, broker.port)).doRequestIfNeeded());
 
             newAttachIdConsumer.accept(newAttachId);
             break;
@@ -525,12 +526,14 @@ final class NetworkConnectionPool
 
     final class FetchConnection extends NetworkConnection
     {
+        private final int brokerId;
         private final String host;
         private final int port;
 
-        private FetchConnection(String host, int port)
+        private FetchConnection(int brokerId, String host, int port)
         {
             super();
+            this.brokerId = brokerId;
             this.host = host;
             this.port = port;
         }
@@ -543,7 +546,9 @@ final class NetworkConnectionPool
                 doBeginIfNotConnected((b, o, m) ->
                 {
                     return tcpBeginExRW.wrap(b, o, m)
-                                      .remoteAddress(ab -> ab.host(host))
+                            .localAddress(lab -> lab.ipv4Address(ob -> ob.put(ANY_IP_ADDR)))
+                                      .localPort(0)
+                                      .remoteAddress(rab -> rab.host(host))
                                       .remotePort(port)
                                       .limit();
                 });
@@ -552,7 +557,6 @@ final class NetworkConnectionPool
                 {
                     final int encodeOffset = 512;
                     int encodeLimit = encodeOffset;
-
                     RequestHeaderFW request = requestRW.wrap(
                             NetworkConnectionPool.this.encodeBuffer, encodeLimit,
                             NetworkConnectionPool.this.encodeBuffer.capacity())
@@ -575,7 +579,6 @@ final class NetworkConnectionPool
                             .build();
 
                     encodeLimit = fetchRequest.limit();
-
                     int maxFetchBytes = 0;
                     int topicCount = 0;
                     for (String topicName : topicsByName.keySet())
@@ -591,15 +594,15 @@ final class NetworkConnectionPool
 
                         NetworkTopic topic = topicsByName.get(topicName);
                         int maxPartitionBytes = topic.maximumWritableBytes();
+                        final int[] nodeIdsByPartition = topicMetadataByName.get(topicName).nodeIdsByPartition;
 
                         maxFetchBytes += maxPartitionBytes;
-
                         int partitionCount = 0;
                         int partitionId = -1;
                         // TODO: eliminate iterator allocation
                         for (NetworkTopicPartition partition : topic.partitions)
                         {
-                            if (partitionId < partition.id)
+                            if (partitionId < partition.id && nodeIdsByPartition[partition.id] == brokerId)
                             {
                                 PartitionRequestFW partitionRequest = NetworkConnectionPool.this.partitionRequestRW
                                     .wrap(NetworkConnectionPool.this.encodeBuffer, encodeLimit,
@@ -712,7 +715,7 @@ final class NetworkConnectionPool
         {
             Optional<TopicMetadata> topicMetadata;
             if (nextRequestId == nextResponseId && (topicMetadata = topicMetadataByName.values().stream()
-                    .filter(m -> m.brokerIndexesByPartition == null).findFirst()).isPresent())
+                    .filter(m -> m.nodeIdsByPartition == null).findFirst()).isPresent())
             {
                 pendingTopicMetadata = topicMetadata.get();
                 doBeginIfNotConnected();
@@ -795,13 +798,17 @@ final class NetworkConnectionPool
             assert topicCount == 1;
             networkOffset = metadataResponsePart2.limit();
             short errorCode = NONE;
-            for (int topicIndex = 0; topicIndex < topicCount; topicIndex++)
+            for (int topicIndex = 0; topicIndex < topicCount && errorCode == NONE; topicIndex++)
             {
                 final TopicMetadataFW topicMetadata =
                         NetworkConnectionPool.this.topicMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
                 final String topicName = topicMetadata.topic().asString();
                 assert topicName.equals(pendingTopicMetadata.topicName);
                 errorCode = topicMetadata.errorCode();
+                if (errorCode != NONE)
+                {
+                    break;
+                }
                 final int partitionCount = topicMetadata.partitionCount();
                 networkOffset = topicMetadata.limit();
 
@@ -1018,7 +1025,7 @@ final class NetworkConnectionPool
         private short errorCode;
         BrokerMetadata[] brokers;
         private int nextBrokerIndex;
-        private int[] brokerIndexesByPartition;
+        private int[] nodeIdsByPartition;
         private List<Consumer<TopicMetadata>> consumers = new ArrayList<>();
 
         TopicMetadata(String topicName)
@@ -1044,26 +1051,19 @@ final class NetworkConnectionPool
 
         void initializePartitions(int partitionCount)
         {
-            brokerIndexesByPartition = new int[partitionCount];
+            nodeIdsByPartition = new int[partitionCount];
         }
 
         void addPartition(int partitionId, int nodeId)
         {
-            for (int i=0; i < brokers.length; i++)
-            {
-                if (brokers[i].nodeId == nodeId)
-                {
-                    brokerIndexesByPartition[partitionId] = i;
-                    break;
-                }
-            }
+            nodeIdsByPartition[partitionId] = nodeId;
         }
 
         void doAttach(
             Consumer<TopicMetadata> consumer)
         {
             consumers.add(consumer);
-            if (brokerIndexesByPartition != null)
+            if (nodeIdsByPartition != null)
             {
                 flush();
             }
@@ -1093,13 +1093,14 @@ final class NetworkConnectionPool
 
         int partitionCount()
         {
-            return brokerIndexesByPartition.length;
+            return nodeIdsByPartition.length;
         }
 
         void reset()
         {
             brokers = null;
-            brokerIndexesByPartition = null;
+            nodeIdsByPartition = null;
+            nextBrokerIndex = 0;
         }
 
     }

@@ -33,8 +33,9 @@ public class FetchIT
 {
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
-            .addScriptRoot("metadata", "org/reaktivity/specification/kafka/metadata.v5")
+            .addScriptRoot("routeAnyTopic", "org/reaktivity/specification/nukleus/kafka/control/route")
             .addScriptRoot("server", "org/reaktivity/specification/kafka/fetch.v5")
+            .addScriptRoot("metadata", "org/reaktivity/specification/kafka/metadata.v5")
             .addScriptRoot("client", "org/reaktivity/specification/nukleus/kafka/streams/fetch");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(5, SECONDS));
@@ -55,7 +56,30 @@ public class FetchIT
     @Specification({
         "${route}/client/controller",
         "${client}/begin.ext.missing/client"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldRejectWhenBeginExtMissing() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${routeAnyTopic}/client/controller",
+        "${client}/invalid.topic.name/client",
+        "${metadata}/one.topic.error.invalid.topic/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldRejectWhenTopicNameContainsDisallowedCharacters() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/unknown.topic.name/client",
+        "${metadata}/one.topic.error.unknown.topic/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldRejectWhenTopicIsUnknown() throws Exception
     {
         k3po.finish();
     }
@@ -64,8 +88,7 @@ public class FetchIT
     @Specification({
         "${route}/client/controller",
         "${client}/zero.offset/client",
-        "${metadata}/one.topic.single.partition/server" })
-        //"${server}/zero.offset/server" })
+        "${server}/zero.offset/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldRequestMessagesAtZeroOffset() throws Exception
     {
@@ -117,6 +140,28 @@ public class FetchIT
         k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
         k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
         k3po.notifyBarrier("SERVER_DELIVER_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset.messages.multiple.nodes/client",
+        "${server}/zero.offset.messages.multiple.nodes/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessagesFromMultipleNodes() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset.messages.multiple.partitions/client",
+        "${server}/zero.offset.messages.multiple.partitions/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessagesFromMultiplePartitions() throws Exception
+    {
         k3po.finish();
     }
 
