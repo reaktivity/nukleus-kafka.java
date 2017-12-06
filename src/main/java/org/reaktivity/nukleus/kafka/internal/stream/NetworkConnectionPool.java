@@ -186,9 +186,19 @@ final class NetworkConnectionPool
             detachersById.put(newAttachId, f -> topic.doDetach(f, consumeRecords, supplyWindow));
 
             topicMetadata.visitBrokers(broker ->
-                    connectionsByNodeId.computeIfAbsent(broker.nodeId,
-                            (i) -> new FetchConnection(i, broker.host, broker.port)).doRequestIfNeeded());
-
+            {
+                FetchConnection current = connectionsByNodeId.get(broker.nodeId);
+                if (current != null && (!current.host.equals(broker.host) || current.port != broker.port))
+                {
+                    current.close();
+                    current = null;
+                }
+                if (current == null)
+                {
+                    current = new FetchConnection(broker.nodeId, broker.host, broker.port);
+                    connectionsByNodeId.put(broker.nodeId, current);
+                }
+            });
             newAttachIdConsumer.accept(newAttachId);
             break;
         default:
@@ -290,6 +300,16 @@ final class NetworkConnectionPool
         }
 
         abstract void doRequestIfNeeded();
+
+        void close()
+        {
+            if (networkId != 0L)
+            {
+                NetworkConnectionPool.this.clientStreamFactory
+                    .doEnd(networkTarget, networkId);
+                this.networkId = 0L;
+            }
+        }
 
         private void handleThrottle(
             int msgTypeId,

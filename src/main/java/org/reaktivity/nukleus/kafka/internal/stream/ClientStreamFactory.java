@@ -26,7 +26,6 @@ import org.agrona.BitUtil;
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2LongHashMap;
-import org.agrona.collections.Long2LongHashMap.LongIterator;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
@@ -262,8 +261,7 @@ public final class ClientStreamFactory implements StreamFactory
         target.accept(data.typeId(), data.buffer(), data.offset(), data.sizeof());
     }
 
-    @SuppressWarnings("unused")
-    private void doEnd(
+    void doEnd(
         final MessageConsumer target,
         final long targetId)
     {
@@ -333,7 +331,7 @@ public final class ClientStreamFactory implements StreamFactory
         final MessageConsumer target,
         final long targetId,
         final OctetsFW payload,
-        final LongIterator fetchOffsets)
+        final Long2LongHashMap fetchOffsets)
     {
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
@@ -345,16 +343,18 @@ public final class ClientStreamFactory implements StreamFactory
     }
 
     private Flyweight.Builder.Visitor visitKafkaDataEx(
-        LongIterator fetchOffsets)
+        Long2LongHashMap fetchOffsets)
     {
         return (b, o, l) ->
         {
             return dataExRW.wrap(b, o, l)
                            .fetchOffsets(a ->
                            {
-                               while (fetchOffsets.hasNext())
+                               int partition = -1;
+                               while (fetchOffsets.get(++partition) != fetchOffsets.missingValue())
                                {
-                                   a.item(p -> p.set(fetchOffsets.nextValue()));
+                                   final long offset = fetchOffsets.get(partition);
+                                   a.item(p -> p.set(offset));
                                }
                            })
                            .build()
@@ -616,7 +616,7 @@ public final class ClientStreamFactory implements StreamFactory
                                 // currently guaranteed only for single partition topics
                                 this.fetchOffsets.put(partitionId, nextFetchAt);
 
-                                doKafkaData(applicationReply, applicationReplyId, value, fetchOffsets.values().iterator());
+                                doKafkaData(applicationReply, applicationReplyId, value, fetchOffsets);
                                 applicationReplyBudget -= value.sizeof() + applicationReplyPadding;
                                 writeableBytesMinimum = 0;
                             }
