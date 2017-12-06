@@ -38,6 +38,7 @@ import java.util.function.IntSupplier;
 import org.agrona.BitUtil;
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
+import org.agrona.collections.ArrayUtil;
 import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2LongHashMap.LongIterator;
@@ -108,7 +109,7 @@ final class NetworkConnectionPool
     private final String networkName;
     private final long networkRef;
     private final BufferPool bufferPool;
-    private final Int2ObjectHashMap<FetchConnection> connectionsByNodeId;
+    private FetchConnection[] connections = new FetchConnection[0];
     private final MetadataConnection metadataConnection;
 
     private final Map<String, TopicMetadata> topicMetadataByName;
@@ -127,7 +128,6 @@ final class NetworkConnectionPool
         this.networkName = networkName;
         this.networkRef = networkRef;
         this.bufferPool = bufferPool;
-        this.connectionsByNodeId = new Int2ObjectHashMap<>();
         this.metadataConnection = new MetadataConnection();
         this.encodeBuffer = new UnsafeBuffer(new byte[clientStreamFactory.bufferPool.slotCapacity()]);
         this.topicsByName = new LinkedHashMap<>();
@@ -187,16 +187,25 @@ final class NetworkConnectionPool
 
             topicMetadata.visitBrokers(broker ->
             {
-                FetchConnection current = connectionsByNodeId.get(broker.nodeId);
-                if (current != null && (!current.host.equals(broker.host) || current.port != broker.port))
+                FetchConnection current = null;
+                for (FetchConnection candidate : connections)
                 {
-                    current.close();
-                    current = null;
+                    if (candidate.brokerId == broker.nodeId)
+                    {
+                        current = candidate;
+                        if (!current.host.equals(broker.host) || current.port != broker.port)
+                        {
+                            // Change in cluster configuration
+                            current.close();
+                            current = new FetchConnection(broker.nodeId, broker.host, broker.port);
+                        }
+                        break;
+                    }
                 }
                 if (current == null)
                 {
                     current = new FetchConnection(broker.nodeId, broker.host, broker.port);
-                    connectionsByNodeId.put(broker.nodeId, current);
+                    connections = ArrayUtil.add(connections, current);
                 }
             });
             newAttachIdConsumer.accept(newAttachId);
@@ -209,7 +218,10 @@ final class NetworkConnectionPool
     void doFlush(
         long connectionPoolAttachId)
     {
-        connectionsByNodeId.values().forEach(connection  -> connection.doRequestIfNeeded());
+        for (FetchConnection connection  : connections)
+        {
+            connection.doRequestIfNeeded();
+        }
     }
 
     void doDetach(
@@ -723,6 +735,13 @@ final class NetworkConnectionPool
                     }
                 }
             }
+        }
+
+        @Override
+        public String toString()
+        {
+            return String.format("[brokerId=%d, host=%s, port=%d, budget=%d, padding=%d]",
+                    brokerId, host, port, networkRequestBudget, networkRequestPadding);
         }
     }
 

@@ -146,7 +146,7 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.messages.multiple.nodes/client",
+        "${client}/zero.offset.messages.multiple.partitions/client",
         "${server}/zero.offset.messages.multiple.nodes/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveMessagesFromMultipleNodes() throws Exception
