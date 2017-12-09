@@ -87,8 +87,8 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${scripts}/fanout.with.historical.message/client",
-        "${scripts}/fanout.with.historical.message/server"})
+        "${client}/fanout.with.historical.message/client",
+        "${server}/fanout.with.historical.message/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldFanoutUsingHistoricalConnection() throws Exception
     {
@@ -98,8 +98,8 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${scripts}/fanout.with.historical.messages/client",
-        "${scripts}/fanout.with.historical.messages/server"})
+        "${client}/fanout.with.historical.messages/client",
+        "${server}/fanout.with.historical.messages/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldFanoutDiscardingHistoricalMessageToJoinLiveStream() throws Exception
     {
@@ -109,8 +109,8 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${scripts}/fanout.with.slow.consumer/client",
-        "${scripts}/fanout.with.slow.consumer/server"})
+        "${client}/fanout.with.slow.consumer/client",
+        "${server}/fanout.with.slow.consumer/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldFanoutWithSlowConsumer() throws Exception
     {

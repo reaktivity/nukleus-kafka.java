@@ -90,7 +90,7 @@ public final class ClientStreamFactory implements StreamFactory
     final BufferPool bufferPool;
     private final MutableDirectBuffer writeBuffer;
 
-    final Long2ObjectHashMap<NetworkConnectionPool.NetworkConnection> correlations;
+    final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
     private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools;
 
     public ClientStreamFactory(
@@ -100,7 +100,7 @@ public final class ClientStreamFactory implements StreamFactory
         BufferPool bufferPool,
         LongSupplier supplyStreamId,
         LongSupplier supplyCorrelationId,
-        Long2ObjectHashMap<NetworkConnectionPool.NetworkConnection> correlations)
+        Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations)
     {
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
@@ -189,7 +189,7 @@ public final class ClientStreamFactory implements StreamFactory
         MessageConsumer handleStream = null;
         if (networkReplyRef == 0L)
         {
-            final NetworkConnectionPool.NetworkConnection connection = correlations.remove(networkReplyCorrelationId);
+            final NetworkConnectionPool.AbstractNetworkConnection connection = correlations.remove(networkReplyCorrelationId);
             if (connection != null)
             {
                 handleStream = connection.onCorrelated(networkReplyThrottle, networkReplyId);

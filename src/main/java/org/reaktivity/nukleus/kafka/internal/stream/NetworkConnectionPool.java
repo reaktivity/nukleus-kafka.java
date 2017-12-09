@@ -236,7 +236,7 @@ final class NetworkConnectionPool
         // TODO: If the topic now has no partitions, remove from topicsByName and topicMetadataByName
     }
 
-    abstract class NetworkConnection
+    abstract class AbstractNetworkConnection
     {
         final MessageConsumer networkTarget;
 
@@ -259,7 +259,7 @@ final class NetworkConnectionPool
         int nextRequestId;
         int nextResponseId;
 
-        private NetworkConnection()
+        private AbstractNetworkConnection()
         {
             this.networkTarget = NetworkConnectionPool.this.clientStreamFactory.router.supplyTarget(networkName);
         }
@@ -300,7 +300,7 @@ final class NetworkConnectionPool
                 final long newNetworkId = NetworkConnectionPool.this.clientStreamFactory.supplyStreamId.getAsLong();
                 final long newCorrelationId = NetworkConnectionPool.this.clientStreamFactory.supplyCorrelationId.getAsLong();
 
-                NetworkConnectionPool.this.clientStreamFactory.correlations.put(newCorrelationId, NetworkConnection.this);
+                NetworkConnectionPool.this.clientStreamFactory.correlations.put(newCorrelationId, AbstractNetworkConnection.this);
 
                 NetworkConnectionPool.this.clientStreamFactory
                     .doBegin(networkTarget, newNetworkId, networkRef, newCorrelationId, extensionVisitor);
@@ -556,7 +556,7 @@ final class NetworkConnectionPool
         }
     }
 
-    final class FetchConnection extends NetworkConnection
+    final class FetchConnection extends AbstractNetworkConnection
     {
         private final int brokerId;
         private final String host;
@@ -745,7 +745,7 @@ final class NetworkConnectionPool
         }
     }
 
-    private final class MetadataConnection extends NetworkConnection
+    private final class MetadataConnection extends AbstractNetworkConnection
     {
         TopicMetadata pendingTopicMetadata;
 
