@@ -22,6 +22,7 @@ import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.UNKNOWN_TOPIC_OR_PARTITION;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -485,6 +486,8 @@ final class NetworkConnectionPool
 
                         if (networkOffset < networkLimit)
                         {
+                            // TODO: can this really happen? Seems like a Kafka protocol violation if there
+                            // is more data than response.size().
                             if (networkSlot == NO_SLOT)
                             {
                                 networkSlot = NetworkConnectionPool.this.clientStreamFactory.bufferPool.acquire(networkReplyId);
@@ -623,12 +626,10 @@ final class NetworkConnectionPool
                                 .build();
 
                         encodeLimit = topicRequest.limit();
-
                         NetworkTopic topic = topicsByName.get(topicName);
                         int maxPartitionBytes = topic.maximumWritableBytes();
                         final int[] nodeIdsByPartition = topicMetadataByName.get(topicName).nodeIdsByPartition;
 
-                        maxFetchBytes += maxPartitionBytes;
                         int partitionCount = 0;
                         int partitionId = -1;
                         // TODO: eliminate iterator allocation
@@ -647,15 +648,19 @@ final class NetworkConnectionPool
                                 encodeLimit = partitionRequest.limit();
                                 partitionId = partition.id;
                                 partitionCount++;
+                                maxFetchBytes += maxPartitionBytes;
                             }
                         }
 
-                        NetworkConnectionPool.this.topicRequestRW
-                                      .wrap(NetworkConnectionPool.this.encodeBuffer, topicRequest.offset(), topicRequest.limit())
-                                      .name(topicRequest.name())
-                                      .partitionCount(partitionCount)
-                                      .build();
-                        topicCount++;
+                        if (partitionCount > 0)
+                        {
+                            NetworkConnectionPool.this.topicRequestRW
+                                  .wrap(NetworkConnectionPool.this.encodeBuffer, topicRequest.offset(), topicRequest.limit())
+                                  .name(topicRequest.name())
+                                  .partitionCount(partitionCount)
+                                  .build();
+                            topicCount++;
+                        }
                     }
 
                     NetworkConnectionPool.this.fetchRequestRW
@@ -668,10 +673,9 @@ final class NetworkConnectionPool
                                   .build();
 
                     // TODO: stream large requests in multiple DATA frames as needed
-                    if (maxFetchBytes > 0 && encodeLimit - encodeOffset + networkRequestPadding <= networkRequestBudget)
+                    if (topicCount > 0 && encodeLimit - encodeOffset + networkRequestPadding <= networkRequestBudget)
                     {
                         int newCorrelationId = nextRequestId++;
-
                         NetworkConnectionPool.this.requestRW
                                  .wrap(NetworkConnectionPool.this.encodeBuffer, request.offset(), request.limit())
                                  .size(encodeLimit - encodeOffset - RequestHeaderFW.FIELD_OFFSET_API_KEY)
@@ -680,7 +684,6 @@ final class NetworkConnectionPool
                                  .correlationId(newCorrelationId)
                                  .clientId((String) null)
                                  .build();
-
                         OctetsFW payload = NetworkConnectionPool.this.payloadRW
                                 .wrap(NetworkConnectionPool.this.encodeBuffer, encodeOffset, encodeLimit)
                                 .set((b, o, m) -> m - o)
@@ -883,6 +886,8 @@ final class NetworkConnectionPool
         private final NetworkTopicPartition candidate;
         private final PartitionProgressHandler progressHandler;
 
+        private BitSet needsHistoricalByPartition = new BitSet();
+
         @Override
         public String toString()
         {
@@ -916,6 +921,10 @@ final class NetworkConnectionPool
                 candidate.offset = iterator.nextValue();
 
                 NetworkTopicPartition partition = partitions.floor(candidate);
+                boolean needsHistorical = partition != null &&
+                        partition.id == candidate.id &&
+                        partition.offset != candidate.offset;
+                needsHistoricalByPartition.set(candidate.id, needsHistorical);
                 if (partition == null || partition.id != candidate.id)
                 {
                     partition = new NetworkTopicPartition();
@@ -1008,6 +1017,16 @@ final class NetworkConnectionPool
                 partitions.add(next);
             }
             next.refs++;
+        }
+
+        boolean needsHistorical()
+        {
+            return needsHistoricalByPartition.nextSetBit(0) != -1;
+        }
+
+        boolean needsHistorical(int partition)
+        {
+            return needsHistoricalByPartition.get(partition);
         }
     }
 
