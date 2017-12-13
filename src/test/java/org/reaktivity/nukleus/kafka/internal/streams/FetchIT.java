@@ -84,7 +84,6 @@ public class FetchIT
         k3po.finish();
     }
 
-    @Ignore // TODO:
     @Test
     @Specification({
         "${route}/client/controller",
@@ -96,7 +95,6 @@ public class FetchIT
         k3po.finish();
     }
 
-    @Ignore // TODO:
     @Test
     @Specification({
         "${route}/client/controller",
@@ -108,7 +106,6 @@ public class FetchIT
         k3po.finish();
     }
 
-    @Ignore // TODO:
     @Test
     @Specification({
         "${route}/client/controller",
@@ -274,6 +271,28 @@ public class FetchIT
         k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_ONE");
         k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
         k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_TWO");
+        k3po.notifyBarrier("SERVER_DELIVER_HISTORICAL_RESPONSE");
+        k3po.awaitBarrier("CLIENT_ONE_RECEIVED_THIRD_MESSAGE");
+        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_THREE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/distinct.offset.messagesets.fanout/client",
+        "${server}/distinct.offset.messagesets.fanout/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldFanoutMessageSetsAtDistinctOffsetsWithoutDeliveringLiveMessageOutOfOrder() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
+        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_ONE");
+        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
+        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_TWO");
+        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_THREE");
+        k3po.awaitBarrier("CLIENT_ONE_RECEIVED_THIRD_MESSAGE");
+        k3po.notifyBarrier("SERVER_DELIVER_HISTORICAL_RESPONSE");
         k3po.finish();
     }
 }

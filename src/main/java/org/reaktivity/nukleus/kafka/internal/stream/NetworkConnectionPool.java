@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static java.lang.String.format;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.INVALID_TOPIC_EXCEPTION;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.LEADER_NOT_AVAILABLE;
@@ -34,6 +35,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 
@@ -111,7 +113,8 @@ final class NetworkConnectionPool
     private final String networkName;
     private final long networkRef;
     private final BufferPool bufferPool;
-    private FetchConnection[] connections = new FetchConnection[0];
+    private AbstractFetchConnection[] connections = new LiveFetchConnection[0];
+    private HistoricalFetchConnection[] historicalConnections = new HistoricalFetchConnection[0];
     private final MetadataConnection metadataConnection;
 
     private final Map<String, TopicMetadata> topicMetadataByName;
@@ -189,38 +192,56 @@ final class NetworkConnectionPool
 
             topicMetadata.visitBrokers(broker ->
             {
-                FetchConnection current = null;
-                for (FetchConnection candidate : connections)
-                {
-                    if (candidate.brokerId == broker.nodeId)
-                    {
-                        current = candidate;
-                        if (!current.host.equals(broker.host) || current.port != broker.port)
-                        {
-                            // Change in cluster configuration
-                            current.close();
-                            current = new FetchConnection(broker.nodeId, broker.host, broker.port);
-                        }
-                        break;
-                    }
-                }
-                if (current == null)
-                {
-                    current = new FetchConnection(broker.nodeId, broker.host, broker.port);
-                    connections = ArrayUtil.add(connections, current);
-                }
+                connections = applyBrokerMetadata(connections, broker, LiveFetchConnection::new);
+            });
+            topicMetadata.visitBrokers(broker ->
+            {
+                historicalConnections = applyBrokerMetadata(historicalConnections, broker,  HistoricalFetchConnection::new);
             });
             newAttachIdConsumer.accept(newAttachId);
             break;
         default:
-            break;
+            throw new RuntimeException(format("Unexpected errorCode %d from metadata query", errorCode));
         }
+    }
+
+    private <T extends AbstractFetchConnection> T[] applyBrokerMetadata(
+        T[] connections,
+        BrokerMetadata broker,
+        Function<BrokerMetadata, T> createConnection)
+    {
+        T[] result = connections;
+        AbstractFetchConnection current = null;
+        for (int i = 0; i < connections.length; i++)
+        {
+            AbstractFetchConnection connection = connections[i];
+            if (connection.brokerId == broker.nodeId)
+            {
+                current = connection;
+                if (!connection.host.equals(broker.host) || connection.port != broker.port)
+                {
+                    // Change in cluster configuration
+                    connection.close();
+                    current = createConnection.apply(broker);
+                }
+                break;
+            }
+        }
+        if (current == null)
+        {
+            result = ArrayUtil.add(connections, createConnection.apply(broker));
+        }
+        return result;
     }
 
     void doFlush(
         long connectionPoolAttachId)
     {
-        for (FetchConnection connection  : connections)
+        for (AbstractFetchConnection connection  : connections)
+        {
+            connection.doRequestIfNeeded();
+        }
+        for (AbstractFetchConnection connection  : historicalConnections)
         {
             connection.doRequestIfNeeded();
         }
@@ -560,7 +581,7 @@ final class NetworkConnectionPool
         }
     }
 
-    class FetchConnection extends AbstractNetworkConnection
+    abstract class AbstractFetchConnection extends AbstractNetworkConnection
     {
         private final String host;
         private final int port;
@@ -569,12 +590,12 @@ final class NetworkConnectionPool
         int encodeLimit;
         int maxFetchBytes;
 
-        private FetchConnection(int brokerId, String host, int port)
+        private AbstractFetchConnection(BrokerMetadata broker)
         {
             super();
-            this.brokerId = brokerId;
-            this.host = host;
-            this.port = port;
+            this.brokerId = broker.nodeId;
+            this.host = broker.host;
+            this.port = broker.port;
         }
 
         @Override
@@ -681,40 +702,8 @@ final class NetworkConnectionPool
             }
         }
 
-        int addTopicToRequest(
-            String topicName)
-        {
-            NetworkTopic topic = topicsByName.get(topicName);
-            int maxPartitionBytes = topic.maximumWritableBytes();
-            final int[] nodeIdsByPartition = topicMetadataByName.get(topicName).nodeIdsByPartition;
-
-            int partitionCount = 0;
-            // TODO: eliminate iterator allocation
-            Iterator<NetworkTopicPartition> iterator = topic.partitions.iterator();
-            NetworkTopicPartition candidate = iterator.hasNext() ? iterator.next() : null;
-            NetworkTopicPartition next;
-            while (candidate != null)
-            {
-                next = iterator.hasNext() ? iterator.next() : null;
-                boolean isHighestOffset = next == null || next.id != candidate.id;
-                if (isHighestOffset && nodeIdsByPartition[candidate.id] == brokerId)
-                {
-                    PartitionRequestFW partitionRequest = NetworkConnectionPool.this.partitionRequestRW
-                        .wrap(NetworkConnectionPool.this.encodeBuffer, encodeLimit,
-                                NetworkConnectionPool.this.encodeBuffer.capacity())
-                        .partitionId(candidate.id)
-                        .fetchOffset(candidate.offset)
-                        .maxBytes(maxPartitionBytes)
-                        .build();
-
-                    encodeLimit = partitionRequest.limit();
-                    partitionCount++;
-                    maxFetchBytes += maxPartitionBytes;
-                }
-                candidate = next;
-            }
-            return partitionCount;
-        }
+        abstract int addTopicToRequest(
+            String topicName);
 
         @Override
         void handleResponse(
@@ -754,11 +743,14 @@ final class NetworkConnectionPool
 
                         topic.onPartitionResponse(partitionResponse.buffer(),
                                                   partitionResponse.offset(),
-                                                  partitionResponseSize);
+                                                  partitionResponseSize,
+                                                  getRequestedOffset(topic, partitionResponse.partitionId()));
                     }
                 }
             }
         }
+
+        abstract long getRequestedOffset(NetworkTopic topic, int partitionId);
 
         @Override
         public String toString()
@@ -768,11 +760,61 @@ final class NetworkConnectionPool
         }
     }
 
-    private final class HistoricalFetchConnection extends FetchConnection
+    private final class LiveFetchConnection extends AbstractFetchConnection
     {
-        private HistoricalFetchConnection(int brokerId, String host, int port)
+        LiveFetchConnection(BrokerMetadata broker)
         {
-            super(brokerId, host, port);
+            super(broker);
+        }
+
+        @Override
+        int addTopicToRequest(
+            String topicName)
+        {
+            NetworkTopic topic = topicsByName.get(topicName);
+            int maxPartitionBytes = topic.maximumWritableBytes();
+            final int[] nodeIdsByPartition = topicMetadataByName.get(topicName).nodeIdsByPartition;
+
+            int partitionCount = 0;
+            // TODO: eliminate iterator allocation
+            Iterator<NetworkTopicPartition> iterator = topic.partitions.iterator();
+            NetworkTopicPartition candidate = iterator.hasNext() ? iterator.next() : null;
+            NetworkTopicPartition next;
+            while (candidate != null)
+            {
+                next = iterator.hasNext() ? iterator.next() : null;
+                boolean isHighestOffset = next == null || next.id != candidate.id;
+                if (isHighestOffset && nodeIdsByPartition[candidate.id] == brokerId)
+                {
+                    PartitionRequestFW partitionRequest = NetworkConnectionPool.this.partitionRequestRW
+                        .wrap(NetworkConnectionPool.this.encodeBuffer, encodeLimit,
+                                NetworkConnectionPool.this.encodeBuffer.capacity())
+                        .partitionId(candidate.id)
+                        .fetchOffset(candidate.offset)
+                        .maxBytes(maxPartitionBytes)
+                        .build();
+
+                    encodeLimit = partitionRequest.limit();
+                    partitionCount++;
+                    maxFetchBytes += maxPartitionBytes;
+                }
+                candidate = next;
+            }
+            return partitionCount;
+        }
+
+        @Override
+        long getRequestedOffset(NetworkTopic topic, int partitionId)
+        {
+            return topic.getHighestOffset(partitionId);
+        }
+    }
+
+    private final class HistoricalFetchConnection extends AbstractFetchConnection
+    {
+        private HistoricalFetchConnection(BrokerMetadata broker)
+        {
+            super(broker);
         }
 
         @Override
@@ -790,7 +832,8 @@ final class NetworkConnectionPool
                 // TODO: eliminate iterator allocation
                 for (NetworkTopicPartition partition : topic.partitions)
                 {
-                    if (partitionId < partition.id && nodeIdsByPartition[partition.id] == brokerId)
+                    if (topic.needsHistorical(partition.id) &&
+                            partitionId < partition.id && nodeIdsByPartition[partition.id] == brokerId)
                     {
                         PartitionRequestFW partitionRequest = NetworkConnectionPool.this.partitionRequestRW
                             .wrap(NetworkConnectionPool.this.encodeBuffer, encodeLimit,
@@ -808,6 +851,12 @@ final class NetworkConnectionPool
                 }
             }
             return partitionCount;
+        }
+
+        @Override
+        long getRequestedOffset(NetworkTopic topic, int partitionId)
+        {
+            return topic.getLowestOffset(partitionId);
         }
 
     }
@@ -985,12 +1034,11 @@ final class NetworkConnectionPool
                 candidate.offset = iterator.nextValue();
 
                 NetworkTopicPartition partition = partitions.floor(candidate);
-                boolean needsHistorical = partition != null &&
-                        partition.id == candidate.id &&
-                        partition.offset != candidate.offset;
-                needsHistoricalByPartition.set(candidate.id, needsHistorical);
                 if (partition == null || partition.id != candidate.id)
                 {
+                    NetworkTopicPartition ceiling = partitions.ceiling(candidate);
+                    boolean needsHistorical = ceiling != null && ceiling.id == candidate.id;
+                    needsHistoricalByPartition.set(candidate.id, needsHistorical);
                     partition = new NetworkTopicPartition();
                     partition.id = candidate.id;
                     partition.offset = candidate.offset;
@@ -1020,20 +1068,42 @@ final class NetworkConnectionPool
                 NetworkTopicPartition partition = partitions.floor(candidate);
                 if (partition != null)
                 {
+                    assert partition.id == candidate.id;
                     partition.refs--;
 
                     if (partition.refs == 0)
                     {
-                        partitions.remove(partition);
+                        remove(partition);
                     }
                 }
             }
         }
 
+        long getHighestOffset(
+            int partitionId)
+        {
+            candidate.id = partitionId;
+            candidate.offset = Long.MAX_VALUE;
+            NetworkTopicPartition floor = partitions.floor(candidate);
+            assert floor.id == partitionId;
+            return floor.offset;
+        }
+
+        long getLowestOffset(
+            int partitionId)
+        {
+            candidate.id = partitionId;
+            candidate.offset = 0L;
+            NetworkTopicPartition ceiling = partitions.ceiling(candidate);
+            assert ceiling.id == partitionId;
+            return ceiling.offset;
+        }
+
         void onPartitionResponse(
             DirectBuffer buffer,
             int index,
-            int length)
+            int length,
+            long requestedOffset)
         {
             // TODO: parse here, callback for individual records only
             //       via RecordConsumer.accept(buffer, index, length, baseOffset, progressHandler)
@@ -1041,10 +1111,8 @@ final class NetworkConnectionPool
             // TODO: eliminate iterator allocation
             for (PartitionResponseConsumer recordsConsumer : recordConsumers)
             {
-                recordsConsumer.accept(buffer, index, length, progressHandler);
+                recordsConsumer.accept(buffer, index, length, requestedOffset, progressHandler);
             }
-
-            partitions.removeIf(p -> p.refs == 0);
         }
 
         int maximumWritableBytes()
@@ -1075,12 +1143,39 @@ final class NetworkConnectionPool
             NetworkTopicPartition next = partitions.floor(candidate);
             if (next == null || next.offset != nextOffset)
             {
+                if (next !=  null && next != first)
+                {
+                    needsHistoricalByPartition.set(partitionId);
+                }
                 next = new NetworkTopicPartition();
                 next.id = partitionId;
                 next.offset = nextOffset;
                 partitions.add(next);
             }
             next.refs++;
+            if (first.refs == 0)
+            {
+                remove(first);
+            }
+        }
+
+        private void remove(
+            NetworkTopicPartition partition)
+        {
+            partitions.remove(partition);
+            boolean needsHistorical = false;
+            partition.offset = 0;
+            NetworkTopicPartition lowest = partitions.ceiling(partition);
+            if (lowest != null && lowest.id == partition.id)
+            {
+                partition.offset = Long.MAX_VALUE;
+                NetworkTopicPartition highest = partitions.floor(partition);
+                if (highest != lowest)
+                {
+                    needsHistorical = true;
+                }
+            }
+            needsHistoricalByPartition.set(partition.id, needsHistorical);
         }
 
         boolean needsHistorical()

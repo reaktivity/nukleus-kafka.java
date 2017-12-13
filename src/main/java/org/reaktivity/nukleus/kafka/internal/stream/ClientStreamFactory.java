@@ -539,6 +539,7 @@ public final class ClientStreamFactory implements StreamFactory
             DirectBuffer buffer,
             int offset,
             int length,
+            long requestedOffset,
             PartitionProgressHandler progressHandler)
         {
             final int maxLimit = offset + length;
@@ -554,7 +555,8 @@ public final class ClientStreamFactory implements StreamFactory
             long nextFetchAt = firstFetchAt;
 
             // TODO: determine appropriate reaction to different non-zero error codes
-            if (partition.errorCode() == 0 && networkOffset < maxLimit - BitUtil.SIZE_OF_INT)
+            if (partition.errorCode() == 0 && networkOffset < maxLimit - BitUtil.SIZE_OF_INT
+                    && requestedOffset <= firstFetchAt) // avoid out of order delivery
             {
                 final RecordSetFW recordSet = recordSetRO.wrap(buffer, networkOffset, maxLimit);
                 networkOffset = recordSet.limit();
