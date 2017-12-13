@@ -143,7 +143,7 @@
         <artifactId>nukleus-maven-plugin</artifactId>
         <version>${nukleus.plugin.version}</version>
         <configuration>
-          <scopeNames>core kafka protocol</scopeNames>
+          <scopeNames>core kafka protocol tcp</scopeNames>
           <packageName>org.reaktivity.nukleus.kafka.internal.types</packageName>
         </configuration>
         <executions>
