@@ -54,10 +54,10 @@
     <k3po.nukleus.ext.version>develop-SNAPSHOT</k3po.nukleus.ext.version>
 
     <nukleus.plugin.version>0.20</nukleus.plugin.version>
-    <nukleus.version>0.12</nukleus.version>
+    <nukleus.version>develop-SNAPSHOT</nukleus.version>
 
     <nukleus.kafka.spec.version>develop-SNAPSHOT</nukleus.kafka.spec.version>
-    <reaktor.version>0.32</reaktor.version>
+    <reaktor.version>develop-SNAPSHOT</reaktor.version>
   </properties>
 
   <dependencies>

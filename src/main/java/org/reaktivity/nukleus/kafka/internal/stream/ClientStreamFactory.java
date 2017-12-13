@@ -256,7 +256,7 @@ public final class ClientStreamFactory implements StreamFactory
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
                 .groupId(0)
-                .claimed(0)
+                .padding(0)
                 .payload(p -> p.set(payload.buffer(), payload.offset(), payload.sizeof()))
                 .build();
 
@@ -340,7 +340,7 @@ public final class ClientStreamFactory implements StreamFactory
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
                 .groupId(0)
-                .claimed(0)
+                .padding(0)
                 .payload(p -> p.set(payload.buffer(), payload.offset(), payload.sizeof()))
                 .extension(e -> e.set(visitKafkaDataEx(fetchOffsets)))
                 .build();
