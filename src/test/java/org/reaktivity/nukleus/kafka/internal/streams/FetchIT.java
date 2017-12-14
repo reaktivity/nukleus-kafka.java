@@ -76,6 +76,16 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/topic.name.not.equals.route.ext/client"})
+    @ScriptProperty("routedTopicName \"not_test\"")
+    public void shouldRejectTopicNameNotEqualToRoutedTopic() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/unknown.topic.name/client",
         "${metadata}/one.topic.error.unknown.topic/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
