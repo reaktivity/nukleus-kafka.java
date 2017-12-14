@@ -31,7 +31,7 @@ import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
 {
     private final KafkaConfiguration config;
-    private final Long2ObjectHashMap<NetworkConnectionPool.NetworkConnection> correlations;
+    private final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
 
     private RouteManager router;
     private MutableDirectBuffer writeBuffer;
