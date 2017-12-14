@@ -541,7 +541,7 @@ final class NetworkConnectionPool
                     Math.max(NetworkConnectionPool.this.bufferPool.slotCapacity() - networkSlotOffset - networkResponseBudget, 0);
 
             NetworkConnectionPool.this.clientStreamFactory.doWindow(
-                    networkReplyThrottle, networkReplyId, networkResponseCredit, networkResponsePadding);
+                    networkReplyThrottle, networkReplyId, networkResponseCredit, networkResponsePadding, 0);
 
             this.networkResponseBudget += networkResponseCredit;
         }

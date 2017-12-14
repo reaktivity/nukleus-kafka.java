@@ -255,6 +255,8 @@ public final class ClientStreamFactory implements StreamFactory
     {
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
+                .groupId(0)
+                .padding(0)
                 .payload(p -> p.set(payload.buffer(), payload.offset(), payload.sizeof()))
                 .build();
 
@@ -287,12 +289,14 @@ public final class ClientStreamFactory implements StreamFactory
         final MessageConsumer throttle,
         final long throttleId,
         final int credit,
-        final int padding)
+        final int padding,
+        final long groupId)
     {
         final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(throttleId)
                 .credit(credit)
                 .padding(padding)
+                .groupId(groupId)
                 .build();
 
         throttle.accept(window.typeId(), window.buffer(), window.offset(), window.sizeof());
@@ -335,6 +339,8 @@ public final class ClientStreamFactory implements StreamFactory
     {
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
+                .groupId(0)
+                .padding(0)
                 .payload(p -> p.set(payload.buffer(), payload.offset(), payload.sizeof()))
                 .extension(e -> e.set(visitKafkaDataEx(fetchOffsets)))
                 .build();
@@ -485,7 +491,7 @@ public final class ClientStreamFactory implements StreamFactory
             doKafkaBegin(newReply, newReplyId, 0L, applicationCorrelationId, applicationBeginExtension);
             router.setThrottle(applicationName, newReplyId, this::handleThrottle);
 
-            doWindow(applicationThrottle, applicationId, 0, 0);
+            doWindow(applicationThrottle, applicationId, 0, 0, 0);
 
             this.networkAttachId = newNetworkAttachId;
             this.applicationReply = newReply;
