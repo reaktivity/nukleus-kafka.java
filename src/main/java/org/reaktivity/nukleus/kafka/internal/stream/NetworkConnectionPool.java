@@ -73,8 +73,8 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.DataFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.TcpBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
-import org.reaktivity.specification.tcp.internal.types.stream.TcpBeginExFW;
 
 final class NetworkConnectionPool
 {
@@ -566,7 +566,7 @@ final class NetworkConnectionPool
                     Math.max(NetworkConnectionPool.this.bufferPool.slotCapacity() - networkSlotOffset - networkResponseBudget, 0);
 
             NetworkConnectionPool.this.clientStreamFactory.doWindow(
-                    networkReplyThrottle, networkReplyId, networkResponseCredit, networkResponsePadding);
+                    networkReplyThrottle, networkReplyId, networkResponseCredit, networkResponsePadding, 0);
 
             this.networkResponseBudget += networkResponseCredit;
         }

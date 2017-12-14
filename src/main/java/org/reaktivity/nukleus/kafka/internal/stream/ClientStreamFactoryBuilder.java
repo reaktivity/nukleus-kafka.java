@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import java.util.function.IntUnaryOperator;
+import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
@@ -65,6 +67,20 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
         LongSupplier supplyStreamId)
     {
         this.supplyStreamId = supplyStreamId;
+        return this;
+    }
+
+    @Override
+    public ClientStreamFactoryBuilder setGroupBudgetClaimer(
+        LongFunction<IntUnaryOperator> groupBudgetClaimer)
+    {
+        return this;
+    }
+
+    @Override
+    public ClientStreamFactoryBuilder setGroupBudgetReleaser(
+        LongFunction<IntUnaryOperator> groupBudgetReleaser)
+    {
         return this;
     }
 
