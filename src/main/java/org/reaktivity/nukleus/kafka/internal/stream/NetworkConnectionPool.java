@@ -469,8 +469,7 @@ final class NetworkConnectionPool
 
                     if (networkSlot != NO_SLOT)
                     {
-                        final MutableDirectBuffer bufferSlot =
-                                NetworkConnectionPool.this.clientStreamFactory.bufferPool.buffer(networkSlot);
+                        final MutableDirectBuffer bufferSlot = bufferPool.buffer(networkSlot);
                         final int networkRemaining = networkLimit - networkOffset;
 
                         bufferSlot.putBytes(networkSlotOffset, networkBuffer, networkOffset, networkRemaining);
@@ -492,10 +491,9 @@ final class NetworkConnectionPool
                     {
                         if (networkSlot == NO_SLOT)
                         {
-                            networkSlot = NetworkConnectionPool.this.clientStreamFactory.bufferPool.acquire(networkReplyId);
+                            networkSlot = bufferPool.acquire(networkReplyId);
 
-                            final MutableDirectBuffer bufferSlot =
-                                    NetworkConnectionPool.this.clientStreamFactory.bufferPool.buffer(networkSlot);
+                            final MutableDirectBuffer bufferSlot = bufferPool.buffer(networkSlot);
                             bufferSlot.putBytes(networkSlotOffset, payload.buffer(), payload.offset(), payload.sizeof());
                             networkSlotOffset += payload.sizeof();
                         }
@@ -512,11 +510,11 @@ final class NetworkConnectionPool
                             // is more data than response.size().
                             if (networkSlot == NO_SLOT)
                             {
-                                networkSlot = NetworkConnectionPool.this.clientStreamFactory.bufferPool.acquire(networkReplyId);
+                                networkSlot = bufferPool.acquire(networkReplyId);
                             }
 
                             final MutableDirectBuffer bufferSlot =
-                                    NetworkConnectionPool.this.clientStreamFactory.bufferPool.buffer(networkSlot);
+                                    bufferPool.buffer(networkSlot);
                             bufferSlot.putBytes(0, networkBuffer, networkOffset, networkLimit - networkOffset);
                             networkSlotOffset = networkLimit - networkOffset;
                         }
@@ -534,7 +532,7 @@ final class NetworkConnectionPool
                 {
                     if (networkSlotOffset == 0 && networkSlot != NO_SLOT)
                     {
-                        NetworkConnectionPool.this.clientStreamFactory.bufferPool.release(networkSlot);
+                        bufferPool.release(networkSlot);
                         networkSlot = NO_SLOT;
                     }
                 }
@@ -563,7 +561,7 @@ final class NetworkConnectionPool
         void doOfferResponseBudget()
         {
             final int networkResponseCredit =
-                    Math.max(NetworkConnectionPool.this.bufferPool.slotCapacity() - networkSlotOffset - networkResponseBudget, 0);
+                    Math.max(bufferPool.slotCapacity() - networkSlotOffset - networkResponseBudget, 0);
 
             NetworkConnectionPool.this.clientStreamFactory.doWindow(
                     networkReplyThrottle, networkReplyId, networkResponseCredit, networkResponsePadding, 0);
@@ -573,8 +571,15 @@ final class NetworkConnectionPool
 
         private void doReinitialize()
         {
+            if (networkSlot != NO_SLOT)
+            {
+                bufferPool.release(networkSlot);
+                networkSlot = NO_SLOT;
+            }
+            networkSlotOffset = 0;
             networkRequestBudget = 0;
             networkRequestPadding = 0;
+            networkResponseBudget = 0;
             networkId = 0L;
             nextRequestId = 0;
             nextResponseId = 0;
