@@ -21,7 +21,7 @@ public final class BufferUtil
 {
 
     /**
-     * Assigns a zero-based partition ID using the same method as
+     * Assigns a zero-based partition ID based on a fetchKey using the same method as
      * https://apache.googlesource.com/kafka/+/trunk/clients/src/main/java/org/apache/kafka/clients/producer/internals/
      * DefaultPartitioner.java
      * @param hashCode
@@ -39,7 +39,7 @@ public final class BufferUtil
 
 
     /**
-     * Assigns a zero-based partition ID using the same method as
+     * Assigns a zero-based partition ID based on a hashCode using the same method as
      * https://apache.googlesource.com/kafka/+/trunk/clients/src/main/java/org/apache/kafka/clients/producer/internals/
      * DefaultPartitioner.java
      * @param hashCode
