@@ -106,4 +106,35 @@ public final class BufferUtilTest
         buffer.putBytes(offset, data);
         assertEquals(Utils.murmur2(data), BufferUtil.murmur2(buffer, offset, offset + data.length));
     }
+
+    @Test
+    public void shouldDefaultPartitionFor43ByteValue()
+    {
+        final int offset = 38;
+        byte[] data = "abcdefghij1234567890abcdefghij1234567890abc".getBytes(UTF_8);
+        buffer.putBytes(offset, data);
+        final int partitionCount = 5;
+        assertEquals(
+                (Utils.murmur2(data) & 0x7fffffff) % partitionCount,
+                BufferUtil.defaultPartition(buffer, offset, offset + data.length, partitionCount));
+    }
+
+    @Test
+    public void shouldPartitionForNegativeHashCodes()
+    {
+        assertEquals(0, BufferUtil.partition(-22220, 4));
+        assertEquals(((-22221 & 0x7fffffff) % 4), BufferUtil.partition(-22221, 4));
+        assertEquals(2, BufferUtil.partition(-22222, 4));
+        assertEquals(((-22223 & 0x7fffffff) % 4), BufferUtil.partition(-22223, 4));
+    }
+
+    @Test
+    public void shouldPartitionForPositiveHashCodes()
+    {
+        assertEquals(0, BufferUtil.partition(22220, 4));
+        assertEquals(1, BufferUtil.partition(22221, 4));
+        assertEquals(2, BufferUtil.partition(22222, 4));
+        assertEquals(3, BufferUtil.partition(22223, 4));
+    }
+
 }

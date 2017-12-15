@@ -21,6 +21,39 @@ public final class BufferUtil
 {
 
     /**
+     * Assigns a zero-based partition ID using the same method as
+     * https://apache.googlesource.com/kafka/+/trunk/clients/src/main/java/org/apache/kafka/clients/producer/internals/
+     * DefaultPartitioner.java
+     * @param hashCode
+     * @param partitionCount
+     * @return
+     */
+    public static int defaultPartition(
+        final DirectBuffer fetchKey,
+        final int offset,
+        final int limit,
+        final int partitionCount)
+    {
+        return partition(murmur2(fetchKey, offset, limit), partitionCount);
+    }
+
+
+    /**
+     * Assigns a zero-based partition ID using the same method as
+     * https://apache.googlesource.com/kafka/+/trunk/clients/src/main/java/org/apache/kafka/clients/producer/internals/
+     * DefaultPartitioner.java
+     * @param hashCode
+     * @param partitionCount
+     * @return
+     */
+    public static int partition(
+        final int hashCode,
+        final int partitionCount)
+    {
+        return (hashCode & 0x7fffffff) % partitionCount;
+    }
+
+    /**
      * Adapted from
      * https://apache.googlesource.com/kafka/+/trunk/clients/src/main/java/org/apache/kafka/common/utils/Utils.java
      *
@@ -28,7 +61,7 @@ public final class BufferUtil
      * @param data buffer to hash from position offset (inclusive) to limit (exclusive)
      * @return 32 bit hash of the given array
      */
-    public static int murmur2(
+    static int murmur2(
         final DirectBuffer buffer,
         final int offset,
         final int limit)
