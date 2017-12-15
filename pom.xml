@@ -58,6 +58,7 @@
 
     <nukleus.kafka.spec.version>develop-SNAPSHOT</nukleus.kafka.spec.version>
     <reaktor.version>0.33</reaktor.version>
+    <kafka.clients.version>1.0.0</kafka.clients.version>
   </properties>
 
   <dependencies>
@@ -132,6 +133,12 @@
       <groupId>org.jmock</groupId>
       <artifactId>jmock-junit4</artifactId>
       <version>${jmock.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.kafka</groupId>
+      <artifactId>kafka-clients</artifactId>
+      <version>${kafka.clients.version}</version>
       <scope>test</scope>
     </dependency>
   </dependencies>
