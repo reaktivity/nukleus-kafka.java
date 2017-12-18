@@ -269,7 +269,6 @@ final class NetworkConnectionPool
         int networkRequestPadding;
 
         int networkResponseBudget;
-        int networkResponsePadding;
 
         MessageConsumer networkReplyThrottle;
         long networkReplyId;
@@ -453,7 +452,7 @@ final class NetworkConnectionPool
         {
             final OctetsFW payload = data.payload();
 
-            networkResponseBudget -= payload.sizeof() + networkResponsePadding;
+            networkResponseBudget -= payload.sizeof() + data.padding();
 
             if (networkResponseBudget < 0)
             {
@@ -566,7 +565,7 @@ final class NetworkConnectionPool
                     Math.max(NetworkConnectionPool.this.bufferPool.slotCapacity() - networkSlotOffset - networkResponseBudget, 0);
 
             NetworkConnectionPool.this.clientStreamFactory.doWindow(
-                    networkReplyThrottle, networkReplyId, networkResponseCredit, networkResponsePadding, 0);
+                    networkReplyThrottle, networkReplyId, networkResponseCredit, 0, 0);
 
             this.networkResponseBudget += networkResponseCredit;
         }
@@ -695,7 +694,8 @@ final class NetworkConnectionPool
                                 .set((b, o, m) -> m - o)
                                 .build();
 
-                        NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId, payload);
+                        NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId,
+                                networkRequestPadding, payload);
                         networkRequestBudget -= payload.sizeof() + networkRequestPadding;
                     }
                 }
@@ -920,7 +920,8 @@ final class NetworkConnectionPool
                                 .set((b, o, m) -> m - o)
                                 .build();
 
-                        NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId, payload);
+                        NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId,
+                                networkRequestPadding, payload);
                         networkRequestBudget -= payload.sizeof() + networkRequestPadding;
                     }
                 }

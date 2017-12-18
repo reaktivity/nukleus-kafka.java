@@ -251,12 +251,13 @@ public final class ClientStreamFactory implements StreamFactory
     void doData(
         final MessageConsumer target,
         final long targetId,
+        final int padding,
         final OctetsFW payload)
     {
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
                 .groupId(0)
-                .padding(0)
+                .padding(padding)
                 .payload(p -> p.set(payload.buffer(), payload.offset(), payload.sizeof()))
                 .build();
 
@@ -334,13 +335,14 @@ public final class ClientStreamFactory implements StreamFactory
     private void doKafkaData(
         final MessageConsumer target,
         final long targetId,
+        final int padding,
         final OctetsFW payload,
         final Long2LongHashMap fetchOffsets)
     {
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
                 .groupId(0)
-                .padding(0)
+                .padding(padding)
                 .payload(p -> p.set(payload.buffer(), payload.offset(), payload.sizeof()))
                 .extension(e -> e.set(visitKafkaDataEx(fetchOffsets)))
                 .build();
@@ -624,7 +626,7 @@ public final class ClientStreamFactory implements StreamFactory
                                 // currently guaranteed only for single partition topics
                                 this.fetchOffsets.put(partitionId, nextFetchAt);
 
-                                doKafkaData(applicationReply, applicationReplyId, value, fetchOffsets);
+                                doKafkaData(applicationReply, applicationReplyId, applicationReplyPadding, value, fetchOffsets);
                                 applicationReplyBudget -= value.sizeof() + applicationReplyPadding;
                                 writeableBytesMinimum = 0;
                             }
