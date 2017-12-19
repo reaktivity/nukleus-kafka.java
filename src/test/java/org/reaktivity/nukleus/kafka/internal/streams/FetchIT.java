@@ -179,6 +179,30 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/fetch.key.zero.offset.messages/client",
+        "${server}/fetch.key.multiple.matches.flow.controlled/server"})
+    @ScriptProperty({"networkAccept \"nukleus://target/streams/kafka\"",
+                     "applicationConnectWindow 15"})
+    public void shouldReceiveMultipleMessagesMatchingFetchKeyFlowControlled() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/fetch.key.zero.offset.three.messages/client",
+        "${server}/fetch.key.three.matches.flow.controlled/server"})
+    @ScriptProperty({"networkAccept \"nukleus://target/streams/kafka\"",
+                     "applicationConnectWindow 15"})
+    public void shouldReceiveMessagesThreeMatchingFetchKeyFlowControlled() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/fetch.key.nonzero.offset.message/client",
         "${server}/fetch.key.nonzero.offset.first.matches/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")

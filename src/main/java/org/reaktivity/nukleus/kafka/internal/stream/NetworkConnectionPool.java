@@ -573,8 +573,6 @@ final class NetworkConnectionPool
 
                         if (networkOffset < networkLimit)
                         {
-                            // TODO: can this really happen? Seems like a Kafka protocol violation if there
-                            // is more data than response.size().
                             if (networkSlot == NO_SLOT)
                             {
                                 networkSlot = bufferPool.acquire(networkReplyId);
