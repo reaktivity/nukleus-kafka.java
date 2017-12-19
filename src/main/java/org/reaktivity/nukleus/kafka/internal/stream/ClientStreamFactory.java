@@ -66,6 +66,7 @@ public final class ClientStreamFactory implements StreamFactory
 
     private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
     private final KafkaBeginExFW beginExRO = new KafkaBeginExFW();
+    private final OctetsFW octetsRO = new OctetsFW();
 
     final WindowFW windowRO = new WindowFW();
     final ResetFW resetRO = new ResetFW();
@@ -359,7 +360,7 @@ public final class ClientStreamFactory implements StreamFactory
                            {
                                if (fetchOffsets.size() == 1)
                                {
-                                   long offset = fetchOffsets.values().iterator().nextValue();
+                                   final long offset = fetchOffsets.values().iterator().nextValue();
                                    a.item(p -> p.set(offset));
                                }
                                else
@@ -397,8 +398,6 @@ public final class ClientStreamFactory implements StreamFactory
 
         private MessageConsumer streamState;
         private int writeableBytesMinimum;
-        private OctetsFW octetsFW = new OctetsFW();
-
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
             long applicationId,
@@ -764,7 +763,7 @@ public final class ClientStreamFactory implements StreamFactory
                                         writeableBytesMinimum = 0;
                                     }
                                     final OctetsFW value = record.value();
-                                    lastMatchingValue = octetsFW.wrap(buffer, value.offset(), value.limit());
+                                    lastMatchingValue = octetsRO.wrap(buffer, value.offset(), value.limit());
                                     lastMatchingOffset = currentFetchAt;
                                 }
                                 nextFetchAt = currentFetchAt + 1;
