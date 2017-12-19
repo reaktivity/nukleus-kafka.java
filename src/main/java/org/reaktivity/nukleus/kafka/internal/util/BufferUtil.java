@@ -16,27 +16,10 @@
 package org.reaktivity.nukleus.kafka.internal.util;
 
 import org.agrona.DirectBuffer;
+import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public final class BufferUtil
 {
-
-    /**
-     * Assigns a zero-based partition ID based on a fetchKey using the same method as
-     * https://apache.googlesource.com/kafka/+/trunk/clients/src/main/java/org/apache/kafka/clients/producer/internals/
-     * DefaultPartitioner.java
-     * @param hashCode
-     * @param partitionCount
-     * @return
-     */
-    public static int defaultPartition(
-        final DirectBuffer fetchKey,
-        final int offset,
-        final int limit,
-        final int partitionCount)
-    {
-        return partition(murmur2(fetchKey, offset, limit), partitionCount);
-    }
-
 
     /**
      * Assigns a zero-based partition ID based on a hashCode using the same method as
@@ -54,14 +37,18 @@ public final class BufferUtil
     }
 
     /**
-     * Adapted from
+     * Generates hash code for a fetchKey using the same method as
+     * https://apache.googlesource.com/kafka/+/trunk/clients/src/main/java/org/apache/kafka/clients/producer/internals/
+     * DefaultPartitioner.java
+     *
+     * Adapted from the murmur2 method in
      * https://apache.googlesource.com/kafka/+/trunk/clients/src/main/java/org/apache/kafka/common/utils/Utils.java
      *
-     * Generates 32 bit murmur2 hash from a range of bytes
+     * Generates 32 bit murmur2 hash from a range of bytes.
      * @param data buffer to hash from position offset (inclusive) to limit (exclusive)
      * @return 32 bit hash of the given array
      */
-    static int murmur2(
+    public static int defaultHashCode(
         final DirectBuffer buffer,
         final int offset,
         final int limit)
@@ -106,6 +93,27 @@ public final class BufferUtil
         h *= m;
         h ^= h >>> 15;
         return h;
+    }
+
+    public static boolean matches(
+        final OctetsFW fetchKey,
+        final byte[] key)
+    {
+        boolean result = key != null && fetchKey != null && key.length == fetchKey.sizeof();
+        if (result)
+        {
+            final DirectBuffer buffer = fetchKey.buffer();
+            final int offset = fetchKey.offset();
+            for (int i=0; i < key.length; i++)
+            {
+                if ((key[i] != buffer.getByte(offset + i)))
+                {
+                    result = false;
+                    break;
+                }
+            }
+        }
+        return result;
     }
 
 }
