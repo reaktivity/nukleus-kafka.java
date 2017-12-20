@@ -76,6 +76,43 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/invalid.fetch.key.and.multiple.offsets/client"})
+    public void shouldRejectInvalidBeginExWithFetchKeyAndMultipleOffsets() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/invalid.missing.fetch.key/client"})
+    public void shouldRejectInvalidBeginExWithMissingFetchKey() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/invalid.more.than.one.fetch.key.hash/client"})
+    public void shouldRejectInvalidBeginExWithMoreThanOneFetchKeyHash() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/topic.name.not.equals.route.ext/client"})
+    @ScriptProperty("routedTopicName \"not_test\"")
+    public void shouldRejectTopicNameNotEqualToRoutedTopic() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/unknown.topic.name/client",
         "${metadata}/one.topic.error.unknown.topic/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -113,6 +150,129 @@ public class FetchIT
         "${server}/fanout.with.slow.consumer/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldFanoutWithSlowConsumer() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/fetch.key.and.hash.code.picks.partition.zero/client",
+        "${server}/fetch.key.and.hash.code.picks.partition.zero/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageUsingFetchKeyAndExplicitHashCode() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/fetch.key.default.partioner.picks.partition.one/client",
+        "${server}/fetch.key.default.partioner.picks.partition.one/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageUsingFetchKeyAndDefaultPartitioner() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/fetch.key.zero.offset.messages/client",
+        "${server}/fetch.key.multiple.matches.flow.controlled/server"})
+    @ScriptProperty({"networkAccept \"nukleus://target/streams/kafka\"",
+                     "applicationConnectWindow 15"})
+    public void shouldReceiveMultipleMessagesMatchingFetchKeyFlowControlled() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/fetch.key.zero.offset.three.messages/client",
+        "${server}/fetch.key.three.matches.flow.controlled/server"})
+    @ScriptProperty({"networkAccept \"nukleus://target/streams/kafka\"",
+                     "applicationConnectWindow 15"})
+    public void shouldReceiveMessagesThreeMatchingFetchKeyFlowControlled() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/fetch.key.nonzero.offset.message/client",
+        "${server}/fetch.key.nonzero.offset.first.matches/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageMatchingFetchKeyFirstNonZeroOffset() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/fetch.key.zero.offset.message/client",
+        "${server}/fetch.key.zero.offset.first.matches/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageMatchingFetchKeyFirst() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/fetch.key.zero.offset.message/client",
+        "${server}/fetch.key.zero.offset.last.matches/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageMatchingFetchKeyLast() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/fetch.key.zero.offset.messages/client",
+        "${server}/fetch.key.zero.offset.multiple.matches/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMultipleMessagesMatchingFetchKey() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/fetch.key.zero.offset.messages.historical/client",
+        "${server}/fetch.key.zero.offset.multiple.matches.historical/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMultipleHistoricalMessagesMatchingFetchKey() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset/client",
+        "${server}/live.fetch.abort.and.reconnect/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReconnectOnAbortOnLiveFetchConnection() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset.message/client",
+        "${server}/live.fetch.reset.reconnect.and.message/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReconnectOnResetOnLiveConnectionAndReceiveMessage() throws Exception
     {
         k3po.finish();
     }
