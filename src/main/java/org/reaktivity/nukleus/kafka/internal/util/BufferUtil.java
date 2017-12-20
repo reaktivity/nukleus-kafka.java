@@ -21,13 +21,10 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 public final class BufferUtil
 {
 
-    /**
+    /*
      * Assigns a zero-based partition ID based on a hashCode using the same method as
      * https://apache.googlesource.com/kafka/+/trunk/clients/src/main/java/org/apache/kafka/clients/producer/internals/
      * DefaultPartitioner.java
-     * @param hashCode
-     * @param partitionCount
-     * @return
      */
     public static int partition(
         final int hashCode,
@@ -36,7 +33,7 @@ public final class BufferUtil
         return (hashCode & 0x7fffffff) % partitionCount;
     }
 
-    /**
+    /*
      * Generates hash code for a fetchKey using the same method as
      * https://apache.googlesource.com/kafka/+/trunk/clients/src/main/java/org/apache/kafka/clients/producer/internals/
      * DefaultPartitioner.java
@@ -45,8 +42,6 @@ public final class BufferUtil
      * https://apache.googlesource.com/kafka/+/trunk/clients/src/main/java/org/apache/kafka/common/utils/Utils.java
      *
      * Generates 32 bit murmur2 hash from a range of bytes.
-     * @param data buffer to hash from position offset (inclusive) to limit (exclusive)
-     * @return 32 bit hash of the given array
      */
     public static int defaultHashCode(
         final DirectBuffer buffer,
