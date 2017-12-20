@@ -75,6 +75,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.TcpBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
+import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
 
 final class NetworkConnectionPool
 {
@@ -157,6 +158,25 @@ final class NetworkConnectionPool
         metadataConnection.doRequestIfNeeded();
     }
 
+    void doAttach(
+        String topicName,
+        Long2LongHashMap fetchOffsets,
+        int partitionHash,
+        PartitionResponseConsumer consumeRecords,
+        IntSupplier supplyWindow,
+        IntConsumer newAttachIdConsumer,
+        IntConsumer onMetadataError)
+    {
+        final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
+        metadata.doAttach((m) ->
+        {
+            doAttach(topicName, fetchOffsets, partitionHash, consumeRecords, supplyWindow, newAttachIdConsumer,
+                    onMetadataError, m);
+        });
+
+        metadataConnection.doRequestIfNeeded();
+    }
+
     private void doAttach(
         String topicName,
         Long2LongHashMap fetchOffsets,
@@ -183,26 +203,73 @@ final class NetworkConnectionPool
             {
                 fetchOffsets.put(fetchOffsets.size(), 0L);
             }
-            final NetworkTopic topic = topicsByName.computeIfAbsent(topicName, NetworkTopic::new);
-            topic.doAttach(fetchOffsets, consumeRecords, supplyWindow);
-
-            final int newAttachId = nextAttachId++;
-
-            detachersById.put(newAttachId, f -> topic.doDetach(f, consumeRecords, supplyWindow));
-
-            topicMetadata.visitBrokers(broker ->
-            {
-                connections = applyBrokerMetadata(connections, broker, LiveFetchConnection::new);
-            });
-            topicMetadata.visitBrokers(broker ->
-            {
-                historicalConnections = applyBrokerMetadata(historicalConnections, broker,  HistoricalFetchConnection::new);
-            });
-            newAttachIdConsumer.accept(newAttachId);
+            finishAttach(topicName, fetchOffsets, consumeRecords, supplyWindow, newAttachIdConsumer, topicMetadata);
             break;
         default:
             throw new RuntimeException(format("Unexpected errorCode %d from metadata query", errorCode));
         }
+    }
+
+    private void doAttach(
+        String topicName,
+        Long2LongHashMap fetchOffsets,
+        int partitionHash,
+        PartitionResponseConsumer consumeRecords,
+        IntSupplier supplyWindow,
+        IntConsumer newAttachIdConsumer,
+        IntConsumer onMetadataError,
+        TopicMetadata topicMetadata)
+    {
+        short errorCode = topicMetadata.errorCode();
+        switch(errorCode)
+        {
+        case UNKNOWN_TOPIC_OR_PARTITION:
+            onMetadataError.accept(errorCode);
+            break;
+        case INVALID_TOPIC_EXCEPTION:
+            onMetadataError.accept(errorCode);
+            break;
+        case LEADER_NOT_AVAILABLE:
+            // recoverable
+            break;
+        case NONE:
+            int partitionId = BufferUtil.partition(partitionHash, topicMetadata.partitionCount());
+            if (partitionId != 0)
+            {
+                long offset = fetchOffsets.remove(0L);
+                fetchOffsets.put(partitionId, offset);
+            }
+            finishAttach(topicName, fetchOffsets, consumeRecords, supplyWindow, newAttachIdConsumer, topicMetadata);
+            break;
+        default:
+            throw new RuntimeException(format("Unexpected errorCode %d from metadata query", errorCode));
+        }
+    }
+
+    private void finishAttach(
+        String topicName,
+        Long2LongHashMap fetchOffsets,
+        PartitionResponseConsumer consumeRecords,
+        IntSupplier supplyWindow,
+        IntConsumer newAttachIdConsumer,
+        TopicMetadata topicMetadata)
+    {
+        final NetworkTopic topic = topicsByName.computeIfAbsent(topicName, NetworkTopic::new);
+        topic.doAttach(fetchOffsets, consumeRecords, supplyWindow);
+
+        final int newAttachId = nextAttachId++;
+
+        detachersById.put(newAttachId, f -> topic.doDetach(f, consumeRecords, supplyWindow));
+
+        topicMetadata.visitBrokers(broker ->
+        {
+            connections = applyBrokerMetadata(connections, broker, LiveFetchConnection::new);
+        });
+        topicMetadata.visitBrokers(broker ->
+        {
+            historicalConnections = applyBrokerMetadata(historicalConnections, broker,  HistoricalFetchConnection::new);
+        });
+        newAttachIdConsumer.accept(newAttachId);
     }
 
     private <T extends AbstractFetchConnection> T[] applyBrokerMetadata(
@@ -469,8 +536,7 @@ final class NetworkConnectionPool
 
                     if (networkSlot != NO_SLOT)
                     {
-                        final MutableDirectBuffer bufferSlot =
-                                NetworkConnectionPool.this.clientStreamFactory.bufferPool.buffer(networkSlot);
+                        final MutableDirectBuffer bufferSlot = bufferPool.buffer(networkSlot);
                         final int networkRemaining = networkLimit - networkOffset;
 
                         bufferSlot.putBytes(networkSlotOffset, networkBuffer, networkOffset, networkRemaining);
@@ -492,10 +558,9 @@ final class NetworkConnectionPool
                     {
                         if (networkSlot == NO_SLOT)
                         {
-                            networkSlot = NetworkConnectionPool.this.clientStreamFactory.bufferPool.acquire(networkReplyId);
+                            networkSlot = bufferPool.acquire(networkReplyId);
 
-                            final MutableDirectBuffer bufferSlot =
-                                    NetworkConnectionPool.this.clientStreamFactory.bufferPool.buffer(networkSlot);
+                            final MutableDirectBuffer bufferSlot = bufferPool.buffer(networkSlot);
                             bufferSlot.putBytes(networkSlotOffset, payload.buffer(), payload.offset(), payload.sizeof());
                             networkSlotOffset += payload.sizeof();
                         }
@@ -508,15 +573,13 @@ final class NetworkConnectionPool
 
                         if (networkOffset < networkLimit)
                         {
-                            // TODO: can this really happen? Seems like a Kafka protocol violation if there
-                            // is more data than response.size().
                             if (networkSlot == NO_SLOT)
                             {
-                                networkSlot = NetworkConnectionPool.this.clientStreamFactory.bufferPool.acquire(networkReplyId);
+                                networkSlot = bufferPool.acquire(networkReplyId);
                             }
 
                             final MutableDirectBuffer bufferSlot =
-                                    NetworkConnectionPool.this.clientStreamFactory.bufferPool.buffer(networkSlot);
+                                    bufferPool.buffer(networkSlot);
                             bufferSlot.putBytes(0, networkBuffer, networkOffset, networkLimit - networkOffset);
                             networkSlotOffset = networkLimit - networkOffset;
                         }
@@ -534,7 +597,7 @@ final class NetworkConnectionPool
                 {
                     if (networkSlotOffset == 0 && networkSlot != NO_SLOT)
                     {
-                        NetworkConnectionPool.this.clientStreamFactory.bufferPool.release(networkSlot);
+                        bufferPool.release(networkSlot);
                         networkSlot = NO_SLOT;
                     }
                 }
@@ -563,7 +626,7 @@ final class NetworkConnectionPool
         void doOfferResponseBudget()
         {
             final int networkResponseCredit =
-                    Math.max(NetworkConnectionPool.this.bufferPool.slotCapacity() - networkSlotOffset - networkResponseBudget, 0);
+                    Math.max(bufferPool.slotCapacity() - networkSlotOffset - networkResponseBudget, 0);
 
             NetworkConnectionPool.this.clientStreamFactory.doWindow(
                     networkReplyThrottle, networkReplyId, networkResponseCredit, networkResponsePadding, 0);
@@ -573,8 +636,15 @@ final class NetworkConnectionPool
 
         private void doReinitialize()
         {
+            if (networkSlot != NO_SLOT)
+            {
+                bufferPool.release(networkSlot);
+                networkSlot = NO_SLOT;
+            }
+            networkSlotOffset = 0;
             networkRequestBudget = 0;
             networkRequestPadding = 0;
+            networkResponseBudget = 0;
             networkId = 0L;
             nextRequestId = 0;
             nextResponseId = 0;
@@ -1025,29 +1095,36 @@ final class NetworkConnectionPool
         {
             recordConsumers.add(consumeRecords);
             windowSuppliers.add(supplyWindow);
-            candidate.id = -1;
 
-            final LongIterator iterator = fetchOffsets.values().iterator();
-            while (iterator.hasNext())
+            final LongIterator keys = fetchOffsets.keySet().iterator();
+            while (keys.hasNext())
             {
-                candidate.id++;
-                candidate.offset = iterator.nextValue();
-
-                NetworkTopicPartition partition = partitions.floor(candidate);
-                if (partition == null || partition.id != candidate.id)
-                {
-                    NetworkTopicPartition ceiling = partitions.ceiling(candidate);
-                    boolean needsHistorical = ceiling != null && ceiling.id == candidate.id;
-                    needsHistoricalByPartition.set(candidate.id, needsHistorical);
-                    partition = new NetworkTopicPartition();
-                    partition.id = candidate.id;
-                    partition.offset = candidate.offset;
-
-                    partitions.add(partition);
-                }
-
-                partition.refs++;
+                final long partitionId = (int) keys.nextValue();
+                attachToPartition((int) partitionId, fetchOffsets.get(partitionId), consumeRecords, supplyWindow);
             }
+        }
+
+        private void attachToPartition(
+            int partitionId,
+            long fetchOffset,
+            PartitionResponseConsumer consumeRecords,
+            IntSupplier supplyWindow)
+        {
+            candidate.id = partitionId;
+            candidate.offset = fetchOffset;
+            NetworkTopicPartition partition = partitions.floor(candidate);
+            if (partition == null || partition.id != candidate.id)
+            {
+                NetworkTopicPartition ceiling = partitions.ceiling(candidate);
+                boolean needsHistorical = ceiling != null && ceiling.id == candidate.id;
+                needsHistoricalByPartition.set(candidate.id, needsHistorical);
+                partition = new NetworkTopicPartition();
+                partition.id = candidate.id;
+                partition.offset = candidate.offset;
+
+                partitions.add(partition);
+            }
+            partition.refs++;
         }
 
         void doDetach(
@@ -1057,24 +1134,35 @@ final class NetworkConnectionPool
         {
             recordConsumers.remove(consumeRecords);
             windowSuppliers.remove(supplyWindow);
-            candidate.id = -1;
+            int partitionId = -1;
 
             final LongIterator iterator = fetchOffsets.values().iterator();
             while (iterator.hasNext())
             {
-                candidate.id++;
-                candidate.offset = iterator.nextValue();
+                partitionId++;
+                doDetach(partitionId, iterator.nextValue(), consumeRecords, supplyWindow);
+            }
+        }
 
-                NetworkTopicPartition partition = partitions.floor(candidate);
-                if (partition != null)
+        void doDetach(
+            int partitionId,
+            long fetchOffset,
+            PartitionResponseConsumer consumeRecords,
+            IntSupplier supplyWindow)
+        {
+            recordConsumers.remove(consumeRecords);
+            windowSuppliers.remove(supplyWindow);
+            candidate.id = partitionId;
+            candidate.offset = fetchOffset;
+            NetworkTopicPartition partition = partitions.floor(candidate);
+            if (partition != null)
+            {
+                assert partition.id == candidate.id;
+                partition.refs--;
+
+                if (partition.refs == 0)
                 {
-                    assert partition.id == candidate.id;
-                    partition.refs--;
-
-                    if (partition.refs == 0)
-                    {
-                        remove(partition);
-                    }
+                    remove(partition);
                 }
             }
         }
