@@ -51,6 +51,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
+import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 
@@ -65,6 +66,7 @@ public final class ClientStreamFactory implements StreamFactory
 
     private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
     private final KafkaBeginExFW beginExRO = new KafkaBeginExFW();
+    private final OctetsFW octetsRO = new OctetsFW();
 
     final WindowFW windowRO = new WindowFW();
     final ResetFW resetRO = new ResetFW();
@@ -358,11 +360,19 @@ public final class ClientStreamFactory implements StreamFactory
             return dataExRW.wrap(b, o, l)
                            .fetchOffsets(a ->
                            {
-                               int partition = -1;
-                               while (fetchOffsets.get(++partition) != fetchOffsets.missingValue())
+                               if (fetchOffsets.size() == 1)
                                {
-                                   final long offset = fetchOffsets.get(partition);
+                                   final long offset = fetchOffsets.values().iterator().nextValue();
                                    a.item(p -> p.set(offset));
+                               }
+                               else
+                               {
+                                   int partition = -1;
+                                   while (fetchOffsets.get(++partition) != fetchOffsets.missingValue())
+                                   {
+                                       final long offset = fetchOffsets.get(partition);
+                                       a.item(p -> p.set(offset));
+                                   }
                                }
                            })
                            .build()
@@ -385,11 +395,11 @@ public final class ClientStreamFactory implements StreamFactory
         private int applicationReplyBudget;
         private int applicationReplyPadding;
 
+        private byte[] fetchKey;
         private int networkAttachId;
 
         private MessageConsumer streamState;
         private int writeableBytesMinimum;
-
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
             long applicationId,
@@ -478,8 +488,31 @@ public final class ClientStreamFactory implements StreamFactory
 
                 fetchOffsets.forEach(v -> this.fetchOffsets.put(this.fetchOffsets.size(), v.value()));
 
-                networkPool.doAttach(topicName, this.fetchOffsets, this::onPartitionResponse, this::writeableBytes,
-                        this::onAttached, this::onMetadataError);
+                final OctetsFW fetchKey = beginEx.fetchKey();
+                byte hashCodesCount = beginEx.fetchKeyHashCount();
+                if ((fetchKey != null && this.fetchOffsets.size() > 1) ||
+                    (hashCodesCount > 1) ||
+                    (hashCodesCount == 1 && fetchKey == null)
+                   )
+                {
+                    doReset(applicationThrottle, applicationId);
+                }
+                byte[] fetchKeyBytes = null;
+                if (fetchKey != null)
+                {
+                    fetchKeyBytes = new byte[fetchKey.limit() - fetchKey.offset()];
+                    fetchKey.buffer().getBytes(fetchKey.offset(), fetchKeyBytes);
+                    this.fetchKey = fetchKeyBytes;
+                    int hashCode = hashCodesCount == 1 ? beginEx.fetchKeyHash().nextInt()
+                            : BufferUtil.defaultHashCode(fetchKey.buffer(), fetchKey.offset(), fetchKey.limit());
+                    networkPool.doAttach(topicName, this.fetchOffsets, hashCode, this::onPartitionResponseFiltered,
+                            this::writeableBytes, this::onAttached, this::onMetadataError);
+                }
+                else
+                {
+                    networkPool.doAttach(topicName, this.fetchOffsets, this::onPartitionResponse,
+                            this::writeableBytes, this::onAttached, this::onMetadataError);
+                }
                 this.streamState = this::afterBegin;
             }
         }
@@ -632,6 +665,131 @@ public final class ClientStreamFactory implements StreamFactory
                             }
                         }
                     }
+
+                    if (nextFetchAt > firstFetchAt)
+                    {
+                        progressHandler.handle(partitionId, firstFetchAt, nextFetchAt);
+                    }
+                }
+            }
+        }
+
+        private void onPartitionResponseFiltered(
+            DirectBuffer buffer,
+            int offset,
+            int length,
+            long requestedOffset,
+            PartitionProgressHandler progressHandler)
+        {
+            final int maxLimit = offset + length;
+
+            int networkOffset = offset;
+
+            final PartitionResponseFW partition = partitionResponseRO.wrap(buffer, networkOffset, maxLimit);
+            networkOffset = partition.limit();
+
+            final int partitionId = partition.partitionId();
+            final long firstFetchAt = fetchOffsets.get(partitionId);
+
+            long nextFetchAt = firstFetchAt;
+
+            // TODO: determine appropriate reaction to different non-zero error codes
+            if (partition.errorCode() == 0 && networkOffset < maxLimit - BitUtil.SIZE_OF_INT
+                    && requestedOffset <= firstFetchAt) // avoid out of order delivery
+            {
+                final RecordSetFW recordSet = recordSetRO.wrap(buffer, networkOffset, maxLimit);
+                networkOffset = recordSet.limit();
+
+                final int recordSetLimit = networkOffset + recordSet.recordBatchSize();
+                if (recordSetLimit <= maxLimit)
+                {
+                    loop:
+                    while (networkOffset < recordSetLimit - RecordBatchFW.FIELD_OFFSET_RECORD_COUNT - BitUtil.SIZE_OF_INT)
+                    {
+                        final RecordBatchFW recordBatch = recordBatchRO.wrap(buffer, networkOffset, recordSetLimit);
+                        networkOffset = recordBatch.limit();
+
+                        final int recordBatchLimit = recordBatch.offset() +
+                                RecordBatchFW.FIELD_OFFSET_LENGTH + BitUtil.SIZE_OF_INT + recordBatch.length();
+                        if (recordBatchLimit > recordSetLimit)
+                        {
+                            break loop;
+                        }
+
+                        final long firstOffset = recordBatch.firstOffset();
+                        OctetsFW lastMatchingValue = null;
+                        long lastMatchingOffset = firstOffset;
+
+                        while (networkOffset < recordBatchLimit - 7 /* minimum RecordFW size */)
+                        {
+                            final RecordFW record = recordRO.wrap(buffer, networkOffset, recordBatchLimit);
+                            networkOffset = record.limit();
+
+                            final int recordLimit = record.offset() +
+                                    RecordFW.FIELD_OFFSET_ATTRIBUTES + record.length();
+                            if (recordLimit > recordSetLimit)
+                            {
+                                break loop;
+                            }
+
+                            final int headerCount = record.headerCount();
+
+                            for (int headerIndex = 0; headerIndex < headerCount; headerIndex++)
+                            {
+                                final HeaderFW headerRO = new HeaderFW();
+                                final HeaderFW header = headerRO.wrap(buffer, networkOffset, recordBatchLimit);
+                                networkOffset = header.limit();
+                            }
+
+                            final long currentFetchAt = firstOffset + record.offsetDelta();
+                            final OctetsFW key = record.key();
+                            final boolean matches = BufferUtil.matches(key, this.fetchKey);
+                            if (currentFetchAt >= firstFetchAt)
+                            {
+                                if (matches)
+                                {
+                                    // Send the previous matching message now we know what the new offset should be
+                                    // (including any nonmatching skipped messages)
+                                    if (lastMatchingValue != null)
+                                    {
+                                        if (applicationReplyBudget < lastMatchingValue.sizeof() + applicationReplyPadding)
+                                        {
+                                            writeableBytesMinimum = lastMatchingValue.sizeof() + applicationReplyPadding;
+                                            nextFetchAt = lastMatchingOffset;
+                                            this.fetchOffsets.put(partitionId, nextFetchAt);
+                                            break loop;
+                                        }
+                                        this.fetchOffsets.put(partitionId, currentFetchAt);
+                                        doKafkaData(applicationReply, applicationReplyId, applicationReplyPadding,
+                                                    lastMatchingValue, fetchOffsets);
+                                        applicationReplyBudget -= lastMatchingValue.sizeof() + applicationReplyPadding;
+                                        writeableBytesMinimum = 0;
+                                    }
+                                    final OctetsFW value = record.value();
+                                    lastMatchingValue = octetsRO.wrap(buffer, value.offset(), value.limit());
+                                    lastMatchingOffset = currentFetchAt;
+                                }
+                                nextFetchAt = currentFetchAt + 1;
+                                this.fetchOffsets.put(partitionId, nextFetchAt);
+                            }
+                        }
+                        if (lastMatchingValue != null)
+                        {
+                            if (applicationReplyBudget < lastMatchingValue.sizeof() + applicationReplyPadding)
+                            {
+                                writeableBytesMinimum = lastMatchingValue.sizeof() + applicationReplyPadding;
+                                nextFetchAt = lastMatchingOffset;
+                                this.fetchOffsets.put(partitionId, nextFetchAt);
+                                break loop;
+                            }
+                            nextFetchAt = recordBatch.firstOffset() + recordBatch.lastOffsetDelta() + 1;
+                            this.fetchOffsets.put(partitionId, nextFetchAt);
+                            doKafkaData(applicationReply, applicationReplyId, applicationReplyPadding,
+                                        lastMatchingValue, fetchOffsets);
+                            applicationReplyBudget -= lastMatchingValue.sizeof() + applicationReplyPadding;
+                            writeableBytesMinimum = 0;
+                        }
+                    } // end loop
 
                     if (nextFetchAt > firstFetchAt)
                     {

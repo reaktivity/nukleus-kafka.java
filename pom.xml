@@ -42,7 +42,7 @@
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <checkstyle.config.location>src/conf/checkstyle/configuration.xml</checkstyle.config.location>
     <checkstyle.suppressions.location>src/conf/checkstyle/suppressions.xml</checkstyle.suppressions.location>
-    <jacoco.coverage.ratio>0.46</jacoco.coverage.ratio>
+    <jacoco.coverage.ratio>0.47</jacoco.coverage.ratio>
     <jacoco.missed.count>65</jacoco.missed.count>
 
     <junit.version>4.12</junit.version>
@@ -53,11 +53,12 @@
     <k3po.version>3.0.0-alpha-86</k3po.version>
     <k3po.nukleus.ext.version>0.16</k3po.nukleus.ext.version>
 
-    <nukleus.plugin.version>0.20</nukleus.plugin.version>
+    <nukleus.plugin.version>0.22</nukleus.plugin.version>
     <nukleus.version>0.13</nukleus.version>
 
-    <nukleus.kafka.spec.version>0.9</nukleus.kafka.spec.version>
+    <nukleus.kafka.spec.version>0.10</nukleus.kafka.spec.version>
     <reaktor.version>0.33</reaktor.version>
+    <kafka.clients.version>1.0.0</kafka.clients.version>
   </properties>
 
   <dependencies>
@@ -132,6 +133,12 @@
       <groupId>org.jmock</groupId>
       <artifactId>jmock-junit4</artifactId>
       <version>${jmock.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.kafka</groupId>
+      <artifactId>kafka-clients</artifactId>
+      <version>${kafka.clients.version}</version>
       <scope>test</scope>
     </dependency>
   </dependencies>
