@@ -370,11 +370,11 @@ final class NetworkConnectionPool
         private void handleWindow(
             final WindowFW window)
         {
-            final int networkWindowCredit = window.credit();
-            final int networkWindowPadding = window.padding();
+            final int networkCredit = window.credit();
+            final int networkPadding = window.padding();
 
-            this.networkRequestBudget += networkWindowCredit;
-            this.networkRequestPadding = networkWindowPadding;
+            this.networkRequestBudget += networkCredit;
+            this.networkRequestPadding = networkPadding;
 
             doRequestIfNeeded();
         }
