@@ -22,9 +22,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import java.nio.ByteBuffer;
-
-import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.apache.kafka.common.utils.Utils;
@@ -117,41 +114,45 @@ public final class BufferUtilTest
     @Test
     public void shouldMatchSameValues()
     {
-        MutableDirectBuffer value1 = new UnsafeBuffer(ByteBuffer.allocateDirect(100));
-        value1.putBytes(50, "abcd".getBytes(US_ASCII));
-        byte[] value2 = ("abcd").getBytes(US_ASCII);
-        assertTrue(BufferUtil.matches(new OctetsFW().wrap(value1, 50, 54), value2));
+        OctetsFW value1 = octets("abcd");
+        OctetsFW value2 = octets("abcd");
+        assertTrue(BufferUtil.matches(value1, value2));
     }
 
     @Test
     public void shouldNotMatchWhenValue1IsLonger()
     {
-        DirectBuffer value1 = new UnsafeBuffer("abcde".getBytes(US_ASCII));
-        byte[] value2 = ("abcd").getBytes(US_ASCII);
-        assertFalse(BufferUtil.matches(new OctetsFW().wrap(value1, 0, 5), value2));
+        OctetsFW value1 = octets("abcde");
+        OctetsFW value2 = octets("abcd");
+        assertFalse(BufferUtil.matches(value1, value2));
     }
 
     @Test
     public void shouldNotMatchWhenValue2IsLonger()
     {
-        DirectBuffer value1 = new UnsafeBuffer("abcd".getBytes(US_ASCII));
-        byte[] value2 = ("abcde").getBytes(US_ASCII);
-        assertFalse(BufferUtil.matches(new OctetsFW().wrap(value1, 0, 4), value2));
+        OctetsFW value1 = octets("abcd");
+        OctetsFW value2 = octets("abcde");
+        assertFalse(BufferUtil.matches(value1, value2));
+    }
+
+    private OctetsFW octets(
+        String value)
+    {
+        return new OctetsFW().wrap(new UnsafeBuffer(value.getBytes(US_ASCII)), 0, value.length());
     }
 
     @Test
     public void shouldNotMatchWhenValue1IsNull()
     {
-        byte[] value2 = ("abcd").getBytes(US_ASCII);
-        assertFalse(BufferUtil.matches(null, value2));
+        assertFalse(BufferUtil.matches(null, octets("abcd")));
     }
 
     @Test
     public void shouldNotMatchWhenValue2IsNull()
     {
-        DirectBuffer value1 = new UnsafeBuffer("abcd".getBytes(US_ASCII));
-        byte[] value2 = null;
-        assertFalse(BufferUtil.matches(new OctetsFW().wrap(value1, 0, 4), value2));
+        OctetsFW value1 = octets("abcd");
+        OctetsFW value2 = null;
+        assertFalse(BufferUtil.matches(value1, value2));
     }
 
     @Test

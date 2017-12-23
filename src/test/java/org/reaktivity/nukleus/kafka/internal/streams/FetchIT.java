@@ -294,7 +294,7 @@ public class FetchIT
         "${client}/header.zero.offset.messages/client",
         "${server}/header.zero.offset.multiple.matches/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveMultipleMessagesMatchingHeaderLast() throws Exception
+    public void shouldReceiveMultipleMessagesMatchingHeader() throws Exception
     {
         k3po.finish();
     }
