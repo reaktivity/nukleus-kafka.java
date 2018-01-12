@@ -27,13 +27,16 @@ import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
+import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
+import org.reaktivity.nukleus.kafka.internal.function.PartitionResponseConsumer;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
+import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.Varint64FW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.HeaderFW;
@@ -49,6 +52,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.DataFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
@@ -80,6 +84,8 @@ public final class ClientStreamFactory implements StreamFactory
 
     private final WindowFW.Builder windowRW = new WindowFW.Builder();
     private final ResetFW.Builder resetRW = new ResetFW.Builder();
+
+    private final HeaderFW headerRO = new HeaderFW();
 
     final PartitionResponseFW partitionResponseRO = new PartitionResponseFW();
     final RecordSetFW recordSetRO = new RecordSetFW();
@@ -395,7 +401,8 @@ public final class ClientStreamFactory implements StreamFactory
         private int applicationReplyBudget;
         private int applicationReplyPadding;
 
-        private byte[] fetchKey;
+        private OctetsFW fetchKey;
+        private ListFW<KafkaHeaderFW> headers;
         private int networkAttachId;
 
         private MessageConsumer streamState;
@@ -497,12 +504,20 @@ public final class ClientStreamFactory implements StreamFactory
                 {
                     doReset(applicationThrottle, applicationId);
                 }
-                byte[] fetchKeyBytes = null;
+                PartitionResponseConsumer responseConsumer = this::onPartitionResponse;
+                final ListFW<KafkaHeaderFW> headers = beginEx.headers();
+                if (headers != null && headers.sizeof() > 0)
+                {
+                    MutableDirectBuffer buffer = new UnsafeBuffer(new byte[headers.sizeof()]);
+                    buffer.putBytes(0, headers.buffer(), headers.offset(), headers.sizeof());
+                    this.headers = new ListFW<KafkaHeaderFW>(new KafkaHeaderFW()).wrap(buffer, 0, buffer.capacity());
+                    responseConsumer = this::onPartitionResponseFiltered;
+                }
                 if (fetchKey != null)
                 {
-                    fetchKeyBytes = new byte[fetchKey.limit() - fetchKey.offset()];
-                    fetchKey.buffer().getBytes(fetchKey.offset(), fetchKeyBytes);
-                    this.fetchKey = fetchKeyBytes;
+                    MutableDirectBuffer buffer = new UnsafeBuffer(new byte[fetchKey.sizeof()]);
+                    buffer.putBytes(0, fetchKey.buffer(), fetchKey.offset(), fetchKey.sizeof());
+                    this.fetchKey = new OctetsFW().wrap(buffer, 0, buffer.capacity());
                     int hashCode = hashCodesCount == 1 ? beginEx.fetchKeyHash().nextInt()
                             : BufferUtil.defaultHashCode(fetchKey.buffer(), fetchKey.offset(), fetchKey.limit());
                     networkPool.doAttach(topicName, this.fetchOffsets, hashCode, this::onPartitionResponseFiltered,
@@ -510,7 +525,7 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 else
                 {
-                    networkPool.doAttach(topicName, this.fetchOffsets, this::onPartitionResponse,
+                    networkPool.doAttach(topicName, this.fetchOffsets, responseConsumer,
                             this::writeableBytes, this::onAttached, this::onMetadataError);
                 }
                 this.streamState = this::afterBegin;
@@ -574,6 +589,17 @@ public final class ClientStreamFactory implements StreamFactory
         {
             networkPool.doDetach(networkAttachId, fetchOffsets);
             doReset(applicationThrottle, applicationId);
+        }
+
+        private boolean headerMatches(
+            final HeaderFW header)
+        {
+            return !headers.anyMatch(kh ->
+            {
+                boolean keyMatches = BufferUtil.matches(header.key(), kh.key());
+                boolean valueMatches = BufferUtil.matches(kh.value(), header.value());
+                return keyMatches && !valueMatches;
+            });
         }
 
         private void onPartitionResponse(
@@ -732,18 +758,19 @@ public final class ClientStreamFactory implements StreamFactory
                                 break loop;
                             }
 
+                            final OctetsFW key = record.key();
+                            boolean matches = this.fetchKey == null || BufferUtil.matches(key, this.fetchKey);
+
                             final int headerCount = record.headerCount();
 
                             for (int headerIndex = 0; headerIndex < headerCount; headerIndex++)
                             {
-                                final HeaderFW headerRO = new HeaderFW();
                                 final HeaderFW header = headerRO.wrap(buffer, networkOffset, recordBatchLimit);
+                                matches = matches && headerMatches(header);
                                 networkOffset = header.limit();
                             }
 
                             final long currentFetchAt = firstOffset + record.offsetDelta();
-                            final OctetsFW key = record.key();
-                            final boolean matches = BufferUtil.matches(key, this.fetchKey);
                             if (currentFetchAt >= firstFetchAt)
                             {
                                 if (matches)

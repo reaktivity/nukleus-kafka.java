@@ -258,6 +258,72 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/header.and.fetch.key.zero.offset.message/client",
+        "${server}/header.and.fetch.key.zero.offset.first.matches/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageMatchingFetchKeyAndHeader() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/header.zero.offset.message/client",
+        "${server}/header.zero.offset.first.matches/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageMatchingHeaderFirst() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/header.zero.offset.message/client",
+        "${server}/header.zero.offset.last.matches/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageMatchingHeaderLast() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/header.zero.offset.messages/client",
+        "${server}/header.zero.offset.multiple.matches/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMultipleMessagesMatchingHeader() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/headers.and.fetch.key.zero.offset.message/client",
+        "${server}/headers.and.fetch.key.zero.offset.first.matches/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageMatchingFetchKeyAndHeaders() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/headers.zero.offset.messages.historical/client",
+        "${server}/headers.zero.offset.multiple.matches.historical/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveHistoricalMessagesMatchingHeaders() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/zero.offset/client",
         "${server}/live.fetch.abort.and.reconnect/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
