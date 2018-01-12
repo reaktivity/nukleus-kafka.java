@@ -15,11 +15,14 @@
  */
 package org.reaktivity.nukleus.kafka.internal.util;
 
+import org.agrona.BitUtil;
 import org.agrona.DirectBuffer;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
+import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 
 public final class BufferUtil
 {
+    private static final int STRING16_SIZE_LENGTH = BitUtil.SIZE_OF_SHORT;
 
     /*
      * Assigns a zero-based partition ID based on a hashCode using the same method as
@@ -91,17 +94,42 @@ public final class BufferUtil
     }
 
     public static boolean matches(
-        final OctetsFW fetchKey,
-        final byte[] key)
+        final OctetsFW o1,
+        final OctetsFW o2)
     {
-        boolean result = key != null && fetchKey != null && key.length == fetchKey.sizeof();
+        boolean result = o2 != null && o1 != null && o2.sizeof() == o1.sizeof();
         if (result)
         {
-            final DirectBuffer buffer = fetchKey.buffer();
-            final int offset = fetchKey.offset();
-            for (int i=0; i < key.length; i++)
+            final DirectBuffer buffer1 = o1.buffer();
+            final DirectBuffer buffer2 = o2.buffer();
+            final int offset1 = o1.offset();
+            final int offset2 = o2.offset();
+            for (int i=0; i < o1.sizeof(); i++)
             {
-                if ((key[i] != buffer.getByte(offset + i)))
+            if ((buffer1.getByte(offset1 + i) != buffer2.getByte(offset2 + i)))
+                {
+                    result = false;
+                    break;
+                }
+            }
+        }
+        return result;
+    }
+
+    public static boolean matches(
+        final OctetsFW octets,
+        final String16FW string)
+    {
+        boolean result = string != null && octets != null && string.sizeof() - STRING16_SIZE_LENGTH == octets.sizeof();
+        if (result)
+        {
+            final DirectBuffer octetsBuf = octets.buffer();
+            final DirectBuffer stringBuf = string.buffer();
+            final int octetsOffset = octets.offset();
+            final int stringOffset = string.offset() + STRING16_SIZE_LENGTH;
+            for (int i=0; i < octets.sizeof(); i++)
+            {
+                if (stringBuf.getByte(i + stringOffset) != octetsBuf.getByte(i + octetsOffset))
                 {
                     result = false;
                     break;
