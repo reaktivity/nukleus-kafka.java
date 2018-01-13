@@ -607,6 +607,7 @@ public final class ClientStreamFactory implements StreamFactory
             int offset,
             int length,
             long requestedOffset,
+            boolean isCompactedTopic,
             PartitionProgressHandler progressHandler)
         {
             final int maxLimit = offset + length;
@@ -705,6 +706,7 @@ public final class ClientStreamFactory implements StreamFactory
             int offset,
             int length,
             long requestedOffset,
+            boolean isCompactedTopic,
             PartitionProgressHandler progressHandler)
         {
             final int maxLimit = offset + length;
