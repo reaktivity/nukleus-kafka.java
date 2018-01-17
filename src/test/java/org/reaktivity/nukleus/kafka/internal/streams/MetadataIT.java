@@ -36,7 +36,7 @@ public class MetadataIT
             .addScriptRoot("server", "org/reaktivity/specification/kafka/fetch.v5")
             .addScriptRoot("client", "org/reaktivity/specification/nukleus/kafka/streams/fetch");
 
-    private final TestRule timeout = new DisableOnDebug(new Timeout(5, SECONDS));
+    private final TestRule timeout = new DisableOnDebug(new Timeout(15, SECONDS));
 
     private final ReaktorRule reaktor = new ReaktorRule()
         .nukleus("kafka"::equals)
