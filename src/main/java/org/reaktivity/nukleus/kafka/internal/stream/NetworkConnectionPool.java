@@ -1056,6 +1056,10 @@ final class NetworkConnectionPool
             {
                 pendingTopicMetadata.setErrorCode(errorCode);
                 pendingTopicMetadata.flush();
+                if (errorCode != NONE)
+                {
+                    topicMetadataByName.remove(pendingTopicMetadata.topicName);
+                }
             }
         }
     }
