@@ -344,7 +344,6 @@ final class NetworkConnectionPool
         {
             detacher.accept(fetchOffsets);
         }
-        // TODO: If the topic now has no partitions, remove from topicsByName and topicMetadataByName
     }
 
     abstract class AbstractNetworkConnection
@@ -1319,6 +1318,12 @@ final class NetworkConnectionPool
             {
                 partitionId++;
                 doDetach(partitionId, iterator.nextValue(), consumeRecords, supplyWindow);
+            }
+            if (partitions.isEmpty())
+            {
+                topicsByName.remove(topicName);
+                topicMetadataByName.remove(topicName);
+
             }
         }
 

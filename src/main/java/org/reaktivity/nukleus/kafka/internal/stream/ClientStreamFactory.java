@@ -506,7 +506,7 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 PartitionResponseConsumer responseConsumer = this::onPartitionResponse;
                 final ListFW<KafkaHeaderFW> headers = beginEx.headers();
-                if (headers != null && headers.sizeof() > 0)
+                if (headers != null && !headers.isEmpty())
                 {
                     MutableDirectBuffer buffer = new UnsafeBuffer(new byte[headers.sizeof()]);
                     buffer.putBytes(0, headers.buffer(), headers.offset(), headers.sizeof());
