@@ -221,7 +221,7 @@ scope protocol
               int32 inSyncReplicasCount;
               int32[inSyncReplicasCount] inSyncReplicas = null;
               int32 offlineReplicasCount;
-              int32[offlineReplicasCount] offlineReplicas = nullit's;
+              int32[offlineReplicasCount] offlineReplicas = null;
             }
         }
     }
