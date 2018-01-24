@@ -70,8 +70,8 @@ public final class ClientStreamFactory implements StreamFactory
 
     private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
     private final KafkaBeginExFW beginExRO = new KafkaBeginExFW();
-    private final OctetsFW octetsRO1 = new OctetsFW();
-    private final OctetsFW octetsRO2 = new OctetsFW();
+    private final OctetsFW keyRO = new OctetsFW();
+    private final OctetsFW valueRO = new OctetsFW();
 
     final WindowFW windowRO = new WindowFW();
     final ResetFW resetRO = new ResetFW();
@@ -366,7 +366,7 @@ public final class ClientStreamFactory implements StreamFactory
     {
         return (b, o, l) ->
         {
-            dataExRW.wrap(b, o, l)
+            return dataExRW.wrap(b, o, l)
                     .fetchOffsets(a ->
                     {
                         if (fetchOffsets.size() == 1)
@@ -383,13 +383,10 @@ public final class ClientStreamFactory implements StreamFactory
                                 a.item(p -> p.set(offset));
                             }
                         }
-                    });
-            if (messageKey != null)
-            {
-                dataExRW.messageKey(messageKey.buffer(), messageKey.offset(), messageKey.sizeof());
-            }
-            return dataExRW.build()
-                           .sizeof();
+                    })
+                    .messageKey(messageKey)
+                    .build()
+                    .sizeof();
         };
     }
 
@@ -800,8 +797,8 @@ public final class ClientStreamFactory implements StreamFactory
                                         writeableBytesMinimum = 0;
                                     }
                                     final OctetsFW value = record.value();
-                                    lastMatchingValue = octetsRO1.wrap(buffer, value.offset(), value.limit());
-                                    lastMatchingKey = key == null ? null : octetsRO2.wrap(buffer, key.offset(), key.limit());
+                                    lastMatchingValue = valueRO.wrap(buffer, value.offset(), value.limit());
+                                    lastMatchingKey = key == null ? null : keyRO.wrap(buffer, key.offset(), key.limit());
                                     lastMatchingOffset = currentFetchAt;
                                 }
                                 nextFetchAt = currentFetchAt + 1;
