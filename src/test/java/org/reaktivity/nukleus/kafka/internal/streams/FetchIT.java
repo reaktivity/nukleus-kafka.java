@@ -38,7 +38,7 @@ public class FetchIT
             .addScriptRoot("metadata", "org/reaktivity/specification/kafka/metadata.v5")
             .addScriptRoot("client", "org/reaktivity/specification/nukleus/kafka/streams/fetch");
 
-    private final TestRule timeout = new DisableOnDebug(new Timeout(15, SECONDS));
+    private final TestRule timeout = new DisableOnDebug(new Timeout(10, SECONDS));
 
     private final ReaktorRule reaktor = new ReaktorRule()
         .nukleus("kafka"::equals)
@@ -112,7 +112,7 @@ public class FetchIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${routeAnyTopic}/client/controller",
         "${client}/unknown.topic.name/client",
         "${metadata}/one.topic.error.unknown.topic/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
