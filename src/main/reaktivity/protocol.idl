@@ -216,9 +216,12 @@ scope protocol
               int16 errorCode;
               int32 partitionId;
               int32 leader;
-              int32 replicas;
-              int32 inSyncReplicas;
-              int32 offlineReplicas;
+              int32 replicaCount;
+              int32[replicaCount] replicas = null;
+              int32 inSyncReplicasCount;
+              int32[inSyncReplicasCount] inSyncReplicas = null;
+              int32 offlineReplicasCount;
+              int32[offlineReplicasCount] offlineReplicas = null;
             }
         }
     }

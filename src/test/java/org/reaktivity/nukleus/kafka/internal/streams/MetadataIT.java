@@ -75,6 +75,17 @@ public class MetadataIT
     @Specification({
         "${route}/client/controller",
         "${client}/zero.offset/client",
+        "${metadata}/one.topic.multiple.nodes.and.replicas/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldHandleMetadataResponseOneTopicMultipleNodesAndReplicas() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset/client",
         "${metadata}/one.topic.multiple.partitions/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldHandleMetadataResponseOneTopicMultiplePartitionsSingleNode() throws Exception
