@@ -32,6 +32,46 @@ scope protocol
         {
           int32 size;
         }
+        
+        scope config
+        {
+            struct DescribeConfigsRequest
+            {
+              int32 resourceCount;
+            }
+            
+            struct ResourceRequest
+            {
+                int8 type;
+                string16 name;
+                int32 configNamesCount;
+            }
+            
+            struct DescribeConfigsResponse
+            {
+                int32 correlationId;
+                int32 throttleTimeMillis;
+                int32 resourceCount;
+            }
+            
+            struct ResourceResponse
+            {
+                int16 errorCode;
+                string16 errorMessage;
+                int8 type;
+                string16 name;
+                int32 configCount;
+            }
+            
+            struct ConfigResponse
+            {
+                string16 name;
+                string16 value;
+                int8 readOnly; // boolean
+                int8 isDefault; // boolean
+                int8 isSensitive; // boolean
+            }
+        }
 
         scope fetch
         {
@@ -119,7 +159,7 @@ scope protocol
               varint32 keyLen;
               octets[keyLen] key = null;
               varint32 valueLen;
-              octets[valueLen] value;
+              octets[valueLen] value = null;
               varint32 headerCount;
             }
 

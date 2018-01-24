@@ -70,7 +70,8 @@ public final class ClientStreamFactory implements StreamFactory
 
     private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
     private final KafkaBeginExFW beginExRO = new KafkaBeginExFW();
-    private final OctetsFW octetsRO = new OctetsFW();
+    private final OctetsFW keyRO = new OctetsFW();
+    private final OctetsFW valueRO = new OctetsFW();
 
     final WindowFW windowRO = new WindowFW();
     final ResetFW resetRO = new ResetFW();
@@ -345,44 +346,47 @@ public final class ClientStreamFactory implements StreamFactory
         final long targetId,
         final int padding,
         final OctetsFW payload,
-        final Long2LongHashMap fetchOffsets)
+        final Long2LongHashMap fetchOffsets,
+        final OctetsFW messageKey)
     {
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
                 .groupId(0)
                 .padding(padding)
-                .payload(p -> p.set(payload.buffer(), payload.offset(), payload.sizeof()))
-                .extension(e -> e.set(visitKafkaDataEx(fetchOffsets)))
+                .payload(payload)
+                .extension(e -> e.set(visitKafkaDataEx(fetchOffsets, messageKey)))
                 .build();
 
         target.accept(data.typeId(), data.buffer(), data.offset(), data.sizeof());
     }
 
     private Flyweight.Builder.Visitor visitKafkaDataEx(
-        Long2LongHashMap fetchOffsets)
+        Long2LongHashMap fetchOffsets,
+        final OctetsFW messageKey)
     {
         return (b, o, l) ->
         {
             return dataExRW.wrap(b, o, l)
-                           .fetchOffsets(a ->
-                           {
-                               if (fetchOffsets.size() == 1)
-                               {
-                                   final long offset = fetchOffsets.values().iterator().nextValue();
-                                   a.item(p -> p.set(offset));
-                               }
-                               else
-                               {
-                                   int partition = -1;
-                                   while (fetchOffsets.get(++partition) != fetchOffsets.missingValue())
-                                   {
-                                       final long offset = fetchOffsets.get(partition);
-                                       a.item(p -> p.set(offset));
-                                   }
-                               }
-                           })
-                           .build()
-                           .sizeof();
+                    .fetchOffsets(a ->
+                    {
+                        if (fetchOffsets.size() == 1)
+                        {
+                            final long offset = fetchOffsets.values().iterator().nextValue();
+                            a.item(p -> p.set(offset));
+                        }
+                        else
+                        {
+                            int partition = -1;
+                            while (fetchOffsets.get(++partition) != fetchOffsets.missingValue())
+                            {
+                                final long offset = fetchOffsets.get(partition);
+                                a.item(p -> p.set(offset));
+                            }
+                        }
+                    })
+                    .messageKey(messageKey)
+                    .build()
+                    .sizeof();
         };
     }
 
@@ -607,6 +611,7 @@ public final class ClientStreamFactory implements StreamFactory
             int offset,
             int length,
             long requestedOffset,
+            boolean isCompactedTopic,
             PartitionProgressHandler progressHandler)
         {
             final int maxLimit = offset + length;
@@ -672,10 +677,11 @@ public final class ClientStreamFactory implements StreamFactory
                             if (currentFetchAt >= firstFetchAt)
                             {
                                 final OctetsFW value = record.value();
+                                final int payloadLength = value == null ? 0 : value.sizeof();
 
-                                if (applicationReplyBudget < value.sizeof() + applicationReplyPadding)
+                                if (applicationReplyBudget < payloadLength + applicationReplyPadding)
                                 {
-                                    writeableBytesMinimum = value.sizeof() + applicationReplyPadding;
+                                    writeableBytesMinimum = payloadLength + applicationReplyPadding;
                                     break loop;
                                 }
 
@@ -685,8 +691,11 @@ public final class ClientStreamFactory implements StreamFactory
                                 // currently guaranteed only for single partition topics
                                 this.fetchOffsets.put(partitionId, nextFetchAt);
 
-                                doKafkaData(applicationReply, applicationReplyId, applicationReplyPadding, value, fetchOffsets);
-                                applicationReplyBudget -= value.sizeof() + applicationReplyPadding;
+                                final OctetsFW messageKey = isCompactedTopic ? record.key(): null;
+
+                                doKafkaData(applicationReply, applicationReplyId, applicationReplyPadding, value,
+                                        fetchOffsets, messageKey);
+                                applicationReplyBudget -= payloadLength + applicationReplyPadding;
                                 writeableBytesMinimum = 0;
                             }
                         }
@@ -705,18 +714,15 @@ public final class ClientStreamFactory implements StreamFactory
             int offset,
             int length,
             long requestedOffset,
+            boolean isCompactedTopic,
             PartitionProgressHandler progressHandler)
         {
             final int maxLimit = offset + length;
-
             int networkOffset = offset;
-
             final PartitionResponseFW partition = partitionResponseRO.wrap(buffer, networkOffset, maxLimit);
             networkOffset = partition.limit();
-
             final int partitionId = partition.partitionId();
             final long firstFetchAt = fetchOffsets.get(partitionId);
-
             long nextFetchAt = firstFetchAt;
 
             // TODO: determine appropriate reaction to different non-zero error codes
@@ -734,23 +740,21 @@ public final class ClientStreamFactory implements StreamFactory
                     {
                         final RecordBatchFW recordBatch = recordBatchRO.wrap(buffer, networkOffset, recordSetLimit);
                         networkOffset = recordBatch.limit();
-
                         final int recordBatchLimit = recordBatch.offset() +
                                 RecordBatchFW.FIELD_OFFSET_LENGTH + BitUtil.SIZE_OF_INT + recordBatch.length();
                         if (recordBatchLimit > recordSetLimit)
                         {
                             break loop;
                         }
-
                         final long firstOffset = recordBatch.firstOffset();
                         OctetsFW lastMatchingValue = null;
+                        OctetsFW lastMatchingKey = null;
                         long lastMatchingOffset = firstOffset;
 
                         while (networkOffset < recordBatchLimit - 7 /* minimum RecordFW size */)
                         {
                             final RecordFW record = recordRO.wrap(buffer, networkOffset, recordBatchLimit);
                             networkOffset = record.limit();
-
                             final int recordLimit = record.offset() +
                                     RecordFW.FIELD_OFFSET_ATTRIBUTES + record.length();
                             if (recordLimit > recordSetLimit)
@@ -760,7 +764,6 @@ public final class ClientStreamFactory implements StreamFactory
 
                             final OctetsFW key = record.key();
                             boolean matches = this.fetchKey == null || BufferUtil.matches(key, this.fetchKey);
-
                             final int headerCount = record.headerCount();
 
                             for (int headerIndex = 0; headerIndex < headerCount; headerIndex++)
@@ -787,13 +790,15 @@ public final class ClientStreamFactory implements StreamFactory
                                             break loop;
                                         }
                                         this.fetchOffsets.put(partitionId, currentFetchAt);
+                                        final OctetsFW messageKey = isCompactedTopic ? lastMatchingKey : null;
                                         doKafkaData(applicationReply, applicationReplyId, applicationReplyPadding,
-                                                    lastMatchingValue, fetchOffsets);
+                                                    lastMatchingValue, fetchOffsets, messageKey);
                                         applicationReplyBudget -= lastMatchingValue.sizeof() + applicationReplyPadding;
                                         writeableBytesMinimum = 0;
                                     }
                                     final OctetsFW value = record.value();
-                                    lastMatchingValue = octetsRO.wrap(buffer, value.offset(), value.limit());
+                                    lastMatchingValue = valueRO.wrap(buffer, value.offset(), value.limit());
+                                    lastMatchingKey = key == null ? null : keyRO.wrap(buffer, key.offset(), key.limit());
                                     lastMatchingOffset = currentFetchAt;
                                 }
                                 nextFetchAt = currentFetchAt + 1;
@@ -811,8 +816,9 @@ public final class ClientStreamFactory implements StreamFactory
                             }
                             nextFetchAt = recordBatch.firstOffset() + recordBatch.lastOffsetDelta() + 1;
                             this.fetchOffsets.put(partitionId, nextFetchAt);
+                            final OctetsFW messageKey = isCompactedTopic ? lastMatchingKey : null;
                             doKafkaData(applicationReply, applicationReplyId, applicationReplyPadding,
-                                        lastMatchingValue, fetchOffsets);
+                                        lastMatchingValue, fetchOffsets, messageKey);
                             applicationReplyBudget -= lastMatchingValue.sizeof() + applicationReplyPadding;
                             writeableBytesMinimum = 0;
                         }

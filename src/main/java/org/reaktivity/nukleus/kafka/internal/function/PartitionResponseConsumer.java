@@ -20,5 +20,11 @@ import org.agrona.DirectBuffer;
 @FunctionalInterface
 public interface PartitionResponseConsumer
 {
-    void accept(DirectBuffer buffer, int index, int length, long requestedOffset, PartitionProgressHandler progressHandler);
+    void accept(
+        DirectBuffer buffer,
+        int index,
+        int length,
+        long requestedOffset,
+        boolean isCompactedTopic,
+        PartitionProgressHandler progressHandler);
 }
