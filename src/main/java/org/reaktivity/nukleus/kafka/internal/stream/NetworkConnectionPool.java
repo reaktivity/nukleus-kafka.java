@@ -16,12 +16,14 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.lang.String.format;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.INVALID_TOPIC_EXCEPTION;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.LEADER_NOT_AVAILABLE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.UNKNOWN_TOPIC_OR_PARTITION;
 
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.HashMap;
@@ -53,8 +55,14 @@ import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionResponseConsumer;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
+import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.RequestHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.ResponseHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.config.ConfigResponseFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.config.DescribeConfigsRequestFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.config.DescribeConfigsResponseFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.config.ResourceRequestFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.config.ResourceResponseFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.FetchRequestFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.FetchResponseFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.PartitionRequestFW;
@@ -79,10 +87,16 @@ import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
 
 final class NetworkConnectionPool
 {
-    private static final short FETCH_API_VERSION = 0x05;
-    private static final short FETCH_API_KEY = 0x01;
-    private static final short METADATA_API_VERSION = 0x05;
-    private static final short METADATA_API_KEY = 0x03;
+    private static final short FETCH_API_VERSION = 5;
+    private static final short FETCH_API_KEY = 1;
+    private static final short METADATA_API_VERSION = 5;
+    private static final short METADATA_API_KEY = 3;
+    private static final short DESCRIBE_CONFIGS_API_VERSION = 0;
+    private static final short DESCRIBE_CONFIGS_API_KEY = 32;
+
+    private static final byte RESOURCE_TYPE_TOPIC = 2;
+    private static final String CLEANUP_POLICY = "cleanup.policy";
+    private static final String COMPACT = "compact";
 
     private static final byte[] ANY_IP_ADDR = new byte[4];
 
@@ -91,6 +105,9 @@ final class NetworkConnectionPool
     final TopicRequestFW.Builder topicRequestRW = new TopicRequestFW.Builder();
     final PartitionRequestFW.Builder partitionRequestRW = new PartitionRequestFW.Builder();
     final MetadataRequestFW.Builder metadataRequestRW = new MetadataRequestFW.Builder();
+    final DescribeConfigsRequestFW.Builder describeConfigsRequestRW = new DescribeConfigsRequestFW.Builder();
+    final ResourceRequestFW.Builder resourceRequestRW = new ResourceRequestFW.Builder();
+    final String16FW.Builder configNameRW = new String16FW.Builder(ByteOrder.BIG_ENDIAN);
 
     final WindowFW windowRO = new WindowFW();
     final OctetsFW.Builder payloadRW = new OctetsFW.Builder();
@@ -107,6 +124,9 @@ final class NetworkConnectionPool
     final MetadataResponsePart2FW metadataResponsePart2RO = new MetadataResponsePart2FW();
     final TopicMetadataFW topicMetadataRO = new TopicMetadataFW();
     final PartitionMetadataFW partitionMetadataRO = new PartitionMetadataFW();
+    final DescribeConfigsResponseFW describeConfigsResponseRO = new DescribeConfigsResponseFW();
+    final ResourceResponseFW resourceResponseRO = new ResourceResponseFW();
+    final ConfigResponseFW configResponseRO = new ConfigResponseFW();
 
     final MutableDirectBuffer encodeBuffer;
 
@@ -254,7 +274,8 @@ final class NetworkConnectionPool
         IntConsumer newAttachIdConsumer,
         TopicMetadata topicMetadata)
     {
-        final NetworkTopic topic = topicsByName.computeIfAbsent(topicName, NetworkTopic::new);
+        final NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
+                name -> new NetworkTopic(name, topicMetadata.isCompacted()));
         topic.doAttach(fetchOffsets, consumeRecords, supplyWindow);
 
         final int newAttachId = nextAttachId++;
@@ -933,73 +954,221 @@ final class NetworkConnectionPool
     private final class MetadataConnection extends AbstractNetworkConnection
     {
         TopicMetadata pendingTopicMetadata;
+        boolean awaitingDescribeConfigs;
 
         @Override
         void doRequestIfNeeded()
         {
             Optional<TopicMetadata> topicMetadata;
-            if (nextRequestId == nextResponseId && (topicMetadata = topicMetadataByName.values().stream()
-                    .filter(m -> m.nodeIdsByPartition == null).findFirst()).isPresent())
+            if (nextRequestId == nextResponseId)
             {
-                pendingTopicMetadata = topicMetadata.get();
-                doBeginIfNotConnected();
-
-                if (networkRequestBudget > networkRequestPadding)
+                if (pendingTopicMetadata == null &&
+                    ((topicMetadata = topicMetadataByName.values().stream()
+                      .filter(m -> m.nodeIdsByPartition == null).findFirst()).isPresent()))
                 {
-                    final int encodeOffset = 0;
-                    int encodeLimit = encodeOffset;
-
-                    RequestHeaderFW request = requestRW.wrap(
-                            NetworkConnectionPool.this.encodeBuffer, encodeLimit,
-                            NetworkConnectionPool.this.encodeBuffer.capacity())
-                            .size(0)
-                            .apiKey(METADATA_API_KEY)
-                            .apiVersion(METADATA_API_VERSION)
-                            .correlationId(0)
-                            .clientId((String) null)
-                            .build();
-
-                    encodeLimit = request.limit();
-
-                    MetadataRequestFW metadataRequest = metadataRequestRW.wrap(
-                            NetworkConnectionPool.this.encodeBuffer, encodeLimit,
-                            NetworkConnectionPool.this.encodeBuffer.capacity())
-                            .topicCount(1)
-                            .topicName(topicMetadata.get().topicName)
-                            .build();
-
-                    encodeLimit = metadataRequest.limit();
-
-                    // TODO: stream large requests in multiple DATA frames as needed
-                    if (encodeLimit - encodeOffset + networkRequestPadding <= networkRequestBudget)
+                    pendingTopicMetadata = topicMetadata.get();
+                }
+                if (pendingTopicMetadata != null)
+                {
+                    if (pendingTopicMetadata.hasMetadata())
                     {
-                        int newCorrelationId = nextRequestId++;
-
-                        NetworkConnectionPool.this.requestRW
-                                 .wrap(NetworkConnectionPool.this.encodeBuffer, request.offset(), request.limit())
-                                 .size(encodeLimit - encodeOffset - RequestHeaderFW.FIELD_OFFSET_API_KEY)
-                                 .apiKey(METADATA_API_KEY)
-                                 .apiVersion(METADATA_API_VERSION)
-                                 .correlationId(newCorrelationId)
-                                 .clientId((String) null)
-                                 .build();
-
-                        OctetsFW payload = NetworkConnectionPool.this.payloadRW
-                                .wrap(NetworkConnectionPool.this.encodeBuffer, encodeOffset, encodeLimit)
-                                .set((b, o, m) -> m - o)
-                                .build();
-
-                        NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId,
-                                networkRequestPadding, payload);
-                        networkRequestBudget -= payload.sizeof() + networkRequestPadding;
+                        doDescribeConfigsRequest();
+                    }
+                    else
+                    {
+                        doMetadataRequest();
                     }
                 }
             }
+        }
 
+        private void doDescribeConfigsRequest()
+        {
+            doBeginIfNotConnected();
+            if (networkRequestBudget > networkRequestPadding)
+            {
+                final int encodeOffset = 0;
+                final MutableDirectBuffer buffer = NetworkConnectionPool.this.encodeBuffer;
+                int encodeLimit = encodeOffset;
+
+                RequestHeaderFW request = requestRW.wrap(
+                        buffer, encodeLimit, buffer.capacity())
+                        .size(0)
+                        .apiKey(DESCRIBE_CONFIGS_API_KEY)
+                        .apiVersion(DESCRIBE_CONFIGS_API_VERSION)
+                        .correlationId(0)
+                        .clientId((String) null)
+                        .build();
+
+                encodeLimit = request.limit();
+
+                DescribeConfigsRequestFW describeRequest = describeConfigsRequestRW.wrap(
+                        buffer, encodeLimit, buffer.capacity())
+                        .resourceCount(1)
+                        .build();
+
+                encodeLimit = describeRequest.limit();
+
+                ResourceRequestFW resourceRequest = resourceRequestRW.wrap(
+                        buffer, encodeLimit, buffer.capacity())
+                        .type(RESOURCE_TYPE_TOPIC)
+                        .name(pendingTopicMetadata.topicName)
+                        .configNamesCount(1)
+                        .build();
+
+                encodeLimit = resourceRequest.limit();
+
+                String16FW configName = configNameRW.wrap(
+                        buffer, encodeLimit, buffer.capacity())
+                        .set(CLEANUP_POLICY, UTF_8)
+                        .build();
+
+                encodeLimit = configName.limit();
+
+                // TODO: stream large requests in multiple DATA frames as needed
+                if (encodeLimit - encodeOffset + networkRequestPadding <= networkRequestBudget)
+                {
+                    int newCorrelationId = nextRequestId++;
+
+                    NetworkConnectionPool.this.requestRW
+                             .wrap(buffer, request.offset(), request.limit())
+                             .size(encodeLimit - encodeOffset - RequestHeaderFW.FIELD_OFFSET_API_KEY)
+                             .apiKey(DESCRIBE_CONFIGS_API_KEY)
+                             .apiVersion(DESCRIBE_CONFIGS_API_VERSION)
+                             .correlationId(newCorrelationId)
+                             .clientId((String) null)
+                             .build();
+
+                    OctetsFW payload = NetworkConnectionPool.this.payloadRW
+                            .wrap(buffer, encodeOffset, encodeLimit)
+                            .set((b, o, m) -> m - o)
+                            .build();
+
+                    NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId,
+                            networkRequestPadding, payload);
+                    networkRequestBudget -= payload.sizeof() + networkRequestPadding;
+                    awaitingDescribeConfigs = true;
+                }
+            }
+        }
+
+        private void doMetadataRequest()
+        {
+            doBeginIfNotConnected();
+
+            if (networkRequestBudget > networkRequestPadding)
+            {
+                final int encodeOffset = 0;
+                int encodeLimit = encodeOffset;
+
+                RequestHeaderFW request = requestRW.wrap(
+                        NetworkConnectionPool.this.encodeBuffer, encodeLimit,
+                        NetworkConnectionPool.this.encodeBuffer.capacity())
+                        .size(0)
+                        .apiKey(METADATA_API_KEY)
+                        .apiVersion(METADATA_API_VERSION)
+                        .correlationId(0)
+                        .clientId((String) null)
+                        .build();
+
+                encodeLimit = request.limit();
+
+                MetadataRequestFW metadataRequest = metadataRequestRW.wrap(
+                        NetworkConnectionPool.this.encodeBuffer, encodeLimit,
+                        NetworkConnectionPool.this.encodeBuffer.capacity())
+                        .topicCount(1)
+                        .topicName(pendingTopicMetadata.topicName)
+                        .build();
+
+                encodeLimit = metadataRequest.limit();
+
+                // TODO: stream large requests in multiple DATA frames as needed
+                if (encodeLimit - encodeOffset + networkRequestPadding <= networkRequestBudget)
+                {
+                    int newCorrelationId = nextRequestId++;
+
+                    NetworkConnectionPool.this.requestRW
+                             .wrap(NetworkConnectionPool.this.encodeBuffer, request.offset(), request.limit())
+                             .size(encodeLimit - encodeOffset - RequestHeaderFW.FIELD_OFFSET_API_KEY)
+                             .apiKey(METADATA_API_KEY)
+                             .apiVersion(METADATA_API_VERSION)
+                             .correlationId(newCorrelationId)
+                             .clientId((String) null)
+                             .build();
+
+                    OctetsFW payload = NetworkConnectionPool.this.payloadRW
+                            .wrap(NetworkConnectionPool.this.encodeBuffer, encodeOffset, encodeLimit)
+                            .set((b, o, m) -> m - o)
+                            .build();
+
+                    NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId,
+                            networkRequestPadding, payload);
+                    networkRequestBudget -= payload.sizeof() + networkRequestPadding;
+                }
+            }
         }
 
         @Override
         void handleResponse(
+            DirectBuffer networkBuffer,
+            int networkOffset,
+            final int networkLimit)
+        {
+            if (awaitingDescribeConfigs)
+            {
+                handleDescribeConfigsResponse(networkBuffer, networkOffset, networkLimit);
+            }
+            else
+            {
+                handleMetadataResponse(networkBuffer, networkOffset, networkLimit);
+            }
+        }
+
+        void handleDescribeConfigsResponse(
+            DirectBuffer networkBuffer,
+            int networkOffset,
+            final int networkLimit)
+        {
+            awaitingDescribeConfigs = false;
+            final DescribeConfigsResponseFW describeConfigsResponse =
+                    NetworkConnectionPool.this.describeConfigsResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
+            int resourceCount = describeConfigsResponse.resourceCount();
+            networkOffset = describeConfigsResponse.limit();
+
+            short errorCode = NONE;
+            boolean compacted = false;
+            for (int resourceIndex = 0; resourceIndex < resourceCount && errorCode == NONE; resourceIndex++)
+            {
+                final ResourceResponseFW resource =
+                        NetworkConnectionPool.this.resourceResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
+                final String16FW name = resource.name();
+                assert name.asString().equals(pendingTopicMetadata.topicName);
+                errorCode = resource.errorCode();
+                if (errorCode != NONE)
+                {
+                    break;
+                }
+                final int configCount = resource.configCount();
+                networkOffset = resource.limit();
+
+                for (int configIndex = 0; configIndex < configCount && errorCode == NONE; configIndex++)
+                {
+                    final ConfigResponseFW config =
+                            NetworkConnectionPool.this.configResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
+                    String16FW configName = config.name();
+                    assert configName.asString().equals(CLEANUP_POLICY);
+                    compacted = config.value() != null && config.value().asString().equals(COMPACT);
+                    networkOffset = config.limit();
+                }
+            }
+            TopicMetadata metadata = pendingTopicMetadata;
+            pendingTopicMetadata = null;
+            metadata.setCompacted(compacted);
+            metadata.setErrorCode(errorCode);
+            metadata.flush();
+        }
+
+        void handleMetadataResponse(
             DirectBuffer networkBuffer,
             int networkOffset,
             final int networkLimit)
@@ -1027,8 +1196,8 @@ final class NetworkConnectionPool
             {
                 final TopicMetadataFW topicMetadata =
                         NetworkConnectionPool.this.topicMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
-                final String topicName = topicMetadata.topic().asString();
-                assert topicName.equals(pendingTopicMetadata.topicName);
+                final String16FW topicName = topicMetadata.topic();
+                assert topicName.asString().equals(pendingTopicMetadata.topicName);
                 errorCode = topicMetadata.errorCode();
                 if (errorCode != NONE)
                 {
@@ -1047,15 +1216,21 @@ final class NetworkConnectionPool
                     networkOffset = partition.limit();
                 }
             }
-            if (KafkaErrors.isRecoverable(errorCode))
+            final TopicMetadata topicMetadata = pendingTopicMetadata;
+            if (errorCode != NONE)
             {
-                pendingTopicMetadata.reset();
-                doRequestIfNeeded();
-            }
-            else
-            {
-                pendingTopicMetadata.setErrorCode(errorCode);
-                pendingTopicMetadata.flush();
+                if (KafkaErrors.isRecoverable(errorCode))
+                {
+                    pendingTopicMetadata.reset();
+                    doRequestIfNeeded();
+                }
+                else
+                {
+                    topicMetadataByName.remove(topicMetadata.topicName);
+                    pendingTopicMetadata = null;
+                    topicMetadata.setErrorCode(errorCode);
+                    topicMetadata.flush();
+                }
             }
         }
     }
@@ -1063,6 +1238,7 @@ final class NetworkConnectionPool
     private final class NetworkTopic
     {
         private final String topicName;
+        private final boolean compacted;
         private final Set<PartitionResponseConsumer> recordConsumers;
         private final Set<IntSupplier> windowSuppliers;
         final NavigableSet<NetworkTopicPartition> partitions;
@@ -1078,9 +1254,10 @@ final class NetworkConnectionPool
         }
 
         NetworkTopic(
-            String topicName)
+            String topicName, boolean compacted)
         {
             this.topicName = topicName;
+            this.compacted = compacted;
             this.recordConsumers = new HashSet<>();
             this.windowSuppliers = new HashSet<>();
             this.partitions = new TreeSet<>();
@@ -1205,7 +1382,7 @@ final class NetworkConnectionPool
             // TODO: eliminate iterator allocation
             for (PartitionResponseConsumer recordsConsumer : recordConsumers)
             {
-                recordsConsumer.accept(buffer, index, length, requestedOffset, progressHandler);
+                recordsConsumer.accept(buffer, index, length, requestedOffset, compacted, progressHandler);
             }
         }
 
@@ -1340,6 +1517,7 @@ final class NetworkConnectionPool
     {
         private final String topicName;
         private short errorCode;
+        private boolean compacted;
         BrokerMetadata[] brokers;
         private int nextBrokerIndex;
         private int[] nodeIdsByPartition;
@@ -1348,6 +1526,21 @@ final class NetworkConnectionPool
         TopicMetadata(String topicName)
         {
             this.topicName = topicName;
+        }
+
+        public boolean hasMetadata()
+        {
+            return brokers != null;
+        }
+
+        public boolean isCompacted()
+        {
+            return compacted;
+        }
+
+        public void setCompacted(boolean compacted)
+        {
+            this.compacted = compacted;
         }
 
         void setErrorCode(

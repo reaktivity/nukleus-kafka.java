@@ -38,7 +38,7 @@ public class FetchIT
             .addScriptRoot("metadata", "org/reaktivity/specification/kafka/metadata.v5")
             .addScriptRoot("client", "org/reaktivity/specification/nukleus/kafka/streams/fetch");
 
-    private final TestRule timeout = new DisableOnDebug(new Timeout(15, SECONDS));
+    private final TestRule timeout = new DisableOnDebug(new Timeout(10, SECONDS));
 
     private final ReaktorRule reaktor = new ReaktorRule()
         .nukleus("kafka"::equals)
@@ -112,7 +112,7 @@ public class FetchIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${routeAnyTopic}/client/controller",
         "${client}/unknown.topic.name/client",
         "${metadata}/one.topic.error.unknown.topic/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -317,6 +317,61 @@ public class FetchIT
         "${server}/headers.zero.offset.multiple.matches.historical/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveHistoricalMessagesMatchingHeaders() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/ktable.message/client",
+        "${server}/ktable.message/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveKtableMessage() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/ktable.messages/client",
+        "${server}/ktable.messages/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveKtableMessages() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/ktable.messages.header.multiple.matches/client",
+        "${server}/ktable.messages.header.multiple.matches/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveKtableMessagesFilteredByHeader() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/ktable.messages.historical/client",
+        "${server}/ktable.messages.historical/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveKTableHistoricalMessages() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/ktable.messages.multiple.nodes/client",
+        "${server}/ktable.messages.multiple.nodes/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveKTableMessagesFromMultipleNodes() throws Exception
     {
         k3po.finish();
     }
