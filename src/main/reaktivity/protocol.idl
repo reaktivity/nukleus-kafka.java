@@ -159,7 +159,7 @@ scope protocol
               varint32 keyLen;
               octets[keyLen] key = null;
               varint32 valueLen;
-              octets[valueLen] value;
+              octets[valueLen] value = null;
               varint32 headerCount;
             }
 
