@@ -254,6 +254,7 @@ final class NetworkConnectionPool
             break;
         case NONE:
             int partitionId = BufferUtil.partition(partitionHash, topicMetadata.partitionCount());
+            fetchOffsets.computeIfAbsent(0L, v -> 0L);
             if (partitionId != 0)
             {
                 long offset = fetchOffsets.remove(0L);
