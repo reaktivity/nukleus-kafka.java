@@ -679,6 +679,7 @@ final class NetworkConnectionPool
 
     abstract class AbstractFetchConnection extends AbstractNetworkConnection
     {
+        private static final int MAX_MESSAGE_SIZE = 10000;
         private final String host;
         private final int port;
 
@@ -768,7 +769,7 @@ final class NetworkConnectionPool
                     // TODO: stream large requests in multiple DATA frames as needed
                     if (topicCount > 0 && encodeLimit - encodeOffset + networkRequestPadding <= networkRequestBudget)
                     {
-                        maxFetchBytes = Math.min(maxFetchBytes, bufferPool.slotCapacity());
+                        maxFetchBytes = limitMaximumBytes(maxFetchBytes);
                         NetworkConnectionPool.this.fetchRequestRW
                         .wrap(NetworkConnectionPool.this.encodeBuffer, fetchRequest.offset(), fetchRequest.limit())
                         .maxWaitTimeMillis(fetchRequest.maxWaitTimeMillis())
@@ -802,6 +803,11 @@ final class NetworkConnectionPool
 
         abstract int addTopicToRequest(
             String topicName);
+
+        final int limitMaximumBytes(int maximumBytes)
+        {
+            return Math.min(maximumBytes, bufferPool.slotCapacity() - MAX_MESSAGE_SIZE);
+        }
 
         @Override
         final void handleResponse(
@@ -853,8 +859,8 @@ final class NetworkConnectionPool
         @Override
         public String toString()
         {
-            return String.format("%s [brokerId=%d, host=%s, port=%d, budget=%d, padding=%d]",
-                    getClass().getName(), brokerId, host, port, networkRequestBudget, networkRequestPadding);
+            return String.format("%s [brokerId=%d, host=%s, port=%d, budget=%d, padding=%d, maxFetchBytes=%d]",
+                    getClass().getName(), brokerId, host, port, networkRequestBudget, networkRequestPadding, maxFetchBytes);
         }
     }
 
@@ -870,7 +876,7 @@ final class NetworkConnectionPool
             String topicName)
         {
             NetworkTopic topic = topicsByName.get(topicName);
-            final int maxPartitionBytes = Math.min(topic.maximumWritableBytes(), bufferPool.slotCapacity());
+            final int maxPartitionBytes =  limitMaximumBytes(topic.maximumWritableBytes());
             final int[] nodeIdsByPartition = topicMetadataByName.get(topicName).nodeIdsByPartition;
 
             int partitionCount = 0;
@@ -923,7 +929,7 @@ final class NetworkConnectionPool
             NetworkTopic topic = topicsByName.get(topicName);
             if (topic.needsHistorical())
             {
-                int maxPartitionBytes = Math.min(topic.maximumWritableBytes(), bufferPool.slotCapacity());
+                int maxPartitionBytes = limitMaximumBytes(topic.maximumWritableBytes());
                 final int[] nodeIdsByPartition = topicMetadataByName.get(topicName).nodeIdsByPartition;
 
                 int partitionId = -1;
