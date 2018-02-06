@@ -584,6 +584,12 @@ final class NetworkConnectionPool
                             bufferSlot.putBytes(networkSlotOffset, payload.buffer(), payload.offset(), payload.sizeof());
                             networkSlotOffset += payload.sizeof();
                         }
+                        if (networkSlotOffset == bufferPool.slotCapacity())
+                        {
+                            // response size exceeds window (slot capacity)
+                            throw new IllegalStateException(format("%s: Kafka response size %d exceeds slot capacity %d",
+                                    this, response.size(), bufferPool.slotCapacity()));
+                        }
                     }
                     else
                     {
@@ -705,7 +711,7 @@ final class NetworkConnectionPool
 
                 if (networkRequestBudget > networkRequestPadding)
                 {
-                    final int encodeOffset = 512;
+                    final int encodeOffset = 0;
                     encodeLimit = encodeOffset;
                     RequestHeaderFW request = requestRW.wrap(
                             NetworkConnectionPool.this.encodeBuffer, encodeLimit,
@@ -762,6 +768,7 @@ final class NetworkConnectionPool
                     // TODO: stream large requests in multiple DATA frames as needed
                     if (topicCount > 0 && encodeLimit - encodeOffset + networkRequestPadding <= networkRequestBudget)
                     {
+                        maxFetchBytes = Math.min(maxFetchBytes, bufferPool.slotCapacity());
                         NetworkConnectionPool.this.fetchRequestRW
                         .wrap(NetworkConnectionPool.this.encodeBuffer, fetchRequest.offset(), fetchRequest.limit())
                         .maxWaitTimeMillis(fetchRequest.maxWaitTimeMillis())
@@ -797,7 +804,7 @@ final class NetworkConnectionPool
             String topicName);
 
         @Override
-        void handleResponse(
+        final void handleResponse(
             DirectBuffer networkBuffer,
             int networkOffset,
             int networkLimit)
@@ -846,8 +853,8 @@ final class NetworkConnectionPool
         @Override
         public String toString()
         {
-            return String.format("[brokerId=%d, host=%s, port=%d, budget=%d, padding=%d]",
-                    brokerId, host, port, networkRequestBudget, networkRequestPadding);
+            return String.format("%s [brokerId=%d, host=%s, port=%d, budget=%d, padding=%d]",
+                    getClass().getName(), brokerId, host, port, networkRequestBudget, networkRequestPadding);
         }
     }
 
@@ -863,7 +870,7 @@ final class NetworkConnectionPool
             String topicName)
         {
             NetworkTopic topic = topicsByName.get(topicName);
-            int maxPartitionBytes = topic.maximumWritableBytes();
+            final int maxPartitionBytes = Math.min(topic.maximumWritableBytes(), bufferPool.slotCapacity());
             final int[] nodeIdsByPartition = topicMetadataByName.get(topicName).nodeIdsByPartition;
 
             int partitionCount = 0;
@@ -916,7 +923,7 @@ final class NetworkConnectionPool
             NetworkTopic topic = topicsByName.get(topicName);
             if (topic.needsHistorical())
             {
-                int maxPartitionBytes = topic.maximumWritableBytes();
+                int maxPartitionBytes = Math.min(topic.maximumWritableBytes(), bufferPool.slotCapacity());
                 final int[] nodeIdsByPartition = topicMetadataByName.get(topicName).nodeIdsByPartition;
 
                 int partitionId = -1;
