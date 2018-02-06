@@ -100,6 +100,8 @@ final class NetworkConnectionPool
 
     private static final byte[] ANY_IP_ADDR = new byte[4];
 
+    private static final int MAX_MESSAGE_SIZE = 10000;
+
     final RequestHeaderFW.Builder requestRW = new RequestHeaderFW.Builder();
     final FetchRequestFW.Builder fetchRequestRW = new FetchRequestFW.Builder();
     final TopicRequestFW.Builder topicRequestRW = new TopicRequestFW.Builder();
@@ -141,6 +143,7 @@ final class NetworkConnectionPool
     private final Map<String, TopicMetadata> topicMetadataByName;
     private final Map<String, NetworkTopic> topicsByName;
     private final Int2ObjectHashMap<Consumer<Long2LongHashMap>> detachersById;
+    private final int maximumFetchBytesLimit;
 
     private int nextAttachId;
 
@@ -159,6 +162,8 @@ final class NetworkConnectionPool
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
         this.detachersById = new Int2ObjectHashMap<>();
+        this.maximumFetchBytesLimit = bufferPool.slotCapacity() > MAX_MESSAGE_SIZE ?
+                bufferPool.slotCapacity() - MAX_MESSAGE_SIZE : bufferPool.slotCapacity();
     }
 
     void doAttach(
@@ -584,6 +589,12 @@ final class NetworkConnectionPool
                             bufferSlot.putBytes(networkSlotOffset, payload.buffer(), payload.offset(), payload.sizeof());
                             networkSlotOffset += payload.sizeof();
                         }
+                        if (networkSlotOffset == bufferPool.slotCapacity())
+                        {
+                            // response size exceeds window (slot capacity)
+                            throw new IllegalStateException(format("%s: Kafka response size %d exceeds slot capacity %d",
+                                    this, response.size(), bufferPool.slotCapacity()));
+                        }
                     }
                     else
                     {
@@ -705,7 +716,7 @@ final class NetworkConnectionPool
 
                 if (networkRequestBudget > networkRequestPadding)
                 {
-                    final int encodeOffset = 512;
+                    final int encodeOffset = 0;
                     encodeLimit = encodeOffset;
                     RequestHeaderFW request = requestRW.wrap(
                             NetworkConnectionPool.this.encodeBuffer, encodeLimit,
@@ -762,6 +773,7 @@ final class NetworkConnectionPool
                     // TODO: stream large requests in multiple DATA frames as needed
                     if (topicCount > 0 && encodeLimit - encodeOffset + networkRequestPadding <= networkRequestBudget)
                     {
+                        maxFetchBytes = limitMaximumBytes(maxFetchBytes);
                         NetworkConnectionPool.this.fetchRequestRW
                         .wrap(NetworkConnectionPool.this.encodeBuffer, fetchRequest.offset(), fetchRequest.limit())
                         .maxWaitTimeMillis(fetchRequest.maxWaitTimeMillis())
@@ -796,8 +808,13 @@ final class NetworkConnectionPool
         abstract int addTopicToRequest(
             String topicName);
 
+        final int limitMaximumBytes(int maximumBytes)
+        {
+            return Math.min(maximumBytes, maximumFetchBytesLimit);
+        }
+
         @Override
-        void handleResponse(
+        final void handleResponse(
             DirectBuffer networkBuffer,
             int networkOffset,
             int networkLimit)
@@ -846,8 +863,8 @@ final class NetworkConnectionPool
         @Override
         public String toString()
         {
-            return String.format("[brokerId=%d, host=%s, port=%d, budget=%d, padding=%d]",
-                    brokerId, host, port, networkRequestBudget, networkRequestPadding);
+            return String.format("%s [brokerId=%d, host=%s, port=%d, budget=%d, padding=%d, maxFetchBytes=%d]",
+                    getClass().getName(), brokerId, host, port, networkRequestBudget, networkRequestPadding, maxFetchBytes);
         }
     }
 
@@ -863,7 +880,7 @@ final class NetworkConnectionPool
             String topicName)
         {
             NetworkTopic topic = topicsByName.get(topicName);
-            int maxPartitionBytes = topic.maximumWritableBytes();
+            final int maxPartitionBytes =  limitMaximumBytes(topic.maximumWritableBytes());
             final int[] nodeIdsByPartition = topicMetadataByName.get(topicName).nodeIdsByPartition;
 
             int partitionCount = 0;
@@ -916,7 +933,7 @@ final class NetworkConnectionPool
             NetworkTopic topic = topicsByName.get(topicName);
             if (topic.needsHistorical())
             {
-                int maxPartitionBytes = topic.maximumWritableBytes();
+                int maxPartitionBytes = limitMaximumBytes(topic.maximumWritableBytes());
                 final int[] nodeIdsByPartition = topicMetadataByName.get(topicName).nodeIdsByPartition;
 
                 int partitionId = -1;
