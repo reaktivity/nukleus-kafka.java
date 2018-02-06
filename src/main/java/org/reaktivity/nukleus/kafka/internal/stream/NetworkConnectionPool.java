@@ -100,6 +100,8 @@ final class NetworkConnectionPool
 
     private static final byte[] ANY_IP_ADDR = new byte[4];
 
+    private static final int MAX_MESSAGE_SIZE = 10000;
+
     final RequestHeaderFW.Builder requestRW = new RequestHeaderFW.Builder();
     final FetchRequestFW.Builder fetchRequestRW = new FetchRequestFW.Builder();
     final TopicRequestFW.Builder topicRequestRW = new TopicRequestFW.Builder();
@@ -141,6 +143,7 @@ final class NetworkConnectionPool
     private final Map<String, TopicMetadata> topicMetadataByName;
     private final Map<String, NetworkTopic> topicsByName;
     private final Int2ObjectHashMap<Consumer<Long2LongHashMap>> detachersById;
+    private final int maximumFetchBytesLimit;
 
     private int nextAttachId;
 
@@ -159,6 +162,8 @@ final class NetworkConnectionPool
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
         this.detachersById = new Int2ObjectHashMap<>();
+        this.maximumFetchBytesLimit = bufferPool.slotCapacity() > MAX_MESSAGE_SIZE ?
+                bufferPool.slotCapacity() - MAX_MESSAGE_SIZE : bufferPool.slotCapacity();
     }
 
     void doAttach(
@@ -679,7 +684,6 @@ final class NetworkConnectionPool
 
     abstract class AbstractFetchConnection extends AbstractNetworkConnection
     {
-        private static final int MAX_MESSAGE_SIZE = 10000;
         private final String host;
         private final int port;
 
@@ -806,7 +810,7 @@ final class NetworkConnectionPool
 
         final int limitMaximumBytes(int maximumBytes)
         {
-            return Math.min(maximumBytes, bufferPool.slotCapacity() - MAX_MESSAGE_SIZE);
+            return Math.min(maximumBytes, maximumFetchBytesLimit);
         }
 
         @Override
