@@ -1374,8 +1374,8 @@ final class NetworkConnectionPool
             candidate.id = partitionId;
             candidate.offset = Long.MAX_VALUE;
             NetworkTopicPartition floor = partitions.floor(candidate);
-            assert floor.id == partitionId;
-            return floor.offset;
+            assert floor == null || floor.id == partitionId;
+            return floor != null ? floor.offset : 0L;
         }
 
         long getLowestOffset(
@@ -1384,8 +1384,8 @@ final class NetworkConnectionPool
             candidate.id = partitionId;
             candidate.offset = 0L;
             NetworkTopicPartition ceiling = partitions.ceiling(candidate);
-            assert ceiling.id == partitionId;
-            return ceiling.offset;
+            assert ceiling == null || ceiling.id == partitionId;
+            return ceiling != null ? ceiling.offset : Long.MAX_VALUE;
         }
 
         void onPartitionResponse(
