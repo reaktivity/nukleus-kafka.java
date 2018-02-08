@@ -392,6 +392,8 @@ public final class ClientStreamFactory implements StreamFactory
 
     private final class ClientAcceptStream
     {
+        private static final int UNATTACHED = -1;
+
         private final MessageConsumer applicationThrottle;
         private final long applicationId;
         private final NetworkConnectionPool networkPool;
@@ -407,7 +409,7 @@ public final class ClientStreamFactory implements StreamFactory
 
         private OctetsFW fetchKey;
         private ListFW<KafkaHeaderFW> headers;
-        private int networkAttachId;
+        private int networkAttachId = UNATTACHED;
 
         private MessageConsumer streamState;
         private int writeableBytesMinimum;
@@ -467,6 +469,7 @@ public final class ClientStreamFactory implements StreamFactory
             case AbortFW.TYPE_ID:
                 doAbort(applicationReply, applicationReplyId);
                 networkPool.doDetach(networkAttachId, fetchOffsets);
+                networkAttachId = UNATTACHED;
                 break;
             default:
                 doReset(applicationThrottle, applicationId);
@@ -592,6 +595,7 @@ public final class ClientStreamFactory implements StreamFactory
             ResetFW reset)
         {
             networkPool.doDetach(networkAttachId, fetchOffsets);
+            networkAttachId = UNATTACHED;
             doReset(applicationThrottle, applicationId);
         }
 
@@ -627,7 +631,7 @@ public final class ClientStreamFactory implements StreamFactory
             long nextFetchAt = firstFetchAt;
 
             // TODO: determine appropriate reaction to different non-zero error codes
-            if (partition.errorCode() == 0 && networkOffset < maxLimit - BitUtil.SIZE_OF_INT
+            if (networkAttachId != UNATTACHED && partition.errorCode() == 0 && networkOffset < maxLimit - BitUtil.SIZE_OF_INT
                     && requestedOffset <= firstFetchAt) // avoid out of order delivery
             {
                 final RecordSetFW recordSet = recordSetRO.wrap(buffer, networkOffset, maxLimit);
@@ -726,7 +730,7 @@ public final class ClientStreamFactory implements StreamFactory
             long nextFetchAt = firstFetchAt;
 
             // TODO: determine appropriate reaction to different non-zero error codes
-            if (partition.errorCode() == 0 && networkOffset < maxLimit - BitUtil.SIZE_OF_INT
+            if (networkAttachId != UNATTACHED && partition.errorCode() == 0 && networkOffset < maxLimit - BitUtil.SIZE_OF_INT
                     && requestedOffset <= firstFetchAt) // avoid out of order delivery
             {
                 final RecordSetFW recordSet = recordSetRO.wrap(buffer, networkOffset, maxLimit);
