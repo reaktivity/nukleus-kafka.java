@@ -52,6 +52,7 @@ import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionResponseConsumer;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
+import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.RequestHeaderFW;
@@ -74,19 +75,17 @@ import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.MetadataRespon
 import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.MetadataResponsePart2FW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.PartitionMetadataFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.TopicMetadataFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.AbortFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.AckFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.DataFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.RegionFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.TcpBeginExFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
 
 final class NetworkConnectionPool
 {
     private static final short FETCH_API_VERSION = 5;
     private static final short FETCH_API_KEY = 1;
+    private static final short FETCH_REQUEST_FIXED_LENGTH = 1;
     private static final short METADATA_API_VERSION = 5;
     private static final short METADATA_API_KEY = 3;
     private static final short DESCRIBE_CONFIGS_API_VERSION = 0;
@@ -107,7 +106,7 @@ final class NetworkConnectionPool
     final ResourceRequestFW.Builder resourceRequestRW = new ResourceRequestFW.Builder();
     final String16FW.Builder configNameRW = new String16FW.Builder(ByteOrder.BIG_ENDIAN);
 
-    final WindowFW windowRO = new WindowFW();
+    final AckFW ackRO = new AckFW();
     final OctetsFW.Builder payloadRW = new OctetsFW.Builder();
     final TcpBeginExFW.Builder tcpBeginExRW = new TcpBeginExFW.Builder();
 
@@ -358,7 +357,7 @@ final class NetworkConnectionPool
 
         private MessageConsumer streamState;
 
-        int networkSlot = NO_SLOT;
+        long networkAddress = -1L;
         int networkSlotOffset;
 
         int nextRequestId;
@@ -436,13 +435,9 @@ final class NetworkConnectionPool
         {
             switch (msgTypeId)
             {
-            case WindowFW.TYPE_ID:
-                final WindowFW window = NetworkConnectionPool.this.windowRO.wrap(buffer, index, index + length);
-                handleWindow(window);
-                break;
-            case ResetFW.TYPE_ID:
-                final ResetFW reset = NetworkConnectionPool.this.clientStreamFactory.resetRO.wrap(buffer, index, index + length);
-                handleReset(reset);
+            case AckFW.TYPE_ID:
+                final AckFW ack = NetworkConnectionPool.this.ackRO.wrap(buffer, index, index + length);
+                handleAck(ack);
                 break;
             default:
                 // ignore
@@ -450,22 +445,14 @@ final class NetworkConnectionPool
             }
         }
 
-        private void handleWindow(
-            final WindowFW window)
+        private void handleAck(
+            final AckFW ack)
         {
-            final int networkCredit = window.credit();
-            final int networkPadding = window.padding();
+            final int flags = ack.flags();
+            final ListFW<RegionFW> regions = ack.regions();
 
-            this.networkRequestBudget += networkCredit;
-            this.networkRequestPadding = networkPadding;
+            // TODO: mark regions as now free for encoding use
 
-            doRequestIfNeeded();
-        }
-
-        private void handleReset(
-            ResetFW reset)
-        {
-            doReinitialize();
             doRequestIfNeeded();
         }
 
