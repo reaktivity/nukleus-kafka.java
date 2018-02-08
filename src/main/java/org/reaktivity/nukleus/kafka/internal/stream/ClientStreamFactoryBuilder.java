@@ -23,6 +23,7 @@ import java.util.function.Supplier;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.buffer.BufferPool;
+import org.reaktivity.nukleus.buffer.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
@@ -37,7 +38,7 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     private MutableDirectBuffer writeBuffer;
     private LongSupplier supplyStreamId;
     private LongSupplier supplyCorrelationId;
-    private Supplier<BufferPool> supplyBufferPool;
+    private MemoryManager memoryManager;
 
     public ClientStreamFactoryBuilder(
         KafkaConfiguration config)
@@ -71,20 +72,6 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
-    public ClientStreamFactoryBuilder setGroupBudgetClaimer(
-        LongFunction<IntUnaryOperator> groupBudgetClaimer)
-    {
-        return this;
-    }
-
-    @Override
-    public ClientStreamFactoryBuilder setGroupBudgetReleaser(
-        LongFunction<IntUnaryOperator> groupBudgetReleaser)
-    {
-        return this;
-    }
-
-    @Override
     public ClientStreamFactoryBuilder setCorrelationIdSupplier(
         LongSupplier supplyCorrelationId)
     {
@@ -93,19 +80,17 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
-    public StreamFactoryBuilder setBufferPoolSupplier(
-        Supplier<BufferPool> supplyBufferPool)
+    public StreamFactoryBuilder setMemoryManager(
+       MemoryManager memoryManager)
     {
-        this.supplyBufferPool = supplyBufferPool;
+        this.memoryManager = memoryManager;
         return this;
     }
 
     @Override
     public StreamFactory build()
-    {
-        final BufferPool bufferPool = supplyBufferPool.get();
 
-        return new ClientStreamFactory(config, router, writeBuffer, bufferPool,
+        return new ClientStreamFactory(config, router, writeBuffer, memoryManager,
                 supplyStreamId, supplyCorrelationId, correlations);
     }
 }

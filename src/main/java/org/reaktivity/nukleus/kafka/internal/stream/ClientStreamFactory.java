@@ -28,7 +28,7 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
-import org.reaktivity.nukleus.buffer.BufferPool;
+import org.reaktivity.nukleus.buffer.MemoryManager;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
@@ -96,7 +96,7 @@ public final class ClientStreamFactory implements StreamFactory
     final RouteManager router;
     final LongSupplier supplyStreamId;
     final LongSupplier supplyCorrelationId;
-    final BufferPool bufferPool;
+    final MemoryManager memoryManager;
     private final MutableDirectBuffer writeBuffer;
 
     final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
@@ -106,14 +106,14 @@ public final class ClientStreamFactory implements StreamFactory
         KafkaConfiguration configuration,
         RouteManager router,
         MutableDirectBuffer writeBuffer,
-        BufferPool bufferPool,
+        MemoryManager memoryManager,
         LongSupplier supplyStreamId,
         LongSupplier supplyCorrelationId,
         Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations)
     {
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
-        this.bufferPool = requireNonNull(bufferPool);
+        this.memoryManager = requireNonNull(memoryManager);
         this.supplyStreamId = requireNonNull(supplyStreamId);
         this.supplyCorrelationId = supplyCorrelationId;
         this.correlations = requireNonNull(correlations);
@@ -172,7 +172,7 @@ public final class ClientStreamFactory implements StreamFactory
                     connectionPools.computeIfAbsent(networkName, this::newConnectionPoolsByRef);
 
                 NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef, ref ->
-                    new NetworkConnectionPool(this, networkName, ref, bufferPool));
+                    new NetworkConnectionPool(this, networkName, ref, memoryManager));
 
                 newStream = new ClientAcceptStream(applicationThrottle, applicationId, connectionPool)::handleStream;
             }

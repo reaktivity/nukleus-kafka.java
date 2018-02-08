@@ -17,7 +17,6 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.lang.String.format;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.INVALID_TOPIC_EXCEPTION;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.LEADER_NOT_AVAILABLE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
@@ -48,8 +47,7 @@ import org.agrona.collections.ArrayUtil;
 import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2LongHashMap.LongIterator;
-import org.agrona.concurrent.UnsafeBuffer;
-import org.reaktivity.nukleus.buffer.BufferPool;
+import org.reaktivity.nukleus.buffer.MemoryManager;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionResponseConsumer;
@@ -128,12 +126,10 @@ final class NetworkConnectionPool
     final ResourceResponseFW resourceResponseRO = new ResourceResponseFW();
     final ConfigResponseFW configResponseRO = new ConfigResponseFW();
 
-    final MutableDirectBuffer encodeBuffer;
-
     private final ClientStreamFactory clientStreamFactory;
     private final String networkName;
     private final long networkRef;
-    private final BufferPool bufferPool;
+    private final MemoryManager memoryManager;
     private AbstractFetchConnection[] connections = new LiveFetchConnection[0];
     private HistoricalFetchConnection[] historicalConnections = new HistoricalFetchConnection[0];
     private final MetadataConnection metadataConnection;
@@ -148,14 +144,13 @@ final class NetworkConnectionPool
         ClientStreamFactory clientStreamFactory,
         String networkName,
         long networkRef,
-        BufferPool bufferPool)
+        MemoryManager memoryManager)
     {
         this.clientStreamFactory = clientStreamFactory;
         this.networkName = networkName;
         this.networkRef = networkRef;
-        this.bufferPool = bufferPool;
+        this.memoryManager = memoryManager;
         this.metadataConnection = new MetadataConnection();
-        this.encodeBuffer = new UnsafeBuffer(new byte[clientStreamFactory.bufferPool.slotCapacity()]);
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
         this.detachersById = new Int2ObjectHashMap<>();
