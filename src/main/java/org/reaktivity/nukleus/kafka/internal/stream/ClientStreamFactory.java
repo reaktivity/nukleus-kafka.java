@@ -61,6 +61,8 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class ClientStreamFactory implements StreamFactory
 {
+    private static final OctetsFW NONE = new OctetsFW();
+
     private final RouteFW routeRO = new RouteFW();
 
     final BeginFW beginRO = new BeginFW();
@@ -751,7 +753,7 @@ public final class ClientStreamFactory implements StreamFactory
                             break loop;
                         }
                         final long firstOffset = recordBatch.firstOffset();
-                        OctetsFW lastMatchingValue = null;
+                        OctetsFW lastMatchingValue = NONE;
                         OctetsFW lastMatchingKey = null;
                         long lastMatchingOffset = firstOffset;
 
@@ -784,11 +786,12 @@ public final class ClientStreamFactory implements StreamFactory
                                 {
                                     // Send the previous matching message now we know what the new offset should be
                                     // (including any nonmatching skipped messages)
-                                    if (lastMatchingValue != null)
+                                    if (lastMatchingValue != NONE)
                                     {
-                                        if (applicationReplyBudget < lastMatchingValue.sizeof() + applicationReplyPadding)
+                                        int lastMatchingValueSize = lastMatchingValue == null ? 0 : lastMatchingValue.sizeof();
+                                        if (applicationReplyBudget < lastMatchingValueSize + applicationReplyPadding)
                                         {
-                                            writeableBytesMinimum = lastMatchingValue.sizeof() + applicationReplyPadding;
+                                            writeableBytesMinimum = lastMatchingValueSize + applicationReplyPadding;
                                             nextFetchAt = lastMatchingOffset;
                                             this.fetchOffsets.put(partitionId, nextFetchAt);
                                             break loop;
@@ -797,11 +800,12 @@ public final class ClientStreamFactory implements StreamFactory
                                         final OctetsFW messageKey = isCompactedTopic ? lastMatchingKey : null;
                                         doKafkaData(applicationReply, applicationReplyId, applicationReplyPadding,
                                                     lastMatchingValue, fetchOffsets, messageKey);
-                                        applicationReplyBudget -= lastMatchingValue.sizeof() + applicationReplyPadding;
+                                        applicationReplyBudget -= lastMatchingValueSize + applicationReplyPadding;
                                         writeableBytesMinimum = 0;
                                     }
                                     final OctetsFW value = record.value();
-                                    lastMatchingValue = valueRO.wrap(buffer, value.offset(), value.limit());
+                                    lastMatchingValue = value == null ? null :
+                                        valueRO.wrap(buffer, value.offset(), value.limit());
                                     lastMatchingKey = key == null ? null : keyRO.wrap(buffer, key.offset(), key.limit());
                                     lastMatchingOffset = currentFetchAt;
                                 }
@@ -809,11 +813,12 @@ public final class ClientStreamFactory implements StreamFactory
                                 this.fetchOffsets.put(partitionId, nextFetchAt);
                             }
                         }
-                        if (lastMatchingValue != null)
+                        if (lastMatchingValue != NONE)
                         {
-                            if (applicationReplyBudget < lastMatchingValue.sizeof() + applicationReplyPadding)
+                            int lastMatchingValueSize = lastMatchingValue == null ? 0 : lastMatchingValue.sizeof();
+                            if (applicationReplyBudget < lastMatchingValueSize + applicationReplyPadding)
                             {
-                                writeableBytesMinimum = lastMatchingValue.sizeof() + applicationReplyPadding;
+                                writeableBytesMinimum = lastMatchingValueSize + applicationReplyPadding;
                                 nextFetchAt = lastMatchingOffset;
                                 this.fetchOffsets.put(partitionId, nextFetchAt);
                                 break loop;
