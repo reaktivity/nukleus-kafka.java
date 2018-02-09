@@ -828,7 +828,7 @@ public final class ClientStreamFactory implements StreamFactory
                             final OctetsFW messageKey = isCompactedTopic ? lastMatchingKey : null;
                             doKafkaData(applicationReply, applicationReplyId, applicationReplyPadding,
                                         lastMatchingValue, fetchOffsets, messageKey);
-                            applicationReplyBudget -= lastMatchingValue.sizeof() + applicationReplyPadding;
+                            applicationReplyBudget -= lastMatchingValueSize + applicationReplyPadding;
                             writeableBytesMinimum = 0;
                         }
                     } // end loop
