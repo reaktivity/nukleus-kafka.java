@@ -571,8 +571,9 @@ public final class ClientStreamFactory implements StreamFactory
         {
             if ((ack.flags() & RST) == RST)
             {
-                handleReset(AckFW)
+                handleReset();
             }
+            // TODO: pass the ACK on to NetworkConnectionPool
             networkPool.doFlush(networkAttachId);
         }
 
