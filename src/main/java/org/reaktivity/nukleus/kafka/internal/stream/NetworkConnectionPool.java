@@ -21,6 +21,7 @@ import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.INVALID_T
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.LEADER_NOT_AVAILABLE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.UNKNOWN_TOPIC_OR_PARTITION;
+import static org.reaktivity.nukleus.kafka.internal.util.FrameFlags.FIN;
 
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -47,6 +48,7 @@ import org.agrona.collections.ArrayUtil;
 import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2LongHashMap.LongIterator;
+import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.buffer.MemoryManager;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
@@ -79,13 +81,14 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.AckFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.RegionFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.TcpBeginExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.TransferFW;
 import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
 
 final class NetworkConnectionPool
 {
+
     private static final short FETCH_API_VERSION = 5;
     private static final short FETCH_API_KEY = 1;
-    private static final short FETCH_REQUEST_FIXED_LENGTH = 1;
     private static final short METADATA_API_VERSION = 5;
     private static final short METADATA_API_KEY = 3;
     private static final short DESCRIBE_CONFIGS_API_VERSION = 0;
@@ -98,6 +101,53 @@ final class NetworkConnectionPool
     private static final byte[] ANY_IP_ADDR = new byte[4];
 
     private static final int MAX_MESSAGE_SIZE = 10000;
+
+    private static final int REQUEST_LENGTH;
+    private static final int FETCH_REQUEST_LENGTH;
+    private static final int TOPIC_REQUEST_MINIMUM_LENGTH;
+    private static final int PARTITION_REQUEST_LENGTH;
+    private static final int METADATA_REQUEST_LENGTH;
+
+    static
+    {
+        MutableDirectBuffer scratch = new UnsafeBuffer(new byte[1000]);
+        REQUEST_LENGTH = new RequestHeaderFW.Builder()
+                .wrap(scratch, 0, scratch.capacity())
+                .size(0)
+                .apiKey(METADATA_API_KEY)
+                .apiVersion(METADATA_API_VERSION)
+                .correlationId(0)
+                .clientId((String) null)
+                .build()
+                .limit();
+        FETCH_REQUEST_LENGTH = new FetchRequestFW.Builder()
+                .wrap(scratch, 0, scratch.capacity())
+                .maxWaitTimeMillis(500)
+                .minBytes(1)
+                .maxBytes(0)
+                .isolationLevel((byte) 0)
+                .topicCount(0)
+                .limit();
+        TOPIC_REQUEST_MINIMUM_LENGTH = new TopicRequestFW.Builder()
+                .wrap(scratch, 0, scratch.capacity())
+                .name((String16FW) null)
+                .partitionCount(0)
+                .build()
+                .limit();
+        PARTITION_REQUEST_LENGTH = new PartitionRequestFW.Builder()
+                .wrap(scratch, 0, scratch.capacity())
+                .partitionId(0)
+                .fetchOffset(0L)
+                .maxBytes(100)
+                .build()
+                .limit();
+        METADATA_REQUEST_LENGTH = new MetadataRequestFW.Builder()
+                .wrap(scratch, 0, scratch.capacity())
+                .topicCount(1)
+                .topicName((String16FW) null)
+                .build()
+                .limit();
+    }
 
     final RequestHeaderFW.Builder requestRW = new RequestHeaderFW.Builder();
     final FetchRequestFW.Builder fetchRequestRW = new FetchRequestFW.Builder();
@@ -138,7 +188,6 @@ final class NetworkConnectionPool
     private final Map<String, TopicMetadata> topicMetadataByName;
     private final Map<String, NetworkTopic> topicsByName;
     private final Int2ObjectHashMap<Consumer<Long2LongHashMap>> detachersById;
-    private final int maximumFetchBytesLimit;
 
     private int nextAttachId;
 
@@ -156,8 +205,6 @@ final class NetworkConnectionPool
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
         this.detachersById = new Int2ObjectHashMap<>();
-        this.maximumFetchBytesLimit = bufferPool.slotCapacity() > MAX_MESSAGE_SIZE ?
-                bufferPool.slotCapacity() - MAX_MESSAGE_SIZE : bufferPool.slotCapacity();
     }
 
     void doAttach(
@@ -352,18 +399,13 @@ final class NetworkConnectionPool
 
         long networkId;
 
-        int networkRequestBudget;
-        int networkRequestPadding;
-
-        int networkResponseBudget;
-
         MessageConsumer networkReplyThrottle;
         long networkReplyId;
 
         private MessageConsumer streamState;
 
-        long networkAddress = -1L;
-        int networkSlotOffset;
+        long encodeAddress = -1L;
+        int encodeLength;
 
         int nextRequestId;
         int nextResponseId;
@@ -376,7 +418,7 @@ final class NetworkConnectionPool
         @Override
         public String toString()
         {
-            return String.format("[budget=%d, padding=%d]", networkRequestBudget, networkRequestPadding);
+            return String.format("[nextRequestId=%d, nextResponseId=%d]", nextRequestId, nextResponseId);
         }
 
         MessageConsumer onCorrelated(
@@ -427,7 +469,7 @@ final class NetworkConnectionPool
             if (networkId != 0L)
             {
                 NetworkConnectionPool.this.clientStreamFactory
-                    .doEnd(networkTarget, networkId);
+                    .doTransfer(networkTarget, networkId, FIN);
                 this.networkId = 0L;
             }
         }
@@ -495,8 +537,8 @@ final class NetworkConnectionPool
         {
             switch (msgTypeId)
             {
-            case DataFW.TYPE_ID:
-                final DataFW data = NetworkConnectionPool.this.clientStreamFactory.dataRO.wrap(buffer, index, index + length);
+            case TransferFW.TYPE_ID:
+                final TransferFW data = NetworkConnectionPool.this.clientStreamFactory.transferRO.wrap(buffer, index, index + length);
                 handleData(data);
                 break;
             case EndFW.TYPE_ID:
@@ -779,7 +821,7 @@ final class NetworkConnectionPool
                                 .set((b, o, m) -> m - o)
                                 .build();
 
-                        NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId,
+                        NetworkConnectionPool.this.clientStreamFactory.doTransfer(networkTarget, networkId,
                                 networkRequestPadding, payload);
                         networkRequestBudget -= payload.sizeof() + networkRequestPadding;
                     }
@@ -1044,7 +1086,7 @@ final class NetworkConnectionPool
                             .set((b, o, m) -> m - o)
                             .build();
 
-                    NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId,
+                    NetworkConnectionPool.this.clientStreamFactory.doTransfer(networkTarget, networkId,
                             networkRequestPadding, payload);
                     networkRequestBudget -= payload.sizeof() + networkRequestPadding;
                     awaitingDescribeConfigs = true;
@@ -1101,7 +1143,7 @@ final class NetworkConnectionPool
                             .set((b, o, m) -> m - o)
                             .build();
 
-                    NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId,
+                    NetworkConnectionPool.this.clientStreamFactory.doTransfer(networkTarget, networkId,
                             networkRequestPadding, payload);
                     networkRequestBudget -= payload.sizeof() + networkRequestPadding;
                 }

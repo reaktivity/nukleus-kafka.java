@@ -16,6 +16,9 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.Objects.requireNonNull;
+import static org.reaktivity.nukleus.kafka.internal.util.FrameFlags.isFin;
+import static org.reaktivity.nukleus.kafka.internal.util.FrameFlags.isReset;
+import static org.reaktivity.nukleus.kafka.internal.util.FrameFlags.RST;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -46,15 +49,13 @@ import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordSetFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.AbortFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.AckFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.DataFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.RegionFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.TransferFW;
 import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
@@ -64,27 +65,21 @@ public final class ClientStreamFactory implements StreamFactory
     private final RouteFW routeRO = new RouteFW();
 
     final BeginFW beginRO = new BeginFW();
-    final DataFW dataRO = new DataFW();
-    final EndFW endRO = new EndFW();
-    final AbortFW abortRO = new AbortFW();
+    final TransferFW transferRO = new TransferFW();
+    final RegionFW regionRO = new RegionFW();
+    final AckFW ackRO = new AckFW();
 
     private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
     private final KafkaBeginExFW beginExRO = new KafkaBeginExFW();
     private final OctetsFW keyRO = new OctetsFW();
     private final OctetsFW valueRO = new OctetsFW();
 
-    final WindowFW windowRO = new WindowFW();
-    final ResetFW resetRO = new ResetFW();
-
     private final BeginFW.Builder beginRW = new BeginFW.Builder();
-    private final DataFW.Builder dataRW = new DataFW.Builder();
-    private final EndFW.Builder endRW = new EndFW.Builder();
-    private final AbortFW.Builder abortRW = new AbortFW.Builder();
+    private final TransferFW.Builder transferRW = new TransferFW.Builder();
+    private final RegionFW.Builder regionRW = new RegionFW.Builder();
+    private final AckFW.Builder ackRW = new AckFW.Builder();
 
     private final KafkaDataExFW.Builder dataExRW = new KafkaDataExFW.Builder();
-
-    private final WindowFW.Builder windowRW = new WindowFW.Builder();
-    private final ResetFW.Builder resetRW = new ResetFW.Builder();
 
     private final HeaderFW headerRO = new HeaderFW();
 
@@ -257,70 +252,59 @@ public final class ClientStreamFactory implements StreamFactory
         target.accept(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
     }
 
-    void doData(
+    void doTransfer(
         final MessageConsumer target,
         final long targetId,
-        final int padding,
-        final OctetsFW payload)
+        final int flags,
+        ListFW<RegionFW> regions)
     {
-        final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+        final TransferFW transfer = transferRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
-                .groupId(0)
-                .padding(padding)
-                .payload(p -> p.set(payload.buffer(), payload.offset(), payload.sizeof()))
+                .flags(flags)
+                .regions(m -> regions.forEach(r -> m.item(i -> i.address(r.address()).length(r.length()))))
                 .build();
 
-        target.accept(data.typeId(), data.buffer(), data.offset(), data.sizeof());
+        target.accept(transfer.typeId(), transfer.buffer(), transfer.offset(), transfer.sizeof());
     }
 
-    void doEnd(
+    public void doTransfer(
         final MessageConsumer target,
-        final long targetId)
+        final long targetId,
+        final int flags)
     {
-        final EndFW end = endRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+        final TransferFW transfer = transferRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
+                .flags(flags)
                 .build();
 
-        target.accept(end.typeId(), end.buffer(), end.offset(), end.sizeof());
+        target.accept(transfer.typeId(), transfer.buffer(), transfer.offset(), transfer.sizeof());
     }
 
-    private void doAbort(
-        final MessageConsumer target,
-        final long targetId)
-    {
-        final AbortFW abort = abortRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                .streamId(targetId)
-                .build();
-
-        target.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());
-    }
-
-    void doWindow(
+    public void doAck(
         final MessageConsumer throttle,
         final long throttleId,
-        final int credit,
-        final int padding,
-        final long groupId)
+        final int flags,
+        final ListFW<RegionFW> regions)
     {
-        final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+        final AckFW ack = ackRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(throttleId)
-                .credit(credit)
-                .padding(padding)
-                .groupId(groupId)
+                .flags(flags)
+                .regions(m -> regions.forEach(r -> m.item(i -> i.address(r.address()).length(r.length()))))
                 .build();
 
-        throttle.accept(window.typeId(), window.buffer(), window.offset(), window.sizeof());
+        throttle.accept(ack.typeId(), ack.buffer(), ack.offset(), ack.sizeof());
     }
 
-    void doReset(
+    public void doReset(
         final MessageConsumer throttle,
         final long throttleId)
     {
-        final ResetFW reset = resetRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-               .streamId(throttleId)
-               .build();
+        final AckFW ack = ackRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                .streamId(throttleId)
+                .flags(0x02) // rst
+                .build();
 
-        throttle.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
+        throttle.accept(ack.typeId(), ack.buffer(), ack.offset(), ack.sizeof());
     }
 
     private void doKafkaBegin(
@@ -344,16 +328,15 @@ public final class ClientStreamFactory implements StreamFactory
     private void doKafkaData(
         final MessageConsumer target,
         final long targetId,
-        final int padding,
-        final OctetsFW payload,
+        final int flags,
+        ListFW<RegionFW> regions,
         final Long2LongHashMap fetchOffsets,
         final OctetsFW messageKey)
     {
-        final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+        final TransferFW data = transferRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
-                .groupId(0)
-                .padding(padding)
-                .payload(payload)
+                .flags(flags)
+                .regions(m -> regions.forEach(r -> m.item(i -> i.address(r.address()).length(r.length()))))
                 .extension(e -> e.set(visitKafkaDataEx(fetchOffsets, messageKey)))
                 .build();
 
@@ -459,17 +442,24 @@ public final class ClientStreamFactory implements StreamFactory
         {
             switch (msgTypeId)
             {
-            case DataFW.TYPE_ID:
-                doReset(applicationThrottle, applicationId);
-                networkPool.doDetach(networkAttachId, fetchOffsets);
-                break;
-            case EndFW.TYPE_ID:
-                // accept reply stream is allowed to outlive accept stream, so ignore END
-                break;
-            case AbortFW.TYPE_ID:
-                doAbort(applicationReply, applicationReplyId);
-                networkPool.doDetach(networkAttachId, fetchOffsets);
-                networkAttachId = UNATTACHED;
+            case TransferFW.TYPE_ID:
+                int flags = transferRO.wrap(buffer, index, length).flags();
+                if (isFin(flags))
+                {
+                    // accept reply stream is allowed to outlive accept stream, so ignore END
+                }
+                else if (isReset(flags))
+                {
+                    doTransfer(applicationReply, applicationReplyId, RST);
+                    networkPool.doDetach(networkAttachId, fetchOffsets);
+                    networkAttachId = UNATTACHED;
+                }
+                else
+                {
+                    doReset(applicationThrottle, applicationId);
+                    networkPool.doDetach(networkAttachId, fetchOffsets);
+                    networkAttachId = UNATTACHED;
+                }
                 break;
             default:
                 doReset(applicationThrottle, applicationId);
@@ -548,8 +538,6 @@ public final class ClientStreamFactory implements StreamFactory
             doKafkaBegin(newReply, newReplyId, 0L, applicationCorrelationId, applicationBeginExtension);
             router.setThrottle(applicationName, newReplyId, this::handleThrottle);
 
-            doWindow(applicationThrottle, applicationId, 0, 0, 0);
-
             this.networkAttachId = newNetworkAttachId;
             this.applicationReply = newReply;
             this.applicationReplyId = newReplyId;
@@ -568,13 +556,9 @@ public final class ClientStreamFactory implements StreamFactory
         {
             switch (msgTypeId)
             {
-            case WindowFW.TYPE_ID:
-                final WindowFW window = windowRO.wrap(buffer, index, index + length);
-                handleWindow(window);
-                break;
-            case ResetFW.TYPE_ID:
-                final ResetFW reset = resetRO.wrap(buffer, index, index + length);
-                handleReset(reset);
+            case AckFW.TYPE_ID:
+                final AckFW ack = ackRO.wrap(buffer, index, index + length);
+                handleAck(ack);
                 break;
             default:
                 // ignore
@@ -582,17 +566,17 @@ public final class ClientStreamFactory implements StreamFactory
             }
         }
 
-        private void handleWindow(
-            final WindowFW window)
+        private void handleAck(
+            final AckFW ack)
         {
-            applicationReplyBudget += window.credit();
-            applicationReplyPadding = window.padding();
-
+            if ((ack.flags() & RST) == RST)
+            {
+                handleReset(AckFW)
+            }
             networkPool.doFlush(networkAttachId);
         }
 
-        private void handleReset(
-            ResetFW reset)
+        private void handleReset()
         {
             networkPool.doDetach(networkAttachId, fetchOffsets);
             networkAttachId = UNATTACHED;
