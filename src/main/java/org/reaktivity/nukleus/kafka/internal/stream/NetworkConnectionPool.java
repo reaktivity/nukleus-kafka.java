@@ -1329,13 +1329,12 @@ final class NetworkConnectionPool
         {
             recordConsumers.remove(consumeRecords);
             windowSuppliers.remove(supplyWindow);
-            int partitionId = -1;
 
-            final LongIterator iterator = fetchOffsets.values().iterator();
-            while (iterator.hasNext())
+            final LongIterator partitionIds = fetchOffsets.keySet().iterator();
+            while (partitionIds.hasNext())
             {
-                partitionId++;
-                doDetach(partitionId, iterator.nextValue(), consumeRecords, supplyWindow);
+                long partitionId = partitionIds.nextValue();
+                doDetach((int) partitionId, fetchOffsets.get(partitionId), consumeRecords, supplyWindow);
             }
             if (partitions.isEmpty())
             {
@@ -1459,6 +1458,7 @@ final class NetworkConnectionPool
             {
                 partition.offset = Long.MAX_VALUE;
                 NetworkTopicPartition highest = partitions.floor(partition);
+                // TODO: BUG must add && highest.id == partition.id
                 if (highest != lowest)
                 {
                     needsHistorical = true;
