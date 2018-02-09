@@ -533,6 +533,17 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/zero.offset.messages.multiple.partitions.partition.1/client",
+        "${server}/zero.offset.messages.multiple.partitions.partition.1/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldCleanUpStateWhenUnsubscribeAfterReceiveMessageFromSecondPartition() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/zero.offset.messagesets.fanout/client",
         "${server}/zero.offset.messagesets.fanout/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
