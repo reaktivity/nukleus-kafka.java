@@ -59,4 +59,10 @@ public class KeyMessageDispatcher implements MessageDispatcher
         return existing;
     }
 
+    public MessageDispatcher remove(OctetsFW key)
+    {
+        buffer.wrap(key.buffer(), key.offset(), key.sizeof());
+        return dispatchersByKey.remove(buffer);
+    }
+
 }

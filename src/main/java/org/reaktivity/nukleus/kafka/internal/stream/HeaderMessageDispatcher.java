@@ -55,17 +55,23 @@ public class HeaderMessageDispatcher implements MessageDispatcher
             result.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, acknowledge, value);
     }
 
-    public MessageDispatcher addIfAbsent(OctetsFW key, MessageDispatcher dispatcher)
+    public MessageDispatcher addIfAbsent(OctetsFW headerValue, MessageDispatcher dispatcher)
     {
-        buffer.wrap(key.buffer(), key.offset(), key.sizeof());
+        buffer.wrap(headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
         MessageDispatcher existing = dispatchersByKey.get(buffer);
         if (existing == null)
         {
-            UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[key.sizeof()]);
-            keyCopy.putBytes(0,  key.buffer(), key.offset(), key.sizeof());
+            UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[headerValue.sizeof()]);
+            keyCopy.putBytes(0,  headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
             dispatchersByKey.put(keyCopy, dispatcher);
         }
         return existing;
+    }
+
+    public MessageDispatcher remove(OctetsFW headerValue)
+    {
+        buffer.wrap(headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
+        return dispatchersByKey.remove(buffer);
     }
 
 }

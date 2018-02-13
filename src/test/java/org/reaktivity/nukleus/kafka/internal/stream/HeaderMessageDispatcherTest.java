@@ -90,8 +90,8 @@ public final class HeaderMessageDispatcherTest
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
-        assertNull(dispatcher.addIfAbsent(asOctets("headerValue_1"), child1));
-        assertNull(dispatcher.addIfAbsent(asOctets("headerValue_2"), child2));
+        dispatcher.addIfAbsent(asOctets("headerValue_1"), child1);
+        dispatcher.addIfAbsent(asOctets("headerValue_2"), child2);
         @SuppressWarnings("unchecked")
         Function<DirectBuffer, DirectBuffer> header = context.mock(Function.class, "header");
         LongLongConsumer ack = context.mock(LongLongConsumer.class, "ack");
@@ -103,6 +103,27 @@ public final class HeaderMessageDispatcherTest
             }
         });
         assertEquals(0, dispatcher.dispatch(1, 10L, 12L, null, header, ack, null));
+    }
+
+    @Test
+    public void shouldRemoveDispatcherWhenPresent()
+    {
+        MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
+        MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
+        dispatcher.addIfAbsent(asOctets("headerValue_1"), child1);
+        dispatcher.addIfAbsent(asOctets("headerValue_2"), child2);
+        assertSame(child1, dispatcher.remove(asOctets("headerValue_1")));
+        assertSame(child2, dispatcher.remove(asOctets("headerValue_2")));
+    }
+
+    @Test
+    public void shouldNotRemoveDispatcherWhenNotPresent()
+    {
+        MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
+        MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
+        dispatcher.addIfAbsent(asOctets("headerValue_1"), child1);
+        dispatcher.addIfAbsent(asOctets("headerValue_2"), child2);
+        assertNull(dispatcher.remove(asOctets("headerValue_3")));
     }
 
     private DirectBuffer asBuffer(String value)
