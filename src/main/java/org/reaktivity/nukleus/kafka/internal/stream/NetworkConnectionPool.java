@@ -22,7 +22,9 @@ import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.LEADER_NO
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.UNKNOWN_TOPIC_OR_PARTITION;
 import static org.reaktivity.nukleus.kafka.internal.util.FrameFlags.FIN;
+import static org.reaktivity.nukleus.kafka.internal.util.FrameFlags.isFin;
 
+import java.lang.annotation.Documented;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.BitSet;
@@ -71,12 +73,12 @@ import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.PartitionResponse
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordSetFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TopicRequestFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TopicResponseFW;
-import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.BrokerMetadataFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.BrokerMetaTransferFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.MetadataRequestFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.MetadataResponseFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.MetadataResponsePart2FW;
-import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.PartitionMetadataFW;
-import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.TopicMetadataFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.PartitionMetaTransferFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.TopicMetaTransferFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.AckFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.RegionFW;
@@ -169,10 +171,10 @@ final class NetworkConnectionPool
     final RecordSetFW recordSetRO = new RecordSetFW();
 
     final MetadataResponseFW metadataResponseRO = new MetadataResponseFW();
-    final BrokerMetadataFW brokerMetadataRO = new BrokerMetadataFW();
+    final BrokerMetaTransferFW brokerMetadataRO = new BrokerMetaTransferFW();
     final MetadataResponsePart2FW metadataResponsePart2RO = new MetadataResponsePart2FW();
-    final TopicMetadataFW topicMetadataRO = new TopicMetadataFW();
-    final PartitionMetadataFW partitionMetadataRO = new PartitionMetadataFW();
+    final TopicMetaTransferFW topicMetadataRO = new TopicMetaTransferFW();
+    final PartitionMetaTransferFW partitionMetadataRO = new PartitionMetaTransferFW();
     final DescribeConfigsResponseFW describeConfigsResponseRO = new DescribeConfigsResponseFW();
     final ResourceResponseFW resourceResponseRO = new ResourceResponseFW();
     final ConfigResponseFW configResponseRO = new ConfigResponseFW();
@@ -564,9 +566,10 @@ final class NetworkConnectionPool
         }
 
 
-        private void handleData(
-            DataFW data)
+        private void handleTransfer(
+            TransferFW data)
         {
+
             final OctetsFW payload = data.payload();
 
             networkResponseBudget -= payload.sizeof() + data.padding();
@@ -655,6 +658,10 @@ final class NetworkConnectionPool
                         bufferPool.release(networkSlot);
                         networkSlot = NO_SLOT;
                     }
+                    if (isFin(data.flags()))
+                    {
+                        handleEnd();
+                    }
                 }
             }
         }
@@ -664,8 +671,7 @@ final class NetworkConnectionPool
             int networkOffset,
             int networkLimit);
 
-        private void handleEnd(
-            EndFW end)
+        private void handleEnd()
         {
             doReinitialize();
             doRequestIfNeeded();
@@ -1222,7 +1228,7 @@ final class NetworkConnectionPool
             networkOffset = metadataResponse.limit();
             for (int brokerIndex=0; brokerIndex < brokerCount; brokerIndex++)
             {
-                final BrokerMetadataFW broker =
+                final BrokerMetaTransferFW broker =
                         NetworkConnectionPool.this.brokerMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
                 pendingTopicMetadata.addBroker(broker.nodeId(), broker.host().asString(), broker.port());
                 networkOffset = broker.limit();
@@ -1236,7 +1242,7 @@ final class NetworkConnectionPool
             short errorCode = NONE;
             for (int topicIndex = 0; topicIndex < topicCount && errorCode == NONE; topicIndex++)
             {
-                final TopicMetadataFW topicMetadata =
+                final TopicMetaTransferFW topicMetadata =
                         NetworkConnectionPool.this.topicMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
                 final String16FW topicName = topicMetadata.topic();
                 assert topicName.asString().equals(pendingTopicMetadata.topicName);
@@ -1251,7 +1257,7 @@ final class NetworkConnectionPool
                 pendingTopicMetadata.initializePartitions(partitionCount);
                 for (int partitionIndex = 0; partitionIndex < partitionCount && errorCode == NONE; partitionIndex++)
                 {
-                    final PartitionMetadataFW partition =
+                    final PartitionMetaTransferFW partition =
                             NetworkConnectionPool.this.partitionMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
                     errorCode = partition.errorCode();
                     pendingTopicMetadata.addPartition(partition.partitionId(), partition.leader());

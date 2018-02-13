@@ -24,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.LongSupplier;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 import org.agrona.BitUtil;
 import org.agrona.DirectBuffer;
@@ -31,6 +32,7 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.reaktivity.nukleus.buffer.DirectBufferBuilder;
 import org.reaktivity.nukleus.buffer.MemoryManager;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessagePredicate;
@@ -92,6 +94,7 @@ public final class ClientStreamFactory implements StreamFactory
     final LongSupplier supplyStreamId;
     final LongSupplier supplyCorrelationId;
     final MemoryManager memoryManager;
+    final Supplier<DirectBufferBuilder> supplyDirectBufferBuilder;
     private final MutableDirectBuffer writeBuffer;
 
     final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
@@ -102,6 +105,7 @@ public final class ClientStreamFactory implements StreamFactory
         RouteManager router,
         MutableDirectBuffer writeBuffer,
         MemoryManager memoryManager,
+        Supplier<DirectBufferBuilder> supplyDirectBufferBuilder,
         LongSupplier supplyStreamId,
         LongSupplier supplyCorrelationId,
         Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations)
@@ -109,6 +113,7 @@ public final class ClientStreamFactory implements StreamFactory
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
         this.memoryManager = requireNonNull(memoryManager);
+        this.supplyDirectBufferBuilder = supplyDirectBufferBuilder;
         this.supplyStreamId = requireNonNull(supplyStreamId);
         this.supplyCorrelationId = supplyCorrelationId;
         this.correlations = requireNonNull(correlations);
