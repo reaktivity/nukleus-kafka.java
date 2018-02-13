@@ -17,8 +17,6 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
 
 import java.util.function.Function;
 
@@ -32,7 +30,6 @@ import org.jmock.Expectations;
 import org.jmock.integration.junit4.JUnitRuleMockery;
 import org.junit.Rule;
 import org.junit.Test;
-import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public final class BroadcastMessageDispatcherTest
 {
@@ -100,12 +97,6 @@ public final class BroadcastMessageDispatcherTest
     {
         byte[] bytes = value.getBytes(UTF_8);
         return new UnsafeBuffer(bytes);
-    }
-
-    private OctetsFW asOctets(String value)
-    {
-        DirectBuffer buffer = asBuffer(value);
-        return new OctetsFW().wrap(buffer, 0, buffer.capacity());
     }
 
     private Matcher<DirectBuffer> bufferMatching(final String string)
