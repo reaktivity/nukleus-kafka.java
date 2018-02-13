@@ -17,10 +17,12 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Function;
 
+import org.agrona.DirectBuffer;
+import org.agrona.collections.LongLongConsumer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
-import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordFW;
 
 public class KeyMessageDispatcher implements MessageDispatcher
 {
@@ -29,17 +31,19 @@ public class KeyMessageDispatcher implements MessageDispatcher
     private Map<UnsafeBuffer, MessageDispatcher> dispatchersByKey = new HashMap<>();
 
     @Override
-    public
-    int dispatch(
-            int partition,
-            long requestOffset,
-            long responseOffset,
-            RecordFW record)
+    public int dispatch(
+                 int partition,
+                 long requestOffset,
+                 long messageOffset,
+                 DirectBuffer key,
+                 Function<DirectBuffer, DirectBuffer> supplyHeader,
+                 LongLongConsumer acknowledge,
+                 DirectBuffer value)
     {
-        OctetsFW key = record.key();
-        buffer.wrap(key.buffer(), key.offset(), key.sizeof());
+        buffer.wrap(key, 0, key.capacity());
         MessageDispatcher result = dispatchersByKey.get(buffer);
-        return result == null ? 0 : result.dispatch(partition, requestOffset, responseOffset, record);
+        return result == null ? 0 :
+            result.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, acknowledge, value);
     }
 
     public MessageDispatcher addIfAbsent(OctetsFW key, MessageDispatcher dispatcher)

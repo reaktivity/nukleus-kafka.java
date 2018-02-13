@@ -34,9 +34,9 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
-public final class KeyMessageDispatcherTest
+public final class HeaderMessageDispatcherTest
 {
-    private KeyMessageDispatcher dispatcher = new KeyMessageDispatcher();
+    private HeaderMessageDispatcher dispatcher = new HeaderMessageDispatcher(asOctets("headerName"));
 
     @Rule
     public JUnitRuleMockery context = new JUnitRuleMockery();
@@ -46,8 +46,8 @@ public final class KeyMessageDispatcherTest
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
-        assertNull(dispatcher.addIfAbsent(asOctets("key_1"), child1));
-        assertNull(dispatcher.addIfAbsent(asOctets("key_2"), child2));
+        assertNull(dispatcher.addIfAbsent(asOctets("headerValue_1"), child1));
+        assertNull(dispatcher.addIfAbsent(asOctets("headerValue_2"), child2));
     }
 
     @Test
@@ -56,10 +56,10 @@ public final class KeyMessageDispatcherTest
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
         MessageDispatcher child3 = context.mock(MessageDispatcher.class, "child3");
-        dispatcher.addIfAbsent(asOctets("key_1"), child1);
-        dispatcher.addIfAbsent(asOctets("key_2"), child2);
-        assertSame(child1, dispatcher.addIfAbsent(asOctets("key_1"), child3));
-        assertSame(child2, dispatcher.addIfAbsent(asOctets("key_2"), child3));
+        dispatcher.addIfAbsent(asOctets("headerValue_1"), child1);
+        dispatcher.addIfAbsent(asOctets("headerValue_2"), child2);
+        assertSame(child1, dispatcher.addIfAbsent(asOctets("headerValue_1"), child3));
+        assertSame(child2, dispatcher.addIfAbsent(asOctets("headerValue_2"), child3));
     }
 
     @Test
@@ -67,20 +67,22 @@ public final class KeyMessageDispatcherTest
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
-        assertNull(dispatcher.addIfAbsent(asOctets("key_1"), child1));
-        assertNull(dispatcher.addIfAbsent(asOctets("key_2"), child2));
+        assertNull(dispatcher.addIfAbsent(asOctets("headerValue_1"), child1));
+        assertNull(dispatcher.addIfAbsent(asOctets("headerValue_2"), child2));
         @SuppressWarnings("unchecked")
         Function<DirectBuffer, DirectBuffer> header = context.mock(Function.class, "header");
         LongLongConsumer ack = context.mock(LongLongConsumer.class, "ack");
         context.checking(new Expectations()
         {
             {
-                oneOf(child2).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key_2")),
+                oneOf(header).apply(with(bufferMatching("headerName")));
+                will(returnValue(asBuffer("headerValue_2")));
+                oneOf(child2).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(header), with(ack), with((DirectBuffer) null));
                 will(returnValue(1));
             }
         });
-        assertEquals(1, dispatcher.dispatch(1, 10L, 12L, asBuffer("key_2"), header, ack, null));
+        assertEquals(1, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), header, ack, null));
     }
 
     @Test
@@ -88,12 +90,19 @@ public final class KeyMessageDispatcherTest
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
-        assertNull(dispatcher.addIfAbsent(asOctets("key_1"), child1));
-        assertNull(dispatcher.addIfAbsent(asOctets("key_2"), child2));
+        assertNull(dispatcher.addIfAbsent(asOctets("headerValue_1"), child1));
+        assertNull(dispatcher.addIfAbsent(asOctets("headerValue_2"), child2));
         @SuppressWarnings("unchecked")
         Function<DirectBuffer, DirectBuffer> header = context.mock(Function.class, "header");
         LongLongConsumer ack = context.mock(LongLongConsumer.class, "ack");
-        assertEquals(0, dispatcher.dispatch(1, 10L, 12L, asBuffer("key_3"), header, ack, null));
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(header).apply(with(bufferMatching("headerName")));
+                will(returnValue(asBuffer("headerValue_3")));
+            }
+        });
+        assertEquals(0, dispatcher.dispatch(1, 10L, 12L, null, header, ack, null));
     }
 
     private DirectBuffer asBuffer(String value)

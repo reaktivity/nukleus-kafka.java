@@ -15,16 +15,22 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
-import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordFW;
+import java.util.function.Function;
+
+import org.agrona.DirectBuffer;
+import org.agrona.collections.LongLongConsumer;
 
 @FunctionalInterface
 public interface MessageDispatcher
 {
 
     int dispatch(
-            int partition,
-            long requestOffset,
-            long responseOffset,
-            RecordFW record);
+             int partition,
+             long requestOffset,
+             long messageOffset,
+             DirectBuffer key,
+             Function<DirectBuffer, DirectBuffer> supplyHeader,
+             LongLongConsumer acknowledge,
+             DirectBuffer value);
 
 }
