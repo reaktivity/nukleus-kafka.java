@@ -19,9 +19,20 @@ import org.reaktivity.nukleus.Configuration;
 
 public class KafkaConfiguration extends Configuration
 {
+    private final int maxTcpReadBytes;
+
     public KafkaConfiguration(
         Configuration config)
     {
         super(config);
+        maxTcpReadBytes = getInteger(org.reaktivity.reaktor.internal.ReaktorConfiguration.MEMORY_BLOCK_CAPACITY_PROPERTY,
+                org.reaktivity.reaktor.internal.ReaktorConfiguration.MEMORY_BLOCK_CAPACITY_DEFAULT);
+    }
+
+    // TODO: do partial decoding and acknowledging of Kafka responses and partial encoding
+    //       to avoid the need for this method
+    public int  maximumUnacknowledgedBytes()
+    {
+        return maxTcpReadBytes;
     }
 }

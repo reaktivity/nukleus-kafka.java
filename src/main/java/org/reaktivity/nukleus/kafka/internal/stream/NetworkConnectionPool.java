@@ -23,8 +23,8 @@ import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.UNKNOWN_TOPIC_OR_PARTITION;
 import static org.reaktivity.nukleus.kafka.internal.util.FrameFlags.FIN;
 import static org.reaktivity.nukleus.kafka.internal.util.FrameFlags.isFin;
+import static org.reaktivity.nukleus.kafka.internal.util.FrameFlags.isReset;
 
-import java.lang.annotation.Documented;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.BitSet;
@@ -51,6 +51,7 @@ import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2LongHashMap.LongIterator;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.reaktivity.nukleus.buffer.DirectBufferBuilder;
 import org.reaktivity.nukleus.buffer.MemoryManager;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
@@ -73,12 +74,12 @@ import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.PartitionResponse
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordSetFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TopicRequestFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TopicResponseFW;
-import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.BrokerMetaTransferFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.BrokerMetadataFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.MetadataRequestFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.MetadataResponseFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.MetadataResponsePart2FW;
-import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.PartitionMetaTransferFW;
-import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.TopicMetaTransferFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.PartitionMetadataFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.metadata.TopicMetadataFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.AckFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.RegionFW;
@@ -88,7 +89,6 @@ import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
 
 final class NetworkConnectionPool
 {
-
     private static final short FETCH_API_VERSION = 5;
     private static final short FETCH_API_KEY = 1;
     private static final short METADATA_API_VERSION = 5;
@@ -100,15 +100,18 @@ final class NetworkConnectionPool
     private static final String CLEANUP_POLICY = "cleanup.policy";
     private static final String COMPACT = "compact";
 
+    private static final int REGION_METADATA_SIZE = Integer.BYTES;
+
     private static final byte[] ANY_IP_ADDR = new byte[4];
 
-    private static final int MAX_MESSAGE_SIZE = 10000;
+    private static final int MAX_KAFKA_MESSAGE_SIZE = 10000;
 
     private static final int REQUEST_LENGTH;
     private static final int FETCH_REQUEST_LENGTH;
     private static final int TOPIC_REQUEST_MINIMUM_LENGTH;
     private static final int PARTITION_REQUEST_LENGTH;
     private static final int METADATA_REQUEST_LENGTH;
+    private static final int FETCH_RESPONSE_LENGTH;
 
     static
     {
@@ -149,6 +152,13 @@ final class NetworkConnectionPool
                 .topicName((String16FW) null)
                 .build()
                 .limit();
+        FETCH_RESPONSE_LENGTH = new FetchResponseFW.Builder()
+                .wrap(scratch, 0, scratch.capacity())
+                .correlationId(0)
+                .throttleTimeMillis(0)
+                .topicCount(1)
+                .build()
+                .limit();
     }
 
     final RequestHeaderFW.Builder requestRW = new RequestHeaderFW.Builder();
@@ -163,6 +173,7 @@ final class NetworkConnectionPool
     final AckFW ackRO = new AckFW();
     final OctetsFW.Builder payloadRW = new OctetsFW.Builder();
     final TcpBeginExFW.Builder tcpBeginExRW = new TcpBeginExFW.Builder();
+    final UnsafeBuffer bufferRW = new UnsafeBuffer(new byte[0]);
 
     final ResponseHeaderFW responseRO = new ResponseHeaderFW();
     final FetchResponseFW fetchResponseRO = new FetchResponseFW();
@@ -171,18 +182,21 @@ final class NetworkConnectionPool
     final RecordSetFW recordSetRO = new RecordSetFW();
 
     final MetadataResponseFW metadataResponseRO = new MetadataResponseFW();
-    final BrokerMetaTransferFW brokerMetadataRO = new BrokerMetaTransferFW();
+    final BrokerMetadataFW brokerMetadataRO = new BrokerMetadataFW();
     final MetadataResponsePart2FW metadataResponsePart2RO = new MetadataResponsePart2FW();
-    final TopicMetaTransferFW topicMetadataRO = new TopicMetaTransferFW();
-    final PartitionMetaTransferFW partitionMetadataRO = new PartitionMetaTransferFW();
+    final TopicMetadataFW topicMetadataRO = new TopicMetadataFW();
+    final PartitionMetadataFW partitionMetadataRO = new PartitionMetadataFW();
     final DescribeConfigsResponseFW describeConfigsResponseRO = new DescribeConfigsResponseFW();
     final ResourceResponseFW resourceResponseRO = new ResourceResponseFW();
     final ConfigResponseFW configResponseRO = new ConfigResponseFW();
 
+    final MutableDirectBuffer encodeBuffer;
+    final int maximumUnacknowledgedBytes;
     private final ClientStreamFactory clientStreamFactory;
     private final String networkName;
     private final long networkRef;
     private final MemoryManager memoryManager;
+
     private AbstractFetchConnection[] connections = new LiveFetchConnection[0];
     private HistoricalFetchConnection[] historicalConnections = new HistoricalFetchConnection[0];
     private final MetadataConnection metadataConnection;
@@ -204,6 +218,8 @@ final class NetworkConnectionPool
         this.networkRef = networkRef;
         this.memoryManager = memoryManager;
         this.metadataConnection = new MetadataConnection();
+        this.maximumUnacknowledgedBytes = clientStreamFactory.configuration.maximumUnacknowledgedBytes();
+        this.encodeBuffer = new UnsafeBuffer(new byte[this.maximumUnacknowledgedBytes]);
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
         this.detachersById = new Int2ObjectHashMap<>();
@@ -412,6 +428,13 @@ final class NetworkConnectionPool
         int nextRequestId;
         int nextResponseId;
 
+        long requestRegionAddress;
+        int requestRegionCapacity;
+        int requestUnacknowledgedBytes;
+
+        DirectBuffer responseBuffer = null;
+        ListFW<RegionFW> responseRegions = null;
+
         private AbstractNetworkConnection()
         {
             this.networkTarget = NetworkConnectionPool.this.clientStreamFactory.router.supplyTarget(networkName);
@@ -497,12 +520,20 @@ final class NetworkConnectionPool
         private void handleAck(
             final AckFW ack)
         {
-            final int flags = ack.flags();
             final ListFW<RegionFW> regions = ack.regions();
-
-            // TODO: mark regions as now free for encoding use
-
-            doRequestIfNeeded();
+            regions.forEach(r -> requestUnacknowledgedBytes  -= r.length());
+            if (requestUnacknowledgedBytes == 0)
+            {
+                 memoryManager.release(requestRegionAddress, requestRegionCapacity);
+            }
+            if (isReset(ack.flags()))
+            {
+                handleAbort();
+            }
+            else
+            {
+                doRequestIfNeeded();
+            }
         }
 
         private void handleStream(
@@ -540,16 +571,9 @@ final class NetworkConnectionPool
             switch (msgTypeId)
             {
             case TransferFW.TYPE_ID:
-                final TransferFW data = NetworkConnectionPool.this.clientStreamFactory.transferRO.wrap(buffer, index, index + length);
-                handleData(data);
-                break;
-            case EndFW.TYPE_ID:
-                final EndFW end = NetworkConnectionPool.this.clientStreamFactory.endRO.wrap(buffer, index, index + length);
-                handleEnd(end);
-                break;
-            case AbortFW.TYPE_ID:
-                final AbortFW abort = NetworkConnectionPool.this.clientStreamFactory.abortRO.wrap(buffer, index, index + length);
-                handleAbort(abort);
+                final TransferFW transfer = NetworkConnectionPool.this.clientStreamFactory.transferRO.wrap(
+                        buffer, index, index + length);
+                handleTransfer(transfer);
                 break;
             default:
                 NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
@@ -560,110 +584,78 @@ final class NetworkConnectionPool
         private void handleBegin(
             BeginFW begin)
         {
-            doOfferResponseBudget();
-
             this.streamState = this::afterBegin;
         }
 
-
         private void handleTransfer(
-            TransferFW data)
+            TransferFW transfer)
         {
-
-            final OctetsFW payload = data.payload();
-
-            networkResponseBudget -= payload.sizeof() + data.padding();
-
-            if (networkResponseBudget < 0)
+            ListFW<RegionFW> regions = transfer.regions();
+            final DirectBufferBuilder builder = clientStreamFactory.directBufferBuilder;
+            if (responseBuffer != null)
             {
-                NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
+                builder.wrap(responseBuffer);
             }
-            else
+            regions.forEach(r -> builder.wrap(memoryManager.resolve(r.address()), r.length()));
+            DirectBuffer networkBuffer = builder.build();
+            int networkOffset = 0;
+            int networkLimit = networkBuffer.capacity();
+            try
             {
-                try
+                ResponseHeaderFW response = null;
+                if (networkOffset + BitUtil.SIZE_OF_INT <= networkLimit)
                 {
-                    DirectBuffer networkBuffer = payload.buffer();
-                    int networkOffset = payload.offset();
-                    int networkLimit = payload.limit();
-
-                    if (networkSlot != NO_SLOT)
-                    {
-                        final MutableDirectBuffer bufferSlot = bufferPool.buffer(networkSlot);
-                        final int networkRemaining = networkLimit - networkOffset;
-
-                        bufferSlot.putBytes(networkSlotOffset, networkBuffer, networkOffset, networkRemaining);
-                        networkSlotOffset += networkRemaining;
-
-                        networkBuffer = bufferSlot;
-                        networkOffset = 0;
-                        networkLimit = networkSlotOffset;
-                    }
-
-                    ResponseHeaderFW response = null;
-                    if (networkOffset + BitUtil.SIZE_OF_INT <= networkLimit)
-                    {
-                        response = NetworkConnectionPool.this.responseRO.wrap(networkBuffer, networkOffset, networkLimit);
-                        networkOffset = response.limit();
-                    }
-
-                    if (response == null || networkOffset + response.size() > networkLimit)
-                    {
-                        if (networkSlot == NO_SLOT)
-                        {
-                            networkSlot = bufferPool.acquire(networkReplyId);
-
-                            final MutableDirectBuffer bufferSlot = bufferPool.buffer(networkSlot);
-                            bufferSlot.putBytes(networkSlotOffset, payload.buffer(), payload.offset(), payload.sizeof());
-                            networkSlotOffset += payload.sizeof();
-                        }
-                        if (networkSlotOffset == bufferPool.slotCapacity())
-                        {
-                            // response size exceeds window (slot capacity)
-                            throw new IllegalStateException(format("%s: Kafka response size %d exceeds slot capacity %d",
-                                    this, response.size(), bufferPool.slotCapacity()));
-                        }
-                    }
-                    else
-                    {
-                        handleResponse(networkBuffer, networkOffset, networkLimit);
-                        networkOffset += response.size();
-                        nextResponseId++;
-
-                        if (networkOffset < networkLimit)
-                        {
-                            if (networkSlot == NO_SLOT)
-                            {
-                                networkSlot = bufferPool.acquire(networkReplyId);
-                            }
-
-                            final MutableDirectBuffer bufferSlot =
-                                    bufferPool.buffer(networkSlot);
-                            bufferSlot.putBytes(0, networkBuffer, networkOffset, networkLimit - networkOffset);
-                            networkSlotOffset = networkLimit - networkOffset;
-                        }
-                        else
-                        {
-                            assert networkOffset == networkLimit;
-                            networkSlotOffset = 0;
-                        }
-
-                        doOfferResponseBudget();
-                        doRequestIfNeeded();
-                    }
+                    response = NetworkConnectionPool.this.responseRO.wrap(networkBuffer, networkOffset, networkLimit);
+                    networkOffset = response.limit();
                 }
-                finally
+
+                if (response == null || networkOffset + response.size() > networkLimit)
                 {
-                    if (networkSlotOffset == 0 && networkSlot != NO_SLOT)
+                    if (responseBuffer.capacity() == maximumUnacknowledgedBytes)
                     {
-                        bufferPool.release(networkSlot);
-                        networkSlot = NO_SLOT;
+                        // response size exceeds maximum we can currently handle
+                        throw new IllegalStateException(format("%s: Kafka response size %d exceeds %d bytes",
+                                this, response.size(), maximumUnacknowledgedBytes));
                     }
-                    if (isFin(data.flags()))
-                    {
-                        handleEnd();
-                    }
+                    responseRegions = appendRegions(regions, responseRegions);
+                }
+                else
+                {
+                    handleResponse(networkBuffer, networkOffset, networkLimit);
+                    networkOffset += response.size();
+                    nextResponseId++;
+
+                    assert networkOffset == networkLimit;
+                    responseBuffer = null;
+
+                    doRequestIfNeeded();
                 }
             }
+            finally
+            {
+                if (isReset(transfer.flags()))
+                {
+                    handleAbort();
+                }
+                else if (isFin(transfer.flags()))
+                {
+                    handleEnd();
+                }
+            }
+        }
+
+        private ListFW<RegionFW> appendRegions(ListFW<RegionFW> regions1, ListFW<RegionFW> regions2)
+        {
+            int capacity = regions1 == null ? regions2.sizeof() : regions1.sizeof() + regions2.sizeof() - Integer.BYTES;
+            UnsafeBuffer buffer = new UnsafeBuffer(new byte[capacity]);
+            ListFW.Builder<RegionFW.Builder, RegionFW>builder = new ListFW.Builder<>(new RegionFW.Builder(), new RegionFW())
+                    .wrap(buffer, 0, buffer.capacity());
+            if (regions1 != null)
+            {
+                regions1.forEach(r -> builder.item(b -> b.address(r.address()).length(r.length()).streamId(r.streamId())));
+            }
+            regions2.forEach(r -> builder.item(b -> b.address(r.address()).length(r.length()).streamId(r.streamId())));
+            return builder.build();
         }
 
         abstract void handleResponse(
@@ -677,38 +669,26 @@ final class NetworkConnectionPool
             doRequestIfNeeded();
         }
 
-        private void handleAbort(
-            AbortFW abort)
+        private void handleAbort()
         {
             doReinitialize();
             doRequestIfNeeded();
         }
 
-        void doOfferResponseBudget()
+        void doAck(ListFW<RegionFW> regions)
         {
-            final int networkResponseCredit =
-                    Math.max(bufferPool.slotCapacity() - networkSlotOffset - networkResponseBudget, 0);
-
-            NetworkConnectionPool.this.clientStreamFactory.doWindow(
-                    networkReplyThrottle, networkReplyId, networkResponseCredit, 0, 0);
-
-            this.networkResponseBudget += networkResponseCredit;
+            NetworkConnectionPool.this.clientStreamFactory.doAck(
+                    networkReplyThrottle, networkReplyId, 0, regions);
         }
 
         private void doReinitialize()
         {
-            if (networkSlot != NO_SLOT)
-            {
-                bufferPool.release(networkSlot);
-                networkSlot = NO_SLOT;
-            }
-            networkSlotOffset = 0;
-            networkRequestBudget = 0;
-            networkRequestPadding = 0;
-            networkResponseBudget = 0;
             networkId = 0L;
             nextRequestId = 0;
             nextResponseId = 0;
+            responseBuffer = null;
+            responseRegions = null;
+            requestUnacknowledgedBytes = 0;
         }
     }
 
@@ -719,7 +699,6 @@ final class NetworkConnectionPool
 
         final int brokerId;
         int encodeLimit;
-        int maxFetchBytes;
 
         private AbstractFetchConnection(BrokerMetadata broker)
         {
@@ -744,9 +723,11 @@ final class NetworkConnectionPool
                                       .limit();
                 });
 
-                if (networkRequestBudget > networkRequestPadding)
+                if (requestUnacknowledgedBytes == 0)
                 {
                     final int encodeOffset = 0;
+                    int topicCount = 0;
+
                     encodeLimit = encodeOffset;
                     RequestHeaderFW request = requestRW.wrap(
                             NetworkConnectionPool.this.encodeBuffer, encodeLimit,
@@ -770,8 +751,8 @@ final class NetworkConnectionPool
                             .build();
 
                     encodeLimit = fetchRequest.limit();
-                    maxFetchBytes = 0;
-                    int topicCount = 0;
+
+                    // TODO: stream large requests in multiple Transfer frames as needed
                     for (String topicName : topicsByName.keySet())
                     {
                         final int originalEncodeLimit = encodeLimit;
@@ -800,15 +781,13 @@ final class NetworkConnectionPool
                         }
                     }
 
-                    // TODO: stream large requests in multiple DATA frames as needed
-                    if (topicCount > 0 && encodeLimit - encodeOffset + networkRequestPadding <= networkRequestBudget)
+                    if (topicCount > 0)
                     {
-                        maxFetchBytes = limitMaximumBytes(maxFetchBytes);
                         NetworkConnectionPool.this.fetchRequestRW
                         .wrap(NetworkConnectionPool.this.encodeBuffer, fetchRequest.offset(), fetchRequest.limit())
                         .maxWaitTimeMillis(fetchRequest.maxWaitTimeMillis())
                         .minBytes(fetchRequest.minBytes())
-                        .maxBytes(maxFetchBytes)
+                        .maxBytes(maximumUnacknowledgedBytes - MAX_KAFKA_MESSAGE_SIZE)
                         .isolationLevel(fetchRequest.isolationLevel())
                         .topicCount(topicCount)
                         .build();
@@ -822,14 +801,15 @@ final class NetworkConnectionPool
                                  .correlationId(newCorrelationId)
                                  .clientId((String) null)
                                  .build();
-                        OctetsFW payload = NetworkConnectionPool.this.payloadRW
-                                .wrap(NetworkConnectionPool.this.encodeBuffer, encodeOffset, encodeLimit)
-                                .set((b, o, m) -> m - o)
-                                .build();
 
-                        NetworkConnectionPool.this.clientStreamFactory.doTransfer(networkTarget, networkId,
-                                networkRequestPadding, payload);
-                        networkRequestBudget -= payload.sizeof() + networkRequestPadding;
+                        requestRegionCapacity = encodeLimit - encodeOffset;
+                        requestRegionAddress = memoryManager.acquire(requestRegionCapacity);
+
+                        NetworkConnectionPool.this.clientStreamFactory.doTransfer(networkTarget, networkId, 0,
+                                b -> b.item(r -> r.address(requestRegionAddress)
+                                                  .length(requestRegionCapacity)
+                                                  .streamId(networkId)));
+                        requestUnacknowledgedBytes = requestRegionCapacity;
                     }
                 }
             }
@@ -837,11 +817,6 @@ final class NetworkConnectionPool
 
         abstract int addTopicToRequest(
             String topicName);
-
-        final int limitMaximumBytes(int maximumBytes)
-        {
-            return Math.min(maximumBytes, maximumFetchBytesLimit);
-        }
 
         @Override
         final void handleResponse(
@@ -852,8 +827,8 @@ final class NetworkConnectionPool
             final FetchResponseFW fetchResponse =
                     NetworkConnectionPool.this.fetchResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
             final int topicCount = fetchResponse.topicCount();
-
             networkOffset = fetchResponse.limit();
+
             for (int topicIndex = 0; topicIndex < topicCount; topicIndex++)
             {
                 final TopicResponseFW topicResponse =
@@ -893,8 +868,8 @@ final class NetworkConnectionPool
         @Override
         public String toString()
         {
-            return String.format("%s [brokerId=%d, host=%s, port=%d, budget=%d, padding=%d, maxFetchBytes=%d]",
-                    getClass().getName(), brokerId, host, port, networkRequestBudget, networkRequestPadding, maxFetchBytes);
+            return String.format("%s [brokerId=%d, host=%s, port=%d, maxFetchBytes=%d]",
+                    getClass().getName(), brokerId, host, port, maximumUnacknowledgedBytes - MAX_KAFKA_MESSAGE_SIZE);
         }
     }
 
@@ -910,7 +885,7 @@ final class NetworkConnectionPool
             String topicName)
         {
             NetworkTopic topic = topicsByName.get(topicName);
-            final int maxPartitionBytes =  limitMaximumBytes(topic.maximumWritableBytes());
+            final int maxPartitionBytes =  maximumUnacknowledgedBytes - MAX_KAFKA_MESSAGE_SIZE;
             final int[] nodeIdsByPartition = topicMetadataByName.get(topicName).nodeIdsByPartition;
 
             int partitionCount = 0;
@@ -934,7 +909,6 @@ final class NetworkConnectionPool
 
                     encodeLimit = partitionRequest.limit();
                     partitionCount++;
-                    maxFetchBytes += maxPartitionBytes;
                 }
                 candidate = next;
             }
@@ -963,7 +937,7 @@ final class NetworkConnectionPool
             NetworkTopic topic = topicsByName.get(topicName);
             if (topic.needsHistorical())
             {
-                int maxPartitionBytes = limitMaximumBytes(topic.maximumWritableBytes());
+                int maxPartitionBytes = maximumUnacknowledgedBytes - MAX_KAFKA_MESSAGE_SIZE;
                 final int[] nodeIdsByPartition = topicMetadataByName.get(topicName).nodeIdsByPartition;
 
                 int partitionId = -1;
@@ -984,7 +958,6 @@ final class NetworkConnectionPool
                         encodeLimit = partitionRequest.limit();
                         partitionId = partition.id;
                         partitionCount++;
-                        maxFetchBytes += maxPartitionBytes;
                     }
                 }
             }
@@ -1033,7 +1006,7 @@ final class NetworkConnectionPool
         private void doDescribeConfigsRequest()
         {
             doBeginIfNotConnected();
-            if (networkRequestBudget > networkRequestPadding)
+            if (requestUnacknowledgedBytes == 0)
             {
                 final int encodeOffset = 0;
                 final MutableDirectBuffer buffer = NetworkConnectionPool.this.encodeBuffer;
@@ -1074,8 +1047,6 @@ final class NetworkConnectionPool
                 encodeLimit = configName.limit();
 
                 // TODO: stream large requests in multiple DATA frames as needed
-                if (encodeLimit - encodeOffset + networkRequestPadding <= networkRequestBudget)
-                {
                     int newCorrelationId = nextRequestId++;
 
                     NetworkConnectionPool.this.requestRW
@@ -1087,16 +1058,16 @@ final class NetworkConnectionPool
                              .clientId((String) null)
                              .build();
 
-                    OctetsFW payload = NetworkConnectionPool.this.payloadRW
-                            .wrap(buffer, encodeOffset, encodeLimit)
-                            .set((b, o, m) -> m - o)
-                            .build();
+                    requestRegionCapacity = encodeLimit - encodeOffset;
+                    requestRegionAddress = memoryManager.acquire(requestRegionCapacity);
 
-                    NetworkConnectionPool.this.clientStreamFactory.doTransfer(networkTarget, networkId,
-                            networkRequestPadding, payload);
-                    networkRequestBudget -= payload.sizeof() + networkRequestPadding;
+                    NetworkConnectionPool.this.clientStreamFactory.doTransfer(networkTarget, networkId, 0,
+                            b -> b.item(r -> r.address(requestRegionAddress)
+                                              .length(requestRegionCapacity)
+                                              .streamId(networkId)));
+                    requestUnacknowledgedBytes = requestRegionCapacity;
+
                     awaitingDescribeConfigs = true;
-                }
             }
         }
 
@@ -1104,7 +1075,7 @@ final class NetworkConnectionPool
         {
             doBeginIfNotConnected();
 
-            if (networkRequestBudget > networkRequestPadding)
+            if (requestUnacknowledgedBytes == 0)
             {
                 final int encodeOffset = 0;
                 int encodeLimit = encodeOffset;
@@ -1131,28 +1102,25 @@ final class NetworkConnectionPool
                 encodeLimit = metadataRequest.limit();
 
                 // TODO: stream large requests in multiple DATA frames as needed
-                if (encodeLimit - encodeOffset + networkRequestPadding <= networkRequestBudget)
-                {
-                    int newCorrelationId = nextRequestId++;
+                int newCorrelationId = nextRequestId++;
 
-                    NetworkConnectionPool.this.requestRW
-                             .wrap(NetworkConnectionPool.this.encodeBuffer, request.offset(), request.limit())
-                             .size(encodeLimit - encodeOffset - RequestHeaderFW.FIELD_OFFSET_API_KEY)
-                             .apiKey(METADATA_API_KEY)
-                             .apiVersion(METADATA_API_VERSION)
-                             .correlationId(newCorrelationId)
-                             .clientId((String) null)
-                             .build();
+                NetworkConnectionPool.this.requestRW
+                         .wrap(NetworkConnectionPool.this.encodeBuffer, request.offset(), request.limit())
+                         .size(encodeLimit - encodeOffset - RequestHeaderFW.FIELD_OFFSET_API_KEY)
+                         .apiKey(METADATA_API_KEY)
+                         .apiVersion(METADATA_API_VERSION)
+                         .correlationId(newCorrelationId)
+                         .clientId((String) null)
+                         .build();
 
-                    OctetsFW payload = NetworkConnectionPool.this.payloadRW
-                            .wrap(NetworkConnectionPool.this.encodeBuffer, encodeOffset, encodeLimit)
-                            .set((b, o, m) -> m - o)
-                            .build();
+                requestRegionCapacity = encodeLimit - encodeOffset;
+                requestRegionAddress = memoryManager.acquire(requestRegionCapacity);
 
-                    NetworkConnectionPool.this.clientStreamFactory.doTransfer(networkTarget, networkId,
-                            networkRequestPadding, payload);
-                    networkRequestBudget -= payload.sizeof() + networkRequestPadding;
-                }
+                NetworkConnectionPool.this.clientStreamFactory.doTransfer(networkTarget, networkId, 0,
+                        b -> b.item(r -> r.address(requestRegionAddress)
+                                          .length(requestRegionCapacity)
+                                          .streamId(networkId)));
+                requestUnacknowledgedBytes = requestRegionCapacity;
             }
         }
 
@@ -1228,7 +1196,7 @@ final class NetworkConnectionPool
             networkOffset = metadataResponse.limit();
             for (int brokerIndex=0; brokerIndex < brokerCount; brokerIndex++)
             {
-                final BrokerMetaTransferFW broker =
+                final BrokerMetadataFW broker =
                         NetworkConnectionPool.this.brokerMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
                 pendingTopicMetadata.addBroker(broker.nodeId(), broker.host().asString(), broker.port());
                 networkOffset = broker.limit();
@@ -1242,7 +1210,7 @@ final class NetworkConnectionPool
             short errorCode = NONE;
             for (int topicIndex = 0; topicIndex < topicCount && errorCode == NONE; topicIndex++)
             {
-                final TopicMetaTransferFW topicMetadata =
+                final TopicMetadataFW topicMetadata =
                         NetworkConnectionPool.this.topicMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
                 final String16FW topicName = topicMetadata.topic();
                 assert topicName.asString().equals(pendingTopicMetadata.topicName);
@@ -1257,7 +1225,7 @@ final class NetworkConnectionPool
                 pendingTopicMetadata.initializePartitions(partitionCount);
                 for (int partitionIndex = 0; partitionIndex < partitionCount && errorCode == NONE; partitionIndex++)
                 {
-                    final PartitionMetaTransferFW partition =
+                    final PartitionMetadataFW partition =
                             NetworkConnectionPool.this.partitionMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
                     errorCode = partition.errorCode();
                     pendingTopicMetadata.addPartition(partition.partitionId(), partition.leader());

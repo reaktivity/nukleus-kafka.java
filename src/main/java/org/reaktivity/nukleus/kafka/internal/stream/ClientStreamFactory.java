@@ -22,6 +22,7 @@ import static org.reaktivity.nukleus.kafka.internal.util.FrameFlags.RST;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -94,11 +95,13 @@ public final class ClientStreamFactory implements StreamFactory
     final LongSupplier supplyStreamId;
     final LongSupplier supplyCorrelationId;
     final MemoryManager memoryManager;
-    final Supplier<DirectBufferBuilder> supplyDirectBufferBuilder;
+    final DirectBufferBuilder directBufferBuilder;
+    final KafkaConfiguration configuration;
     private final MutableDirectBuffer writeBuffer;
 
     final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
     private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools;
+
 
     public ClientStreamFactory(
         KafkaConfiguration configuration,
@@ -113,11 +116,12 @@ public final class ClientStreamFactory implements StreamFactory
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
         this.memoryManager = requireNonNull(memoryManager);
-        this.supplyDirectBufferBuilder = supplyDirectBufferBuilder;
+        this.directBufferBuilder = supplyDirectBufferBuilder.get();
         this.supplyStreamId = requireNonNull(supplyStreamId);
         this.supplyCorrelationId = supplyCorrelationId;
         this.correlations = requireNonNull(correlations);
         this.connectionPools = new LinkedHashMap<String, Long2ObjectHashMap<NetworkConnectionPool>>();
+        this.configuration = configuration;
     }
 
     @Override
@@ -261,12 +265,12 @@ public final class ClientStreamFactory implements StreamFactory
         final MessageConsumer target,
         final long targetId,
         final int flags,
-        ListFW<RegionFW> regions)
+        Consumer<ListFW.Builder<RegionFW.Builder, RegionFW>> mutator)
     {
         final TransferFW transfer = transferRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
                 .flags(flags)
-                .regions(m -> regions.forEach(r -> m.item(i -> i.address(r.address()).length(r.length()))))
+                .regions(mutator)
                 .build();
 
         target.accept(transfer.typeId(), transfer.buffer(), transfer.offset(), transfer.sizeof());
