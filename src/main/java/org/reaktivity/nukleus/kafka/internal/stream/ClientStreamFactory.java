@@ -32,6 +32,7 @@ import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
+import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.buffer.DirectBufferBuilder;
 import org.reaktivity.nukleus.buffer.MemoryManager;
 import org.reaktivity.nukleus.function.MessageConsumer;
@@ -47,6 +48,7 @@ import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.PartitionResponse
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordSetFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
+import org.reaktivity.nukleus.kafka.internal.types.region.RegionMetadataFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.AckFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
@@ -60,11 +62,29 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class ClientStreamFactory implements StreamFactory
 {
-    private final RouteFW routeRO = new RouteFW();
+    static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
+    static final int REGION_METADATA_SIZE;
 
+    static
+    {
+        MutableDirectBuffer scratch = new UnsafeBuffer(new byte[100]);
+        REGION_METADATA_SIZE = new RegionMetadataFW.Builder()
+                .wrap(scratch, 0, scratch.capacity())
+                .endAdress(0L)
+                .regionCapacity(0)
+                .refCount(1)
+                .build()
+                .limit();
+    }
+
+    private final RouteFW routeRO = new RouteFW();
     final BeginFW beginRO = new BeginFW();
     final TransferFW transferRO = new TransferFW();
     final RegionFW regionRO = new RegionFW();
+
+    final UnsafeBuffer regionMetadataBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    final RegionMetadataFW.Builder regionMetadataRW = new RegionMetadataFW.Builder();
+    final RegionMetadataFW regionMetadataRO = new RegionMetadataFW();
     final AckFW ackRO = new AckFW();
 
     private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
@@ -388,6 +408,7 @@ public final class ClientStreamFactory implements StreamFactory
 
         private int networkAttachId = UNATTACHED;
         private PartitionProgressHandler progressHandler;
+        private RegionFW region;
 
         private MessageConsumer streamState;
 
@@ -549,13 +570,37 @@ public final class ClientStreamFactory implements StreamFactory
         private void handleAck(
             final AckFW ack)
         {
+            // Free the region if refCount (in region metadata) is now 0 and this is the last ack
+            // for the region (partial acks case: we assume in order acks)
+            ack.regions().forEach(r -> region = r);
+            final long ackEndAddress = region.address() + region.length();
+            regionMetadataBuffer.wrap(memoryManager.resolve(ackEndAddress),
+                    REGION_METADATA_SIZE);
+            regionMetadataRO.wrap(regionMetadataBuffer,  0,  regionMetadataBuffer.capacity());
+            long endAddress = regionMetadataRO.endAdress();
+            if (endAddress == ackEndAddress) // region is now fully ack'd
+            {
+                int regionCapacity = regionMetadataRO.regionCapacity();
+                int newRefCount = regionMetadataRO.refCount() - 1;
+                assert newRefCount >= 0;
+                if (newRefCount == 0)
+                {
+                    memoryManager.release(endAddress - regionCapacity, regionCapacity);
+                }
+                else
+                {
+                    regionMetadataRW.wrap(regionMetadataBuffer,  0,  regionMetadataBuffer.capacity())
+                        .endAdress(ackEndAddress)
+                        .regionCapacity(regionCapacity)
+                        .refCount(newRefCount)
+                        .build();
+                }
+                networkPool.doFlush(networkAttachId);
+            }
             if ((ack.flags() & RST) == RST)
             {
                 handleReset();
             }
-            // TODO: pass the ACK on to NetworkConnectionPool? Need to free the region if refCount
-            // (in region metadata) is now 0 and this is the last ack for the region (partial acks case)
-            networkPool.doFlush(networkAttachId);
         }
 
         private void handleReset()

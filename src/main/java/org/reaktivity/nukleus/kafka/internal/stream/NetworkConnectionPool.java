@@ -17,6 +17,8 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.lang.String.format;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.reaktivity.nukleus.kafka.internal.stream.ClientStreamFactory.EMPTY_BYTE_ARRAY;
+import static org.reaktivity.nukleus.kafka.internal.stream.ClientStreamFactory.REGION_METADATA_SIZE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.INVALID_TOPIC_EXCEPTION;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.LEADER_NOT_AVAILABLE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
@@ -100,68 +102,9 @@ final class NetworkConnectionPool
     private static final String CLEANUP_POLICY = "cleanup.policy";
     private static final String COMPACT = "compact";
 
-    private static final int REGION_METADATA_SIZE = Long.BYTES + Integer.BYTES;
-
     private static final byte[] ANY_IP_ADDR = new byte[4];
 
     private static final int MAX_KAFKA_MESSAGE_SIZE = 10000;
-
-    private static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
-
-    private static final int REQUEST_LENGTH;
-    private static final int FETCH_REQUEST_LENGTH;
-    private static final int TOPIC_REQUEST_MINIMUM_LENGTH;
-    private static final int PARTITION_REQUEST_LENGTH;
-    private static final int METADATA_REQUEST_LENGTH;
-    private static final int FETCH_RESPONSE_LENGTH;
-
-    static
-    {
-        MutableDirectBuffer scratch = new UnsafeBuffer(new byte[1000]);
-        REQUEST_LENGTH = new RequestHeaderFW.Builder()
-                .wrap(scratch, 0, scratch.capacity())
-                .size(0)
-                .apiKey(METADATA_API_KEY)
-                .apiVersion(METADATA_API_VERSION)
-                .correlationId(0)
-                .clientId((String) null)
-                .build()
-                .limit();
-        FETCH_REQUEST_LENGTH = new FetchRequestFW.Builder()
-                .wrap(scratch, 0, scratch.capacity())
-                .maxWaitTimeMillis(500)
-                .minBytes(1)
-                .maxBytes(0)
-                .isolationLevel((byte) 0)
-                .topicCount(0)
-                .limit();
-        TOPIC_REQUEST_MINIMUM_LENGTH = new TopicRequestFW.Builder()
-                .wrap(scratch, 0, scratch.capacity())
-                .name((String16FW) null)
-                .partitionCount(0)
-                .build()
-                .limit();
-        PARTITION_REQUEST_LENGTH = new PartitionRequestFW.Builder()
-                .wrap(scratch, 0, scratch.capacity())
-                .partitionId(0)
-                .fetchOffset(0L)
-                .maxBytes(100)
-                .build()
-                .limit();
-        METADATA_REQUEST_LENGTH = new MetadataRequestFW.Builder()
-                .wrap(scratch, 0, scratch.capacity())
-                .topicCount(1)
-                .topicName((String16FW) null)
-                .build()
-                .limit();
-        FETCH_RESPONSE_LENGTH = new FetchResponseFW.Builder()
-                .wrap(scratch, 0, scratch.capacity())
-                .correlationId(0)
-                .throttleTimeMillis(0)
-                .topicCount(1)
-                .build()
-                .limit();
-    }
 
     final RequestHeaderFW.Builder requestRW = new RequestHeaderFW.Builder();
     final FetchRequestFW.Builder fetchRequestRW = new FetchRequestFW.Builder();
@@ -1023,27 +966,27 @@ final class NetworkConnectionPool
                 encodeLimit = configName.limit();
 
                 // TODO: stream large requests in multiple DATA frames as needed
-                    int newCorrelationId = nextRequestId++;
+                int newCorrelationId = nextRequestId++;
 
-                    NetworkConnectionPool.this.requestRW
-                             .wrap(buffer, request.offset(), request.limit())
-                             .size(encodeLimit - encodeOffset - RequestHeaderFW.FIELD_OFFSET_API_KEY)
-                             .apiKey(DESCRIBE_CONFIGS_API_KEY)
-                             .apiVersion(DESCRIBE_CONFIGS_API_VERSION)
-                             .correlationId(newCorrelationId)
-                             .clientId((String) null)
-                             .build();
+                NetworkConnectionPool.this.requestRW
+                         .wrap(buffer, request.offset(), request.limit())
+                         .size(encodeLimit - encodeOffset - RequestHeaderFW.FIELD_OFFSET_API_KEY)
+                         .apiKey(DESCRIBE_CONFIGS_API_KEY)
+                         .apiVersion(DESCRIBE_CONFIGS_API_VERSION)
+                         .correlationId(newCorrelationId)
+                         .clientId((String) null)
+                         .build();
 
-                    requestRegionCapacity = encodeLimit - encodeOffset;
-                    requestRegionAddress = memoryManager.acquire(requestRegionCapacity);
+                requestRegionCapacity = encodeLimit - encodeOffset;
+                requestRegionAddress = memoryManager.acquire(requestRegionCapacity);
 
-                    NetworkConnectionPool.this.clientStreamFactory.doTransfer(networkTarget, networkId, 0,
-                            b -> b.item(r -> r.address(requestRegionAddress)
-                                              .length(requestRegionCapacity)
-                                              .streamId(networkId)));
-                    requestUnacknowledgedBytes = requestRegionCapacity;
+                NetworkConnectionPool.this.clientStreamFactory.doTransfer(networkTarget, networkId, 0,
+                        b -> b.item(r -> r.address(requestRegionAddress)
+                                          .length(requestRegionCapacity)
+                                          .streamId(networkId)));
+                requestUnacknowledgedBytes = requestRegionCapacity;
 
-                    awaitingDescribeConfigs = true;
+                awaitingDescribeConfigs = true;
             }
         }
 
@@ -1427,24 +1370,44 @@ final class NetworkConnectionPool
 
                             final long currentFetchAt = firstOffset + record.offsetDelta();
 
+                            nextFetchAt = currentFetchAt + 1;
+
+                            DirectBuffer key = null;
+                            if (compacted)
+                            {
+                                final OctetsFW messageKey = record.key();
+                                keyBuffer.wrap(messageKey.buffer(), messageKey.offset(), messageKey.sizeof());
+                                key = keyBuffer;
+                            }
+
                             final OctetsFW value = record.value();
                             if (value != null)
                             {
-                                valueBuffer.wrap(value.buffer(), value.offset(), value.sizeof());
+                                int regionSize = value.sizeof() + REGION_METADATA_SIZE;
+                                long regionAddress = memoryManager.acquire(regionSize);
+                                valueBuffer.wrap(memoryManager.resolve(regionAddress), value.sizeof());
+                                valueBuffer.putBytes(0,  value.buffer(), value.offset(), value.sizeof());
+                                int referenceCount = dispatcher.dispatch(partitionId, requestedOffset, nextFetchAt,
+                                        keyBuffer, this::supplyHeader, valueBuffer);
+                                if (referenceCount == 0)
+                                {
+                                    memoryManager.release(regionAddress, regionSize);
+                                }
+                                else
+                                {
+                                    valueBuffer.wrap(memoryManager.resolve(regionAddress) + value.sizeof(),
+                                            REGION_METADATA_SIZE);
+                                    clientStreamFactory.regionMetadataRW.wrap(valueBuffer,  0,  valueBuffer.capacity())
+                                        .endAdress(regionAddress + value.sizeof())  // end of region marker
+                                        .regionCapacity(regionSize)
+                                        .refCount(referenceCount)
+                                        .build();
+                                }
                             }
-                            nextFetchAt = currentFetchAt + 1;
-
-                            final OctetsFW messageKey = compacted ? record.key(): null;
-
-                            int regionSize = value.sizeof() + REGION_METADATA_SIZE;
-                            long regionAddress = memoryManager.acquire(regionSize);
-                            keyBuffer.wrap(messageKey.buffer(), messageKey.offset(), messageKey.sizeof());
-
-                            int refCount = dispatcher.dispatch(partitionId, requestedOffset, nextFetchAt,
-                                    keyBuffer, this::supplyHeader, valueBuffer);
-                            if (refCount == 0)
+                            else
                             {
-                                memoryManager.release(regionAddress, regionSize);
+                                dispatcher.dispatch(partitionId, requestedOffset, nextFetchAt,
+                                        key, this::supplyHeader, null);
                             }
                             memoryManager.release(headersAddress, headersSize);
                         }

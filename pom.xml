@@ -150,7 +150,7 @@
         <artifactId>nukleus-maven-plugin</artifactId>
         <version>${nukleus.plugin.version}</version>
         <configuration>
-          <scopeNames>core kafka protocol tcp</scopeNames>
+          <scopeNames>core kafka protocol tcp internal</scopeNames>
           <packageName>org.reaktivity.nukleus.kafka.internal.types</packageName>
         </configuration>
         <executions>
