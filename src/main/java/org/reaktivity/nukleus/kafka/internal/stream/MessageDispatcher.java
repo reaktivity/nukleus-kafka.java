@@ -18,7 +18,6 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
-import org.agrona.collections.LongLongConsumer;
 
 @FunctionalInterface
 public interface MessageDispatcher
@@ -30,7 +29,6 @@ public interface MessageDispatcher
              long messageOffset,
              DirectBuffer key,
              Function<DirectBuffer, DirectBuffer> supplyHeader,
-             LongLongConsumer acknowledge,
              DirectBuffer value);
 
 }

@@ -16,13 +16,14 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.Objects.requireNonNull;
+import static org.reaktivity.nukleus.kafka.internal.util.FrameFlags.RST;
 import static org.reaktivity.nukleus.kafka.internal.util.FrameFlags.isFin;
 import static org.reaktivity.nukleus.kafka.internal.util.FrameFlags.isReset;
-import static org.reaktivity.nukleus.kafka.internal.util.FrameFlags.RST;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -32,14 +33,12 @@ import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
-import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.buffer.DirectBufferBuilder;
 import org.reaktivity.nukleus.buffer.MemoryManager;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
-import org.reaktivity.nukleus.kafka.internal.function.PartitionResponseConsumer;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
@@ -55,8 +54,8 @@ import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.AckFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaTransferExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.RegionFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.TransferFW;
 import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
@@ -82,7 +81,7 @@ public final class ClientStreamFactory implements StreamFactory
     private final RegionFW.Builder regionRW = new RegionFW.Builder();
     private final AckFW.Builder ackRW = new AckFW.Builder();
 
-    private final KafkaDataExFW.Builder dataExRW = new KafkaDataExFW.Builder();
+    private final KafkaTransferExFW.Builder transferExRW = new KafkaTransferExFW.Builder();
 
     private final HeaderFW headerRO = new HeaderFW();
 
@@ -334,31 +333,32 @@ public final class ClientStreamFactory implements StreamFactory
         target.accept(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
     }
 
-    private void doKafkaData(
+    private void doKafkaTransfer(
         final MessageConsumer target,
         final long targetId,
         final int flags,
-        ListFW<RegionFW> regions,
+        final DirectBuffer value,
         final Long2LongHashMap fetchOffsets,
-        final OctetsFW messageKey)
+        final DirectBuffer messageKey)
     {
-        final TransferFW data = transferRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+        long regionAddress = value.addressOffset() - memoryManager.resolve(0);
+        final TransferFW transfer = transferRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
                 .flags(flags)
-                .regions(m -> regions.forEach(r -> m.item(i -> i.address(r.address()).length(r.length()))))
+                .regions(m -> m.item(i -> i.address(regionAddress).length(value.capacity())))
                 .extension(e -> e.set(visitKafkaDataEx(fetchOffsets, messageKey)))
                 .build();
 
-        target.accept(data.typeId(), data.buffer(), data.offset(), data.sizeof());
+        target.accept(transfer.typeId(), transfer.buffer(), transfer.offset(), transfer.sizeof());
     }
 
     private Flyweight.Builder.Visitor visitKafkaDataEx(
         Long2LongHashMap fetchOffsets,
-        final OctetsFW messageKey)
+        final DirectBuffer messageKey)
     {
         return (b, o, l) ->
         {
-            return dataExRW.wrap(b, o, l)
+            return transferExRW.wrap(b, o, l)
                     .fetchOffsets(a ->
                     {
                         if (fetchOffsets.size() == 1)
@@ -376,13 +376,13 @@ public final class ClientStreamFactory implements StreamFactory
                             }
                         }
                     })
-                    .messageKey(messageKey)
+                    .messageKey(messageKey, 0, messageKey.capacity())
                     .build()
                     .sizeof();
         };
     }
 
-    private final class ClientAcceptStream
+    private final class ClientAcceptStream implements MessageDispatcher
     {
         private static final int UNATTACHED = -1;
 
@@ -404,7 +404,6 @@ public final class ClientStreamFactory implements StreamFactory
         private int networkAttachId = UNATTACHED;
 
         private MessageConsumer streamState;
-        private int writeableBytesMinimum;
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
             long applicationId,
@@ -510,30 +509,15 @@ public final class ClientStreamFactory implements StreamFactory
                 {
                     doReset(applicationThrottle, applicationId);
                 }
-                PartitionResponseConsumer responseConsumer = this::onPartitionResponse;
                 final ListFW<KafkaHeaderFW> headers = beginEx.headers();
-                if (headers != null && !headers.isEmpty())
-                {
-                    MutableDirectBuffer buffer = new UnsafeBuffer(new byte[headers.sizeof()]);
-                    buffer.putBytes(0, headers.buffer(), headers.offset(), headers.sizeof());
-                    this.headers = new ListFW<KafkaHeaderFW>(new KafkaHeaderFW()).wrap(buffer, 0, buffer.capacity());
-                    responseConsumer = this::onPartitionResponseFiltered;
-                }
+                int hashCode = -1;
                 if (fetchKey != null)
                 {
-                    MutableDirectBuffer buffer = new UnsafeBuffer(new byte[fetchKey.sizeof()]);
-                    buffer.putBytes(0, fetchKey.buffer(), fetchKey.offset(), fetchKey.sizeof());
-                    this.fetchKey = new OctetsFW().wrap(buffer, 0, buffer.capacity());
-                    int hashCode = hashCodesCount == 1 ? beginEx.fetchKeyHash().nextInt()
+                    hashCode = hashCodesCount == 1 ? beginEx.fetchKeyHash().nextInt()
                             : BufferUtil.defaultHashCode(fetchKey.buffer(), fetchKey.offset(), fetchKey.limit());
-                    networkPool.doAttach(topicName, this.fetchOffsets, hashCode, this::onPartitionResponseFiltered,
-                            this::writeableBytes, this::onAttached, this::onMetadataError);
                 }
-                else
-                {
-                    networkPool.doAttach(topicName, this.fetchOffsets, responseConsumer,
-                            this::writeableBytes, this::onAttached, this::onMetadataError);
-                }
+                networkPool.doAttach(topicName, this.fetchOffsets, hashCode, fetchKey, headers,
+                        this, this::onAttached, this::onMetadataError);
                 this.streamState = this::afterBegin;
             }
         }
@@ -691,7 +675,7 @@ public final class ClientStreamFactory implements StreamFactory
 
                                 final OctetsFW messageKey = isCompactedTopic ? record.key(): null;
 
-                                doKafkaData(applicationReply, applicationReplyId, applicationReplyPadding, value,
+                                doKafkaTransfer(applicationReply, applicationReplyId, applicationReplyPadding, value,
                                         fetchOffsets, messageKey);
                                 applicationReplyBudget -= payloadLength + applicationReplyPadding;
                                 writeableBytesMinimum = 0;
@@ -789,7 +773,7 @@ public final class ClientStreamFactory implements StreamFactory
                                         }
                                         this.fetchOffsets.put(partitionId, currentFetchAt);
                                         final OctetsFW messageKey = isCompactedTopic ? lastMatchingKey : null;
-                                        doKafkaData(applicationReply, applicationReplyId, applicationReplyPadding,
+                                        doKafkaTransfer(applicationReply, applicationReplyId, applicationReplyPadding,
                                                     lastMatchingValue, fetchOffsets, messageKey);
                                         applicationReplyBudget -= lastMatchingValue.sizeof() + applicationReplyPadding;
                                         writeableBytesMinimum = 0;
@@ -815,7 +799,7 @@ public final class ClientStreamFactory implements StreamFactory
                             nextFetchAt = recordBatch.firstOffset() + recordBatch.lastOffsetDelta() + 1;
                             this.fetchOffsets.put(partitionId, nextFetchAt);
                             final OctetsFW messageKey = isCompactedTopic ? lastMatchingKey : null;
-                            doKafkaData(applicationReply, applicationReplyId, applicationReplyPadding,
+                            doKafkaTransfer(applicationReply, applicationReplyId, applicationReplyPadding,
                                         lastMatchingValue, fetchOffsets, messageKey);
                             applicationReplyBudget -= lastMatchingValue.sizeof() + applicationReplyPadding;
                             writeableBytesMinimum = 0;
@@ -830,10 +814,19 @@ public final class ClientStreamFactory implements StreamFactory
             }
         }
 
-        private int writeableBytes()
+        @Override
+        public int dispatch(int partition, long requestOffset, long messageOffset, DirectBuffer key,
+                            Function<DirectBuffer, DirectBuffer> supplyHeader, DirectBuffer value)
         {
-            final int writeableBytes = applicationReplyBudget - applicationReplyPadding;
-            return writeableBytes > writeableBytesMinimum ? writeableBytes : 0;
+            int  messagesDelivered = 0;
+            if (requestOffset <= fetchOffsets.get(partition)) // avoid out of order delivery
+            {
+                this.fetchOffsets.put(partition, messageOffset);
+                doKafkaTransfer(applicationReply, applicationReplyId, applicationReplyPadding,
+                        value, fetchOffsets, key);
+                messagesDelivered++;
+            }
+            return messagesDelivered;
         }
     }
 }

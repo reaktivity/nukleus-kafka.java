@@ -20,7 +20,6 @@ import java.util.List;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
-import org.agrona.collections.LongLongConsumer;
 
 public class BroadcastMessageDispatcher implements MessageDispatcher
 {
@@ -33,13 +32,12 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
                  long messageOffset,
                  DirectBuffer key,
                  Function<DirectBuffer, DirectBuffer> supplyHeader,
-                 LongLongConsumer acknowledge,
                  DirectBuffer value)
     {
         int result = 0;
          for (MessageDispatcher dispatcher : dispatchers)
          {
-            result += dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, acknowledge, value);
+            result += dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
          }
          return result;
     }
@@ -49,10 +47,14 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
          dispatchers.add(dispatcher);
     }
 
-    public int remove(MessageDispatcher dispatcher)
+    public void remove(MessageDispatcher dispatcher)
     {
         dispatchers.remove(dispatcher);
-        return  dispatchers.size();
+    }
+
+    public boolean isEmpty()
+    {
+        return dispatchers.isEmpty();
     }
 
 }

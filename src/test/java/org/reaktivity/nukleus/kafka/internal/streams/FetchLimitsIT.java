@@ -48,7 +48,7 @@ public class FetchLimitsIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
         .clean()
-        .configure(ReaktorConfiguration.BUFFER_SLOT_CAPACITY_PROPERTY, 256);
+        .configure(ReaktorConfiguration.MEMORY_BLOCK_CAPACITY_PROPERTY, 256);
 
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);

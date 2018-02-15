@@ -20,15 +20,16 @@ import java.util.Map;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
-import org.agrona.collections.LongLongConsumer;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 
 public class KeyMessageDispatcher implements MessageDispatcher
 {
     private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
 
-    private Map<UnsafeBuffer, MessageDispatcher> dispatchersByKey = new HashMap<>();
+    private Map<UnsafeBuffer, HeaderNameMessageDispatcher> dispatchersByKey = new HashMap<>();
 
     @Override
     public int dispatch(
@@ -37,32 +38,37 @@ public class KeyMessageDispatcher implements MessageDispatcher
                  long messageOffset,
                  DirectBuffer key,
                  Function<DirectBuffer, DirectBuffer> supplyHeader,
-                 LongLongConsumer acknowledge,
                  DirectBuffer value)
     {
         buffer.wrap(key, 0, key.capacity());
         MessageDispatcher result = dispatchersByKey.get(buffer);
         return result == null ? 0 :
-            result.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, acknowledge, value);
+            result.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
     }
 
-    public MessageDispatcher addIfAbsent(OctetsFW key, MessageDispatcher dispatcher)
+    public MessageDispatcher add(OctetsFW key, ListFW<KafkaHeaderFW> headers, MessageDispatcher dispatcher)
     {
         buffer.wrap(key.buffer(), key.offset(), key.sizeof());
-        MessageDispatcher existing = dispatchersByKey.get(buffer);
+        HeaderNameMessageDispatcher existing = dispatchersByKey.get(buffer);
         if (existing == null)
         {
             UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[key.sizeof()]);
             keyCopy.putBytes(0,  key.buffer(), key.offset(), key.sizeof());
-            dispatchersByKey.put(keyCopy, dispatcher);
+            existing = new HeaderNameMessageDispatcher();
+            dispatchersByKey.put(keyCopy, existing);
         }
+        existing.add(headers, 0, dispatcher);
         return existing;
     }
 
-    public MessageDispatcher remove(OctetsFW key)
+    public void remove(OctetsFW key, ListFW<KafkaHeaderFW> headers, MessageDispatcher dispatcher)
     {
         buffer.wrap(key.buffer(), key.offset(), key.sizeof());
-        return dispatchersByKey.remove(buffer);
+        HeaderNameMessageDispatcher headerDispatcher = dispatchersByKey.get(buffer);
+        if (headerDispatcher.remove(headers, 0, dispatcher))
+        {
+            dispatchersByKey.remove(buffer);
+        }
     }
 
 }

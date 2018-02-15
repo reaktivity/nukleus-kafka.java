@@ -18,23 +18,25 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.agrona.DirectBuffer;
-import org.agrona.collections.LongLongConsumer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
+import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 
-public class HeaderMessageDispatcher implements MessageDispatcher
+public class HeaderValueMessageDispatcher implements MessageDispatcher
 {
     private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
     private final UnsafeBuffer headerName;
 
-    private Map<UnsafeBuffer, MessageDispatcher> dispatchersByKey = new HashMap<>();
+    private Map<UnsafeBuffer, HeaderNameMessageDispatcher> dispatchersByKey = new HashMap<>();
 
-    public HeaderMessageDispatcher(OctetsFW headerKey)
+    public HeaderValueMessageDispatcher(String16FW headerKey)
     {
-        headerName = new UnsafeBuffer(new byte[headerKey.sizeof()], 0, headerKey.sizeof());
-        headerName.putBytes(0, headerKey.buffer(), headerKey.offset(), headerKey.sizeof());
+        int bytesLength = headerKey.sizeof() - Short.BYTES;
+        this.headerName = new UnsafeBuffer(new byte[bytesLength]);
+        this.headerName.putBytes(0, headerKey.buffer(), headerKey.offset() + Short.BYTES, bytesLength);
     }
 
     @Override
@@ -45,33 +47,42 @@ public class HeaderMessageDispatcher implements MessageDispatcher
              long messageOffset,
              DirectBuffer key,
              Function<DirectBuffer, DirectBuffer> supplyHeader,
-             LongLongConsumer acknowledge,
              DirectBuffer value)
     {
         DirectBuffer header = supplyHeader.apply(headerName);
         buffer.wrap(header);
         MessageDispatcher result = dispatchersByKey.get(buffer);
         return result == null ? 0 :
-            result.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, acknowledge, value);
+            result.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
     }
 
-    public MessageDispatcher addIfAbsent(OctetsFW headerValue, MessageDispatcher dispatcher)
+    public HeaderNameMessageDispatcher computeIfAbsent(
+            OctetsFW headerValue,
+            Supplier<HeaderNameMessageDispatcher> dispatcher)
     {
         buffer.wrap(headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
-        MessageDispatcher existing = dispatchersByKey.get(buffer);
+        HeaderNameMessageDispatcher existing = dispatchersByKey.get(buffer);
         if (existing == null)
         {
             UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[headerValue.sizeof()]);
             keyCopy.putBytes(0,  headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
-            dispatchersByKey.put(keyCopy, dispatcher);
+            existing = dispatcher.get();
+            dispatchersByKey.put(keyCopy, existing);
         }
         return existing;
     }
 
-    public MessageDispatcher remove(OctetsFW headerValue)
+    public HeaderNameMessageDispatcher remove(OctetsFW headerValue)
     {
         buffer.wrap(headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
         return dispatchersByKey.remove(buffer);
+    }
+
+    public HeaderNameMessageDispatcher get(
+            OctetsFW headerValue)
+    {
+        buffer.wrap(headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
+        return dispatchersByKey.get(buffer);
     }
 
 }

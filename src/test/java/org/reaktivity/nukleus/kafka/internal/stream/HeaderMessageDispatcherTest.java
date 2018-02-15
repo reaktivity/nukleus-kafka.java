@@ -36,7 +36,7 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public final class HeaderMessageDispatcherTest
 {
-    private HeaderMessageDispatcher dispatcher = new HeaderMessageDispatcher(asOctets("headerName"));
+    private HeaderValueMessageDispatcher dispatcher = new HeaderValueMessageDispatcher(asOctets("headerName"));
 
     @Rule
     public JUnitRuleMockery context = new JUnitRuleMockery();
