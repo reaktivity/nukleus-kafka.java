@@ -29,7 +29,7 @@ public class KeyMessageDispatcher implements MessageDispatcher
 {
     private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
 
-    private Map<UnsafeBuffer, HeaderNameMessageDispatcher> dispatchersByKey = new HashMap<>();
+    private Map<UnsafeBuffer, HeadersMessageDispatcher> dispatchersByKey = new HashMap<>();
 
     @Override
     public int dispatch(
@@ -46,29 +46,39 @@ public class KeyMessageDispatcher implements MessageDispatcher
             result.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
     }
 
-    public MessageDispatcher add(OctetsFW key, ListFW<KafkaHeaderFW> headers, MessageDispatcher dispatcher)
+    public void add(OctetsFW key, ListFW<KafkaHeaderFW> headers, MessageDispatcher dispatcher)
     {
         buffer.wrap(key.buffer(), key.offset(), key.sizeof());
-        HeaderNameMessageDispatcher existing = dispatchersByKey.get(buffer);
+        HeadersMessageDispatcher existing = dispatchersByKey.get(buffer);
         if (existing == null)
         {
             UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[key.sizeof()]);
             keyCopy.putBytes(0,  key.buffer(), key.offset(), key.sizeof());
-            existing = new HeaderNameMessageDispatcher();
+            existing = new HeadersMessageDispatcher();
             dispatchersByKey.put(keyCopy, existing);
         }
         existing.add(headers, 0, dispatcher);
-        return existing;
     }
 
-    public void remove(OctetsFW key, ListFW<KafkaHeaderFW> headers, MessageDispatcher dispatcher)
+    public boolean remove(OctetsFW key, ListFW<KafkaHeaderFW> headers, MessageDispatcher dispatcher)
     {
+        boolean result = false;
         buffer.wrap(key.buffer(), key.offset(), key.sizeof());
-        HeaderNameMessageDispatcher headerDispatcher = dispatchersByKey.get(buffer);
-        if (headerDispatcher.remove(headers, 0, dispatcher))
+        HeadersMessageDispatcher headersDispatcher = dispatchersByKey.get(buffer);
+        if (headersDispatcher != null)
         {
-            dispatchersByKey.remove(buffer);
+            result = headersDispatcher.remove(headers, 0, dispatcher);
+            if (headersDispatcher.isEmpty())
+            {
+                dispatchersByKey.remove(buffer);
+            }
         }
+        return result;
+    }
+
+    public boolean isEmpty()
+    {
+        return dispatchersByKey.isEmpty();
     }
 
 }

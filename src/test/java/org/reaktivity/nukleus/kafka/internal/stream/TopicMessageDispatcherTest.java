@@ -36,9 +36,9 @@ import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 
-public final class KeyMessageDispatcherTest
+public final class TopicMessageDispatcherTest
 {
-    private KeyMessageDispatcher dispatcher = new KeyMessageDispatcher();
+    private TopicMessageDispatcher dispatcher = new TopicMessageDispatcher();
 
     private final ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW> headersRW =
             new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW());
@@ -48,19 +48,19 @@ public final class KeyMessageDispatcherTest
     public JUnitRuleMockery context = new JUnitRuleMockery();
 
     @Test
-    public void shouldAddDispatcherWithEmptHeaders()
+    public void shouldAddDispatcherWithEmptyHeadersAndNullKey()
     {
         ListFW<KafkaHeaderFW> headers = headersRW.wrap(headersBuffer, 0, headersBuffer.capacity())
                                                  .build();
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
-        dispatcher.add(asOctets("key1"), headers, child1);
+        dispatcher.add(null, headers, child1);
     }
 
     @Test
-    public void shouldAddDispatcherWithNullHeaders()
+    public void shouldAddDispatcherWithNullHeadersAndNullKey()
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
-        dispatcher.add(asOctets("key1"), null, child1);
+        dispatcher.add(null, null, child1);
     }
 
     @Test
@@ -71,6 +71,32 @@ public final class KeyMessageDispatcherTest
         dispatcher.add(asOctets("key1"), null, child1);
         dispatcher.add(asOctets("key1"), null, child2);
     }
+
+    @Test
+    public void shouldDispatchWithoutKey()
+    {
+        MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
+        MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
+        dispatcher.add(null, null, child1);
+        dispatcher.add(null, null, child2);
+
+        @SuppressWarnings("unchecked")
+        Function<DirectBuffer, DirectBuffer> header = context.mock(Function.class, "header");
+
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(child1).dispatch(with(1), with(10L), with(12L), with((DirectBuffer) null),
+                        with(header), with((DirectBuffer) null));
+                will(returnValue(1));
+                oneOf(child2).dispatch(with(1), with(10L), with(12L), with((DirectBuffer) null),
+                        with(header), with((DirectBuffer) null));
+                will(returnValue(1));
+            }
+        });
+        assertEquals(2, dispatcher.dispatch(1, 10L, 12L, null, header, null));
+    }
+
 
     @Test
     public void shouldDispatchWithMatchingKey()

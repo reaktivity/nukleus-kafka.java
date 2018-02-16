@@ -17,11 +17,12 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
-import org.agrona.collections.LongLongConsumer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
@@ -56,19 +57,18 @@ public final class BroadcastMessageDispatcherTest
         dispatcher.add(child2);
         @SuppressWarnings("unchecked")
         Function<DirectBuffer, DirectBuffer> header = context.mock(Function.class, "header");
-        LongLongConsumer ack = context.mock(LongLongConsumer.class, "ack");
         context.checking(new Expectations()
         {
             {
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
-                        with(header), with(ack), with((DirectBuffer) null));
+                        with(header), with((DirectBuffer) null));
                 will(returnValue(1));
                 oneOf(child2).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
-                        with(header), with(ack), with((DirectBuffer) null));
+                        with(header),  with((DirectBuffer) null));
                 will(returnValue(1));
             }
         });
-        assertEquals(2, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), header, ack, null));
+        assertEquals(2, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), header, null));
     }
 
     @Test
@@ -78,8 +78,8 @@ public final class BroadcastMessageDispatcherTest
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
         dispatcher.add(child1);
         dispatcher.add(child2);
-        assertEquals(1, dispatcher.remove(child1));
-        assertEquals(0, dispatcher.remove(child2));
+        assertTrue(dispatcher.remove(child1));
+        assertTrue(dispatcher.remove(child2));
     }
 
     @Test
@@ -90,7 +90,7 @@ public final class BroadcastMessageDispatcherTest
         MessageDispatcher another = context.mock(MessageDispatcher.class, "another");
         dispatcher.add(child1);
         dispatcher.add(child2);
-        assertEquals(2, dispatcher.remove(another));
+        assertFalse(dispatcher.remove(another));
     }
 
     private DirectBuffer asBuffer(String value)

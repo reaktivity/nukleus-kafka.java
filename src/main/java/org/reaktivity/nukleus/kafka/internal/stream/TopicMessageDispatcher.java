@@ -25,7 +25,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 public class TopicMessageDispatcher implements MessageDispatcher
 {
     private final KeyMessageDispatcher keys = new KeyMessageDispatcher();
-    private final HeaderNameMessageDispatcher headers = new HeaderNameMessageDispatcher();
+    private final HeadersMessageDispatcher headers = new HeadersMessageDispatcher();
     private final BroadcastMessageDispatcher broadcast = new BroadcastMessageDispatcher();
 
     @Override
@@ -39,7 +39,11 @@ public class TopicMessageDispatcher implements MessageDispatcher
     {
         int result = 0;
         result += broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
-        result += keys.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
+        if (key != null)
+        {
+            result += keys.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
+        }
+        result += headers.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
         return result;
     }
 
@@ -51,7 +55,7 @@ public class TopicMessageDispatcher implements MessageDispatcher
          {
              keys.add(fetchKey, headers, dispatcher);
          }
-         else if (headers != null && headers.isEmpty())
+         else if (headers != null && !headers.isEmpty())
          {
              this.headers.add(headers, 0, dispatcher);
          }
@@ -61,22 +65,29 @@ public class TopicMessageDispatcher implements MessageDispatcher
          }
     }
 
-    public void remove(OctetsFW fetchKey,
-                      ListFW<KafkaHeaderFW> headers,
-                      MessageDispatcher dispatcher)
+    public boolean remove(OctetsFW fetchKey,
+                       ListFW<KafkaHeaderFW> headers,
+                       MessageDispatcher dispatcher)
       {
+           boolean result = false;
            if (fetchKey != null)
            {
-               keys.remove(fetchKey, headers, dispatcher);
+               result = keys.remove(fetchKey, headers, dispatcher);
            }
            else if (headers != null && headers.isEmpty())
            {
-               this.headers.remove(headers, 0, dispatcher);
+               result = this.headers.remove(headers, 0, dispatcher);
            }
            else
            {
-               broadcast.remove(dispatcher);
+               result = broadcast.remove(dispatcher);
            }
+           return result;
       }
+
+    public boolean isEmpty()
+    {
+        return keys.isEmpty() && headers.isEmpty() && broadcast.isEmpty();
+    }
 
 }

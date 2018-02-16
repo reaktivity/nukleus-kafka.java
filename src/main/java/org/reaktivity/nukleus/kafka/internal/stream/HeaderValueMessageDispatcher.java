@@ -18,25 +18,23 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
-import java.util.function.Supplier;
 
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
-import org.reaktivity.nukleus.kafka.internal.types.String16FW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 
 public class HeaderValueMessageDispatcher implements MessageDispatcher
 {
     private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
-    private final UnsafeBuffer headerName;
+    private final DirectBuffer headerName;
 
-    private Map<UnsafeBuffer, HeaderNameMessageDispatcher> dispatchersByKey = new HashMap<>();
+    private Map<UnsafeBuffer, HeadersMessageDispatcher> dispatchersByHeaderValue = new HashMap<>();
 
-    public HeaderValueMessageDispatcher(String16FW headerKey)
+    public HeaderValueMessageDispatcher(DirectBuffer headerKey)
     {
-        int bytesLength = headerKey.sizeof() - Short.BYTES;
-        this.headerName = new UnsafeBuffer(new byte[bytesLength]);
-        this.headerName.putBytes(0, headerKey.buffer(), headerKey.offset() + Short.BYTES, bytesLength);
+        this.headerName = headerKey;
     }
 
     @Override
@@ -49,40 +47,75 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
              Function<DirectBuffer, DirectBuffer> supplyHeader,
              DirectBuffer value)
     {
+        int result = 0;
         DirectBuffer header = supplyHeader.apply(headerName);
-        buffer.wrap(header);
-        MessageDispatcher result = dispatchersByKey.get(buffer);
-        return result == null ? 0 :
-            result.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
+        if (header != null)
+        {
+            buffer.wrap(header);
+            MessageDispatcher dispatcher = dispatchersByHeaderValue.get(buffer);
+            if (dispatcher != null)
+            {
+                result =  dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
+            }
+        }
+        return result;
     }
 
-    public HeaderNameMessageDispatcher computeIfAbsent(
+    public void add(
             OctetsFW headerValue,
-            Supplier<HeaderNameMessageDispatcher> dispatcher)
+            ListFW<KafkaHeaderFW> headers,
+            int index,
+            MessageDispatcher dispatcher)
     {
         buffer.wrap(headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
-        HeaderNameMessageDispatcher existing = dispatchersByKey.get(buffer);
-        if (existing == null)
+        HeadersMessageDispatcher headersDispatcher = dispatchersByHeaderValue.get(buffer);
+        if (headersDispatcher == null)
         {
             UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[headerValue.sizeof()]);
             keyCopy.putBytes(0,  headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
-            existing = dispatcher.get();
-            dispatchersByKey.put(keyCopy, existing);
+            headersDispatcher =  new HeadersMessageDispatcher();
+            dispatchersByHeaderValue.put(keyCopy, headersDispatcher);
         }
-        return existing;
+        headersDispatcher.add(headers, index, dispatcher);
     }
 
-    public HeaderNameMessageDispatcher remove(OctetsFW headerValue)
+    public boolean remove(
+            OctetsFW headerValue,
+            ListFW<KafkaHeaderFW> headers,
+            int index,
+            MessageDispatcher dispatcher)
     {
+        boolean result = false;
         buffer.wrap(headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
-        return dispatchersByKey.remove(buffer);
+        HeadersMessageDispatcher headersDispatcher = dispatchersByHeaderValue.get(buffer);
+        if (headersDispatcher != null)
+        {
+            result = headersDispatcher.remove(headers, index, dispatcher);
+            if (headersDispatcher.isEmpty())
+            {
+                dispatchersByHeaderValue.remove(buffer);
+            }
+        }
+        return result;
     }
 
-    public HeaderNameMessageDispatcher get(
+    public HeadersMessageDispatcher get(
             OctetsFW headerValue)
     {
         buffer.wrap(headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
-        return dispatchersByKey.get(buffer);
+        return dispatchersByHeaderValue.get(buffer);
+    }
+
+    @Override
+    public String toString()
+    {
+        return String.format("%s(%s, %s)", this.getClass().getSimpleName(), new String(headerName.byteArray()),
+                dispatchersByHeaderValue);
+    }
+
+    public boolean isEmpty()
+    {
+         return dispatchersByHeaderValue.isEmpty();
     }
 
 }

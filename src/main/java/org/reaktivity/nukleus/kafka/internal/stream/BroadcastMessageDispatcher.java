@@ -47,9 +47,9 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
          dispatchers.add(dispatcher);
     }
 
-    public void remove(MessageDispatcher dispatcher)
+    public boolean remove(MessageDispatcher dispatcher)
     {
-        dispatchers.remove(dispatcher);
+        return dispatchers.remove(dispatcher);
     }
 
     public boolean isEmpty()
