@@ -99,6 +99,7 @@ public final class ClientStreamFactory implements StreamFactory
 
     final PartitionResponseFW partitionResponseRO = new PartitionResponseFW();
     final RecordSetFW recordSetRO = new RecordSetFW();
+    final OctetsFW octetsRO = new OctetsFW();
 
     final RouteManager router;
     final LongSupplier supplyStreamId;
@@ -365,11 +366,12 @@ public final class ClientStreamFactory implements StreamFactory
         final DirectBuffer messageKey)
     {
         long regionAddress = value.addressOffset() - memoryManager.resolve(0);
+        OctetsFW octetsKey = messageKey == null ? null : octetsRO.wrap(messageKey, 0,  messageKey.capacity());
         final TransferFW transfer = transferRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
                 .flags(flags)
-                .regions(m -> m.item(i -> i.address(regionAddress).length(value.capacity())))
-                .extension(e -> e.set(visitKafkaDataEx(fetchOffsets, messageKey)))
+                .regions(m -> m.item(i -> i.address(regionAddress).length(value.capacity()).streamId(targetId)))
+                .extension(e -> e.set(visitKafkaDataEx(fetchOffsets, octetsKey)))
                 .build();
 
         target.accept(transfer.typeId(), transfer.buffer(), transfer.offset(), transfer.sizeof());
@@ -377,7 +379,7 @@ public final class ClientStreamFactory implements StreamFactory
 
     private Flyweight.Builder.Visitor visitKafkaDataEx(
         Long2LongHashMap fetchOffsets,
-        final DirectBuffer messageKey)
+        final OctetsFW messageKey)
     {
         return (b, o, l) ->
         {
@@ -399,7 +401,7 @@ public final class ClientStreamFactory implements StreamFactory
                             }
                         }
                     })
-                    .messageKey(messageKey, 0, messageKey.capacity())
+                    .messageKey(messageKey)
                     .build()
                     .sizeof();
         };
@@ -618,7 +620,7 @@ public final class ClientStreamFactory implements StreamFactory
                         .refCount(newRefCount)
                         .build();
                 }
-                networkPool.doFlush(networkAttachId);
+                networkPool.doFlush();
             }
         }
 

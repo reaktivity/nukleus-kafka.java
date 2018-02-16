@@ -128,8 +128,8 @@ final class NetworkConnectionPool
 
     final RecordBatchFW recordBatchRO = new RecordBatchFW();
     final RecordFW recordRO = new RecordFW();
-    final ListFW<HeaderFW> headers = new ListFW<>(new HeaderFW());
     final UnsafeBuffer headersBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    final ListFW<HeaderFW> headersRO = new ListFW<>(new HeaderFW());
     final UnsafeBuffer keyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     final UnsafeBuffer regionBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
@@ -275,6 +275,7 @@ final class NetworkConnectionPool
             historicalConnections = applyBrokerMetadata(historicalConnections, broker,  HistoricalFetchConnection::new);
         });
         newAttachIdConsumer.accept(newAttachId);
+        doFlush();
     }
 
     private <T extends AbstractFetchConnection> T[] applyBrokerMetadata(
@@ -306,8 +307,7 @@ final class NetworkConnectionPool
         return result;
     }
 
-    void doFlush(
-        long connectionPoolAttachId)
+    void doFlush()
     {
         for (AbstractFetchConnection connection  : connections)
         {
@@ -730,6 +730,8 @@ final class NetworkConnectionPool
 
                         requestRegionCapacity = encodeLimit - encodeOffset;
                         requestRegionAddress = memoryManager.acquire(requestRegionCapacity);
+                        regionBuffer.wrap(memoryManager.resolve(requestRegionAddress), requestRegionCapacity);
+                        regionBuffer.putBytes(0, encodeBuffer, 0, requestRegionCapacity);
 
                         NetworkConnectionPool.this.clientStreamFactory.doTransfer(networkTarget, networkId, 0,
                                 b -> b.item(r -> r.address(requestRegionAddress)
@@ -1187,10 +1189,13 @@ final class NetworkConnectionPool
         private final boolean compacted;
         final NavigableSet<NetworkTopicPartition> partitions;
         private final NetworkTopicPartition candidate;
-        private final PartitionProgressHandler progressHandler;
         private final TopicMessageDispatcher dispatcher = new TopicMessageDispatcher();
+        private final PartitionProgressHandler progressHandler;
+        private ListFW<HeaderFW> headers;
+        private UnsafeBuffer header = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
         private BitSet needsHistoricalByPartition = new BitSet();
+
 
         @Override
         public String toString()
@@ -1310,20 +1315,15 @@ final class NetworkConnectionPool
 
         void onPartitionResponse(
             DirectBuffer buffer,
-            int index,
+            int offset,
             int length,
             long requestedOffset)
         {
-            int offset = 0;
             final int maxLimit = offset + length;
-
             int networkOffset = offset;
-
             final PartitionResponseFW partition = partitionResponseRO.wrap(buffer, networkOffset, maxLimit);
             networkOffset = partition.limit();
-
             final int partitionId = partition.partitionId();
-
             long nextFetchAt;
 
             // TODO: determine appropriate reaction to different non-zero error codes
@@ -1363,21 +1363,30 @@ final class NetworkConnectionPool
                             }
 
                             final int headerCount = record.headerCount();
-
-                            int headersOffset = networkOffset;
-                            int headersSize = 0;
-                            for (int headerIndex = 0; headerIndex < headerCount; headerIndex++)
+                            long headersAddress = 0;
+                            int headersCapacity = 0;
+                            if (headerCount > 0)
                             {
-                                final HeaderFW headerRO = new HeaderFW();
-                                final HeaderFW header = headerRO.wrap(buffer, networkOffset, recordBatchLimit);
-                                networkOffset = header.limit();
-                                headersSize += header.sizeof();
+                                int headersOffset = networkOffset;
+                                int headersSize = 0;
+                                for (int headerIndex = 0; headerIndex < headerCount; headerIndex++)
+                                {
+                                    final HeaderFW headerRO = new HeaderFW();
+                                    final HeaderFW header = headerRO.wrap(buffer, networkOffset, recordBatchLimit);
+                                    networkOffset = header.limit();
+                                    headersSize += header.sizeof();
+                                }
+                                headersCapacity = headersSize + Integer.BYTES;
+                                headersAddress = memoryManager.acquire(headersCapacity);
+                                headersBuffer.wrap(memoryManager.resolve(headersAddress), headersSize);
+                                headersBuffer.putInt(0,  headersSize);
+                                headersBuffer.putBytes(Integer.BYTES, buffer, headersOffset, headersSize);
+                                headers = headersRO.wrap(headersBuffer, 0, headersBuffer.capacity());
                             }
-                            long headersAddress = memoryManager.acquire(headersSize + Integer.BYTES);
-                            headersBuffer.wrap(memoryManager.resolve(headersAddress), headersSize);
-                            headersBuffer.putInt(0,  headersSize);
-                            headersBuffer.putBytes(Integer.BYTES, buffer, headersOffset, headersSize);
-                            headers.wrap(headersBuffer, 0, headersBuffer.capacity());
+                            else
+                            {
+                                headers = null;
+                            }
 
                             final long currentFetchAt = firstOffset + record.offsetDelta();
 
@@ -1399,7 +1408,7 @@ final class NetworkConnectionPool
                                 regionBuffer.wrap(memoryManager.resolve(regionAddress), value.sizeof());
                                 regionBuffer.putBytes(0,  value.buffer(), value.offset(), value.sizeof());
                                 int referenceCount = dispatcher.dispatch(partitionId, requestedOffset, nextFetchAt,
-                                        keyBuffer, this::supplyHeader, regionBuffer);
+                                        key, this::supplyHeader, regionBuffer);
                                 if (referenceCount == 0)
                                 {
                                     memoryManager.release(regionAddress, regionSize);
@@ -1420,7 +1429,10 @@ final class NetworkConnectionPool
                                 dispatcher.dispatch(partitionId, requestedOffset, nextFetchAt,
                                         key, this::supplyHeader, null);
                             }
-                            memoryManager.release(headersAddress, headersSize);
+                            if (headers != null)
+                            {
+                                memoryManager.release(headersAddress, headersCapacity);
+                            }
                         }
                     }
                 }
@@ -1429,7 +1441,24 @@ final class NetworkConnectionPool
 
         private DirectBuffer supplyHeader(DirectBuffer headerName)
         {
-            return null;
+            DirectBuffer result = null;
+            if (headers != null)
+            {
+                HeaderFW matching = headers.matchFirst(h -> matches(h.key(), headerName));
+                if (matching != null)
+                {
+                    OctetsFW value = matching.value();
+                    header.wrap(value.buffer(), value.offset(), value.sizeof());
+                    result = header;
+                }
+            }
+            return result;
+        }
+
+        private boolean matches(OctetsFW octets, DirectBuffer buffer)
+        {
+            boolean result = false;
+            return result;
         }
 
         private void handleProgress(
