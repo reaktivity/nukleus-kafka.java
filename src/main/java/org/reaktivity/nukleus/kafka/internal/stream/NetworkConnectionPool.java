@@ -451,6 +451,7 @@ final class NetworkConnectionPool
             }
             if (isReset(ack.flags()))
             {
+                NetworkConnectionPool.this.clientStreamFactory.correlations.remove(networkId, AbstractNetworkConnection.this);
                 reconnectAsConfigured();
             }
             else
