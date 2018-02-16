@@ -423,6 +423,7 @@ public final class ClientStreamFactory implements StreamFactory
         private long applicationReplyId;
 
         private int networkAttachId = UNATTACHED;
+        private boolean compacted;
         private PartitionProgressHandler progressHandler;
 
         private MessageConsumer streamState;
@@ -546,7 +547,7 @@ public final class ClientStreamFactory implements StreamFactory
             }
         }
 
-        private void onAttached(int newNetworkAttachId)
+        private void onAttached(int newNetworkAttachId, boolean compacted)
         {
             final long newReplyId = supplyStreamId.getAsLong();
             final String replyName = applicationName;
@@ -556,6 +557,7 @@ public final class ClientStreamFactory implements StreamFactory
             router.setThrottle(applicationName, newReplyId, this::handleThrottle);
 
             this.networkAttachId = newNetworkAttachId;
+            this.compacted = compacted;
             this.applicationReply = newReply;
             this.applicationReplyId = newReplyId;
         }
@@ -642,7 +644,7 @@ public final class ClientStreamFactory implements StreamFactory
             {
                 this.fetchOffsets.put(partition, messageOffset);
                 doKafkaTransfer(applicationReply, applicationReplyId, 0,
-                        value, fetchOffsets, key);
+                        value, fetchOffsets, compacted ? key : null);
                 messagesDelivered++;
                 progressHandler.handle(partition, lastOffset, messageOffset);
             }

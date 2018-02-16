@@ -53,6 +53,7 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.buffer.DirectBufferBuilder;
 import org.reaktivity.nukleus.buffer.MemoryManager;
 import org.reaktivity.nukleus.function.MessageConsumer;
+import org.reaktivity.nukleus.kafka.internal.function.IntBooleanConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
@@ -185,14 +186,14 @@ final class NetworkConnectionPool
         ListFW<KafkaHeaderFW> headers,
         MessageDispatcher dispatcher,
         Consumer<PartitionProgressHandler> progressHandlerConsumer,
-        IntConsumer newAttachIdConsumer,
+        IntBooleanConsumer newAttachDetailsConsumer,
         IntConsumer onMetadataError)
     {
         final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
         metadata.doAttach((m) ->
         {
             doAttach(topicName, fetchOffsets, partitionHash,  fetchKey, headers, dispatcher, progressHandlerConsumer,
-                    newAttachIdConsumer, onMetadataError, m);
+                    newAttachDetailsConsumer, onMetadataError, m);
         });
 
         metadataConnection.doRequestIfNeeded();
@@ -206,7 +207,7 @@ final class NetworkConnectionPool
         ListFW<KafkaHeaderFW> headers,
         MessageDispatcher dispatcher,
         Consumer<PartitionProgressHandler> progressHandlerConsumer,
-        IntConsumer newAttachIdConsumer,
+        IntBooleanConsumer newAttachDetailsConsumer,
         IntConsumer onMetadataError,
         TopicMetadata topicMetadata)
     {
@@ -241,7 +242,7 @@ final class NetworkConnectionPool
                 }
             }
             finishAttach(topicName, fetchOffsets, fetchKey, headers, dispatcher, progressHandlerConsumer,
-                    newAttachIdConsumer, topicMetadata);
+                    newAttachDetailsConsumer, topicMetadata);
             break;
         default:
             throw new RuntimeException(format("Unexpected errorCode %d from metadata query", errorCode));
@@ -255,7 +256,7 @@ final class NetworkConnectionPool
         ListFW<KafkaHeaderFW> headers,
         MessageDispatcher dispatcher,
         Consumer<PartitionProgressHandler> progressHandlerConsumer,
-        IntConsumer newAttachIdConsumer,
+        IntBooleanConsumer newAttachDetailsConsumer,
         TopicMetadata topicMetadata)
     {
         final NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
@@ -274,7 +275,7 @@ final class NetworkConnectionPool
         {
             historicalConnections = applyBrokerMetadata(historicalConnections, broker,  HistoricalFetchConnection::new);
         });
-        newAttachIdConsumer.accept(newAttachId);
+        newAttachDetailsConsumer.accept(newAttachId, topicMetadata.compacted);
         doFlush();
     }
 
@@ -1193,6 +1194,8 @@ final class NetworkConnectionPool
         private final PartitionProgressHandler progressHandler;
         private ListFW<HeaderFW> headers;
         private UnsafeBuffer header = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+        private UnsafeBuffer value1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+        private UnsafeBuffer value2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
         private BitSet needsHistoricalByPartition = new BitSet();
 
@@ -1346,7 +1349,6 @@ final class NetworkConnectionPool
                         }
 
                         final long firstOffset = recordBatch.firstOffset();
-
                         while (networkOffset < recordBatchLimit - 7 /* minimum RecordFW size */)
                         {
                             final RecordFW record = recordRO.wrap(buffer, networkOffset, recordBatchLimit);
@@ -1375,7 +1377,7 @@ final class NetworkConnectionPool
                                 }
                                 headersCapacity = headersSize + Integer.BYTES;
                                 headersAddress = memoryManager.acquire(headersCapacity);
-                                headersBuffer.wrap(memoryManager.resolve(headersAddress), headersSize);
+                                headersBuffer.wrap(memoryManager.resolve(headersAddress), headersCapacity);
                                 headersBuffer.putInt(0,  headersSize);
                                 headersBuffer.putBytes(Integer.BYTES, buffer, headersOffset, headersSize);
                                 headers = headersRO.wrap(headersBuffer, 0, headersBuffer.capacity());
@@ -1390,10 +1392,11 @@ final class NetworkConnectionPool
                             nextFetchAt = currentFetchAt + 1;
 
                             DirectBuffer key = null;
-                            if (compacted)
+                            final OctetsFW messageKey = record.key();
+                            if (messageKey != null)
                             {
-                                final OctetsFW messageKey = record.key();
                                 keyBuffer.wrap(messageKey.buffer(), messageKey.offset(), messageKey.sizeof());
+                                keyBuffer.putBytes(0, messageKey.buffer(), messageKey.offset(), messageKey.sizeof());
                                 key = keyBuffer;
                             }
 
@@ -1454,8 +1457,9 @@ final class NetworkConnectionPool
 
         private boolean matches(OctetsFW octets, DirectBuffer buffer)
         {
-            boolean result = false;
-            return result;
+            value1.wrap(octets.buffer(), octets.offset(), octets.sizeof());
+            value2.wrap(buffer);
+            return value1.equals(value2);
         }
 
         private void handleProgress(
