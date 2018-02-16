@@ -19,7 +19,7 @@ import org.reaktivity.nukleus.Configuration;
 
 public class KafkaConfiguration extends Configuration
 {
-    public static final String PROPERTY_BROKER_AUTO_RECONNECT = "kafka.reconnect.seconds";
+    public static final String PROPERTY_BROKER_AUTO_RECONNECT = "kafka.auto.reconnect";
 
     public static final boolean DEFAULT_BROKER_AUTO_RECONNECT  = true;
 

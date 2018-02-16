@@ -610,7 +610,7 @@ public final class ClientStreamFactory implements StreamFactory
                 assert newRefCount >= 0;
                 if (newRefCount == 0)
                 {
-                    memoryManager.release(endAddress - regionCapacity, regionCapacity);
+                    memoryManager.release(endAddress - regionCapacity + REGION_METADATA_SIZE, regionCapacity);
                 }
                 else
                 {

@@ -46,6 +46,7 @@ public class FetchIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
+        .configure("kafka.auto.reconnect", "false")
         .clean();
 
     @Rule
