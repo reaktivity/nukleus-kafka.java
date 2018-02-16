@@ -47,6 +47,17 @@ public class TopicMessageDispatcher implements MessageDispatcher
         return result;
     }
 
+    @Override
+    public void flush(
+            int partition,
+            long requestOffset,
+            long lastOffset)
+    {
+        broadcast.flush(partition, requestOffset, lastOffset);
+        keys.flush(partition, requestOffset, lastOffset);
+        headers.flush(partition, requestOffset, lastOffset);
+    }
+
     public void add(OctetsFW fetchKey,
                     ListFW<KafkaHeaderFW> headers,
                     MessageDispatcher dispatcher)

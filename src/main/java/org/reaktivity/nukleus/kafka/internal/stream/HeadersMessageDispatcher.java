@@ -54,6 +54,19 @@ public class HeadersMessageDispatcher implements MessageDispatcher
         return result;
     }
 
+    @Override
+    public void flush(
+            int partition,
+            long requestOffset,
+            long lastOffset)
+    {
+        broadcast.flush(partition, requestOffset, lastOffset);
+        for (MessageDispatcher dispatcher: dispatchersByHeaderKey.values())
+        {
+            dispatcher.flush(partition, requestOffset, lastOffset);
+        }
+    }
+
     public HeadersMessageDispatcher add(
                 ListFW<KafkaHeaderFW> headers,
                 int index,

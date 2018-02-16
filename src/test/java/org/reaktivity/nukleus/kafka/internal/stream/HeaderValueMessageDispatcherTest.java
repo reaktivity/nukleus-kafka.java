@@ -172,6 +172,32 @@ public final class HeaderValueMessageDispatcherTest
     }
 
     @Test
+    public void shouldFlush()
+    {
+        MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
+        MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
+        ListFW<KafkaHeaderFW> headers1 =
+                headersRW.wrap(headers1Buffer, 0, headers1Buffer.capacity())
+                .item(b -> b.key("header1").value(asOctets("value1")))
+                .build();
+        dispatcher.add(asOctets("header1"), headers1, 1, child1);
+        ListFW<KafkaHeaderFW> headers2 =
+                headersRW.wrap(headers2Buffer, 0, headers2Buffer.capacity())
+                .item(b -> b.key("header1").value(asOctets("value1")))
+                .item(b -> b.key("header2").value(asOctets("value2")))
+                .build();
+        dispatcher.add(asOctets("header1"), headers2, 1, child2);
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(child1).flush(1, 10L, 12L);
+                oneOf(child2).flush(1, 10L, 12L);
+            }
+        });
+        dispatcher.flush(1, 10L, 12L);
+    }
+
+    @Test
     public void shouldRemoveDispatcherWhenPresent()
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");

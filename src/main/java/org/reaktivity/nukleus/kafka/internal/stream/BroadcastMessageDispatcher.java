@@ -42,6 +42,18 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
          return result;
     }
 
+    @Override
+    public void flush(
+            int partition,
+            long requestOffset,
+            long lastOffset)
+    {
+        for (MessageDispatcher dispatcher: dispatchers)
+        {
+            dispatcher.flush(partition, requestOffset, lastOffset);
+        }
+    }
+
     public void add(MessageDispatcher dispatcher)
     {
          dispatchers.add(dispatcher);

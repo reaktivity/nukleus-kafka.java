@@ -46,6 +46,18 @@ public class KeyMessageDispatcher implements MessageDispatcher
             result.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
     }
 
+    @Override
+    public void flush(
+            int partition,
+            long requestOffset,
+            long lastOffset)
+    {
+        for (MessageDispatcher dispatcher: dispatchersByKey.values())
+        {
+            dispatcher.flush(partition, requestOffset, lastOffset);
+        }
+    }
+
     public void add(OctetsFW key, ListFW<KafkaHeaderFW> headers, MessageDispatcher dispatcher)
     {
         buffer.wrap(key.buffer(), key.offset(), key.sizeof());

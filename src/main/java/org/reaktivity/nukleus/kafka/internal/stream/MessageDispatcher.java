@@ -19,7 +19,6 @@ import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
 
-@FunctionalInterface
 public interface MessageDispatcher
 {
 
@@ -30,5 +29,10 @@ public interface MessageDispatcher
              DirectBuffer key,
              Function<DirectBuffer, DirectBuffer> supplyHeader,
              DirectBuffer value);
+
+    void flush(
+            int partition,
+            long requestOffset,
+            long lastOffset);
 
 }

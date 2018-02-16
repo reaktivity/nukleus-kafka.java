@@ -1187,7 +1187,6 @@ final class NetworkConnectionPool
     private final class NetworkTopic
     {
         private final String topicName;
-        private final boolean compacted;
         final NavigableSet<NetworkTopicPartition> partitions;
         private final NetworkTopicPartition candidate;
         private final TopicMessageDispatcher dispatcher = new TopicMessageDispatcher();
@@ -1210,7 +1209,6 @@ final class NetworkConnectionPool
             String topicName, boolean compacted)
         {
             this.topicName = topicName;
-            this.compacted = compacted;
             this.partitions = new TreeSet<>();
             this.candidate = new NetworkTopicPartition();
             this.progressHandler = this::handleProgress;
@@ -1324,7 +1322,6 @@ final class NetworkConnectionPool
             final PartitionResponseFW partition = partitionResponseRO.wrap(buffer, networkOffset, maxLimit);
             networkOffset = partition.limit();
             final int partitionId = partition.partitionId();
-            long nextFetchAt;
 
             // TODO: determine appropriate reaction to different non-zero error codes
             if (partition.errorCode() == 0 && networkOffset < maxLimit - BitUtil.SIZE_OF_INT)
@@ -1349,11 +1346,11 @@ final class NetworkConnectionPool
                         }
 
                         final long firstOffset = recordBatch.firstOffset();
+                        long nextFetchAt = firstOffset;
                         while (networkOffset < recordBatchLimit - 7 /* minimum RecordFW size */)
                         {
                             final RecordFW record = recordRO.wrap(buffer, networkOffset, recordBatchLimit);
                             networkOffset = record.limit();
-
                             final int recordLimit = record.offset() +
                                     RecordFW.FIELD_OFFSET_ATTRIBUTES + record.length();
                             if (recordLimit > recordSetLimit)
@@ -1434,6 +1431,7 @@ final class NetworkConnectionPool
                                 memoryManager.release(headersAddress, headersCapacity);
                             }
                         }
+                        dispatcher.flush(partitionId, requestedOffset, nextFetchAt);
                     }
                 }
             }

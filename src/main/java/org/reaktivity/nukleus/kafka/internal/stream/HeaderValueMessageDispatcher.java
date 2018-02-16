@@ -61,6 +61,18 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
         return result;
     }
 
+    @Override
+    public void flush(
+            int partition,
+            long requestOffset,
+            long lastOffset)
+    {
+        for (MessageDispatcher dispatcher: dispatchersByHeaderValue.values())
+        {
+            dispatcher.flush(partition, requestOffset, lastOffset);
+        }
+    }
+
     public void add(
             OctetsFW headerValue,
             ListFW<KafkaHeaderFW> headers,
