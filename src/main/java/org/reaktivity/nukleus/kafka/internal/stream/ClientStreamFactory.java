@@ -365,12 +365,18 @@ public final class ClientStreamFactory implements StreamFactory
         final Long2LongHashMap fetchOffsets,
         final DirectBuffer messageKey)
     {
-        long regionAddress = value.addressOffset() - memoryManager.resolve(0);
+        long regionAddress = value == null ? 0 : value.addressOffset() - memoryManager.resolve(0);
         OctetsFW octetsKey = messageKey == null ? null : octetsRO.wrap(messageKey, 0,  messageKey.capacity());
         final TransferFW transfer = transferRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
                 .flags(flags)
-                .regions(m -> m.item(i -> i.address(regionAddress).length(value.capacity()).streamId(targetId)))
+                .regions(m ->
+                {
+                    if (value != null)
+                    {
+                        m.item(i -> i.address(regionAddress).length(value.capacity()).streamId(targetId));
+                    }
+                })
                 .extension(e -> e.set(visitKafkaDataEx(fetchOffsets, octetsKey)))
                 .build();
 
@@ -415,6 +421,8 @@ public final class ClientStreamFactory implements StreamFactory
         private final long applicationId;
         private final NetworkConnectionPool networkPool;
         private final Long2LongHashMap fetchOffsets;
+        private final UnsafeBuffer pendingMessageValueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+        private final UnsafeBuffer pendingMessageKeyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
         private String applicationName;
         private long applicationCorrelationId;
@@ -428,11 +436,9 @@ public final class ClientStreamFactory implements StreamFactory
 
         private MessageConsumer streamState;
 
-        private UnsafeBuffer pendingMessageValue = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-
-        private UnsafeBuffer pendingMessageKey = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-
         private boolean messagePending;;
+        private UnsafeBuffer pendingMessageValue;
+        private UnsafeBuffer pendingMessageKey;
 
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
@@ -540,16 +546,19 @@ public final class ClientStreamFactory implements StreamFactory
                 {
                     doAckReset(applicationThrottle, applicationId);
                 }
-                final ListFW<KafkaHeaderFW> headers = beginEx.headers();
-                int hashCode = -1;
-                if (fetchKey != null)
+                else
                 {
-                    hashCode = hashCodesCount == 1 ? beginEx.fetchKeyHash().nextInt()
-                            : BufferUtil.defaultHashCode(fetchKey.buffer(), fetchKey.offset(), fetchKey.limit());
+                    final ListFW<KafkaHeaderFW> headers = beginEx.headers();
+                    int hashCode = -1;
+                    if (fetchKey != null)
+                    {
+                        hashCode = hashCodesCount == 1 ? beginEx.fetchKeyHash().nextInt()
+                                : BufferUtil.defaultHashCode(fetchKey.buffer(), fetchKey.offset(), fetchKey.limit());
+                    }
+                    networkPool.doAttach(topicName, this.fetchOffsets, hashCode, fetchKey, headers,
+                            this, h -> progressHandler = h, this::onAttached, this::onMetadataError);
+                    this.streamState = this::afterBegin;
                 }
-                networkPool.doAttach(topicName, this.fetchOffsets, hashCode, fetchKey, headers,
-                        this, h -> progressHandler = h, this::onAttached, this::onMetadataError);
-                this.streamState = this::afterBegin;
             }
         }
 
@@ -648,12 +657,27 @@ public final class ClientStreamFactory implements StreamFactory
             if (requestOffset <= lastOffset // avoid out of order deliveryYeah‰
                     && messageOffset > lastOffset)
             {
-                flush(partition, requestOffset, messageOffset);
-                pendingMessageValue.wrap(value);
-                pendingMessageKey.wrap(key);
+                flush(partition, requestOffset, messageOffset - 1);
+                if (key == null)
+                {
+                    pendingMessageKey = null;
+                }
+                else
+                {
+                    pendingMessageKeyBuffer.wrap(key);
+                    pendingMessageKey = pendingMessageKeyBuffer;
+                }
+                if (value == null)
+                {
+                    pendingMessageValue = null;
+                }
+                else
+                {
+                    pendingMessageValueBuffer.wrap(value);
+                    pendingMessageValue = pendingMessageValueBuffer;
+                }
                 messagePending = true;
                 messagesDelivered++;
-                progressHandler.handle(partition, lastOffset, messageOffset);
             }
             return messagesDelivered;
         }
@@ -663,10 +687,12 @@ public final class ClientStreamFactory implements StreamFactory
         {
             if (messagePending)
             {
+                long previousOffset = fetchOffsets.get(partition);
                 this.fetchOffsets.put(partition, lastOffset);
                 doKafkaTransfer(applicationReply, applicationReplyId, 0,
                         pendingMessageValue, fetchOffsets, compacted ? pendingMessageKey : null);
                 messagePending = false;
+                progressHandler.handle(partition, previousOffset, lastOffset);
             }
         }
     }
