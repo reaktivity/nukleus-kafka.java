@@ -57,6 +57,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaTransferExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.RegionFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.TransferFW;
 import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
+import org.reaktivity.nukleus.kafka.internal.util.FrameFlags;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 
@@ -306,19 +307,32 @@ public final class ClientStreamFactory implements StreamFactory
         final AckFW ack = ackRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(throttleId)
                 .flags(flags)
-                .regions(m -> regions.forEach(r -> m.item(i -> i.address(r.address()).length(r.length()))))
+                .regions(regions == null ? m ->
+                         {} : m -> regions.forEach(r -> m.item(i -> i.address(r.address()).length(r.length()))))
                 .build();
 
         throttle.accept(ack.typeId(), ack.buffer(), ack.offset(), ack.sizeof());
     }
 
-    public void doReset(
+    public void doAckFin(
         final MessageConsumer throttle,
         final long throttleId)
     {
         final AckFW ack = ackRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(throttleId)
-                .flags(0x02) // rst
+                .flags(FrameFlags.FIN)
+                .build();
+
+        throttle.accept(ack.typeId(), ack.buffer(), ack.offset(), ack.sizeof());
+    }
+
+    public void doAckReset(
+        final MessageConsumer throttle,
+        final long throttleId)
+    {
+        final AckFW ack = ackRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                .streamId(throttleId)
+                .flags(FrameFlags.RST)
                 .build();
 
         throttle.accept(ack.typeId(), ack.buffer(), ack.offset(), ack.sizeof());
@@ -408,7 +422,6 @@ public final class ClientStreamFactory implements StreamFactory
 
         private int networkAttachId = UNATTACHED;
         private PartitionProgressHandler progressHandler;
-        private RegionFW region;
 
         private MessageConsumer streamState;
 
@@ -446,7 +459,7 @@ public final class ClientStreamFactory implements StreamFactory
             }
             else
             {
-                doReset(applicationThrottle, applicationId);
+                doAckReset(applicationThrottle, applicationId);
             }
         }
 
@@ -459,10 +472,11 @@ public final class ClientStreamFactory implements StreamFactory
             switch (msgTypeId)
             {
             case TransferFW.TYPE_ID:
-                int flags = transferRO.wrap(buffer, index, length).flags();
+                int flags = transferRO.wrap(buffer, index, index + length).flags();
                 if (isFin(flags))
                 {
-                    // accept reply stream is allowed to outlive accept stream, so ignore END
+                    // accept reply stream is allowed to outlive accept stream, so do clean close
+                    doAckFin(applicationThrottle, applicationId);
                 }
                 else if (isReset(flags))
                 {
@@ -472,13 +486,13 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 else
                 {
-                    doReset(applicationThrottle, applicationId);
+                    doAckReset(applicationThrottle, applicationId);
                     networkPool.doDetach(networkAttachId, fetchOffsets);
                     networkAttachId = UNATTACHED;
                 }
                 break;
             default:
-                doReset(applicationThrottle, applicationId);
+                doAckReset(applicationThrottle, applicationId);
                 break;
             }
         }
@@ -492,7 +506,7 @@ public final class ClientStreamFactory implements StreamFactory
 
             if (extension.sizeof() == 0)
             {
-                doReset(applicationThrottle, applicationId);
+                doAckReset(applicationThrottle, applicationId);
             }
             else
             {
@@ -515,7 +529,7 @@ public final class ClientStreamFactory implements StreamFactory
                     (hashCodesCount == 1 && fetchKey == null)
                    )
                 {
-                    doReset(applicationThrottle, applicationId);
+                    doAckReset(applicationThrottle, applicationId);
                 }
                 final ListFW<KafkaHeaderFW> headers = beginEx.headers();
                 int hashCode = -1;
@@ -546,7 +560,7 @@ public final class ClientStreamFactory implements StreamFactory
 
         private void onMetadataError(int errorCode)
         {
-            doReset(applicationThrottle, applicationId);
+            doAckReset(applicationThrottle, applicationId);
         }
 
         private void handleThrottle(
@@ -570,9 +584,18 @@ public final class ClientStreamFactory implements StreamFactory
         private void handleAck(
             final AckFW ack)
         {
+            ack.regions().forEach(r -> handleAcknowledgedRegion(r));
+            if ((ack.flags() & RST) == RST)
+            {
+                handleReset();
+            }
+        }
+
+        private void handleAcknowledgedRegion(
+            final RegionFW region)
+        {
             // Free the region if refCount (in region metadata) is now 0 and this is the last ack
             // for the region (partial acks case: we assume in order acks)
-            ack.regions().forEach(r -> region = r);
             final long ackEndAddress = region.address() + region.length();
             regionMetadataBuffer.wrap(memoryManager.resolve(ackEndAddress),
                     REGION_METADATA_SIZE);
@@ -597,17 +620,13 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 networkPool.doFlush(networkAttachId);
             }
-            if ((ack.flags() & RST) == RST)
-            {
-                handleReset();
-            }
         }
 
         private void handleReset()
         {
             networkPool.doDetach(networkAttachId, fetchOffsets);
             networkAttachId = UNATTACHED;
-            doReset(applicationThrottle, applicationId);
+            doAckReset(applicationThrottle, applicationId);
         }
 
         @Override

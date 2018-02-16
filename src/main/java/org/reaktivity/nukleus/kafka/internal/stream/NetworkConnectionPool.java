@@ -131,7 +131,7 @@ final class NetworkConnectionPool
     final ListFW<HeaderFW> headers = new ListFW<>(new HeaderFW());
     final UnsafeBuffer headersBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     final UnsafeBuffer keyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-    final UnsafeBuffer valueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    final UnsafeBuffer regionBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
     final MetadataResponseFW metadataResponseRO = new MetadataResponseFW();
     final BrokerMetadataFW brokerMetadataRO = new BrokerMetadataFW();
@@ -440,14 +440,17 @@ final class NetworkConnectionPool
             final AckFW ack)
         {
             final ListFW<RegionFW> regions = ack.regions();
-            regions.forEach(r -> requestUnacknowledgedBytes  -= r.length());
-            if (requestUnacknowledgedBytes == 0)
+            if (!regions.isEmpty())
             {
-                 memoryManager.release(requestRegionAddress, requestRegionCapacity);
+                regions.forEach(r -> requestUnacknowledgedBytes  -= r.length());
+                if (requestUnacknowledgedBytes == 0)
+                {
+                     memoryManager.release(requestRegionAddress, requestRegionCapacity);
+                }
             }
             if (isReset(ack.flags()))
             {
-                handleAbort();
+                reconnectAsConfigured();
             }
             else
             {
@@ -477,7 +480,7 @@ final class NetworkConnectionPool
             }
             else
             {
-                NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
+                NetworkConnectionPool.this.clientStreamFactory.doAckReset(networkReplyThrottle, networkReplyId);
             }
         }
 
@@ -495,7 +498,7 @@ final class NetworkConnectionPool
                 handleTransfer(transfer);
                 break;
             default:
-                NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
+                NetworkConnectionPool.this.clientStreamFactory.doAckReset(networkReplyThrottle, networkReplyId);
                 break;
             }
         }
@@ -504,6 +507,7 @@ final class NetworkConnectionPool
             BeginFW begin)
         {
             this.streamState = this::afterBegin;
+            doAck(null);
         }
 
         private void handleTransfer(
@@ -530,13 +534,14 @@ final class NetworkConnectionPool
 
                 if (response == null || networkOffset + response.size() > networkLimit)
                 {
-                    if (responseBuffer.capacity() == maximumUnacknowledgedBytes)
+                    if (networkBuffer.capacity() == maximumUnacknowledgedBytes)
                     {
                         // response size exceeds maximum we can currently handle
                         throw new IllegalStateException(format("%s: Kafka response size %d exceeds %d bytes",
                                 this, response.size(), maximumUnacknowledgedBytes));
                     }
-                    responseRegions = appendRegions(regions, responseRegions);
+                    responseRegions = appendRegions(responseRegions, regions);
+                    responseBuffer = networkBuffer;
                 }
                 else
                 {
@@ -552,29 +557,39 @@ final class NetworkConnectionPool
             }
             finally
             {
-                if (isReset(transfer.flags()))
+                if (transfer.flags() != 0)
                 {
-                    handleAbort();
-                }
-                else if (isFin(transfer.flags()))
-                {
-                    handleEnd();
+                    if (isReset(transfer.flags()))
+                    {
+                        NetworkConnectionPool.this.clientStreamFactory.doAckReset(networkReplyThrottle, networkReplyId);
+                    }
+                    else if (isFin(transfer.flags()))
+                    {
+                        NetworkConnectionPool.this.clientStreamFactory.doAckFin(networkReplyThrottle, networkReplyId);
+                    }
+                    reconnectAsConfigured();
                 }
             }
         }
 
         private ListFW<RegionFW> appendRegions(ListFW<RegionFW> regions1, ListFW<RegionFW> regions2)
         {
-            int capacity = regions1 == null ? regions2.sizeof() : regions1.sizeof() + regions2.sizeof() - Integer.BYTES;
-            UnsafeBuffer buffer = new UnsafeBuffer(new byte[capacity]);
-            ListFW.Builder<RegionFW.Builder, RegionFW>builder = new ListFW.Builder<>(new RegionFW.Builder(), new RegionFW())
-                    .wrap(buffer, 0, buffer.capacity());
-            if (regions1 != null)
+            ListFW<RegionFW> result = regions1;
+            int capacity = regions1 == null ? regions2 == null ? 0 : regions2.sizeof() :
+                regions1.sizeof() + regions2.sizeof() - Integer.BYTES;
+            if (capacity > 0)
             {
-                regions1.forEach(r -> builder.item(b -> b.address(r.address()).length(r.length()).streamId(r.streamId())));
+                UnsafeBuffer buffer = new UnsafeBuffer(new byte[capacity]);
+                ListFW.Builder<RegionFW.Builder, RegionFW>builder = new ListFW.Builder<>(new RegionFW.Builder(), new RegionFW())
+                        .wrap(buffer, 0, buffer.capacity());
+                if (regions1 != null)
+                {
+                    regions1.forEach(r -> builder.item(b -> b.address(r.address()).length(r.length()).streamId(r.streamId())));
+                }
+                regions2.forEach(r -> builder.item(b -> b.address(r.address()).length(r.length()).streamId(r.streamId())));
+                result = builder.build();
             }
-            regions2.forEach(r -> builder.item(b -> b.address(r.address()).length(r.length()).streamId(r.streamId())));
-            return builder.build();
+            return result;
         }
 
         abstract void handleResponse(
@@ -582,32 +597,24 @@ final class NetworkConnectionPool
             int networkOffset,
             int networkLimit);
 
-        private void handleEnd()
-        {
-            doReinitialize();
-            doRequestIfNeeded();
-        }
-
-        private void handleAbort()
-        {
-            doReinitialize();
-            doRequestIfNeeded();
-        }
-
         void doAck(ListFW<RegionFW> regions)
         {
             NetworkConnectionPool.this.clientStreamFactory.doAck(
                     networkReplyThrottle, networkReplyId, 0, regions);
         }
 
-        private void doReinitialize()
+        private void reconnectAsConfigured()
         {
-            networkId = 0L;
-            nextRequestId = 0;
-            nextResponseId = 0;
-            responseBuffer = null;
-            responseRegions = null;
-            requestUnacknowledgedBytes = 0;
+            if (NetworkConnectionPool.this.clientStreamFactory.configuration.brokerAutoReconnect())
+            {
+                networkId = 0L;
+                nextRequestId = 0;
+                nextResponseId = 0;
+                responseBuffer = null;
+                responseRegions = null;
+                requestUnacknowledgedBytes = 0;
+                doRequestIfNeeded();
+            }
         }
     }
 
@@ -979,6 +986,8 @@ final class NetworkConnectionPool
 
                 requestRegionCapacity = encodeLimit - encodeOffset;
                 requestRegionAddress = memoryManager.acquire(requestRegionCapacity);
+                regionBuffer.wrap(memoryManager.resolve(requestRegionAddress), requestRegionCapacity);
+                regionBuffer.putBytes(0, encodeBuffer, 0, requestRegionCapacity);
 
                 NetworkConnectionPool.this.clientStreamFactory.doTransfer(networkTarget, networkId, 0,
                         b -> b.item(r -> r.address(requestRegionAddress)
@@ -1034,6 +1043,8 @@ final class NetworkConnectionPool
 
                 requestRegionCapacity = encodeLimit - encodeOffset;
                 requestRegionAddress = memoryManager.acquire(requestRegionCapacity);
+                regionBuffer.wrap(memoryManager.resolve(requestRegionAddress), requestRegionCapacity);
+                regionBuffer.putBytes(0, encodeBuffer, 0, requestRegionCapacity);
 
                 NetworkConnectionPool.this.clientStreamFactory.doTransfer(networkTarget, networkId, 0,
                         b -> b.item(r -> r.address(requestRegionAddress)
@@ -1385,19 +1396,19 @@ final class NetworkConnectionPool
                             {
                                 int regionSize = value.sizeof() + REGION_METADATA_SIZE;
                                 long regionAddress = memoryManager.acquire(regionSize);
-                                valueBuffer.wrap(memoryManager.resolve(regionAddress), value.sizeof());
-                                valueBuffer.putBytes(0,  value.buffer(), value.offset(), value.sizeof());
+                                regionBuffer.wrap(memoryManager.resolve(regionAddress), value.sizeof());
+                                regionBuffer.putBytes(0,  value.buffer(), value.offset(), value.sizeof());
                                 int referenceCount = dispatcher.dispatch(partitionId, requestedOffset, nextFetchAt,
-                                        keyBuffer, this::supplyHeader, valueBuffer);
+                                        keyBuffer, this::supplyHeader, regionBuffer);
                                 if (referenceCount == 0)
                                 {
                                     memoryManager.release(regionAddress, regionSize);
                                 }
                                 else
                                 {
-                                    valueBuffer.wrap(memoryManager.resolve(regionAddress) + value.sizeof(),
+                                    regionBuffer.wrap(memoryManager.resolve(regionAddress) + value.sizeof(),
                                             REGION_METADATA_SIZE);
-                                    clientStreamFactory.regionMetadataRW.wrap(valueBuffer,  0,  valueBuffer.capacity())
+                                    clientStreamFactory.regionMetadataRW.wrap(regionBuffer,  0,  regionBuffer.capacity())
                                         .endAdress(regionAddress + value.sizeof())  // end of region marker
                                         .regionCapacity(regionSize)
                                         .refCount(referenceCount)

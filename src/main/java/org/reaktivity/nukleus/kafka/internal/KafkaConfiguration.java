@@ -19,20 +19,27 @@ import org.reaktivity.nukleus.Configuration;
 
 public class KafkaConfiguration extends Configuration
 {
-    private final int maxTcpReadBytes;
+    public static final String PROPERTY_BROKER_AUTO_RECONNECT = "kafka.reconnect.seconds";
+
+    public static final boolean DEFAULT_BROKER_AUTO_RECONNECT  = true;
 
     public KafkaConfiguration(
         Configuration config)
     {
         super(config);
-        maxTcpReadBytes = getInteger(org.reaktivity.reaktor.internal.ReaktorConfiguration.MEMORY_BLOCK_CAPACITY_PROPERTY,
-                org.reaktivity.reaktor.internal.ReaktorConfiguration.MEMORY_BLOCK_CAPACITY_DEFAULT);
     }
 
     // TODO: do partial decoding and acknowledging of Kafka responses and partial encoding
     //       to avoid the need for this method
     public int  maximumUnacknowledgedBytes()
     {
-        return maxTcpReadBytes;
+        return getInteger("reaktor.memory.block.capacity", 8 * 1024);
     }
+
+    public boolean brokerAutoReconnect()
+    {
+        return getBoolean(PROPERTY_BROKER_AUTO_RECONNECT, DEFAULT_BROKER_AUTO_RECONNECT);
+    }
+
+
 }
