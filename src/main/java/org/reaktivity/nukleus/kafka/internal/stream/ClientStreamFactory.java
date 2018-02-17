@@ -105,7 +105,7 @@ public final class ClientStreamFactory implements StreamFactory
     final LongSupplier supplyStreamId;
     final LongSupplier supplyCorrelationId;
     final MemoryManager memoryManager;
-    final DirectBufferBuilder directBufferBuilder;
+    final Supplier<DirectBufferBuilder> supplyDirectBufferBuilder;
     final KafkaConfiguration configuration;
     private final MutableDirectBuffer writeBuffer;
 
@@ -126,7 +126,7 @@ public final class ClientStreamFactory implements StreamFactory
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
         this.memoryManager = requireNonNull(memoryManager);
-        this.directBufferBuilder = supplyDirectBufferBuilder.get();
+        this.supplyDirectBufferBuilder = supplyDirectBufferBuilder;
         this.supplyStreamId = requireNonNull(supplyStreamId);
         this.supplyCorrelationId = supplyCorrelationId;
         this.correlations = requireNonNull(correlations);
@@ -309,7 +309,10 @@ public final class ClientStreamFactory implements StreamFactory
                 .streamId(throttleId)
                 .flags(flags)
                 .regions(regions == null ? m ->
-                         {} : m -> regions.forEach(r -> m.item(i -> i.address(r.address()).length(r.length()))))
+                         {} : m -> regions.forEach(r -> m.item(i -> i.address(r.address())
+                                                                     .length(r.length())
+                                                                     .streamId(r.streamId())
+                                                               )))
                 .build();
 
         throttle.accept(ack.typeId(), ack.buffer(), ack.offset(), ack.sizeof());

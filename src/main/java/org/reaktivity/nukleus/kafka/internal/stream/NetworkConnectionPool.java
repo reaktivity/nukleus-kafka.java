@@ -24,6 +24,7 @@ import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.LEADER_NO
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.UNKNOWN_TOPIC_OR_PARTITION;
 import static org.reaktivity.nukleus.kafka.internal.util.FrameFlags.FIN;
+import static org.reaktivity.nukleus.kafka.internal.util.FrameFlags.RST;
 import static org.reaktivity.nukleus.kafka.internal.util.FrameFlags.isFin;
 import static org.reaktivity.nukleus.kafka.internal.util.FrameFlags.isReset;
 
@@ -354,10 +355,12 @@ final class NetworkConnectionPool
 
         DirectBuffer responseBuffer = null;
         ListFW<RegionFW> responseRegions = null;
+        final DirectBufferBuilder directBufferBuilder;
 
         private AbstractNetworkConnection()
         {
             this.networkTarget = NetworkConnectionPool.this.clientStreamFactory.router.supplyTarget(networkName);
+            directBufferBuilder = clientStreamFactory.supplyDirectBufferBuilder.get();
         }
 
         @Override
@@ -509,20 +512,19 @@ final class NetworkConnectionPool
             BeginFW begin)
         {
             this.streamState = this::afterBegin;
-            doAck(null);
+            doAck(0, null);
         }
 
         private void handleTransfer(
             TransferFW transfer)
         {
             ListFW<RegionFW> regions = transfer.regions();
-            final DirectBufferBuilder builder = clientStreamFactory.directBufferBuilder;
             if (responseBuffer != null)
             {
-                builder.wrap(responseBuffer);
+                directBufferBuilder.wrap(responseBuffer);
             }
-            regions.forEach(r -> builder.wrap(memoryManager.resolve(r.address()), r.length()));
-            DirectBuffer networkBuffer = builder.build();
+            regions.forEach(r -> directBufferBuilder.wrap(memoryManager.resolve(r.address()), r.length()));
+            DirectBuffer networkBuffer = directBufferBuilder.build();
             int networkOffset = 0;
             int networkLimit = networkBuffer.capacity();
             try
@@ -548,12 +550,12 @@ final class NetworkConnectionPool
                 else
                 {
                     handleResponse(networkBuffer, networkOffset, networkLimit);
+                    responseBuffer = null;
+                    doAck(0, responseRegions);
+                    responseRegions = null;
                     networkOffset += response.size();
                     nextResponseId++;
-
                     assert networkOffset == networkLimit;
-                    responseBuffer = null;
-
                     doRequestIfNeeded();
                 }
             }
@@ -563,11 +565,11 @@ final class NetworkConnectionPool
                 {
                     if (isReset(transfer.flags()))
                     {
-                        NetworkConnectionPool.this.clientStreamFactory.doAckReset(networkReplyThrottle, networkReplyId);
+                        doAck(RST, responseRegions);
                     }
                     else if (isFin(transfer.flags()))
                     {
-                        NetworkConnectionPool.this.clientStreamFactory.doAckFin(networkReplyThrottle, networkReplyId);
+                        doAck(FIN, responseRegions);
                     }
                     reconnectAsConfigured();
                 }
@@ -599,10 +601,10 @@ final class NetworkConnectionPool
             int networkOffset,
             int networkLimit);
 
-        void doAck(ListFW<RegionFW> regions)
+        void doAck(int flags, ListFW<RegionFW> regions)
         {
             NetworkConnectionPool.this.clientStreamFactory.doAck(
-                    networkReplyThrottle, networkReplyId, 0, regions);
+                    networkReplyThrottle, networkReplyId, flags, regions);
         }
 
         private void reconnectAsConfigured()
