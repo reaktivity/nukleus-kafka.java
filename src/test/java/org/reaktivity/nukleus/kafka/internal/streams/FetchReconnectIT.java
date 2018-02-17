@@ -29,15 +29,16 @@ import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
-public class MetadataIT
+public class FetchReconnectIT
 {
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
-            .addScriptRoot("metadata", "org/reaktivity/specification/kafka/metadata.v5")
+            .addScriptRoot("routeAnyTopic", "org/reaktivity/specification/nukleus/kafka/control/route")
             .addScriptRoot("server", "org/reaktivity/specification/kafka/fetch.v5")
+            .addScriptRoot("metadata", "org/reaktivity/specification/kafka/metadata.v5")
             .addScriptRoot("client", "org/reaktivity/specification/nukleus/kafka/streams/fetch");
 
-    private final TestRule timeout = new DisableOnDebug(new Timeout(15, SECONDS));
+    private final TestRule timeout = new DisableOnDebug(new Timeout(10, SECONDS));
 
     private final ReaktorRule reaktor = new ReaktorRule()
         .nukleus("kafka"::equals)
@@ -45,7 +46,7 @@ public class MetadataIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
-        .configure(KafkaConfiguration.PROPERTY_BROKER_RECONNECT_ATTEMPTS, "0")
+        .configure(KafkaConfiguration.PROPERTY_BROKER_RECONNECT_ATTEMPTS, "1")
         .clean();
 
     @Rule
@@ -55,9 +56,9 @@ public class MetadataIT
     @Specification({
         "${route}/client/controller",
         "${client}/zero.offset/client",
-        "${metadata}/one.topic.leader.not.available.and.retry/server"})
+        "${server}/live.fetch.abort.and.reconnect/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldRetryWhenLeaderNotAvailable() throws Exception
+    public void shouldReconnectOnAbortOnLiveFetchConnection() throws Exception
     {
         k3po.finish();
     }
@@ -65,45 +66,11 @@ public class MetadataIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset/client",
-        "${metadata}/one.topic.multiple.nodes/server"})
+        "${client}/zero.offset.message/client",
+        "${server}/live.fetch.reset.reconnect.and.message/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldHandleMetadataResponseOneTopicOnMultipleNodes() throws Exception
+    public void shouldReconnectOnResetOnLiveConnectionAndReceiveMessage() throws Exception
     {
         k3po.finish();
     }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/zero.offset/client",
-        "${metadata}/one.topic.multiple.nodes.and.replicas/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldHandleMetadataResponseOneTopicMultipleNodesAndReplicas() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/zero.offset/client",
-        "${metadata}/one.topic.multiple.partitions/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldHandleMetadataResponseOneTopicMultiplePartitionsSingleNode() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/zero.offset/client",
-        "${metadata}/one.topic.single.partition/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldHandleMetadataResponseOneTopicSinglePartition() throws Exception
-    {
-        k3po.finish();
-    }
-
 }

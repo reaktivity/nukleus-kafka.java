@@ -15,14 +15,13 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
-import java.util.function.IntUnaryOperator;
-import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
-import org.reaktivity.nukleus.buffer.BufferPool;
+import org.reaktivity.nukleus.buffer.DirectBufferBuilder;
+import org.reaktivity.nukleus.buffer.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
@@ -37,7 +36,8 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     private MutableDirectBuffer writeBuffer;
     private LongSupplier supplyStreamId;
     private LongSupplier supplyCorrelationId;
-    private Supplier<BufferPool> supplyBufferPool;
+    private Supplier<DirectBufferBuilder> supplyDirectBufferBuilder;
+    private MemoryManager memoryManager;
 
     public ClientStreamFactoryBuilder(
         KafkaConfiguration config)
@@ -71,20 +71,6 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
-    public ClientStreamFactoryBuilder setGroupBudgetClaimer(
-        LongFunction<IntUnaryOperator> groupBudgetClaimer)
-    {
-        return this;
-    }
-
-    @Override
-    public ClientStreamFactoryBuilder setGroupBudgetReleaser(
-        LongFunction<IntUnaryOperator> groupBudgetReleaser)
-    {
-        return this;
-    }
-
-    @Override
     public ClientStreamFactoryBuilder setCorrelationIdSupplier(
         LongSupplier supplyCorrelationId)
     {
@@ -93,19 +79,24 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
-    public StreamFactoryBuilder setBufferPoolSupplier(
-        Supplier<BufferPool> supplyBufferPool)
+    public StreamFactoryBuilder setDirectBufferBuilderFactory(Supplier<DirectBufferBuilder> supplyDirectBufferBuilder)
     {
-        this.supplyBufferPool = supplyBufferPool;
+        this.supplyDirectBufferBuilder = supplyDirectBufferBuilder;
+        return this;
+    }
+
+    @Override
+    public StreamFactoryBuilder setMemoryManager(
+       MemoryManager memoryManager)
+    {
+        this.memoryManager = memoryManager;
         return this;
     }
 
     @Override
     public StreamFactory build()
     {
-        final BufferPool bufferPool = supplyBufferPool.get();
-
-        return new ClientStreamFactory(config, router, writeBuffer, bufferPool,
+        return new ClientStreamFactory(config, router, writeBuffer, memoryManager, supplyDirectBufferBuilder,
                 supplyStreamId, supplyCorrelationId, correlations);
     }
 }
