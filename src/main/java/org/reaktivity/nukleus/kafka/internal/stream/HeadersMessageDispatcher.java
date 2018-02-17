@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
@@ -30,7 +31,7 @@ public class HeadersMessageDispatcher implements MessageDispatcher
 {
     private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
     private final Map<DirectBuffer, HeaderValueMessageDispatcher> dispatchersByHeaderKey = new HashMap<>();
-    private ArrayList<HeaderValueMessageDispatcher> dispatchers = new ArrayList<HeaderValueMessageDispatcher>();
+    private final List<HeaderValueMessageDispatcher> dispatchers = new ArrayList<HeaderValueMessageDispatcher>();
     private final BroadcastMessageDispatcher broadcast = new BroadcastMessageDispatcher();
 
     @Override
@@ -44,8 +45,9 @@ public class HeadersMessageDispatcher implements MessageDispatcher
     {
         int result = 0;
         result +=  broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
-        for (MessageDispatcher dispatcher : dispatchersByHeaderKey.values())
+        for (int i = 0; i < dispatchers.size(); i++)
         {
+            MessageDispatcher dispatcher = dispatchers.get(i);
             result += dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
         }
         return result;
