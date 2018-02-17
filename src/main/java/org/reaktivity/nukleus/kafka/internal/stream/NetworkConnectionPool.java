@@ -106,7 +106,7 @@ final class NetworkConnectionPool
 
     private static final byte[] ANY_IP_ADDR = new byte[4];
 
-    private static final int MAX_KAFKA_MESSAGE_SIZE = 10000;
+    private final int maximumMessageSize;
 
     final RequestHeaderFW.Builder requestRW = new RequestHeaderFW.Builder();
     final FetchRequestFW.Builder fetchRequestRW = new FetchRequestFW.Builder();
@@ -179,6 +179,7 @@ final class NetworkConnectionPool
         this.topicMetadataByName = new HashMap<>();
         this.detachersById = new Int2ObjectHashMap<>();
         this.maximumBrokerReconnects = clientStreamFactory.configuration.maximumBrokerReconnects();
+        this.maximumMessageSize = clientStreamFactory.configuration.maximumMessageSize();
     }
 
     void doAttach(
@@ -729,7 +730,7 @@ final class NetworkConnectionPool
                         .wrap(NetworkConnectionPool.this.encodeBuffer, fetchRequest.offset(), fetchRequest.limit())
                         .maxWaitTimeMillis(fetchRequest.maxWaitTimeMillis())
                         .minBytes(fetchRequest.minBytes())
-                        .maxBytes(maximumUnacknowledgedBytes - MAX_KAFKA_MESSAGE_SIZE)
+                        .maxBytes(maximumUnacknowledgedBytes - maximumMessageSize)
                         .isolationLevel(fetchRequest.isolationLevel())
                         .topicCount(topicCount)
                         .build();
@@ -813,7 +814,7 @@ final class NetworkConnectionPool
         public String toString()
         {
             return String.format("%s [brokerId=%d, host=%s, port=%d, maxFetchBytes=%d]",
-                    getClass().getName(), brokerId, host, port, maximumUnacknowledgedBytes - MAX_KAFKA_MESSAGE_SIZE);
+                    getClass().getName(), brokerId, host, port, maximumUnacknowledgedBytes - maximumMessageSize);
         }
     }
 
@@ -829,7 +830,7 @@ final class NetworkConnectionPool
             String topicName)
         {
             NetworkTopic topic = topicsByName.get(topicName);
-            final int maxPartitionBytes =  maximumUnacknowledgedBytes - MAX_KAFKA_MESSAGE_SIZE;
+            final int maxPartitionBytes =  maximumUnacknowledgedBytes - maximumMessageSize;
             final int[] nodeIdsByPartition = topicMetadataByName.get(topicName).nodeIdsByPartition;
 
             int partitionCount = 0;
@@ -881,7 +882,7 @@ final class NetworkConnectionPool
             NetworkTopic topic = topicsByName.get(topicName);
             if (topic.needsHistorical())
             {
-                int maxPartitionBytes = maximumUnacknowledgedBytes - MAX_KAFKA_MESSAGE_SIZE;
+                int maxPartitionBytes = maximumUnacknowledgedBytes - maximumMessageSize;
                 final int[] nodeIdsByPartition = topicMetadataByName.get(topicName).nodeIdsByPartition;
 
                 int partitionId = -1;

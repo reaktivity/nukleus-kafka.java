@@ -19,9 +19,13 @@ import org.reaktivity.nukleus.Configuration;
 
 public class KafkaConfiguration extends Configuration
 {
-    public static final String PROPERTY_BROKER_RECONNECT_ATTEMPTS = "kafka.maximum.reconnects";
+    public static final String PROPERTY_BROKER_RECONNECT_ATTEMPTS = "nukleus.kafka.maximum.reconnects";
+    public static final String PROPERTY_MAXIMUM_UNACKNOWLEDGED_BYTES = "nukleus.kafka.maximum.unacknowledged.bytes";
+    public static final String PROPERTY_MAXIMUM_MESSAGE_SIZE  = "nukleus.kafka.maximum.message.size";
 
-    public static final int DEFAULT_BROKER_RECONNECT_ATTEMPTS  = -1; // unlimited
+    private static final int DEFAULT_BROKER_RECONNECT_ATTEMPTS  = -1; // unlimited
+    private static final int DEFAULT_MAXIMUM_UNACKNOWLEDGED_BYTES  = 64 * 1024;
+    private static final int DEFAULT_MAXIMUM_MESSAGE_SIZE = 8 * 1024;
 
     public KafkaConfiguration(
         Configuration config)
@@ -33,7 +37,13 @@ public class KafkaConfiguration extends Configuration
     //       to avoid the need for this method
     public int  maximumUnacknowledgedBytes()
     {
-        return getInteger("reaktor.memory.block.capacity", 8 * 1024);
+        return getInteger(PROPERTY_MAXIMUM_UNACKNOWLEDGED_BYTES, DEFAULT_MAXIMUM_UNACKNOWLEDGED_BYTES);
+    }
+
+    // TODO: get configured value from Kafka broker
+    public int  maximumMessageSize()
+    {
+        return getInteger(PROPERTY_MAXIMUM_MESSAGE_SIZE, DEFAULT_MAXIMUM_MESSAGE_SIZE);
     }
 
     public int maximumBrokerReconnects()

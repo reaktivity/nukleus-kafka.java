@@ -35,11 +35,12 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
                  DirectBuffer value)
     {
         int result = 0;
-         for (MessageDispatcher dispatcher : dispatchers)
-         {
+        for (int i = 0; i < dispatchers.size(); i++)
+        {
+            MessageDispatcher dispatcher = dispatchers.get(i);
             result += dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
-         }
-         return result;
+        }
+        return result;
     }
 
     @Override
@@ -48,8 +49,9 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
             long requestOffset,
             long lastOffset)
     {
-        for (MessageDispatcher dispatcher: dispatchers)
+        for (int i = 0; i < dispatchers.size(); i++)
         {
+            MessageDispatcher dispatcher = dispatchers.get(i);
             dispatcher.flush(partition, requestOffset, lastOffset);
         }
     }

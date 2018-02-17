@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
@@ -30,7 +31,8 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
     private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
     private final DirectBuffer headerName;
 
-    private Map<UnsafeBuffer, HeadersMessageDispatcher> dispatchersByHeaderValue = new HashMap<>();
+    private Map<DirectBuffer, HeadersMessageDispatcher> dispatchersByHeaderValue = new HashMap<>();
+    private ArrayList<HeadersMessageDispatcher> dispatchers = new ArrayList<HeadersMessageDispatcher>();
 
     public HeaderValueMessageDispatcher(DirectBuffer headerKey)
     {
@@ -67,8 +69,9 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             long requestOffset,
             long lastOffset)
     {
-        for (MessageDispatcher dispatcher: dispatchersByHeaderValue.values())
+        for (int i = 0; i < dispatchers.size(); i++)
         {
+            MessageDispatcher dispatcher = dispatchers.get(i);
             dispatcher.flush(partition, requestOffset, lastOffset);
         }
     }
@@ -87,6 +90,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             keyCopy.putBytes(0,  headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
             headersDispatcher =  new HeadersMessageDispatcher();
             dispatchersByHeaderValue.put(keyCopy, headersDispatcher);
+            dispatchers.add(headersDispatcher);
         }
         headersDispatcher.add(headers, index, dispatcher);
     }
@@ -106,6 +110,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             if (headersDispatcher.isEmpty())
             {
                 dispatchersByHeaderValue.remove(buffer);
+                dispatchers.remove(headersDispatcher);
             }
         }
         return result;

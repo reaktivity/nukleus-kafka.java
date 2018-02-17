@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
@@ -28,13 +29,9 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 public class HeadersMessageDispatcher implements MessageDispatcher
 {
     private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
-    private final Map<UnsafeBuffer, HeaderValueMessageDispatcher> dispatchersByHeaderKey = new HashMap<>();
+    private final Map<DirectBuffer, HeaderValueMessageDispatcher> dispatchersByHeaderKey = new HashMap<>();
+    private ArrayList<HeaderValueMessageDispatcher> dispatchers = new ArrayList<HeaderValueMessageDispatcher>();
     private final BroadcastMessageDispatcher broadcast = new BroadcastMessageDispatcher();
-
-    public HeadersMessageDispatcher()
-    {
-
-    }
 
     @Override
     public int dispatch(
@@ -46,11 +43,11 @@ public class HeadersMessageDispatcher implements MessageDispatcher
                  DirectBuffer value)
     {
         int result = 0;
+        result +=  broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
         for (MessageDispatcher dispatcher : dispatchersByHeaderKey.values())
         {
             result += dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
         }
-        result +=  broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
         return result;
     }
 
@@ -61,8 +58,9 @@ public class HeadersMessageDispatcher implements MessageDispatcher
             long lastOffset)
     {
         broadcast.flush(partition, requestOffset, lastOffset);
-        for (MessageDispatcher dispatcher: dispatchersByHeaderKey.values())
+        for (int i = 0; i < dispatchers.size(); i++)
         {
+            MessageDispatcher dispatcher = dispatchers.get(i);
             dispatcher.flush(partition, requestOffset, lastOffset);
         }
     }
@@ -92,6 +90,7 @@ public class HeadersMessageDispatcher implements MessageDispatcher
                 keyCopy.putBytes(0, headerKey.buffer(), valueOffset, valueLength);
                 valueDispatcher = new HeaderValueMessageDispatcher(keyCopy);
                 dispatchersByHeaderKey.put(keyCopy, valueDispatcher);
+                dispatchers.add(valueDispatcher);
             }
             valueDispatcher.add(header.value(), headers, index + 1, dispatcher);
         }
@@ -129,6 +128,7 @@ public class HeadersMessageDispatcher implements MessageDispatcher
                 if (valueDispatcher.isEmpty())
                 {
                     dispatchersByHeaderKey.remove(buffer);
+                    dispatchers.remove(valueDispatcher);
                 }
             }
         }
