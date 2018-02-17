@@ -19,9 +19,9 @@ import org.reaktivity.nukleus.Configuration;
 
 public class KafkaConfiguration extends Configuration
 {
-    public static final String PROPERTY_BROKER_AUTO_RECONNECT = "kafka.auto.reconnect";
+    public static final String PROPERTY_BROKER_RECONNECT_ATTEMPTS = "kafka.maximum.reconnects";
 
-    public static final boolean DEFAULT_BROKER_AUTO_RECONNECT  = true;
+    public static final int DEFAULT_BROKER_RECONNECT_ATTEMPTS  = -1; // unlimited
 
     public KafkaConfiguration(
         Configuration config)
@@ -36,9 +36,10 @@ public class KafkaConfiguration extends Configuration
         return getInteger("reaktor.memory.block.capacity", 8 * 1024);
     }
 
-    public boolean brokerAutoReconnect()
+    public int maximumBrokerReconnects()
     {
-        return getBoolean(PROPERTY_BROKER_AUTO_RECONNECT, DEFAULT_BROKER_AUTO_RECONNECT);
+        int result = getInteger(PROPERTY_BROKER_RECONNECT_ATTEMPTS, DEFAULT_BROKER_RECONNECT_ATTEMPTS);
+        return result == -1 ? Integer.MAX_VALUE : result;
     }
 
 

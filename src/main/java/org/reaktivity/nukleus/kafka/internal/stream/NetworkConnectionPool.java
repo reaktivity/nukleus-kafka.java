@@ -150,6 +150,7 @@ final class NetworkConnectionPool
     private final String networkName;
     private final long networkRef;
     private final MemoryManager memoryManager;
+    private final int maximumBrokerReconnects;
 
     private AbstractFetchConnection[] connections = new LiveFetchConnection[0];
     private HistoricalFetchConnection[] historicalConnections = new HistoricalFetchConnection[0];
@@ -177,6 +178,7 @@ final class NetworkConnectionPool
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
         this.detachersById = new Int2ObjectHashMap<>();
+        this.maximumBrokerReconnects = clientStreamFactory.configuration.maximumBrokerReconnects();
     }
 
     void doAttach(
@@ -345,6 +347,7 @@ final class NetworkConnectionPool
 
         long encodeAddress = -1L;
         int encodeLength;
+        int reconnects;
 
         int nextRequestId;
         int nextResponseId;
@@ -454,7 +457,14 @@ final class NetworkConnectionPool
             }
             if (isReset(ack.flags()))
             {
-                NetworkConnectionPool.this.clientStreamFactory.correlations.remove(networkId, AbstractNetworkConnection.this);
+                if (networkReplyId == 0L)
+                {
+                    NetworkConnectionPool.this.clientStreamFactory.correlations.remove(networkId, AbstractNetworkConnection.this);
+                }
+                else
+                {
+                    doAck(RST, responseRegions);
+                }
                 reconnectAsConfigured();
             }
             else
@@ -609,9 +619,11 @@ final class NetworkConnectionPool
 
         private void reconnectAsConfigured()
         {
-            if (NetworkConnectionPool.this.clientStreamFactory.configuration.brokerAutoReconnect())
+            if (reconnects < maximumBrokerReconnects)
             {
+                reconnects++;
                 networkId = 0L;
+                networkReplyId = 0L;
                 nextRequestId = 0;
                 nextResponseId = 0;
                 responseBuffer = null;

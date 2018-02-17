@@ -145,6 +145,7 @@ public class FetchIT
     }
 
     @Test
+    @Ignore("Need k3po nukleus transport enhancement to delay acks")
     @Specification({
         "${route}/client/controller",
         "${client}/fanout.with.slow.consumer/client",
@@ -178,6 +179,7 @@ public class FetchIT
     }
 
     @Test
+    @Ignore("Need k3po nukleus transport enhancement to delay acks")
     @Specification({
         "${route}/client/controller",
         "${client}/fetch.key.zero.offset.messages/client",
@@ -190,6 +192,7 @@ public class FetchIT
     }
 
     @Test
+    @Ignore("Need k3po nukleus transport enhancement to delay acks")
     @Specification({
         "${route}/client/controller",
         "${client}/fetch.key.zero.offset.three.messages/client",
@@ -384,28 +387,6 @@ public class FetchIT
         "${server}/ktable.messages.multiple.nodes/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveKTableMessagesFromMultipleNodes() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/zero.offset/client",
-        "${server}/live.fetch.abort.and.reconnect/server" })
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReconnectOnAbortOnLiveFetchConnection() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/zero.offset.message/client",
-        "${server}/live.fetch.reset.reconnect.and.message/server" })
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReconnectOnResetOnLiveConnectionAndReceiveMessage() throws Exception
     {
         k3po.finish();
     }
