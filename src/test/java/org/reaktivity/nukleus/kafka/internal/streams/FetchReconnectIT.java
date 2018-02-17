@@ -45,7 +45,7 @@ public class FetchReconnectIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
-        .configure("kafka.maximum.reconnects", "1")
+        .configure("nukleus.kafka.maximum.reconnects", "1")
         .clean();
 
     @Rule
