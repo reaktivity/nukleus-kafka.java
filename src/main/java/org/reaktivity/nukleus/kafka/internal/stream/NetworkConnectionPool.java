@@ -106,8 +106,6 @@ final class NetworkConnectionPool
 
     private static final byte[] ANY_IP_ADDR = new byte[4];
 
-    private final int maximumMessageSize;
-
     final RequestHeaderFW.Builder requestRW = new RequestHeaderFW.Builder();
     final FetchRequestFW.Builder fetchRequestRW = new FetchRequestFW.Builder();
     final TopicRequestFW.Builder topicRequestRW = new TopicRequestFW.Builder();
@@ -159,6 +157,7 @@ final class NetworkConnectionPool
     private final Map<String, TopicMetadata> topicMetadataByName;
     private final Map<String, NetworkTopic> topicsByName;
     private final Int2ObjectHashMap<Consumer<Long2LongHashMap>> detachersById;
+    private final int maximumFetchBytesLimit;
 
     private int nextAttachId;
 
@@ -179,7 +178,9 @@ final class NetworkConnectionPool
         this.topicMetadataByName = new HashMap<>();
         this.detachersById = new Int2ObjectHashMap<>();
         this.maximumBrokerReconnects = clientStreamFactory.configuration.maximumBrokerReconnects();
-        this.maximumMessageSize = clientStreamFactory.configuration.maximumMessageSize();
+        int maximumMessageSize = clientStreamFactory.configuration.maximumMessageSize();
+        this.maximumFetchBytesLimit = maximumUnacknowledgedBytes > maximumMessageSize ?
+                maximumUnacknowledgedBytes - maximumMessageSize : maximumUnacknowledgedBytes;
     }
 
     void doAttach(
@@ -549,7 +550,7 @@ final class NetworkConnectionPool
 
                 if (response == null || networkOffset + response.size() > networkLimit)
                 {
-                    if (networkBuffer.capacity() == maximumUnacknowledgedBytes)
+                    if (networkBuffer.capacity() >= maximumUnacknowledgedBytes)
                     {
                         // response size exceeds maximum we can currently handle
                         throw new IllegalStateException(format("%s: Kafka response size %d exceeds %d bytes",
@@ -730,7 +731,7 @@ final class NetworkConnectionPool
                         .wrap(NetworkConnectionPool.this.encodeBuffer, fetchRequest.offset(), fetchRequest.limit())
                         .maxWaitTimeMillis(fetchRequest.maxWaitTimeMillis())
                         .minBytes(fetchRequest.minBytes())
-                        .maxBytes(maximumUnacknowledgedBytes - maximumMessageSize)
+                        .maxBytes(maximumFetchBytesLimit)
                         .isolationLevel(fetchRequest.isolationLevel())
                         .topicCount(topicCount)
                         .build();
@@ -814,7 +815,7 @@ final class NetworkConnectionPool
         public String toString()
         {
             return String.format("%s [brokerId=%d, host=%s, port=%d, maxFetchBytes=%d]",
-                    getClass().getName(), brokerId, host, port, maximumUnacknowledgedBytes - maximumMessageSize);
+                    getClass().getName(), brokerId, host, port, maximumFetchBytesLimit);
         }
     }
 
@@ -830,7 +831,7 @@ final class NetworkConnectionPool
             String topicName)
         {
             NetworkTopic topic = topicsByName.get(topicName);
-            final int maxPartitionBytes =  maximumUnacknowledgedBytes - maximumMessageSize;
+            final int maxPartitionBytes =  maximumFetchBytesLimit;
             final int[] nodeIdsByPartition = topicMetadataByName.get(topicName).nodeIdsByPartition;
 
             int partitionCount = 0;
@@ -882,7 +883,7 @@ final class NetworkConnectionPool
             NetworkTopic topic = topicsByName.get(topicName);
             if (topic.needsHistorical())
             {
-                int maxPartitionBytes = maximumUnacknowledgedBytes - maximumMessageSize;
+                int maxPartitionBytes = maximumFetchBytesLimit;
                 final int[] nodeIdsByPartition = topicMetadataByName.get(topicName).nodeIdsByPartition;
 
                 int partitionId = -1;

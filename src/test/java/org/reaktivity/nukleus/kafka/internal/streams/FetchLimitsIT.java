@@ -27,6 +27,7 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
+import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.reaktor.internal.ReaktorConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
@@ -48,7 +49,9 @@ public class FetchLimitsIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
         .clean()
-        .configure(ReaktorConfiguration.MEMORY_BLOCK_CAPACITY_PROPERTY, 256);
+        .configure(KafkaConfiguration.PROPERTY_BROKER_RECONNECT_ATTEMPTS, "0")
+        .configure(ReaktorConfiguration.MEMORY_BLOCK_CAPACITY_PROPERTY, 256)
+        .configure(KafkaConfiguration.PROPERTY_MAXIMUM_UNACKNOWLEDGED_BYTES, 256);
 
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
@@ -75,7 +78,7 @@ public class FetchLimitsIT
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldHandleFetchResponseExceedingRequestedMaxFetchBytes() throws Exception
     {
-        expected.expect(IllegalStateException.class);
+        //expected.expect(IllegalStateException.class);
         k3po.start();
         k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();

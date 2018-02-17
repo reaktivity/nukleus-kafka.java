@@ -27,6 +27,7 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
+import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
 public class FetchIT
@@ -46,7 +47,7 @@ public class FetchIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
-        .configure("nukleus.kafka.maximum.reconnects", "0")
+        .configure(KafkaConfiguration.PROPERTY_BROKER_RECONNECT_ATTEMPTS, "0")
         .clean();
 
     @Rule
