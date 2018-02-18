@@ -24,7 +24,7 @@ public class KafkaConfiguration extends Configuration
     public static final String PROPERTY_MAXIMUM_MESSAGE_SIZE  = "nukleus.kafka.maximum.message.size";
 
     private static final int DEFAULT_BROKER_RECONNECT_ATTEMPTS  = -1; // unlimited
-    private static final int DEFAULT_MAXIMUM_UNACKNOWLEDGED_BYTES  = 64 * 1024;
+    private static final int DEFAULT_MAXIMUM_UNACKNOWLEDGED_BYTES  = 32 * 1024;
     private static final int DEFAULT_MAXIMUM_MESSAGE_SIZE = 8 * 1024;
 
     public KafkaConfiguration(
