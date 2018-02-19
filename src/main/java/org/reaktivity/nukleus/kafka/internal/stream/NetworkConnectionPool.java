@@ -563,7 +563,7 @@ final class NetworkConnectionPool
                 {
                     handleResponse(networkBuffer, networkOffset, networkLimit);
                     responseBuffer = null;
-                    doAck(0, responseRegions);
+                    doAck(0, responseRegions != null ? appendRegions(responseRegions, regions) : regions);
                     responseRegions = null;
                     networkOffset += response.size();
                     nextResponseId++;
