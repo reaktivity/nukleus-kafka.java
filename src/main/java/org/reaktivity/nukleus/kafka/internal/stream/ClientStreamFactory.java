@@ -101,6 +101,8 @@ public final class ClientStreamFactory implements StreamFactory
     final RecordSetFW recordSetRO = new RecordSetFW();
     final OctetsFW octetsRO = new OctetsFW();
 
+    private final int maximumUnacknowledgedBytes;
+
     final RouteManager router;
     final LongSupplier supplyStreamId;
     final LongSupplier supplyCorrelationId;
@@ -132,6 +134,7 @@ public final class ClientStreamFactory implements StreamFactory
         this.correlations = requireNonNull(correlations);
         this.connectionPools = new LinkedHashMap<String, Long2ObjectHashMap<NetworkConnectionPool>>();
         this.configuration = configuration;
+        this.maximumUnacknowledgedBytes = configuration.maximumUnacknowledgedBytes();
     }
 
     @Override
@@ -442,6 +445,8 @@ public final class ClientStreamFactory implements StreamFactory
         private boolean messagePending;;
         private UnsafeBuffer pendingMessageValue;
         private UnsafeBuffer pendingMessageKey;
+        private int unacknowledgedBytes;
+        private int pendingUnacknowledgedBytes;
 
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
@@ -616,6 +621,7 @@ public final class ClientStreamFactory implements StreamFactory
         private void handleAcknowledgedRegion(
             final RegionFW region)
         {
+            unacknowledgedBytes -= region.length();
             // Free the region if refCount (in region metadata) is now 0 and this is the last ack
             // for the region (partial acks case: we assume in order acks)
             final long ackEndAddress = region.address() + region.length();
@@ -640,7 +646,10 @@ public final class ClientStreamFactory implements StreamFactory
                         .refCount(newRefCount)
                         .build();
                 }
-                networkPool.doFlush();
+                if (unacknowledgedBytes == 0)
+                {
+                    networkPool.doFlush();
+                }
             }
         }
 
@@ -657,10 +666,12 @@ public final class ClientStreamFactory implements StreamFactory
         {
             int  messagesDelivered = 0;
             long lastOffset = fetchOffsets.get(partition);
+            int valueSize = value == null ? 0 : value.capacity();
             if (requestOffset <= lastOffset // avoid out of order deliveryYeah‰
-                    && messageOffset > lastOffset)
+                    && messageOffset > lastOffset
+                    && unacknowledgedBytes + valueSize < maximumUnacknowledgedBytes)
             {
-                flush(partition, requestOffset, messageOffset - 1);
+                flushPreviousMessage(partition, messageOffset - 1);
                 if (key == null)
                 {
                     pendingMessageKey = null;
@@ -688,14 +699,27 @@ public final class ClientStreamFactory implements StreamFactory
         @Override
         public void flush(int partition, long requestOffset, long lastOffset)
         {
+            flushPreviousMessage(partition, lastOffset);
+            unacknowledgedBytes += pendingUnacknowledgedBytes;
+            pendingUnacknowledgedBytes = 0;
+        }
+
+        private void flushPreviousMessage(
+                int partition,
+                long messageOffset)
+        {
             if (messagePending)
             {
                 long previousOffset = fetchOffsets.get(partition);
-                this.fetchOffsets.put(partition, lastOffset);
+                this.fetchOffsets.put(partition, messageOffset);
                 doKafkaTransfer(applicationReply, applicationReplyId, 0,
                         pendingMessageValue, fetchOffsets, compacted ? pendingMessageKey : null);
                 messagePending = false;
-                progressHandler.handle(partition, previousOffset, lastOffset);
+                if (pendingMessageValue != null)
+                {
+                    pendingUnacknowledgedBytes += pendingMessageValue.capacity();
+                }
+                progressHandler.handle(partition, previousOffset, messageOffset);
             }
         }
     }
