@@ -78,6 +78,8 @@ public final class ClientStreamFactory implements StreamFactory
                 .limit();
     }
 
+    private static final long UNSET = -1;
+
     private final RouteFW routeRO = new RouteFW();
     final BeginFW beginRO = new BeginFW();
     final TransferFW transferRO = new TransferFW();
@@ -101,7 +103,7 @@ public final class ClientStreamFactory implements StreamFactory
     final RecordSetFW recordSetRO = new RecordSetFW();
     final OctetsFW octetsRO = new OctetsFW();
 
-    private final int maximumUnacknowledgedBytes;
+    private final int unacknowledgedBytesLimit;
 
     final RouteManager router;
     final LongSupplier supplyStreamId;
@@ -134,7 +136,10 @@ public final class ClientStreamFactory implements StreamFactory
         this.correlations = requireNonNull(correlations);
         this.connectionPools = new LinkedHashMap<String, Long2ObjectHashMap<NetworkConnectionPool>>();
         this.configuration = configuration;
-        this.maximumUnacknowledgedBytes = configuration.maximumUnacknowledgedBytes();
+        int maximumUnacknowledgedBytes = configuration.maximumUnacknowledgedBytes();
+        int maximumMessageSize = configuration.maximumMessageSize();
+        this.unacknowledgedBytesLimit = maximumUnacknowledgedBytes > maximumMessageSize ?
+                maximumUnacknowledgedBytes - maximumMessageSize : maximumUnacknowledgedBytes;
     }
 
     @Override
@@ -445,8 +450,12 @@ public final class ClientStreamFactory implements StreamFactory
         private boolean messagePending;;
         private UnsafeBuffer pendingMessageValue;
         private UnsafeBuffer pendingMessageKey;
-        private int unacknowledgedBytes;
         private int pendingUnacknowledgedBytes;
+        private long progressStartOffset = UNSET;
+        private long progressEndOffset;
+
+        private int unacknowledgedBytes;
+
 
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
@@ -666,12 +675,16 @@ public final class ClientStreamFactory implements StreamFactory
         {
             int  messagesDelivered = 0;
             long lastOffset = fetchOffsets.get(partition);
-            int valueSize = value == null ? 0 : value.capacity();
-            if (requestOffset <= lastOffset // avoid out of order deliveryYeah‰
-                    && messageOffset > lastOffset
-                    && unacknowledgedBytes + valueSize < maximumUnacknowledgedBytes)
+            if (progressStartOffset == UNSET)
             {
-                flushPreviousMessage(partition, messageOffset - 1);
+                progressStartOffset = lastOffset;
+                progressEndOffset = lastOffset;
+            }
+            flushPreviousMessage(partition, messageOffset - 1);
+            if (requestOffset <= lastOffset // avoid out of order deliveryYeah‰
+                && messageOffset > lastOffset
+                && unacknowledgedBytes < unacknowledgedBytesLimit)
+            {
                 if (key == null)
                 {
                     pendingMessageKey = null;
@@ -700,8 +713,20 @@ public final class ClientStreamFactory implements StreamFactory
         public void flush(int partition, long requestOffset, long lastOffset)
         {
             flushPreviousMessage(partition, lastOffset);
+            long endOffset = progressEndOffset;
+            if (requestOffset <= progressStartOffset
+                    && unacknowledgedBytes < unacknowledgedBytesLimit)
+            {
+                // We didn't skip any messages, advance to highest offset
+                endOffset = lastOffset;
+            }
+            if (endOffset > progressStartOffset)
+            {
+                progressHandler.handle(partition, progressStartOffset, endOffset);
+            }
             unacknowledgedBytes += pendingUnacknowledgedBytes;
             pendingUnacknowledgedBytes = 0;
+            progressStartOffset = UNSET;
         }
 
         private void flushPreviousMessage(
@@ -710,7 +735,6 @@ public final class ClientStreamFactory implements StreamFactory
         {
             if (messagePending)
             {
-                long previousOffset = fetchOffsets.get(partition);
                 this.fetchOffsets.put(partition, messageOffset);
                 doKafkaTransfer(applicationReply, applicationReplyId, 0,
                         pendingMessageValue, fetchOffsets, compacted ? pendingMessageKey : null);
@@ -719,7 +743,7 @@ public final class ClientStreamFactory implements StreamFactory
                 {
                     pendingUnacknowledgedBytes += pendingMessageValue.capacity();
                 }
-                progressHandler.handle(partition, previousOffset, messageOffset);
+                progressEndOffset = messageOffset;
             }
         }
     }
