@@ -85,7 +85,7 @@ public class TopicMessageDispatcher implements MessageDispatcher
            {
                result = keys.remove(fetchKey, headers, dispatcher);
            }
-           else if (headers != null && headers.isEmpty())
+           else if (headers != null && !headers.isEmpty())
            {
                result = this.headers.remove(headers, 0, dispatcher);
            }

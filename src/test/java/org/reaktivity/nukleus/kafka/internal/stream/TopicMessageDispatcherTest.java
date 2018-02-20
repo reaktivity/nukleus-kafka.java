@@ -166,14 +166,47 @@ public final class TopicMessageDispatcherTest
     }
 
     @Test
-    public void shouldRemoveDispatchers()
+    public void shouldRemoveKeyDispatchers()
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
+        ListFW<KafkaHeaderFW> emptyHeaders = headersRW.wrap(headersBuffer, 0, headersBuffer.capacity())
+                .build();
         dispatcher.add(asOctets("key1"), null, child1);
-        dispatcher.add(asOctets("key1"), null, child2);
+        dispatcher.add(asOctets("key1"), emptyHeaders, child2);
         assertTrue(dispatcher.remove(asOctets("key1"), null, child1));
-        assertTrue(dispatcher.remove(asOctets("key1"), null, child2));
+        assertTrue(dispatcher.remove(asOctets("key1"), emptyHeaders, child2));
+        assertTrue(dispatcher.isEmpty());
+    }
+
+    @Test
+    public void shouldRemoveHeadersDispatchers()
+    {
+        MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
+        MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
+        ListFW<KafkaHeaderFW> headers =
+                headersRW.wrap(headersBuffer, 0, headersBuffer.capacity())
+                .item(b -> b.key("header1").value(asOctets("value1")))
+                .build();
+        dispatcher.add(null, headers, child1);
+        dispatcher.add(asOctets("key1"), headers, child2);
+        assertTrue(dispatcher.remove(null, headers, child1));
+        assertTrue(dispatcher.remove(asOctets("key1"), headers, child2));
+        assertTrue(dispatcher.isEmpty());
+    }
+
+    @Test
+    public void shouldRemoveUnconditionalDispatchers()
+    {
+        MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
+        MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
+        ListFW<KafkaHeaderFW> emptyHeaders = headersRW
+                .wrap(headersBuffer, 0, headersBuffer.capacity())
+                .build();
+        dispatcher.add(null, emptyHeaders, child1);
+        dispatcher.add(null, null, child2);
+        assertTrue(dispatcher.remove(null, emptyHeaders, child1));
+        assertTrue(dispatcher.remove(null, null, child2));
         assertTrue(dispatcher.isEmpty());
     }
 
