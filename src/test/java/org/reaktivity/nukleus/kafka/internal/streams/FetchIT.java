@@ -463,6 +463,20 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/zero.offset.and.reset/client",
+        "${server}/zero.offset.messages.multiple.partitions/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldHandleFetchResponseMultiplePartitionsAfterUnsubscribe() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("SUBSCRIBED");
+        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/zero.offset.message/client",
         "${server}/zero.offset.message.single.partition.multiple.nodes/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -527,6 +541,8 @@ public class FetchIT
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveMessagesFromMultiplePartitions() throws Exception
     {
+        k3po.start();
+        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
 
