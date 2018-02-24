@@ -475,6 +475,7 @@ final class NetworkConnectionPool
         private void handleReset(
             ResetFW reset)
         {
+            NetworkConnectionPool.this.clientStreamFactory.correlations.remove(networkId, AbstractNetworkConnection.this);
             doReinitialize();
             doRequestIfNeeded();
         }
