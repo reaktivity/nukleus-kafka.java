@@ -357,6 +357,7 @@ final class NetworkConnectionPool
         final MessageConsumer networkTarget;
 
         long networkId;
+        long networkCorrelationId;
 
         int networkRequestBudget;
         int networkRequestPadding;
@@ -404,7 +405,7 @@ final class NetworkConnectionPool
             });
         }
 
-        void doBeginIfNotConnected(Flyweight.Builder.Visitor extensionVisitor)
+        final void doBeginIfNotConnected(Flyweight.Builder.Visitor extensionVisitor)
         {
             if (networkId == 0L)
             {
@@ -423,6 +424,7 @@ final class NetworkConnectionPool
                         networkName, newNetworkId, this::handleThrottle);
 
                 this.networkId = newNetworkId;
+                this.networkCorrelationId = newCorrelationId;
             }
         }
 
@@ -475,7 +477,8 @@ final class NetworkConnectionPool
         private void handleReset(
             ResetFW reset)
         {
-            NetworkConnectionPool.this.clientStreamFactory.correlations.remove(networkId, AbstractNetworkConnection.this);
+            NetworkConnectionPool.this.clientStreamFactory.correlations.remove(
+                    networkCorrelationId, AbstractNetworkConnection.this);
             doReinitialize();
             doRequestIfNeeded();
         }
