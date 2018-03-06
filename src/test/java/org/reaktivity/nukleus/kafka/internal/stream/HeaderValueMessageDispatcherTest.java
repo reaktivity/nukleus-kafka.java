@@ -18,6 +18,8 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.function.Function;
@@ -42,6 +44,7 @@ public final class HeaderValueMessageDispatcherTest
          new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW());
     private final MutableDirectBuffer headers1Buffer = new UnsafeBuffer(new byte[1000]);
     private final MutableDirectBuffer headers2Buffer = new UnsafeBuffer(new byte[1000]);
+    private final MutableDirectBuffer headers3Buffer = new UnsafeBuffer(new byte[1000]);
 
     private HeaderValueMessageDispatcher dispatcher = new HeaderValueMessageDispatcher(asBuffer("header1"));
 
@@ -64,6 +67,26 @@ public final class HeaderValueMessageDispatcherTest
                 .item(b -> b.key("header2").value(asOctets("value2")))
                 .build();
         dispatcher.add(asOctets("header1"), headers2, 1, child2);
+    }
+
+    @Test
+    public void shouldGetDispatchers()
+    {
+        MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
+        MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
+        ListFW<KafkaHeaderFW> headers1 =
+                headersRW.wrap(headers1Buffer, 0, headers1Buffer.capacity())
+                .item(b -> b.key("header1").value(asOctets("value1")))
+                .build();
+        dispatcher.add(asOctets("value1"), headers1, 1, child1);
+        ListFW<KafkaHeaderFW> headers2 =
+                headersRW.wrap(headers2Buffer, 0, headers2Buffer.capacity())
+                .item(b -> b.key("header1").value(asOctets("value1")))
+                .item(b -> b.key("header2").value(asOctets("value2")))
+                .build();
+        dispatcher.add(asOctets("value1"), headers2, 1, child2);
+        assertNotNull(dispatcher.get(asOctets("value1")));
+        assertNull(dispatcher.get(asOctets("value2")));
     }
 
     @Test
@@ -247,6 +270,7 @@ public final class HeaderValueMessageDispatcherTest
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
+        MessageDispatcher child3 = context.mock(MessageDispatcher.class, "child3");
         ListFW<KafkaHeaderFW> headers1 =
                 headersRW.wrap(headers1Buffer, 0, headers1Buffer.capacity())
                 .item(b -> b.key("header1").value(asOctets("value1")))
@@ -258,13 +282,20 @@ public final class HeaderValueMessageDispatcherTest
                 .item(b -> b.key("header2").value(asOctets("value2")))
                 .build();
         dispatcher.add(asOctets("value1"), headers2, 1, child2);
+        ListFW<KafkaHeaderFW> headers3 =
+                headersRW.wrap(headers3Buffer, 0, headers3Buffer.capacity())
+                .item(b -> b.key("header2").value(asOctets("value2")))
+                .build();
+        dispatcher.add(asOctets("value2"), headers3, 1, child3);
         String result = dispatcher.toString();
         assertTrue(result.contains(child1.toString()));
         assertTrue(result.contains(child2.toString()));
+        assertTrue(result.contains(child3.toString()));
         assertTrue(result.contains("header1"));
         assertTrue(result.contains("header2"));
         assertTrue(result.contains("value1"));
         assertTrue(result.contains("value2"));
+        System.out.println(result);
     }
 
     private DirectBuffer asBuffer(String value)

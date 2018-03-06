@@ -139,9 +139,6 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
         boolean first = true;
         for (Map.Entry<DirectBuffer, V> entry : map.entrySet())
         {
-            result.append(entry.getKey().getStringWithoutLengthUtf8(0, entry.getKey().capacity()));
-            result.append("=");
-            result.append(entry.getValue().toString());
             if (first)
             {
                 first = false;
@@ -150,6 +147,9 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             {
                 result.append(", ");
             }
+            result.append(entry.getKey().getStringWithoutLengthUtf8(0, entry.getKey().capacity()));
+            result.append("=");
+            result.append(entry.getValue().toString());
         }
         result.append("}");
         return result.toString();
