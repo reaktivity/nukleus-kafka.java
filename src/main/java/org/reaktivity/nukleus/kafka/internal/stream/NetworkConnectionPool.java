@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.lang.String.format;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
+import static org.reaktivity.nukleus.kafka.internal.stream.ClientStreamFactory.EMPTY_BYTE_ARRAY;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.INVALID_TOPIC_EXCEPTION;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.LEADER_NOT_AVAILABLE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
@@ -107,8 +108,6 @@ final class NetworkConnectionPool
 
     private static final int MAX_MESSAGE_SIZE = 10000;
 
-    static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
-
     final RequestHeaderFW.Builder requestRW = new RequestHeaderFW.Builder();
     final FetchRequestFW.Builder fetchRequestRW = new FetchRequestFW.Builder();
     final TopicRequestFW.Builder topicRequestRW = new TopicRequestFW.Builder();
@@ -134,6 +133,8 @@ final class NetworkConnectionPool
 
     private final UnsafeBuffer keyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     private final UnsafeBuffer valueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+
+    private final Headers headers = new Headers();
 
     final MetadataResponseFW metadataResponseRO = new MetadataResponseFW();
     final BrokerMetadataFW brokerMetadataRO = new BrokerMetadataFW();
@@ -281,7 +282,6 @@ final class NetworkConnectionPool
             historicalConnections = applyBrokerMetadata(historicalConnections, broker,  HistoricalFetchConnection::new);
         });
         newAttachDetailsConsumer.accept(newAttachId, topicMetadata.compacted);
-        doFlush();
     }
 
     private <T extends AbstractFetchConnection> T[] applyBrokerMetadata(
@@ -1252,14 +1252,6 @@ final class NetworkConnectionPool
 
         private BitSet needsHistoricalByPartition = new BitSet();
 
-        // Transient, on stack state
-        private int headersOffset;
-        private int headersLimit;
-        private DirectBuffer headersBuffer;
-        private UnsafeBuffer header = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-        private UnsafeBuffer value1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-        private UnsafeBuffer value2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-
         @Override
         public String toString()
         {
@@ -1427,15 +1419,15 @@ final class NetworkConnectionPool
                                 break loop;
                             }
 
-                            headersOffset = networkOffset;
+                            int headersOffset = networkOffset;
                             final int headerCount = record.headerCount();
                             for (int i = 0; i < headerCount; i++)
                             {
                                 final HeaderFW header = headerRO.wrap(buffer, networkOffset, recordBatchLimit);
                                 networkOffset = header.limit();
                             }
-                            headersLimit = networkOffset;
-                            headersBuffer = buffer;
+                            int headersLimit = networkOffset;
+                            headers.wrap(buffer, headersOffset, headersLimit);
 
                             final long currentFetchAt = firstOffset + record.offsetDelta();
 
@@ -1459,7 +1451,7 @@ final class NetworkConnectionPool
                                 value = valueBuffer;
                             }
                             dispatcher.dispatch(partitionId, requestedOffset, nextFetchAt,
-                                         key, this::supplyHeader, timestamp, value);
+                                         key, headers::supplyHeader, timestamp, value);
                         }
                         dispatcher.flush(partitionId, requestedOffset, nextFetchAt);
                     }
@@ -1511,13 +1503,6 @@ final class NetworkConnectionPool
             }
         }
 
-        private boolean matches(OctetsFW octets, DirectBuffer buffer)
-        {
-            value1.wrap(octets.buffer(), octets.offset(), octets.sizeof());
-            value2.wrap(buffer);
-            return value1.equals(value2);
-        }
-
         private void remove(
             NetworkTopicPartition partition)
         {
@@ -1546,26 +1531,6 @@ final class NetworkConnectionPool
         boolean needsHistorical(int partition)
         {
             return needsHistoricalByPartition.get(partition);
-        }
-
-        private DirectBuffer supplyHeader(DirectBuffer headerName)
-        {
-            DirectBuffer result = null;
-            if (headersLimit > headersOffset)
-            {
-                for (int offset = headersOffset; offset < headersLimit; offset = headerRO.limit())
-                {
-                    headerRO.wrap(headersBuffer, offset, headersLimit);
-                    if (matches(headerRO.key(), headerName))
-                    {
-                        OctetsFW value = headerRO.value();
-                        header.wrap(value.buffer(), value.offset(), value.sizeof());
-                        result = header;
-                        break;
-                    }
-                }
-            }
-            return result;
         }
     }
 
@@ -1716,6 +1681,53 @@ final class NetworkConnectionPool
             nodeIdsByPartition = null;
             nextBrokerIndex = 0;
         }
+    }
 
+    private static final class Headers
+    {
+        private int offset;
+        private int limit;
+        private DirectBuffer buffer;
+
+        private final HeaderFW headerRO = new HeaderFW();
+        private final UnsafeBuffer header = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+        private final UnsafeBuffer value1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+        private final UnsafeBuffer value2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+
+        void wrap(DirectBuffer buffer,
+                  int offset,
+                  int limit)
+        {
+            this.buffer = buffer;
+            this.offset = offset;
+            this.limit = limit;
+        }
+
+        DirectBuffer supplyHeader(DirectBuffer headerName)
+        {
+            DirectBuffer result = null;
+            if (limit > offset)
+            {
+                for (int offset = this.offset; offset < limit; offset = headerRO.limit())
+                {
+                    headerRO.wrap(buffer, offset, limit);
+                    if (matches(headerRO.key(), headerName))
+                    {
+                        OctetsFW value = headerRO.value();
+                        header.wrap(value.buffer(), value.offset(), value.sizeof());
+                        result = header;
+                        break;
+                    }
+                }
+            }
+            return result;
+        }
+
+        private boolean matches(OctetsFW octets, DirectBuffer buffer)
+        {
+            value1.wrap(octets.buffer(), octets.offset(), octets.sizeof());
+            value2.wrap(buffer);
+            return value1.equals(value2);
+        }
     }
 }

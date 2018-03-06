@@ -27,6 +27,7 @@ import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
+import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessagePredicate;
@@ -58,6 +59,8 @@ public final class ClientStreamFactory implements StreamFactory
 {
     private static final long UNSET = -1;
 
+    static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
+
     private final RouteFW routeRO = new RouteFW();
 
     final BeginFW beginRO = new BeginFW();
@@ -67,8 +70,6 @@ public final class ClientStreamFactory implements StreamFactory
 
     private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
     private final KafkaBeginExFW beginExRO = new KafkaBeginExFW();
-    private final OctetsFW messageKeyRO = new OctetsFW();
-    private final OctetsFW messageValueRO = new OctetsFW();
 
     final WindowFW windowRO = new WindowFW();
     final ResetFW resetRO = new ResetFW();
@@ -85,6 +86,12 @@ public final class ClientStreamFactory implements StreamFactory
 
     final PartitionResponseFW partitionResponseRO = new PartitionResponseFW();
     final RecordSetFW recordSetRO = new RecordSetFW();
+
+    private final OctetsFW messageKeyRO = new OctetsFW();
+    private final OctetsFW messageValueRO = new OctetsFW();
+
+    private final DirectBuffer messageKeyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    private final DirectBuffer messageValueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
     final RouteManager router;
     final LongSupplier supplyStreamId;
@@ -343,14 +350,14 @@ public final class ClientStreamFactory implements StreamFactory
         final DirectBuffer messageValue,
         final Long2LongHashMap fetchOffsets)
     {
-        messageKeyRO.wrap(messageKey, 0,  messageKey.capacity());
-        messageValueRO.wrap(messageValue, 0,  messageValue.capacity());
+        OctetsFW key = messageKey == null ? null : messageKeyRO.wrap(messageKey, 0, messageKey.capacity());
+        OctetsFW value = messageValue == null ? null : messageValueRO.wrap(messageValue, 0, messageValue.capacity());
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
                 .groupId(0)
                 .padding(padding)
-                .payload(messageValueRO)
-                .extension(e -> e.set(visitKafkaDataEx(timestamp, fetchOffsets, messageKeyRO)))
+                .payload(value)
+                .extension(e -> e.set(visitKafkaDataEx(timestamp, fetchOffsets, key)))
                 .build();
 
         target.accept(data.typeId(), data.buffer(), data.offset(), data.sizeof());
@@ -463,9 +470,9 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 else
                 {
-                    pendingMessageKey = key;
+                    pendingMessageKey = wrap(messageKeyBuffer, key);
                     pendingMessageTimestamp = timestamp;
-                    pendingMessageValue = value;
+                    pendingMessageValue = wrap(messageValueBuffer, value);
                     messagePending = true;
                     messagesDelivered++;
                 }
@@ -673,6 +680,17 @@ public final class ClientStreamFactory implements StreamFactory
             networkPool.doDetach(networkAttachId, fetchOffsets);
             networkAttachId = UNATTACHED;
             doReset(applicationThrottle, applicationId);
+        }
+
+        private DirectBuffer wrap(DirectBuffer wrapper, DirectBuffer wrapped)
+        {
+            DirectBuffer result = null;
+            if (wrapped != null)
+            {
+                wrapper.wrap(wrapped, 0, wrapped.capacity());
+                result = wrapper;
+            }
+            return result;
         }
 
         private int writeableBytes()
