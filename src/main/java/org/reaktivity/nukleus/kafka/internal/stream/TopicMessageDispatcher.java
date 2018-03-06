@@ -35,15 +35,16 @@ public class TopicMessageDispatcher implements MessageDispatcher
                  long messageOffset,
                  DirectBuffer key,
                  Function<DirectBuffer, DirectBuffer> supplyHeader,
+                 long timestamp,
                  DirectBuffer value)
     {
         int result = 0;
-        result += broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
+        result += broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, value);
         if (key != null)
         {
-            result += keys.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
+            result += keys.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, value);
         }
-        result += headers.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
+        result += headers.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, value);
         return result;
     }
 

@@ -41,14 +41,15 @@ public class HeadersMessageDispatcher implements MessageDispatcher
                  long messageOffset,
                  DirectBuffer key,
                  Function<DirectBuffer, DirectBuffer> supplyHeader,
+                 long timestamp,
                  DirectBuffer value)
     {
         int result = 0;
-        result +=  broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
+        result +=  broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, value);
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
-            result += dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
+            result += dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, value);
         }
         return result;
     }

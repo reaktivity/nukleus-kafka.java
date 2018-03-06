@@ -47,6 +47,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
              long messageOffset,
              DirectBuffer key,
              Function<DirectBuffer, DirectBuffer> supplyHeader,
+             long timestamp,
              DirectBuffer value)
     {
         int result = 0;
@@ -57,7 +58,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             MessageDispatcher dispatcher = dispatchersByHeaderValue.get(buffer);
             if (dispatcher != null)
             {
-                result =  dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, value);
+                result =  dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, value);
             }
         }
         return result;

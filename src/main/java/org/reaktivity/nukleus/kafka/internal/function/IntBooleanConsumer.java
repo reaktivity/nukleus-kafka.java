@@ -13,27 +13,10 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.kafka.internal.stream;
+package org.reaktivity.nukleus.kafka.internal.function;
 
-import java.util.function.Function;
-
-import org.agrona.DirectBuffer;
-
-public interface MessageDispatcher
+@FunctionalInterface
+public interface IntBooleanConsumer
 {
-
-    int dispatch(
-             int partition,
-             long requestOffset,
-             long messageOffset,
-             DirectBuffer key,
-             Function<DirectBuffer, DirectBuffer> supplyHeader,
-             long timestamp,
-             DirectBuffer value);
-
-    void flush(
-            int partition,
-            long requestOffset,
-            long lastOffset);
-
+    void accept(int intValue, boolean booleanValue);
 }
