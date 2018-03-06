@@ -141,7 +141,23 @@ public class HeadersMessageDispatcher implements MessageDispatcher
     @Override
     public String toString()
     {
-        return String.format("%s(%s)", this.getClass().getSimpleName(), dispatchersByHeaderKey);
+        return String.format("%s(%s, %s)", this.getClass().getSimpleName(), broadcast, toString(dispatchersByHeaderKey));
+    }
+
+    private <V> String toString(
+        Map<DirectBuffer, V> map)
+    {
+        StringBuffer result = new StringBuffer(1000);
+        result.append('{');
+        for (Map.Entry<DirectBuffer, V> entry : map.entrySet())
+        {
+            result.append('\n');
+            result.append(entry.getKey().getStringWithoutLengthUtf8(0, entry.getKey().capacity()));
+            result.append(" = ");
+            result.append(entry.getValue().toString());
+        }
+        result.append('}');
+        return result.toString();
     }
 
 }

@@ -90,9 +90,6 @@ public final class ClientStreamFactory implements StreamFactory
     private final OctetsFW messageKeyRO = new OctetsFW();
     private final OctetsFW messageValueRO = new OctetsFW();
 
-    private final DirectBuffer messageKeyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-    private final DirectBuffer messageValueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-
     final RouteManager router;
     final LongSupplier supplyStreamId;
     final LongSupplier supplyCorrelationId;
@@ -403,6 +400,9 @@ public final class ClientStreamFactory implements StreamFactory
         private final long applicationId;
         private final NetworkConnectionPool networkPool;
         private final Long2LongHashMap fetchOffsets;
+
+        private final DirectBuffer messageKeyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+        private final DirectBuffer messageValueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
         private String applicationName;
         private long applicationCorrelationId;

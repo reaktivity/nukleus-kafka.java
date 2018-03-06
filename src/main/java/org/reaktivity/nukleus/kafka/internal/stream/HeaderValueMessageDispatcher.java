@@ -128,7 +128,31 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
     public String toString()
     {
         return String.format("%s(%s, %s)", this.getClass().getSimpleName(), new String(headerName.byteArray()),
-                dispatchersByHeaderValue);
+                toString(dispatchersByHeaderValue));
+    }
+
+    private <V> String toString(
+        Map<DirectBuffer, V> map)
+    {
+        StringBuffer result = new StringBuffer(1000);
+        result.append("{");
+        boolean first = true;
+        for (Map.Entry<DirectBuffer, V> entry : map.entrySet())
+        {
+            result.append(entry.getKey().getStringWithoutLengthUtf8(0, entry.getKey().capacity()));
+            result.append("=");
+            result.append(entry.getValue().toString());
+            if (first)
+            {
+                first = false;
+            }
+            else
+            {
+                result.append(", ");
+            }
+        }
+        result.append("}");
+        return result.toString();
     }
 
     public boolean isEmpty()

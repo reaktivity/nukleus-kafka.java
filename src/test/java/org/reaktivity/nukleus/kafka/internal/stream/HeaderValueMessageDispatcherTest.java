@@ -242,6 +242,31 @@ public final class HeaderValueMessageDispatcherTest
         dispatcher.remove(asOctets("header1"), headers2, 1, child1);
     }
 
+    @Test
+    public void shouldToString()
+    {
+        MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
+        MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
+        ListFW<KafkaHeaderFW> headers1 =
+                headersRW.wrap(headers1Buffer, 0, headers1Buffer.capacity())
+                .item(b -> b.key("header1").value(asOctets("value1")))
+                .build();
+        dispatcher.add(asOctets("value1"), headers1, 1, child1);
+        ListFW<KafkaHeaderFW> headers2 =
+                headersRW.wrap(headers2Buffer, 0, headers2Buffer.capacity())
+                .item(b -> b.key("value1").value(asOctets("value1")))
+                .item(b -> b.key("header2").value(asOctets("value2")))
+                .build();
+        dispatcher.add(asOctets("value1"), headers2, 1, child2);
+        String result = dispatcher.toString();
+        assertTrue(result.contains(child1.toString()));
+        assertTrue(result.contains(child2.toString()));
+        assertTrue(result.contains("header1"));
+        assertTrue(result.contains("header2"));
+        assertTrue(result.contains("value1"));
+        assertTrue(result.contains("value2"));
+    }
+
     private DirectBuffer asBuffer(String value)
     {
         byte[] bytes = value.getBytes(UTF_8);

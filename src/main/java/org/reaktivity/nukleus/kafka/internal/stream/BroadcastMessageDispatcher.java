@@ -72,4 +72,10 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
         return dispatchers.isEmpty();
     }
 
+    @Override
+    public String toString()
+    {
+        return String.format("%s(%s)", this.getClass().getSimpleName(), dispatchers);
+    }
+
 }
