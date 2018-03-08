@@ -506,13 +506,15 @@ public final class ClientStreamFactory implements StreamFactory
             if (messagePending)
             {
                 this.fetchOffsets.put(partition, messageOffset);
-                doKafkaData(applicationReply, applicationReplyId, 0, compacted ? pendingMessageKey : null,
-                    pendingMessageTimestamp, pendingMessageValue, fetchOffsets);
+                doKafkaData(applicationReply, applicationReplyId, applicationReplyPadding,
+                            compacted ? pendingMessageKey : null,
+                            pendingMessageTimestamp, pendingMessageValue, fetchOffsets);
                 messagePending = false;
                 if (pendingMessageValue != null)
                 {
-                    applicationReplyBudget -= pendingMessageValue.capacity() + applicationReplyPadding;
+                    applicationReplyBudget -= pendingMessageValue.capacity();
                 }
+                applicationReplyBudget -= applicationReplyPadding;
                 progressEndOffset = messageOffset;
             }
         }
