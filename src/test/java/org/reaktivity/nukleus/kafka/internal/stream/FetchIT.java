@@ -191,6 +191,18 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/fetch.key.zero.offset.no.messages/client",
+        "${server}/fetch.key.zero.offset.no.matches/server"})
+    @ScriptProperty({"networkAccept \"nukleus://target/streams/kafka\"",
+                     "applicationConnectWindow 15"})
+    public void shouldReceiveNoMessagesMatchingFetchKey() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/fetch.key.zero.offset.three.messages/client",
         "${server}/fetch.key.three.matches.flow.controlled/server"})
     @ScriptProperty({"networkAccept \"nukleus://target/streams/kafka\"",

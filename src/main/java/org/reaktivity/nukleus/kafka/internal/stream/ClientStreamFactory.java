@@ -485,10 +485,15 @@ public final class ClientStreamFactory implements StreamFactory
         {
             flushPreviousMessage(partition, lastOffset);
             long endOffset = progressEndOffset;
-            if (requestOffset <= progressStartOffset
+            if (progressStartOffset == UNSET)
+            {
+                progressStartOffset = requestOffset;
+                endOffset = lastOffset;
+            }
+            else if (requestOffset <= progressStartOffset
                     && writeableBytesMinimum == 0)
             {
-                // We didn't skip any messages, advance to highest offset
+                // We didn't skip any messages due to lack of window, advance to highest offset
                 endOffset = lastOffset;
             }
             if (endOffset > progressStartOffset)
