@@ -450,16 +450,15 @@ public final class ClientStreamFactory implements StreamFactory
             DirectBuffer value)
         {
             int  messagesDelivered = 0;
-            long lastOffset = fetchOffsets.get(partition);
             if (progressStartOffset == UNSET)
             {
-                progressStartOffset = lastOffset;
-                progressEndOffset = lastOffset;
+                progressStartOffset = fetchOffsets.get(partition);
+                progressEndOffset = progressStartOffset;
             }
             flushPreviousMessage(partition, messageOffset - 1);
 
-            if (requestOffset <= lastOffset // avoid out of order delivery
-                && messageOffset > lastOffset
+            if (requestOffset <= progressStartOffset // avoid out of order delivery
+                && messageOffset > progressStartOffset
                 && writeableBytesMinimum == 0)
             {
                 final int payloadLength = value == null ? 0 : value.capacity();
@@ -484,21 +483,24 @@ public final class ClientStreamFactory implements StreamFactory
         public void flush(int partition, long requestOffset, long lastOffset)
         {
             flushPreviousMessage(partition, lastOffset);
+            long startOffset = progressStartOffset;
             long endOffset = progressEndOffset;
-            if (progressStartOffset == UNSET)
+            if (startOffset == UNSET)
             {
-                progressStartOffset = requestOffset;
+                // no messages were dispatched
+                startOffset = fetchOffsets.get(partition);
                 endOffset = lastOffset;
             }
-            else if (requestOffset <= progressStartOffset
+            else if (requestOffset <= startOffset
                     && writeableBytesMinimum == 0)
             {
                 // We didn't skip any messages due to lack of window, advance to highest offset
                 endOffset = lastOffset;
             }
-            if (endOffset > progressStartOffset)
+            if (endOffset > startOffset)
             {
-                progressHandler.handle(partition, progressStartOffset, endOffset);
+                this.fetchOffsets.put(partition, endOffset);
+                progressHandler.handle(partition, startOffset, endOffset);
             }
             writeableBytesMinimum = 0;
             progressStartOffset = UNSET;
@@ -510,7 +512,6 @@ public final class ClientStreamFactory implements StreamFactory
         {
             if (messagePending)
             {
-                this.fetchOffsets.put(partition, messageOffset);
                 doKafkaData(applicationReply, applicationReplyId, applicationReplyPadding,
                             compacted ? pendingMessageKey : null,
                             pendingMessageTimestamp, pendingMessageValue, fetchOffsets);
