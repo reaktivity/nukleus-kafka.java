@@ -57,7 +57,7 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class ClientStreamFactory implements StreamFactory
 {
-    private static final long UNSET = -1;
+    static final long UNSET = -1;
 
     static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
 
@@ -512,6 +512,7 @@ public final class ClientStreamFactory implements StreamFactory
         {
             if (messagePending)
             {
+                this.fetchOffsets.put(partition, messageOffset);
                 doKafkaData(applicationReply, applicationReplyId, applicationReplyPadding,
                             compacted ? pendingMessageKey : null,
                             pendingMessageTimestamp, pendingMessageValue, fetchOffsets);

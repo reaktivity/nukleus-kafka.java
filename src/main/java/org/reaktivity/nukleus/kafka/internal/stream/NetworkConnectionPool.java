@@ -1392,6 +1392,7 @@ final class NetworkConnectionPool
                 final int recordSetLimit = networkOffset + recordSet.recordBatchSize();
                 if (recordSetLimit <= maxLimit)
                 {
+                    long nextFetchAt = requestedOffset;
                     loop:
                     while (networkOffset < recordSetLimit - RecordBatchFW.FIELD_OFFSET_RECORD_COUNT - BitUtil.SIZE_OF_INT)
                     {
@@ -1407,7 +1408,7 @@ final class NetworkConnectionPool
 
                         final long firstOffset = recordBatch.firstOffset();
                         final long firstTimestamp = recordBatch.firstTimestamp();
-                        long nextFetchAt = firstOffset;
+                        nextFetchAt = firstOffset;
                         while (networkOffset < recordBatchLimit - 7 /* minimum RecordFW size */)
                         {
                             final RecordFW record = recordRO.wrap(buffer, networkOffset, recordBatchLimit);
@@ -1453,8 +1454,8 @@ final class NetworkConnectionPool
                             dispatcher.dispatch(partitionId, requestedOffset, nextFetchAt,
                                          key, headers::supplyHeader, timestamp, value);
                         }
-                        dispatcher.flush(partitionId, requestedOffset, nextFetchAt);
                     }
+                    dispatcher.flush(partitionId, requestedOffset, nextFetchAt);
                 }
             }
         }
