@@ -168,6 +168,17 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/fetch.key.and.no.key.messages/client",
+        "${server}/fetch.key.and.no.key.multiple.partitions/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageOnSubscribesWithAndWithoutKeyFromMultiplePartitions() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/fetch.key.default.partioner.picks.partition.one/client",
         "${server}/fetch.key.default.partioner.picks.partition.one/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")

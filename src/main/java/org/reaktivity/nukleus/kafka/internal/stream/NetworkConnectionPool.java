@@ -266,7 +266,7 @@ final class NetworkConnectionPool
         TopicMetadata topicMetadata)
     {
         final NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
-                name -> new NetworkTopic(name));
+                name -> new NetworkTopic(name, topicMetadata.partitionCount()));
         progressHandlerConsumer.accept(topic.doAttach(fetchOffsets, fetchKey, headers, dispatcher, supplyWindow));
 
         final int newAttachId = nextAttachId++;
@@ -1247,7 +1247,7 @@ final class NetworkConnectionPool
         private final Set<IntSupplier> windowSuppliers;
         final NavigableSet<NetworkTopicPartition> partitions;
         private final NetworkTopicPartition candidate;
-        private final TopicMessageDispatcher dispatcher = new TopicMessageDispatcher();
+        private final TopicMessageDispatcher dispatcher;
         private final PartitionProgressHandler progressHandler;
 
         private BitSet needsHistoricalByPartition = new BitSet();
@@ -1259,13 +1259,15 @@ final class NetworkConnectionPool
         }
 
         NetworkTopic(
-            String topicName)
+            String topicName,
+            int partitionCount)
         {
             this.topicName = topicName;
             this.windowSuppliers = new HashSet<>();
             this.partitions = new TreeSet<>();
             this.candidate = new NetworkTopicPartition();
             this.progressHandler = this::handleProgress;
+            this.dispatcher = new TopicMessageDispatcher(partitionCount);
         }
 
         PartitionProgressHandler doAttach(
@@ -1276,7 +1278,8 @@ final class NetworkConnectionPool
             IntSupplier supplyWindow)
         {
             windowSuppliers.add(supplyWindow);
-            this.dispatcher.add(fetchKey, headers, dispatcher);
+            int fetchKeyPartition = (int) (fetchKey == null ? -1 : fetchOffsets.keySet().iterator().next());
+            this.dispatcher.add(fetchKey, fetchKeyPartition, headers, dispatcher);
 
             final LongIterator keys = fetchOffsets.keySet().iterator();
             while (keys.hasNext())
@@ -1284,7 +1287,7 @@ final class NetworkConnectionPool
                 final long partitionId = (int) keys.nextValue();
                 attachToPartition((int) partitionId, fetchOffsets.get(partitionId));
             }
-             return progressHandler;
+            return progressHandler;
         }
 
         private void attachToPartition(
@@ -1316,7 +1319,8 @@ final class NetworkConnectionPool
             IntSupplier supplyWindow)
         {
             windowSuppliers.remove(supplyWindow);
-            this.dispatcher.remove(fetchKey, headers, dispatcher);
+            int fetchKeyPartition = (int) (fetchKey == null ? -1 : fetchOffsets.keySet().iterator().next());
+            this.dispatcher.remove(fetchKey, fetchKeyPartition, headers, dispatcher);
             final LongIterator partitionIds = fetchOffsets.keySet().iterator();
             while (partitionIds.hasNext())
             {

@@ -24,9 +24,18 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 
 public class TopicMessageDispatcher implements MessageDispatcher
 {
-    private final KeyMessageDispatcher keys = new KeyMessageDispatcher();
+    private final KeyMessageDispatcher[] keys;
     private final HeadersMessageDispatcher headers = new HeadersMessageDispatcher();
     private final BroadcastMessageDispatcher broadcast = new BroadcastMessageDispatcher();
+
+    public TopicMessageDispatcher(int partitionCount)
+    {
+        keys = new KeyMessageDispatcher[partitionCount];
+        for (int partition = 0; partition < partitionCount; partition++)
+        {
+            keys[partition] = new KeyMessageDispatcher();
+        }
+    }
 
     @Override
     public int dispatch(
@@ -42,7 +51,7 @@ public class TopicMessageDispatcher implements MessageDispatcher
         result += broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, value);
         if (key != null)
         {
-            result += keys.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, value);
+            result += keys[partition].dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, value);
         }
         result += headers.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, value);
         return result;
@@ -55,17 +64,18 @@ public class TopicMessageDispatcher implements MessageDispatcher
             long lastOffset)
     {
         broadcast.flush(partition, requestOffset, lastOffset);
-        keys.flush(partition, requestOffset, lastOffset);
+        keys[partition].flush(partition, requestOffset, lastOffset);
         headers.flush(partition, requestOffset, lastOffset);
     }
 
     public void add(OctetsFW fetchKey,
+                    int fetchKeyPartition,
                     ListFW<KafkaHeaderFW> headers,
                     MessageDispatcher dispatcher)
     {
          if (fetchKey != null)
          {
-             keys.add(fetchKey, headers, dispatcher);
+             keys[fetchKeyPartition].add(fetchKey, headers, dispatcher);
          }
          else if (headers != null && !headers.isEmpty())
          {
@@ -77,14 +87,16 @@ public class TopicMessageDispatcher implements MessageDispatcher
          }
     }
 
-    public boolean remove(OctetsFW fetchKey,
-                       ListFW<KafkaHeaderFW> headers,
-                       MessageDispatcher dispatcher)
+    public boolean remove(
+        OctetsFW fetchKey,
+        int fetchKeyPartition,
+        ListFW<KafkaHeaderFW> headers,
+        MessageDispatcher dispatcher)
       {
            boolean result = false;
            if (fetchKey != null)
            {
-               result = keys.remove(fetchKey, headers, dispatcher);
+               result = keys[fetchKeyPartition].remove(fetchKey, headers, dispatcher);
            }
            else if (headers != null && !headers.isEmpty())
            {
@@ -99,7 +111,12 @@ public class TopicMessageDispatcher implements MessageDispatcher
 
     public boolean isEmpty()
     {
-        return keys.isEmpty() && headers.isEmpty() && broadcast.isEmpty();
+        boolean empty = true;
+        for (KeyMessageDispatcher keys : keys)
+        {
+            empty = empty && keys.isEmpty();
+        }
+        return empty && headers.isEmpty() && broadcast.isEmpty();
     }
 
 }
