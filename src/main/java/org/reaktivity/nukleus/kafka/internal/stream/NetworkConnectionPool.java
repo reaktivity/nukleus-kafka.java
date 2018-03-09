@@ -104,6 +104,8 @@ final class NetworkConnectionPool
     private static final String CLEANUP_POLICY = "cleanup.policy";
     private static final String COMPACT = "compact";
 
+    private static final long NO_OFFSET = -1L;
+
     private static final byte[] ANY_IP_ADDR = new byte[4];
 
     private static final int MAX_MESSAGE_SIZE = 10000;
@@ -836,17 +838,20 @@ final class NetworkConnectionPool
                     if (topic != null)
                     {
                         int partitionResponseSize = networkOffset - partitionResponse.offset();
-
-                        topic.onPartitionResponse(partitionResponse.buffer(),
-                                                  partitionResponse.offset(),
-                                                  partitionResponseSize,
-                                                  getRequestedOffset(topic, partitionResponse.partitionId()));
+                        long requiredOffset = getRequiredOffset(topic, partitionResponse.partitionId());
+                        if (requiredOffset != NO_OFFSET)
+                        {
+                            topic.onPartitionResponse(partitionResponse.buffer(),
+                                                      partitionResponse.offset(),
+                                                      partitionResponseSize,
+                                                      requiredOffset);
+                        }
                     }
                 }
             }
         }
 
-        abstract long getRequestedOffset(NetworkTopic topic, int partitionId);
+        abstract long getRequiredOffset(NetworkTopic topic, int partitionId);
 
         @Override
         public String toString()
@@ -900,7 +905,7 @@ final class NetworkConnectionPool
         }
 
         @Override
-        long getRequestedOffset(NetworkTopic topic, int partitionId)
+        long getRequiredOffset(NetworkTopic topic, int partitionId)
         {
             return topic.getHighestOffset(partitionId);
         }
@@ -950,7 +955,7 @@ final class NetworkConnectionPool
         }
 
         @Override
-        long getRequestedOffset(NetworkTopic topic, int partitionId)
+        long getRequiredOffset(NetworkTopic topic, int partitionId)
         {
             return topic.getLowestOffset(partitionId);
         }
@@ -1361,8 +1366,7 @@ final class NetworkConnectionPool
             candidate.id = partitionId;
             candidate.offset = Long.MAX_VALUE;
             NetworkTopicPartition floor = partitions.floor(candidate);
-            assert floor == null || floor.id == partitionId;
-            return floor != null ? floor.offset : 0L;
+            return floor != null && floor.id == partitionId ? floor.offset : NO_OFFSET;
         }
 
         long getLowestOffset(
@@ -1371,8 +1375,7 @@ final class NetworkConnectionPool
             candidate.id = partitionId;
             candidate.offset = 0L;
             NetworkTopicPartition ceiling = partitions.ceiling(candidate);
-            assert ceiling == null || ceiling.id == partitionId;
-            return ceiling != null ? ceiling.offset : Long.MAX_VALUE;
+            return ceiling != null && ceiling.id == partitionId ? ceiling.offset : NO_OFFSET;
         }
 
         void onPartitionResponse(
