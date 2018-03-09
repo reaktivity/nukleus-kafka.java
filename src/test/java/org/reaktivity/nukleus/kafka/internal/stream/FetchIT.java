@@ -179,6 +179,20 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/fetch.key.and.no.key.unsubscribe/client",
+        "${server}/fetch.key.and.no.key.multiple.partitions.unsubscribe/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldNotGiveAssertionErrorWhenUnsubscribeLeavingConsumerOnAnotherPartition() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_TWO_HAS_WRITTEN_RESET");
+        k3po.notifyBarrier("CLIENT_TWO_UNSUBSCRIBED");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/fetch.key.default.partioner.picks.partition.one/client",
         "${server}/fetch.key.default.partioner.picks.partition.one/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
