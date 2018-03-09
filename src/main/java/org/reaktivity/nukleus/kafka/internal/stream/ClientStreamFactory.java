@@ -603,7 +603,7 @@ public final class ClientStreamFactory implements StreamFactory
 
                 fetchOffsets.forEach(v -> this.fetchOffsets.put(this.fetchOffsets.size(), v.value()));
 
-                final OctetsFW fetchKey = beginEx.fetchKey();
+                OctetsFW fetchKey = beginEx.fetchKey();
                 byte hashCodesCount = beginEx.fetchKeyHashCount();
                 if ((fetchKey != null && this.fetchOffsets.size() > 1) ||
                     (hashCodesCount > 1) ||
@@ -614,10 +614,19 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 else
                 {
-                    final ListFW<KafkaHeaderFW> headers = beginEx.headers();
+                    ListFW<KafkaHeaderFW> headers = beginEx.headers();
+                    if (headers != null)
+                    {
+                        MutableDirectBuffer headersBuffer = new UnsafeBuffer(new byte[headers.limit() - headers.offset()]);
+                        headersBuffer.putBytes(0, headers.buffer(),  headers.offset(), headers.sizeof());
+                        headers = new ListFW<KafkaHeaderFW>(new KafkaHeaderFW()).wrap(headersBuffer, 0, headersBuffer.capacity());
+                    }
                     int hashCode = -1;
                     if (fetchKey != null)
                     {
+                        MutableDirectBuffer keyBuffer = new UnsafeBuffer(new byte[fetchKey.limit() - fetchKey.offset()]);
+                        keyBuffer.putBytes(0, fetchKey.buffer(),  fetchKey.offset(), fetchKey.sizeof());
+                        fetchKey = new OctetsFW().wrap(keyBuffer, 0, keyBuffer.capacity());
                         hashCode = hashCodesCount == 1 ? beginEx.fetchKeyHash().nextInt()
                                 : BufferUtil.defaultHashCode(fetchKey.buffer(), fetchKey.offset(), fetchKey.limit());
                     }
