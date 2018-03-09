@@ -104,6 +104,8 @@ final class NetworkConnectionPool
     private static final String CLEANUP_POLICY = "cleanup.policy";
     private static final String COMPACT = "compact";
 
+    private static final long NO_OFFSET = -1L;
+
     private static final byte[] ANY_IP_ADDR = new byte[4];
 
     private static final int MAX_MESSAGE_SIZE = 10000;
@@ -266,7 +268,7 @@ final class NetworkConnectionPool
         TopicMetadata topicMetadata)
     {
         final NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
-                name -> new NetworkTopic(name));
+                name -> new NetworkTopic(name, topicMetadata.partitionCount()));
         progressHandlerConsumer.accept(topic.doAttach(fetchOffsets, fetchKey, headers, dispatcher, supplyWindow));
 
         final int newAttachId = nextAttachId++;
@@ -836,17 +838,20 @@ final class NetworkConnectionPool
                     if (topic != null)
                     {
                         int partitionResponseSize = networkOffset - partitionResponse.offset();
-
-                        topic.onPartitionResponse(partitionResponse.buffer(),
-                                                  partitionResponse.offset(),
-                                                  partitionResponseSize,
-                                                  getRequestedOffset(topic, partitionResponse.partitionId()));
+                        long requiredOffset = getRequiredOffset(topic, partitionResponse.partitionId());
+                        if (requiredOffset != NO_OFFSET)
+                        {
+                            topic.onPartitionResponse(partitionResponse.buffer(),
+                                                      partitionResponse.offset(),
+                                                      partitionResponseSize,
+                                                      requiredOffset);
+                        }
                     }
                 }
             }
         }
 
-        abstract long getRequestedOffset(NetworkTopic topic, int partitionId);
+        abstract long getRequiredOffset(NetworkTopic topic, int partitionId);
 
         @Override
         public String toString()
@@ -900,7 +905,7 @@ final class NetworkConnectionPool
         }
 
         @Override
-        long getRequestedOffset(NetworkTopic topic, int partitionId)
+        long getRequiredOffset(NetworkTopic topic, int partitionId)
         {
             return topic.getHighestOffset(partitionId);
         }
@@ -950,7 +955,7 @@ final class NetworkConnectionPool
         }
 
         @Override
-        long getRequestedOffset(NetworkTopic topic, int partitionId)
+        long getRequiredOffset(NetworkTopic topic, int partitionId)
         {
             return topic.getLowestOffset(partitionId);
         }
@@ -1247,7 +1252,7 @@ final class NetworkConnectionPool
         private final Set<IntSupplier> windowSuppliers;
         final NavigableSet<NetworkTopicPartition> partitions;
         private final NetworkTopicPartition candidate;
-        private final TopicMessageDispatcher dispatcher = new TopicMessageDispatcher();
+        private final TopicMessageDispatcher dispatcher;
         private final PartitionProgressHandler progressHandler;
 
         private BitSet needsHistoricalByPartition = new BitSet();
@@ -1259,13 +1264,15 @@ final class NetworkConnectionPool
         }
 
         NetworkTopic(
-            String topicName)
+            String topicName,
+            int partitionCount)
         {
             this.topicName = topicName;
             this.windowSuppliers = new HashSet<>();
             this.partitions = new TreeSet<>();
             this.candidate = new NetworkTopicPartition();
             this.progressHandler = this::handleProgress;
+            this.dispatcher = new TopicMessageDispatcher(partitionCount);
         }
 
         PartitionProgressHandler doAttach(
@@ -1276,7 +1283,8 @@ final class NetworkConnectionPool
             IntSupplier supplyWindow)
         {
             windowSuppliers.add(supplyWindow);
-            this.dispatcher.add(fetchKey, headers, dispatcher);
+            int fetchKeyPartition = (int) (fetchKey == null ? -1 : fetchOffsets.keySet().iterator().next());
+            this.dispatcher.add(fetchKey, fetchKeyPartition, headers, dispatcher);
 
             final LongIterator keys = fetchOffsets.keySet().iterator();
             while (keys.hasNext())
@@ -1284,7 +1292,7 @@ final class NetworkConnectionPool
                 final long partitionId = (int) keys.nextValue();
                 attachToPartition((int) partitionId, fetchOffsets.get(partitionId));
             }
-             return progressHandler;
+            return progressHandler;
         }
 
         private void attachToPartition(
@@ -1316,7 +1324,8 @@ final class NetworkConnectionPool
             IntSupplier supplyWindow)
         {
             windowSuppliers.remove(supplyWindow);
-            this.dispatcher.remove(fetchKey, headers, dispatcher);
+            int fetchKeyPartition = (int) (fetchKey == null ? -1 : fetchOffsets.keySet().iterator().next());
+            this.dispatcher.remove(fetchKey, fetchKeyPartition, headers, dispatcher);
             final LongIterator partitionIds = fetchOffsets.keySet().iterator();
             while (partitionIds.hasNext())
             {
@@ -1357,8 +1366,7 @@ final class NetworkConnectionPool
             candidate.id = partitionId;
             candidate.offset = Long.MAX_VALUE;
             NetworkTopicPartition floor = partitions.floor(candidate);
-            assert floor == null || floor.id == partitionId;
-            return floor != null ? floor.offset : 0L;
+            return floor != null && floor.id == partitionId ? floor.offset : NO_OFFSET;
         }
 
         long getLowestOffset(
@@ -1367,8 +1375,7 @@ final class NetworkConnectionPool
             candidate.id = partitionId;
             candidate.offset = 0L;
             NetworkTopicPartition ceiling = partitions.ceiling(candidate);
-            assert ceiling == null || ceiling.id == partitionId;
-            return ceiling != null ? ceiling.offset : Long.MAX_VALUE;
+            return ceiling != null && ceiling.id == partitionId ? ceiling.offset : NO_OFFSET;
         }
 
         void onPartitionResponse(
@@ -1392,6 +1399,7 @@ final class NetworkConnectionPool
                 final int recordSetLimit = networkOffset + recordSet.recordBatchSize();
                 if (recordSetLimit <= maxLimit)
                 {
+                    long nextFetchAt = requestedOffset;
                     loop:
                     while (networkOffset < recordSetLimit - RecordBatchFW.FIELD_OFFSET_RECORD_COUNT - BitUtil.SIZE_OF_INT)
                     {
@@ -1407,7 +1415,7 @@ final class NetworkConnectionPool
 
                         final long firstOffset = recordBatch.firstOffset();
                         final long firstTimestamp = recordBatch.firstTimestamp();
-                        long nextFetchAt = firstOffset;
+                        nextFetchAt = firstOffset;
                         while (networkOffset < recordBatchLimit - 7 /* minimum RecordFW size */)
                         {
                             final RecordFW record = recordRO.wrap(buffer, networkOffset, recordBatchLimit);
@@ -1453,8 +1461,8 @@ final class NetworkConnectionPool
                             dispatcher.dispatch(partitionId, requestedOffset, nextFetchAt,
                                          key, headers::supplyHeader, timestamp, value);
                         }
-                        dispatcher.flush(partitionId, requestedOffset, nextFetchAt);
                     }
+                    dispatcher.flush(partitionId, requestedOffset, nextFetchAt);
                 }
             }
         }

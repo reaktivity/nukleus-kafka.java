@@ -57,7 +57,7 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class ClientStreamFactory implements StreamFactory
 {
-    private static final long UNSET = -1;
+    static final long UNSET = -1;
 
     static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
 
@@ -450,16 +450,15 @@ public final class ClientStreamFactory implements StreamFactory
             DirectBuffer value)
         {
             int  messagesDelivered = 0;
-            long lastOffset = fetchOffsets.get(partition);
             if (progressStartOffset == UNSET)
             {
-                progressStartOffset = lastOffset;
-                progressEndOffset = lastOffset;
+                progressStartOffset = fetchOffsets.get(partition);
+                progressEndOffset = progressStartOffset;
             }
             flushPreviousMessage(partition, messageOffset - 1);
 
-            if (requestOffset <= lastOffset // avoid out of order delivery
-                && messageOffset > lastOffset
+            if (requestOffset <= progressStartOffset // avoid out of order delivery
+                && messageOffset > progressStartOffset
                 && writeableBytesMinimum == 0)
             {
                 final int payloadLength = value == null ? 0 : value.capacity();
@@ -484,16 +483,24 @@ public final class ClientStreamFactory implements StreamFactory
         public void flush(int partition, long requestOffset, long lastOffset)
         {
             flushPreviousMessage(partition, lastOffset);
+            long startOffset = progressStartOffset;
             long endOffset = progressEndOffset;
-            if (requestOffset <= progressStartOffset
-                    && writeableBytesMinimum == 0)
+            if (startOffset == UNSET)
             {
-                // We didn't skip any messages, advance to highest offset
+                // no messages were dispatched
+                startOffset = fetchOffsets.get(partition);
                 endOffset = lastOffset;
             }
-            if (endOffset > progressStartOffset)
+            else if (requestOffset <= startOffset
+                    && writeableBytesMinimum == 0)
             {
-                progressHandler.handle(partition, progressStartOffset, endOffset);
+                // We didn't skip any messages due to lack of window, advance to highest offset
+                endOffset = lastOffset;
+            }
+            if (endOffset > startOffset)
+            {
+                this.fetchOffsets.put(partition, endOffset);
+                progressHandler.handle(partition, startOffset, endOffset);
             }
             writeableBytesMinimum = 0;
             progressStartOffset = UNSET;
@@ -596,7 +603,7 @@ public final class ClientStreamFactory implements StreamFactory
 
                 fetchOffsets.forEach(v -> this.fetchOffsets.put(this.fetchOffsets.size(), v.value()));
 
-                final OctetsFW fetchKey = beginEx.fetchKey();
+                OctetsFW fetchKey = beginEx.fetchKey();
                 byte hashCodesCount = beginEx.fetchKeyHashCount();
                 if ((fetchKey != null && this.fetchOffsets.size() > 1) ||
                     (hashCodesCount > 1) ||
@@ -607,10 +614,19 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 else
                 {
-                    final ListFW<KafkaHeaderFW> headers = beginEx.headers();
+                    ListFW<KafkaHeaderFW> headers = beginEx.headers();
+                    if (headers != null)
+                    {
+                        MutableDirectBuffer headersBuffer = new UnsafeBuffer(new byte[headers.limit() - headers.offset()]);
+                        headersBuffer.putBytes(0, headers.buffer(),  headers.offset(), headers.sizeof());
+                        headers = new ListFW<KafkaHeaderFW>(new KafkaHeaderFW()).wrap(headersBuffer, 0, headersBuffer.capacity());
+                    }
                     int hashCode = -1;
                     if (fetchKey != null)
                     {
+                        MutableDirectBuffer keyBuffer = new UnsafeBuffer(new byte[fetchKey.limit() - fetchKey.offset()]);
+                        keyBuffer.putBytes(0, fetchKey.buffer(),  fetchKey.offset(), fetchKey.sizeof());
+                        fetchKey = new OctetsFW().wrap(keyBuffer, 0, keyBuffer.capacity());
                         hashCode = hashCodesCount == 1 ? beginEx.fetchKeyHash().nextInt()
                                 : BufferUtil.defaultHashCode(fetchKey.buffer(), fetchKey.offset(), fetchKey.limit());
                     }
