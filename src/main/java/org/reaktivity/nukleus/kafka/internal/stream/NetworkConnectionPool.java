@@ -1174,8 +1174,8 @@ final class NetworkConnectionPool
             }
             TopicMetadata metadata = pendingTopicMetadata;
             pendingTopicMetadata = null;
-            metadata.setCompacted(compacted);
             metadata.setErrorCode(errorCode);
+            metadata.finalize(compacted);
             metadata.flush();
         }
 
@@ -1430,7 +1430,7 @@ final class NetworkConnectionPool
                             final long currentFetchAt = firstOffset + record.offsetDelta();
                             if (currentFetchAt < requestedOffset)
                             {
-                                // The only guarantee is that the response will include the requested offset. It may start before it.
+                                // The only guarantee is the response will encompass the requested offset.
                                 continue;
                             }
                             nextFetchAt = currentFetchAt + 1;
@@ -1607,6 +1607,7 @@ final class NetworkConnectionPool
         private final String topicName;
         private short errorCode;
         private boolean compacted;
+        private boolean finalized;
         BrokerMetadata[] brokers;
         private int nextBrokerIndex;
         private int[] nodeIdsByPartition;
@@ -1622,9 +1623,10 @@ final class NetworkConnectionPool
             return brokers != null;
         }
 
-        void setCompacted(boolean compacted)
+        void finalize(boolean compacted)
         {
             this.compacted = compacted;
+            this.finalized = true;
         }
 
         void setErrorCode(
@@ -1657,7 +1659,7 @@ final class NetworkConnectionPool
             Consumer<TopicMetadata> consumer)
         {
             consumers.add(consumer);
-            if (nodeIdsByPartition != null)
+            if (finalized)
             {
                 flush();
             }
