@@ -1427,6 +1427,14 @@ final class NetworkConnectionPool
                                 break loop;
                             }
 
+                            final long currentFetchAt = firstOffset + record.offsetDelta();
+                            if (currentFetchAt < requestedOffset)
+                            {
+                                // The only guarantee is that the response will include the requested offset. It may start before it.
+                                continue;
+                            }
+                            nextFetchAt = currentFetchAt + 1;
+
                             int headersOffset = networkOffset;
                             final int headerCount = record.headerCount();
                             for (int i = 0; i < headerCount; i++)
@@ -1436,10 +1444,6 @@ final class NetworkConnectionPool
                             }
                             int headersLimit = networkOffset;
                             headers.wrap(buffer, headersOffset, headersLimit);
-
-                            final long currentFetchAt = firstOffset + record.offsetDelta();
-
-                            nextFetchAt = currentFetchAt + 1;
 
                             DirectBuffer key = null;
                             final OctetsFW messageKey = record.key();
@@ -1461,6 +1465,8 @@ final class NetworkConnectionPool
                             dispatcher.dispatch(partitionId, requestedOffset, nextFetchAt,
                                          key, headers::supplyHeader, timestamp, value);
                         }
+                        // If there are deleted records, the last offset reported on record batch may exceed the offset of the
+                        // last record in the batch. We must use this to make sure we continue to advance.
                         nextFetchAt = recordBatch.firstOffset() + recordBatch.lastOffsetDelta() + 1;
                     }
                     dispatcher.flush(partitionId, requestedOffset, nextFetchAt);
