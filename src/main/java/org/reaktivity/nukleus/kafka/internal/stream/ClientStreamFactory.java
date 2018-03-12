@@ -458,7 +458,7 @@ public final class ClientStreamFactory implements StreamFactory
             flushPreviousMessage(partition, messageOffset - 1);
 
             if (requestOffset <= progressStartOffset // avoid out of order delivery
-                && messageOffset > progressStartOffset
+                && messageOffset >= progressStartOffset
                 && writeableBytesMinimum == 0)
             {
                 final int payloadLength = value == null ? 0 : value.capacity();

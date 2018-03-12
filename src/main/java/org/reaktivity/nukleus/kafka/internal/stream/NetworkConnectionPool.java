@@ -1461,6 +1461,7 @@ final class NetworkConnectionPool
                             dispatcher.dispatch(partitionId, requestedOffset, nextFetchAt,
                                          key, headers::supplyHeader, timestamp, value);
                         }
+                        nextFetchAt = recordBatch.firstOffset() + recordBatch.lastOffsetDelta() + 1;
                     }
                     dispatcher.flush(partitionId, requestedOffset, nextFetchAt);
                 }
