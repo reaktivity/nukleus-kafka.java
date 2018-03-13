@@ -16,10 +16,6 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
-import static org.hamcrest.Matchers.anyOf;
-import static org.hamcrest.Matchers.hasItem;
-import static org.hamcrest.Matchers.hasProperty;
-import static org.hamcrest.Matchers.isA;
 import static org.junit.rules.RuleChain.outerRule;
 
 import org.junit.Rule;
@@ -77,10 +73,8 @@ public class FetchLimitsIT
         "${client}/zero.offset/client",
         "${server}/zero.offset.message.response.exceeds.requested.256.bytes/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldHandleFetchResponseExceedingRequestedMaxFetchBytes() throws Exception
+    public void shouldHandleFetchResponseSizeExceedingSlotCapacity() throws Exception
     {
-        expected.expect(anyOf(isA(IllegalStateException.class),
-                hasProperty("failures", hasItem(isA(IllegalStateException.class)))));
         k3po.start();
         k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
