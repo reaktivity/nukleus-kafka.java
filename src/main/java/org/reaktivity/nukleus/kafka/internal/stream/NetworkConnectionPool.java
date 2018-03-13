@@ -1174,8 +1174,8 @@ final class NetworkConnectionPool
             }
             TopicMetadata metadata = pendingTopicMetadata;
             pendingTopicMetadata = null;
-            metadata.setCompacted(compacted);
             metadata.setErrorCode(errorCode);
+            metadata.finalize(compacted);
             metadata.flush();
         }
 
@@ -1427,6 +1427,14 @@ final class NetworkConnectionPool
                                 break loop;
                             }
 
+                            final long currentFetchAt = firstOffset + record.offsetDelta();
+                            if (currentFetchAt < requestedOffset)
+                            {
+                                // The only guarantee is the response will encompass the requested offset.
+                                continue;
+                            }
+                            nextFetchAt = currentFetchAt + 1;
+
                             int headersOffset = networkOffset;
                             final int headerCount = record.headerCount();
                             for (int i = 0; i < headerCount; i++)
@@ -1436,10 +1444,6 @@ final class NetworkConnectionPool
                             }
                             int headersLimit = networkOffset;
                             headers.wrap(buffer, headersOffset, headersLimit);
-
-                            final long currentFetchAt = firstOffset + record.offsetDelta();
-
-                            nextFetchAt = currentFetchAt + 1;
 
                             DirectBuffer key = null;
                             final OctetsFW messageKey = record.key();
@@ -1461,6 +1465,9 @@ final class NetworkConnectionPool
                             dispatcher.dispatch(partitionId, requestedOffset, nextFetchAt,
                                          key, headers::supplyHeader, timestamp, value);
                         }
+                        // If there are deleted records, the last offset reported on record batch may exceed the offset of the
+                        // last record in the batch. We must use this to make sure we continue to advance.
+                        nextFetchAt = recordBatch.firstOffset() + recordBatch.lastOffsetDelta() + 1;
                     }
                     dispatcher.flush(partitionId, requestedOffset, nextFetchAt);
                 }
@@ -1600,6 +1607,7 @@ final class NetworkConnectionPool
         private final String topicName;
         private short errorCode;
         private boolean compacted;
+        private boolean finalized;
         BrokerMetadata[] brokers;
         private int nextBrokerIndex;
         private int[] nodeIdsByPartition;
@@ -1615,9 +1623,10 @@ final class NetworkConnectionPool
             return brokers != null;
         }
 
-        void setCompacted(boolean compacted)
+        void finalize(boolean compacted)
         {
             this.compacted = compacted;
+            this.finalized = true;
         }
 
         void setErrorCode(
@@ -1650,7 +1659,7 @@ final class NetworkConnectionPool
             Consumer<TopicMetadata> consumer)
         {
             consumers.add(consumer);
-            if (nodeIdsByPartition != null)
+            if (finalized)
             {
                 flush();
             }
