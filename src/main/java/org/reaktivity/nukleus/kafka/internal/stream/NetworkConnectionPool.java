@@ -24,6 +24,7 @@ import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.LEADER_NO
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.UNKNOWN_TOPIC_OR_PARTITION;
 
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.BitSet;
@@ -105,6 +106,7 @@ final class NetworkConnectionPool
     private static final String COMPACT = "compact";
 
     private static final long NO_OFFSET = -1L;
+    private static final int LOCAL_SLOT = -2;
 
     private static final byte[] ANY_IP_ADDR = new byte[4];
 
@@ -361,6 +363,8 @@ final class NetworkConnectionPool
         int nextRequestId;
         int nextResponseId;
 
+        private MutableDirectBuffer localDecodeBuffer;
+
         private AbstractNetworkConnection()
         {
             this.networkTarget = NetworkConnectionPool.this.clientStreamFactory.router.supplyTarget(networkName);
@@ -551,7 +555,8 @@ final class NetworkConnectionPool
 
                     if (networkSlot != NO_SLOT)
                     {
-                        final MutableDirectBuffer bufferSlot = bufferPool.buffer(networkSlot);
+                        final MutableDirectBuffer bufferSlot = networkSlot == LOCAL_SLOT ?
+                                localDecodeBuffer: bufferPool.buffer(networkSlot);
                         final int networkRemaining = networkLimit - networkOffset;
 
                         bufferSlot.putBytes(networkSlotOffset, networkBuffer, networkOffset, networkRemaining);
@@ -563,27 +568,32 @@ final class NetworkConnectionPool
                     }
 
                     ResponseHeaderFW response = null;
+                    int responseSize = 0;
                     if (networkOffset + BitUtil.SIZE_OF_INT <= networkLimit)
                     {
                         response = NetworkConnectionPool.this.responseRO.wrap(networkBuffer, networkOffset, networkLimit);
                         networkOffset = response.limit();
+                        responseSize = response.size();
                     }
 
-                    if (response == null || networkOffset + response.size() > networkLimit)
+                    if (response == null || networkOffset + responseSize > networkLimit)
                     {
                         if (networkSlot == NO_SLOT)
                         {
-                            networkSlot = bufferPool.acquire(networkReplyId);
-
-                            final MutableDirectBuffer bufferSlot = bufferPool.buffer(networkSlot);
+                            final MutableDirectBuffer bufferSlot;
+                            if (responseSize > bufferPool.slotCapacity())
+                            {
+                                localDecodeBuffer = new UnsafeBuffer(ByteBuffer.allocateDirect(response.size()));
+                                networkSlot = LOCAL_SLOT;
+                                bufferSlot = localDecodeBuffer;
+                            }
+                            else
+                            {
+                                networkSlot = bufferPool.acquire(networkReplyId);
+                                bufferSlot = bufferPool.buffer(networkSlot);
+                            }
                             bufferSlot.putBytes(networkSlotOffset, payload.buffer(), payload.offset(), payload.sizeof());
                             networkSlotOffset += payload.sizeof();
-                        }
-                        if (networkSlotOffset == bufferPool.slotCapacity())
-                        {
-                            // response size exceeds window (slot capacity)
-                            throw new IllegalStateException(format("%s: Kafka response size %d exceeds slot capacity %d",
-                                    this, response.size(), bufferPool.slotCapacity()));
                         }
                     }
                     else
@@ -618,7 +628,14 @@ final class NetworkConnectionPool
                 {
                     if (networkSlotOffset == 0 && networkSlot != NO_SLOT)
                     {
-                        bufferPool.release(networkSlot);
+                        if (networkSlot == LOCAL_SLOT)
+                        {
+                            localDecodeBuffer = null;
+                        }
+                        else
+                        {
+                            bufferPool.release(networkSlot);
+                        }
                         networkSlot = NO_SLOT;
                     }
                 }
@@ -659,7 +676,14 @@ final class NetworkConnectionPool
         {
             if (networkSlot != NO_SLOT)
             {
-                bufferPool.release(networkSlot);
+                if (networkSlot == LOCAL_SLOT)
+                {
+                    localDecodeBuffer = null;
+                }
+                else
+                {
+                    bufferPool.release(networkSlot);
+                }
                 networkSlot = NO_SLOT;
             }
             networkSlotOffset = 0;
