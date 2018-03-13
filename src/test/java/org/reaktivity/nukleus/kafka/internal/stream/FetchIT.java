@@ -404,6 +404,21 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/ktable.message.fanout/client",
+        "${server}/ktable.message.delayed.describe.response/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveKtableMessageWithMessageKeyAndLastOffset() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("DESCRIBE_REQUEST_RECEIVED");
+        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
+        k3po.notifyBarrier("DELIVER_DESCRIBE_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/ktable.messages/client",
         "${server}/ktable.messages/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -452,6 +467,17 @@ public class FetchIT
         "${server}/live.fetch.abort.and.reconnect/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReconnectOnAbortOnLiveFetchConnection() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/record.batch.ends.with.deleted.record/client",
+        "${server}/record.batch.ends.with.deleted.record/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldUseLastOffsetFromRecordBatch() throws Exception
     {
         k3po.finish();
     }
