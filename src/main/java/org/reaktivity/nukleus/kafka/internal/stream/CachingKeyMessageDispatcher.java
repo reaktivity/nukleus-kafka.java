@@ -69,7 +69,8 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
         OctetsFW key)
     {
         buffer.wrap(key.buffer(), key.offset(), key.sizeof());
-        return offsetsByKey.get(buffer);
+        Long offset = offsetsByKey.get(buffer);
+        return offset == null ? 0 : offset.longValue();
     }
 
 }
