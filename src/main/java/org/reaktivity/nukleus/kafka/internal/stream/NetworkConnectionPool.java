@@ -270,7 +270,7 @@ final class NetworkConnectionPool
         TopicMetadata topicMetadata)
     {
         final NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
-                name -> new NetworkTopic(name, topicMetadata.partitionCount()));
+                name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted));
         progressHandlerConsumer.accept(topic.doAttach(fetchOffsets, fetchKey, headers, dispatcher, supplyWindow));
 
         final int newAttachId = nextAttachId++;
@@ -1289,14 +1289,16 @@ final class NetworkConnectionPool
 
         NetworkTopic(
             String topicName,
-            int partitionCount)
+            int partitionCount,
+            boolean compacted)
         {
             this.topicName = topicName;
             this.windowSuppliers = new HashSet<>();
             this.partitions = new TreeSet<>();
             this.candidate = new NetworkTopicPartition();
             this.progressHandler = this::handleProgress;
-            this.dispatcher = new TopicMessageDispatcher(partitionCount);
+            this.dispatcher = new TopicMessageDispatcher(partitionCount,
+                    compacted ? CachingKeyMessageDispatcher::new : KeyMessageDispatcher::new);
         }
 
         PartitionProgressHandler doAttach(

@@ -23,17 +23,25 @@ public interface MessageDispatcher
 {
 
     int dispatch(
-             int partition,
-             long requestOffset,
-             long messageOffset,
-             DirectBuffer key,
-             Function<DirectBuffer, DirectBuffer> supplyHeader,
-             long timestamp,
-             DirectBuffer value);
+        int partition,
+        long requestOffset,
+        long messageOffset,
+        DirectBuffer key,
+        Function<DirectBuffer, DirectBuffer> supplyHeader,
+        long timestamp,
+        DirectBuffer value);
 
     void flush(
-            int partition,
-            long requestOffset,
-            long lastOffset);
+        int partition,
+        long requestOffset,
+        long lastOffset);
+
+
+    default long lastOffset(
+        int partition,
+        DirectBuffer key)
+    {
+        return 0L;
+    }
 
 }
