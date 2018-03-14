@@ -25,7 +25,7 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
 {
-    private final Map<UnsafeBuffer, Long> offsetsByKey = new HashMap<>();
+    private final Map<UnsafeBuffer, long[]> offsetsByKey = new HashMap<>();
 
     private long highestOffset;
 
@@ -43,9 +43,18 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
 
         if (requestOffset <= highestOffset && messageOffset > highestOffset)
         {
-            UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[key.capacity()]);
-            keyCopy.putBytes(0,  key, 0, key.capacity());
-            offsetsByKey.put(keyCopy, messageStartOffset);
+            buffer.wrap(key, 0, key.capacity());
+            long[] offset = offsetsByKey.get(buffer);
+            if (offset == null)
+            {
+                UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[key.capacity()]);
+                keyCopy.putBytes(0,  key, 0, key.capacity());
+                offsetsByKey.put(keyCopy, new long[]{messageStartOffset});
+            }
+            else
+            {
+                offset[0] = messageStartOffset;
+            }
             highestOffset = messageOffset;
         }
 
@@ -53,7 +62,8 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
         if (dispatched > 0 && messageOffset < highestOffset)
         {
             buffer.wrap(key, 0, key.capacity());
-            if (offsetsByKey.get(buffer) == messageStartOffset)
+            long[] offset = offsetsByKey.get(buffer);
+            if (offset != null  && offset[0] == messageStartOffset)
             {
                 // The message is a historical one which is the latest one with this key.
                 // Tell consumers to move up to the live stream.
@@ -69,8 +79,8 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
         OctetsFW key)
     {
         buffer.wrap(key.buffer(), key.offset(), key.sizeof());
-        Long offset = offsetsByKey.get(buffer);
-        return offset == null ? 0 : offset.longValue();
+        long[] offset = offsetsByKey.get(buffer);
+        return offset == null ? 0 : offset[0];
     }
 
 }

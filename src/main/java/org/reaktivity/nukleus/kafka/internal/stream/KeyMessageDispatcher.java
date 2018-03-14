@@ -27,7 +27,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 
 public class KeyMessageDispatcher implements MessageDispatcher
 {
-    final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
+    protected final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
 
     private Map<UnsafeBuffer, HeadersMessageDispatcher> dispatchersByKey = new HashMap<>();
 
