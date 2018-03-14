@@ -74,7 +74,7 @@ public class TopicMessageDispatcher implements MessageDispatcher
     @Override
     public long lastOffset(
         int partition,
-        DirectBuffer key)
+        OctetsFW key)
     {
         return keys[partition].lastOffset(partition, key);
     }

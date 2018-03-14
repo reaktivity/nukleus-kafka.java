@@ -1273,6 +1273,7 @@ final class NetworkConnectionPool
     private final class NetworkTopic
     {
         private final String topicName;
+        private final boolean compacted;
         private final Set<IntSupplier> windowSuppliers;
         final NavigableSet<NetworkTopicPartition> partitions;
         private final NetworkTopicPartition candidate;
@@ -1293,6 +1294,7 @@ final class NetworkConnectionPool
             boolean compacted)
         {
             this.topicName = topicName;
+            this.compacted = compacted;
             this.windowSuppliers = new HashSet<>();
             this.partitions = new TreeSet<>();
             this.candidate = new NetworkTopicPartition();
@@ -1309,15 +1311,34 @@ final class NetworkConnectionPool
             IntSupplier supplyWindow)
         {
             windowSuppliers.add(supplyWindow);
-            int fetchKeyPartition = (int) (fetchKey == null ? -1 : fetchOffsets.keySet().iterator().next());
-            this.dispatcher.add(fetchKey, fetchKeyPartition, headers, dispatcher);
-
-            final LongIterator keys = fetchOffsets.keySet().iterator();
-            while (keys.hasNext())
+            int fetchKeyPartition;
+            if (fetchKey == null)
             {
-                final long partitionId = (int) keys.nextValue();
-                attachToPartition((int) partitionId, fetchOffsets.get(partitionId));
+                fetchKeyPartition = -1;
+                final LongIterator keys = fetchOffsets.keySet().iterator();
+                while (keys.hasNext())
+                {
+                    final int partitionId = (int) keys.nextValue();
+                    attachToPartition(partitionId, fetchOffsets.get(partitionId));
+                }
             }
+            else
+            {
+                fetchKeyPartition = fetchOffsets.keySet().iterator().next().intValue();
+                long fetchOffset = fetchOffsets.get(fetchKeyPartition);
+                if (compacted)
+                {
+                    long cachedOffset = this.dispatcher.lastOffset(fetchKeyPartition, fetchKey);
+                    if (cachedOffset > fetchOffset)
+                    {
+                        fetchOffsets.put(fetchKeyPartition, cachedOffset);
+                        fetchOffset = cachedOffset;
+                    }
+                }
+                attachToPartition(fetchKeyPartition, fetchOffset);
+            }
+
+            this.dispatcher.add(fetchKey, fetchKeyPartition, headers, dispatcher);
             return progressHandler;
         }
 

@@ -21,6 +21,7 @@ import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
 {
@@ -65,9 +66,10 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
     @Override
     public long lastOffset(
         int partition,
-        DirectBuffer key)
+        OctetsFW key)
     {
-        return offsetsByKey.get(key);
+        buffer.wrap(key.buffer(), key.offset(), key.sizeof());
+        return offsetsByKey.get(buffer);
     }
 
 }
