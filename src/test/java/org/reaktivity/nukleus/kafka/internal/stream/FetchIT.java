@@ -204,6 +204,17 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/fetch.key.historical.does.not.use.cached.key/client",
+        "${server}/fetch.key.historical.does.not.use.cached.key/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageFromNonCompactedTopicWithoutCachingKeyOffset() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/fetch.key.zero.offset.messages/client",
         "${server}/fetch.key.multiple.matches.flow.controlled/server"})
     @ScriptProperty({"networkAccept \"nukleus://target/streams/kafka\"",
@@ -387,6 +398,48 @@ public class FetchIT
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveHistoricalMessagesMatchingHeaders() throws Exception
     {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/ktable.historical.uses.cached.key.then.latest.offset/client",
+        "${server}/ktable.historical.uses.cached.key.then.latest.offset/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveKTableMessagesWithUncachedKeyUsingLatestOffset() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_THREE_CONNECTED");
+        k3po.notifyBarrier("DELIVER_SECOND_LIVE_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/ktable.historical.uses.cached.key.then.live/client",
+        "${server}/ktable.historical.uses.cached.key.then.live/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveKTableMessageUsingCachedKeyOffsetThenCatchUpToLiveStream() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_ONE_RECEIVED_FIRST_MESSAGE");
+        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
+        k3po.awaitBarrier("CLIENT_TWO_RECEIVED_FIRST_MESSAGE");
+        k3po.notifyBarrier("DELIVER_SECOND_LIVE_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/ktable.historical.uses.cached.key.then.zero.offset/client",
+        "${server}/ktable.historical.uses.cached.key.then.zero.offset/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveKTableMessagesWithUncachedKeyUsingZeroOffset() throws Exception
+    {
+        k3po.start();
         k3po.finish();
     }
 

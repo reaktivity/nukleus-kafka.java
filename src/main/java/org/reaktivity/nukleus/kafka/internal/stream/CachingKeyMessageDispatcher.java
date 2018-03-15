@@ -80,7 +80,7 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
     {
         buffer.wrap(key.buffer(), key.offset(), key.sizeof());
         long[] offset = offsetsByKey.get(buffer);
-        return offset == null ? 0 : offset[0];
+        return offset == null ? highestOffset : offset[0];
     }
 
 }
