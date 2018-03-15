@@ -1379,7 +1379,7 @@ final class NetworkConnectionPool
                 long partitionId = partitionIds.nextValue();
                 doDetach((int) partitionId, fetchOffsets.get(partitionId), supplyWindow);
             }
-            if (partitions.isEmpty())
+            if (partitions.isEmpty()  && !compacted)
             {
                 topicsByName.remove(topicName);
                 topicMetadataByName.remove(topicName);

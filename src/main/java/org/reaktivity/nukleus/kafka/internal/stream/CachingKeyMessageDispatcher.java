@@ -61,6 +61,8 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
         }
 
         int dispatched = super.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, value);
+
+        // detect historical message stream
         if (dispatched > 0 && messageOffset < highestOffset)
         {
             buffer.wrap(key, 0, key.capacity());
