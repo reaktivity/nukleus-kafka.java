@@ -451,6 +451,17 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/ktable.historical.uses.cached.key.then.live.after.null.message/client",
+        "${server}/ktable.historical.uses.cached.key.then.live.after.null.message/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveKTableMessagesFromLiveStreamAfterCachedKeyRemovedByNullMessage() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/ktable.historical.uses.cached.key.then.zero.offset/client",
         "${server}/ktable.historical.uses.cached.key.then.zero.offset/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
