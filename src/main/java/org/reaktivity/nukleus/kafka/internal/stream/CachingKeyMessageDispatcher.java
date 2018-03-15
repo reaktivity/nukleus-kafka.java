@@ -52,10 +52,11 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
         {
             offset[0] = Math.max(messageStartOffset, offset[0]);
         }
+
+        // highestOffset must only be incremented if we originally queried from offset zero
+        // so it can be used as the starting offset for absent keys
         if (requestOffset <= highestOffset && messageOffset > highestOffset)
         {
-            // highestOffset must only be incremented if we originally queried from offset zero
-            // so it can be used as the starting offset for absent keys
             highestOffset = messageOffset;
         }
 
