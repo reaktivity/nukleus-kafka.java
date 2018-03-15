@@ -497,7 +497,7 @@ public final class ClientStreamFactory implements StreamFactory
                 // We didn't skip any messages due to lack of window, advance to highest offset
                 endOffset = lastOffset;
             }
-            if (endOffset > startOffset)
+            if (endOffset > startOffset && requestOffset <= startOffset)
             {
                 this.fetchOffsets.put(partition, endOffset);
                 progressHandler.handle(partition, startOffset, endOffset);
