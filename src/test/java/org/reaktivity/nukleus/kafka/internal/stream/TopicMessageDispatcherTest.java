@@ -38,7 +38,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 
 public final class TopicMessageDispatcherTest
 {
-    private TopicMessageDispatcher dispatcher = new TopicMessageDispatcher(2);
+    private TopicMessageDispatcher dispatcher = new TopicMessageDispatcher(2, KeyMessageDispatcher::new);
 
     private final ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW> headersRW =
             new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW());

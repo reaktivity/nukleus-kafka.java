@@ -18,22 +18,30 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
+import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public interface MessageDispatcher
 {
 
     int dispatch(
-             int partition,
-             long requestOffset,
-             long messageOffset,
-             DirectBuffer key,
-             Function<DirectBuffer, DirectBuffer> supplyHeader,
-             long timestamp,
-             DirectBuffer value);
+        int partition,
+        long requestOffset,
+        long messageOffset,
+        DirectBuffer key,
+        Function<DirectBuffer, DirectBuffer> supplyHeader,
+        long timestamp,
+        DirectBuffer value);
 
     void flush(
-            int partition,
-            long requestOffset,
-            long lastOffset);
+        int partition,
+        long requestOffset,
+        long lastOffset);
+
+    default long lastOffset(
+        int partition,
+        OctetsFW key)
+    {
+        return 0L;
+    }
 
 }

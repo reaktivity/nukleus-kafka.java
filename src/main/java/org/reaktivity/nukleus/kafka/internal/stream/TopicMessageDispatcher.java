@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.agrona.DirectBuffer;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
@@ -28,12 +29,14 @@ public class TopicMessageDispatcher implements MessageDispatcher
     private final HeadersMessageDispatcher headers = new HeadersMessageDispatcher();
     private final BroadcastMessageDispatcher broadcast = new BroadcastMessageDispatcher();
 
-    public TopicMessageDispatcher(int partitionCount)
+    public TopicMessageDispatcher(
+        int partitionCount,
+        Supplier<KeyMessageDispatcher> createKeyMessageDispatcher)
     {
         keys = new KeyMessageDispatcher[partitionCount];
         for (int partition = 0; partition < partitionCount; partition++)
         {
-            keys[partition] = new KeyMessageDispatcher();
+            keys[partition] = createKeyMessageDispatcher.get();
         }
     }
 
@@ -66,6 +69,14 @@ public class TopicMessageDispatcher implements MessageDispatcher
         broadcast.flush(partition, requestOffset, lastOffset);
         keys[partition].flush(partition, requestOffset, lastOffset);
         headers.flush(partition, requestOffset, lastOffset);
+    }
+
+    @Override
+    public long lastOffset(
+        int partition,
+        OctetsFW key)
+    {
+        return keys[partition].lastOffset(partition, key);
     }
 
     public void add(OctetsFW fetchKey,
