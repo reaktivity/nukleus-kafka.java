@@ -65,10 +65,10 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
         {
             buffer.wrap(key, 0, key.capacity());
             offset = offsetsByKey.get(buffer);
+
+            // fast-forward to live stream after observing most recent cached offset for message key
             if (offset != null  && offset[0] == messageStartOffset)
             {
-                // The message is a historical one which is the latest one with this key.
-                // Tell consumers to move up to the live stream.
                 super.flush(partition, requestOffset, highestOffset);
             }
         }

@@ -404,6 +404,17 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/ktable.historical.uses.cached.key.after.unsubscribe/client",
+        "${server}/ktable.historical.uses.cached.key.after.unsubscribe/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveKTableMessageUsingCachedKeyAfterAllClientsUnsubscribe() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/ktable.historical.uses.cached.key.then.latest.offset/client",
         "${server}/ktable.historical.uses.cached.key.then.latest.offset/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
