@@ -54,6 +54,7 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.IntBooleanConsumer;
+import org.reaktivity.nukleus.kafka.internal.function.IntLongConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
@@ -704,6 +705,7 @@ final class NetworkConnectionPool
         final int brokerId;
         int encodeLimit;
         int maxFetchBytes;
+        Map<String, long[]> requestedFetchOffsetsByTopic = new HashMap<>();
 
         private AbstractFetchConnection(BrokerMetadata broker)
         {
@@ -767,7 +769,14 @@ final class NetworkConnectionPool
                                 .build();
 
                         encodeLimit = topicRequest.limit();
-                        int partitionCount = addTopicToRequest(topicName);
+
+                        long[] requestedOffsets = requestedFetchOffsetsByTopic.computeIfAbsent(
+                                topicName,
+                                k  ->  new long[topicMetadataByName.get(topicName).partitionCount()]);
+                        int partitionCount = addTopicToRequest(topicName, (p, o) ->
+                        {
+                            requestedOffsets[p] = o;
+                        });
 
                         if (partitionCount > 0)
                         {
@@ -820,7 +829,8 @@ final class NetworkConnectionPool
         }
 
         abstract int addTopicToRequest(
-            String topicName);
+            String topicName,
+            IntLongConsumer partitionsOffsets);
 
         final int limitMaximumBytes(int maximumBytes)
         {
@@ -862,7 +872,7 @@ final class NetworkConnectionPool
                     if (topic != null)
                     {
                         int partitionResponseSize = networkOffset - partitionResponse.offset();
-                        long requiredOffset = getRequiredOffset(topic, partitionResponse.partitionId());
+                        long requiredOffset = getRequiredOffset(topicName, partitionResponse.partitionId());
                         if (requiredOffset != NO_OFFSET)
                         {
                             topic.onPartitionResponse(partitionResponse.buffer(),
@@ -875,7 +885,10 @@ final class NetworkConnectionPool
             }
         }
 
-        abstract long getRequiredOffset(NetworkTopic topic, int partitionId);
+        final long getRequiredOffset(String topicName, int partitionId)
+        {
+            return requestedFetchOffsetsByTopic.get(topicName)[partitionId];
+        }
 
         @Override
         public String toString()
@@ -894,7 +907,8 @@ final class NetworkConnectionPool
 
         @Override
         int addTopicToRequest(
-            String topicName)
+            String topicName,
+            IntLongConsumer partitionOffsets)
         {
             NetworkTopic topic = topicsByName.get(topicName);
             final int maxPartitionBytes =  limitMaximumBytes(topic.maximumWritableBytes());
@@ -919,6 +933,7 @@ final class NetworkConnectionPool
                         .maxBytes(maxPartitionBytes)
                         .build();
 
+                    partitionOffsets.accept(candidate.id,  candidate.offset);
                     encodeLimit = partitionRequest.limit();
                     partitionCount++;
                     maxFetchBytes += maxPartitionBytes;
@@ -926,12 +941,6 @@ final class NetworkConnectionPool
                 candidate = next;
             }
             return partitionCount;
-        }
-
-        @Override
-        long getRequiredOffset(NetworkTopic topic, int partitionId)
-        {
-            return topic.getHighestOffset(partitionId);
         }
     }
 
@@ -944,7 +953,8 @@ final class NetworkConnectionPool
 
         @Override
         int addTopicToRequest(
-            String topicName)
+            String topicName,
+            IntLongConsumer partitionOffsets)
         {
             int partitionCount = 0;
             NetworkTopic topic = topicsByName.get(topicName);
@@ -968,6 +978,7 @@ final class NetworkConnectionPool
                             .maxBytes(maxPartitionBytes)
                             .build();
 
+                        partitionOffsets.accept(partition.id,  partition.offset);
                         encodeLimit = partitionRequest.limit();
                         partitionId = partition.id;
                         partitionCount++;
@@ -977,13 +988,6 @@ final class NetworkConnectionPool
             }
             return partitionCount;
         }
-
-        @Override
-        long getRequiredOffset(NetworkTopic topic, int partitionId)
-        {
-            return topic.getLowestOffset(partitionId);
-        }
-
     }
 
     private final class MetadataConnection extends AbstractNetworkConnection
@@ -1405,24 +1409,6 @@ final class NetworkConnectionPool
                     remove(partition);
                 }
             }
-        }
-
-        long getHighestOffset(
-            int partitionId)
-        {
-            candidate.id = partitionId;
-            candidate.offset = Long.MAX_VALUE;
-            NetworkTopicPartition floor = partitions.floor(candidate);
-            return floor != null && floor.id == partitionId ? floor.offset : NO_OFFSET;
-        }
-
-        long getLowestOffset(
-            int partitionId)
-        {
-            candidate.id = partitionId;
-            candidate.offset = 0L;
-            NetworkTopicPartition ceiling = partitions.ceiling(candidate);
-            return ceiling != null && ceiling.id == partitionId ? ceiling.offset : NO_OFFSET;
         }
 
         void onPartitionResponse(
