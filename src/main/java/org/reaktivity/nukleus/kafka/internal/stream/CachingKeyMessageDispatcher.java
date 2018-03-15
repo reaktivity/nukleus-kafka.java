@@ -40,21 +40,22 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
          DirectBuffer value)
     {
         long messageStartOffset = messageOffset - 1;
-
+        buffer.wrap(key, 0, key.capacity());
+        long[] offset = offsetsByKey.get(buffer);
+        if (offset == null)
+        {
+            UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[key.capacity()]);
+            keyCopy.putBytes(0,  key, 0, key.capacity());
+            offsetsByKey.put(keyCopy, new long[]{messageStartOffset});
+        }
+        else
+        {
+            offset[0] = Math.max(messageStartOffset, offset[0]);
+        }
         if (requestOffset <= highestOffset && messageOffset > highestOffset)
         {
-            buffer.wrap(key, 0, key.capacity());
-            long[] offset = offsetsByKey.get(buffer);
-            if (offset == null)
-            {
-                UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[key.capacity()]);
-                keyCopy.putBytes(0,  key, 0, key.capacity());
-                offsetsByKey.put(keyCopy, new long[]{messageStartOffset});
-            }
-            else
-            {
-                offset[0] = messageStartOffset;
-            }
+            // highestOffset must only be incremented if we queried from offset zero
+            // so it can be used as the starting offset for absent keys
             highestOffset = messageOffset;
         }
 
@@ -62,7 +63,7 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
         if (dispatched > 0 && messageOffset < highestOffset)
         {
             buffer.wrap(key, 0, key.capacity());
-            long[] offset = offsetsByKey.get(buffer);
+            offset = offsetsByKey.get(buffer);
             if (offset != null  && offset[0] == messageStartOffset)
             {
                 // The message is a historical one which is the latest one with this key.
