@@ -41,16 +41,23 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
     {
         long messageStartOffset = messageOffset - 1;
         buffer.wrap(key, 0, key.capacity());
-        long[] offset = offsetsByKey.get(buffer);
-        if (offset == null)
+        if (value == null)
         {
-            UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[key.capacity()]);
-            keyCopy.putBytes(0,  key, 0, key.capacity());
-            offsetsByKey.put(keyCopy, new long[]{messageStartOffset});
+            offsetsByKey.remove(buffer);
         }
         else
         {
-            offset[0] = Math.max(messageStartOffset, offset[0]);
+            long[] offset = offsetsByKey.get(buffer);
+            if (offset == null)
+            {
+                UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[key.capacity()]);
+                keyCopy.putBytes(0,  key, 0, key.capacity());
+                offsetsByKey.put(keyCopy, new long[]{messageStartOffset});
+            }
+            else
+            {
+                offset[0] = Math.max(messageStartOffset, offset[0]);
+            }
         }
 
         // highestOffset must only be incremented if we originally queried from offset zero
@@ -66,7 +73,7 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
         if (dispatched > 0 && messageOffset < highestOffset)
         {
             buffer.wrap(key, 0, key.capacity());
-            offset = offsetsByKey.get(buffer);
+            long[] offset = offsetsByKey.get(buffer);
 
             // fast-forward to live stream after observing most recent cached offset for message key
             if (offset != null  && offset[0] == messageStartOffset)
