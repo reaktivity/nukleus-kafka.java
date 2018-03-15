@@ -54,7 +54,7 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
         }
         if (requestOffset <= highestOffset && messageOffset > highestOffset)
         {
-            // highestOffset must only be incremented if we queried from offset zero
+            // highestOffset must only be incremented if we originally queried from offset zero
             // so it can be used as the starting offset for absent keys
             highestOffset = messageOffset;
         }
