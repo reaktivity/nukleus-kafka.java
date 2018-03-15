@@ -20,6 +20,7 @@ import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
+import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.buffer.BufferPool;
@@ -107,5 +108,11 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
 
         return new ClientStreamFactory(config, router, writeBuffer, bufferPool,
                 supplyStreamId, supplyCorrelationId, correlations);
+    }
+
+    public boolean handleRoute(int msgTypeId, DirectBuffer buffer, int index, int length)
+    {
+        boolean result = true;
+        return result;
     }
 }

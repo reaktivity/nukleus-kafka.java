@@ -38,7 +38,10 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi
     {
         KafkaConfiguration kafkaConfig = new KafkaConfiguration(config);
 
-        return builder.streamFactory(CLIENT, new ClientStreamFactoryBuilder(kafkaConfig))
+        ClientStreamFactoryBuilder streamFactoryBuilder = new ClientStreamFactoryBuilder(kafkaConfig);
+
+        return builder.streamFactory(CLIENT, streamFactoryBuilder)
+                      .routeHandler(CLIENT, streamFactoryBuilder::handleRoute)
                       .build();
     }
 }
