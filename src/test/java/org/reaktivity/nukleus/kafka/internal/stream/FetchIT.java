@@ -414,7 +414,7 @@ public class FetchIT
         k3po.awaitBarrier("SECOND_LIVE_FETCH_REQUEST_RECEIVED");
         k3po.notifyBarrier("CONNECT_CLIENT_TWO");
         k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        k3po.notifyBarrier("DELIVER_SECOND_FETCH_RESPONSE");
+        k3po.notifyBarrier("DELIVER_SECOND_LIVE_FETCH_RESPONSE");
         k3po.finish();
     }
 

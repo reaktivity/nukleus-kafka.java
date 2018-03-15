@@ -37,7 +37,6 @@ public interface MessageDispatcher
         long requestOffset,
         long lastOffset);
 
-
     default long lastOffset(
         int partition,
         OctetsFW key)
