@@ -17,14 +17,33 @@ package org.reaktivity.nukleus.kafka.internal;
 
 import static org.reaktivity.nukleus.route.RouteKind.CLIENT;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Consumer;
+
+import org.agrona.DirectBuffer;
 import org.reaktivity.nukleus.Configuration;
 import org.reaktivity.nukleus.Nukleus;
 import org.reaktivity.nukleus.NukleusBuilder;
 import org.reaktivity.nukleus.NukleusFactorySpi;
+import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.stream.ClientStreamFactoryBuilder;
+import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
 
 public final class KafkaNukleusFactorySpi implements NukleusFactorySpi
 {
+    private static final MessagePredicate DEFAULT_ROUTE_HANDLER = (m, b, i, l) ->
+    {
+        return true;
+    };
+    private static final Consumer<Consumer<RouteFW>> DEFAULT_ROUTE_CONSUMER = b ->
+    {
+
+    };
+
+    private final RouteFW routeRO = new RouteFW();
+    private List<Consumer<RouteFW>> topicBootstrappers;
+
     @Override
     public String name()
     {
@@ -38,10 +57,36 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi
     {
         KafkaConfiguration kafkaConfig = new KafkaConfiguration(config);
 
-        ClientStreamFactoryBuilder streamFactoryBuilder = new ClientStreamFactoryBuilder(kafkaConfig);
+        Consumer<Consumer<RouteFW>> registerTopicBootstrapper = DEFAULT_ROUTE_CONSUMER;
+        MessagePredicate routeHandler = DEFAULT_ROUTE_HANDLER;
+        if (kafkaConfig.bootstrapEnabled())
+        {
+            topicBootstrappers = new ArrayList<>();
+            registerTopicBootstrapper = topicBootstrappers::add;
+            routeHandler = this::handleRouteForBootstrap;
+        }
+
+        ClientStreamFactoryBuilder streamFactoryBuilder = new ClientStreamFactoryBuilder(kafkaConfig, registerTopicBootstrapper);
 
         return builder.streamFactory(CLIENT, streamFactoryBuilder)
-                      .routeHandler(CLIENT, streamFactoryBuilder::handleRoute)
+                       .routeHandler(CLIENT, routeHandler)
                       .build();
+    }
+
+    public boolean handleRouteForBootstrap(int msgTypeId, DirectBuffer buffer, int index, int length)
+    {
+        boolean result = true;
+        switch(msgTypeId)
+        {
+        case RouteFW.TYPE_ID:
+            {
+                final RouteFW route = routeRO.wrap(buffer, index, index + length);
+                topicBootstrappers.forEach(c -> c.accept(route));
+            }
+            break;
+        default:
+            break;
+        }
+        return result;
     }
 }

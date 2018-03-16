@@ -19,6 +19,7 @@ import static java.util.Objects.requireNonNull;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
 import java.util.function.Predicate;
@@ -106,7 +107,8 @@ public final class ClientStreamFactory implements StreamFactory
         BufferPool bufferPool,
         LongSupplier supplyStreamId,
         LongSupplier supplyCorrelationId,
-        Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations)
+        Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations,
+        Consumer<Consumer<RouteFW>> registerTopicBootstrapper)
     {
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
@@ -115,6 +117,7 @@ public final class ClientStreamFactory implements StreamFactory
         this.supplyCorrelationId = supplyCorrelationId;
         this.correlations = requireNonNull(correlations);
         this.connectionPools = new LinkedHashMap<String, Long2ObjectHashMap<NetworkConnectionPool>>();
+        registerTopicBootstrapper.accept(this::startTopicBootstrap);
     }
 
     @Override
@@ -140,6 +143,28 @@ public final class ClientStreamFactory implements StreamFactory
         }
 
         return newStream;
+    }
+
+    public void startTopicBootstrap(RouteFW route)
+    {
+        final OctetsFW extension = route.extension();
+        if (extension.sizeof() > 0)
+        {
+            final KafkaRouteExFW routeEx = extension.get(routeExRO::wrap);
+            String topicName = routeEx.topicName().asString();
+            System.out.println(String.format("Starting bootstrap for topic %s on route %s", topicName, route));
+
+            final String networkName = route.target().asString();
+            final long networkRef = route.targetRef();
+
+            Long2ObjectHashMap<NetworkConnectionPool> connectionPoolsByRef =
+                connectionPools.computeIfAbsent(networkName, this::newConnectionPoolsByRef);
+
+            NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef, ref ->
+                new NetworkConnectionPool(this, networkName, ref, bufferPool));
+
+            connectionPool.doAttach(topicName, null, 0, extension, null, null, null, null, null, null);
+        }
     }
 
     private MessageConsumer newAcceptStream(

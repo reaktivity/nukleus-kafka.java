@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import java.util.function.Consumer;
 import java.util.function.IntUnaryOperator;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
@@ -24,6 +25,7 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
+import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
@@ -31,6 +33,7 @@ import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
 {
     private final KafkaConfiguration config;
+    private final Consumer<Consumer<RouteFW>> registerTopicBootstrapper;
     private final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
 
     private RouteManager router;
@@ -40,9 +43,11 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     private Supplier<BufferPool> supplyBufferPool;
 
     public ClientStreamFactoryBuilder(
-        KafkaConfiguration config)
+        KafkaConfiguration config,
+        Consumer<Consumer<RouteFW>> registerTopicBootstrapper)
     {
         this.config = config;
+        this.registerTopicBootstrapper = registerTopicBootstrapper;
         this.correlations = new Long2ObjectHashMap<>();
     }
 
@@ -106,6 +111,6 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
         final BufferPool bufferPool = supplyBufferPool.get();
 
         return new ClientStreamFactory(config, router, writeBuffer, bufferPool,
-                supplyStreamId, supplyCorrelationId, correlations);
+                supplyStreamId, supplyCorrelationId, correlations, registerTopicBootstrapper);
     }
 }

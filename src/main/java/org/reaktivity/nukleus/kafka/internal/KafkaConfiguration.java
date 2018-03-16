@@ -19,9 +19,22 @@ import org.reaktivity.nukleus.Configuration;
 
 public class KafkaConfiguration extends Configuration
 {
+
+    public static final String TOPIC_BOOTSTRAP_ENABLED = "nukleus.kafka.enable.topic.bootstrap";
+
+    /**
+     * @see java.nio.channels.ServerSocketChannel#bind(java.net.SocketAddress, int)
+     */
+    private static final boolean TOPIC_BOOTSTRAP_ENABLED_DEFAULT = false;
+
     public KafkaConfiguration(
         Configuration config)
     {
         super(config);
+    }
+
+    public boolean bootstrapEnabled()
+    {
+        return getBoolean(TOPIC_BOOTSTRAP_ENABLED, TOPIC_BOOTSTRAP_ENABLED_DEFAULT);
     }
 }
