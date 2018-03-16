@@ -85,6 +85,21 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
     }
 
     @Override
+    public void flush(
+        int partition,
+        long requestOffset,
+        long lastOffset)
+    {
+        // highestOffset must only be incremented if we originally queried from offset zero
+        // so it can be used as the starting offset for absent keys
+        if (requestOffset <= highestOffset && lastOffset > highestOffset)
+        {
+            highestOffset = lastOffset;
+        }
+        super.flush(partition, requestOffset, lastOffset);
+    }
+
+    @Override
     public long lastOffset(
         int partition,
         OctetsFW key)
