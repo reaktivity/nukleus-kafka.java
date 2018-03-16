@@ -1443,6 +1443,12 @@ final class NetworkConnectionPool
                                 RecordBatchFW.FIELD_OFFSET_LENGTH + BitUtil.SIZE_OF_INT + recordBatch.length();
                         if (recordBatchLimit > recordSetLimit)
                         {
+                            if (recordBatch.lastOffsetDelta() == 0 && recordBatch.length() > maximumFetchBytesLimit)
+                            {
+                                System.out.format("[nukleus-kafka] skipping topic: %s partition: %d offset: %d batch-size: %d\n",
+                                                  topicName, partitionId, recordBatch.firstOffset(), recordBatch.length());
+                                nextFetchAt = recordBatch.firstOffset() + recordBatch.lastOffsetDelta() + 1;
+                            }
                             break loop;
                         }
 
