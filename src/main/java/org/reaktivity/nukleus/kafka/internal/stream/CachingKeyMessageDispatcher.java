@@ -78,7 +78,7 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
             // fast-forward to live stream after observing most recent cached offset for message key
             if (offset != null  && offset[0] == messageStartOffset)
             {
-                super.flush(partition, requestOffset, highestOffset);
+                flush(partition, requestOffset, highestOffset, key);
             }
         }
         return dispatched;
