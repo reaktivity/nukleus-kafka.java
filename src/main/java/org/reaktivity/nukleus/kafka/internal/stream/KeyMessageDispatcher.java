@@ -73,6 +73,20 @@ public class KeyMessageDispatcher implements MessageDispatcher
         existing.add(headers, 0, dispatcher);
     }
 
+    protected void flush(
+            int partition,
+            long requestOffset,
+            long lastOffset,
+            DirectBuffer key)
+    {
+        buffer.wrap(key, 0, key.capacity());
+        MessageDispatcher dispatcher = dispatchersByKey.get(buffer);
+        if (dispatcher != null)
+        {
+            dispatcher.flush(partition, requestOffset, lastOffset);
+        }
+    }
+
     public boolean remove(OctetsFW key, ListFW<KafkaHeaderFW> headers, MessageDispatcher dispatcher)
     {
         boolean result = false;

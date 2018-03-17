@@ -124,6 +124,23 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/distinct.offsets.message.fanout/client",
+        "${server}/distinct.offsets.message.fanout/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldHandleParallelSubscribesAtDistinctOffsets() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
+        k3po.awaitBarrier("SERVER_LIVE_REQUEST_RECEIVED");
+        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
+        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
+        k3po.notifyBarrier("SERVER_DELIVER_LIVE_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/fanout.with.historical.message/client",
         "${server}/fanout.with.historical.message/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")

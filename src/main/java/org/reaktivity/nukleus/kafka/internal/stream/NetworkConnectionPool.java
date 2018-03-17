@@ -1353,10 +1353,18 @@ final class NetworkConnectionPool
             candidate.id = partitionId;
             candidate.offset = fetchOffset;
             NetworkTopicPartition partition = partitions.floor(candidate);
-            if (partition == null || partition.id != candidate.id)
+            if (!candidate.equals(partition))
             {
-                NetworkTopicPartition ceiling = partitions.ceiling(candidate);
-                boolean needsHistorical = ceiling != null && ceiling.id == candidate.id;
+                boolean needsHistorical;
+                if (partition != null && partition.id == candidate.id)
+                {
+                    needsHistorical = true;
+                }
+                else
+                {
+                    NetworkTopicPartition ceiling = partitions.ceiling(candidate);
+                    needsHistorical = ceiling != null && ceiling.id == candidate.id;
+                }
                 needsHistoricalByPartition.set(candidate.id, needsHistorical);
                 partition = new NetworkTopicPartition();
                 partition.id = candidate.id;
@@ -1617,6 +1625,30 @@ final class NetworkConnectionPool
             }
 
             return comparison;
+        }
+
+        @Override
+        public boolean equals(
+            Object arg0)
+        {
+            boolean result = false;
+            if (this == arg0)
+            {
+                result = true;
+            }
+            else if (arg0 != null && arg0.getClass() == NetworkTopicPartition.class)
+            {
+                NetworkTopicPartition other = (NetworkTopicPartition) arg0;
+                result = this.id == other.id && this.offset == other.offset;
+            }
+            return result;
+        }
+
+        @Override
+        public int hashCode()
+        {
+            int offsetHash = id ^ (id >>> 32);
+            return 31 * id + offsetHash;
         }
 
         @Override
