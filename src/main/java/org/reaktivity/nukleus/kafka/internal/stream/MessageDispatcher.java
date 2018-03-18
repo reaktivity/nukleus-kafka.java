@@ -18,7 +18,6 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
-import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public interface MessageDispatcher
 {
@@ -36,12 +35,5 @@ public interface MessageDispatcher
         int partition,
         long requestOffset,
         long lastOffset);
-
-    default long lastOffset(
-        int partition,
-        OctetsFW key)
-    {
-        return 0L;
-    }
 
 }

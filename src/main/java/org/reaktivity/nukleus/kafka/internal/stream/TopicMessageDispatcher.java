@@ -71,12 +71,17 @@ public class TopicMessageDispatcher implements MessageDispatcher
         headers.flush(partition, requestOffset, lastOffset);
     }
 
-    @Override
     public long lastOffset(
         int partition,
         OctetsFW key)
     {
         return keys[partition].lastOffset(partition, key);
+    }
+
+    public long lowestOffset(
+        int partition)
+    {
+        return keys[partition].lowestOffset(partition);
     }
 
     public void add(OctetsFW fetchKey,

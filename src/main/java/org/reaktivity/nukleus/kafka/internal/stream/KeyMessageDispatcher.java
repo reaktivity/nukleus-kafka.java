@@ -59,6 +59,19 @@ public class KeyMessageDispatcher implements MessageDispatcher
         }
     }
 
+    public long lastOffset(
+        int partition,
+        OctetsFW key)
+    {
+        return 0L;
+    }
+
+    public long lowestOffset(
+        int partition)
+    {
+        return 0L;
+    }
+
     public void add(OctetsFW key, ListFW<KafkaHeaderFW> headers, MessageDispatcher dispatcher)
     {
         buffer.wrap(key.buffer(), key.offset(), key.sizeof());
