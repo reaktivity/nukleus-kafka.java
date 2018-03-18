@@ -1323,7 +1323,14 @@ final class NetworkConnectionPool
                 while (keys.hasNext())
                 {
                     final int partitionId = (int) keys.nextValue();
-                    attachToPartition(partitionId, fetchOffsets.get(partitionId));
+                    long fetchOffset = fetchOffsets.get(partitionId);
+                    long cachedOffset = this.dispatcher.lowestOffset(partitionId);
+                    if (cachedOffset > fetchOffset)
+                    {
+                        fetchOffsets.put(partitionId, cachedOffset);
+                        fetchOffset = cachedOffset;
+                    }
+                    attachToPartition(partitionId, fetchOffset);
                 }
             }
             else

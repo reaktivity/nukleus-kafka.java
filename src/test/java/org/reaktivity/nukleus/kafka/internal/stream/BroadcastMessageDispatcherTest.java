@@ -101,12 +101,6 @@ public final class BroadcastMessageDispatcherTest
     }
 
     @Test
-    public void shouldReportLastOffsetZero()
-    {
-        assertEquals(0L, dispatcher.lastOffset(0, null));
-    }
-
-    @Test
     public void shouldNotRemoveDispatcherWhenNotPresent()
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");

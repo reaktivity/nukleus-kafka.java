@@ -109,4 +109,26 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
         return offset == null ? highestOffset : offset[0];
     }
 
+    @Override
+    public long lowestOffset(
+        int partition)
+    {
+        long lowestOffset = Long.MAX_VALUE;
+        for (long[] offset : offsetsByKey.values())
+        {
+            lowestOffset = Math.min(offset[0], lowestOffset);
+        }
+        return lowestOffset == Long.MAX_VALUE ? 0L : lowestOffset;
+    }
+
+    @Override
+    public boolean shouldDispatch(
+        DirectBuffer key,
+        long messageOffset)
+    {
+        buffer.wrap(key, 0, key.capacity());
+        long[] offset = offsetsByKey.get(buffer);
+        return offset == null || messageOffset > offset[0];
+    }
+
 }
