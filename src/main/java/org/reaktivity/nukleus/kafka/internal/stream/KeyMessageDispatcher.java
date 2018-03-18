@@ -72,6 +72,13 @@ public class KeyMessageDispatcher implements MessageDispatcher
         return 0L;
     }
 
+    public boolean shouldDispatch(
+        DirectBuffer key,
+        long messageOffset)
+    {
+        return true;
+    }
+
     public void add(OctetsFW key, ListFW<KafkaHeaderFW> headers, MessageDispatcher dispatcher)
     {
         buffer.wrap(key.buffer(), key.offset(), key.sizeof());
