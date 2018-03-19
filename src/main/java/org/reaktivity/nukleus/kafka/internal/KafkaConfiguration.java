@@ -19,9 +19,18 @@ import org.reaktivity.nukleus.Configuration;
 
 public class KafkaConfiguration extends Configuration
 {
+    public static final String FETCH_MAX_BYTES_PROPERTY = "nukleus.kafka.fetch.max.bytes";
+
+    public static final int FETCH_MAX_BYTES_DEFAULT = 50 * 1024 * 1024;
+
     public KafkaConfiguration(
         Configuration config)
     {
         super(config);
+    }
+
+    public int fetchMaxBytes()
+    {
+        return getInteger(FETCH_MAX_BYTES_PROPERTY, FETCH_MAX_BYTES_DEFAULT);
     }
 }
