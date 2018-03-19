@@ -463,7 +463,7 @@ public final class ClientStreamFactory implements StreamFactory
             {
                 final int payloadLength = value == null ? 0 : value.capacity();
 
-                if (applicationReplyBudget < payloadLength + applicationReplyPadding)
+                if (applicationReplyBudget == 0 || applicationReplyBudget < payloadLength + applicationReplyPadding)
                 {
                     writeableBytesMinimum = payloadLength + applicationReplyPadding;
                 }
@@ -522,6 +522,7 @@ public final class ClientStreamFactory implements StreamFactory
                     applicationReplyBudget -= pendingMessageValue.capacity();
                 }
                 applicationReplyBudget -= applicationReplyPadding;
+                assert applicationReplyBudget >= 0;
                 progressEndOffset = messageOffset;
             }
         }
