@@ -421,8 +421,25 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/ktable.historical.delivers.compacted.messages/client",
-        "${server}/ktable.historical.delivers.compacted.messages/server"})
+        "${client}/ktable.delivers.compacted.deleted.messages/client",
+        "${server}/ktable.delivers.compacted.deleted.messages/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveKTableCompactedDeletedMessages() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_ONE_UNSUBSCRIBED");
+        k3po.awaitBarrier("SECOND_LIVE_FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
+        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
+        k3po.notifyBarrier("DELIVER_SECOND_LIVE_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/ktable.delivers.compacted.messages/client",
+        "${server}/ktable.delivers.compacted.messages/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveKTableCompactedMessages() throws Exception
     {
