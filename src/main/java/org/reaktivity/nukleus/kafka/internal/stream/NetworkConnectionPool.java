@@ -368,6 +368,7 @@ final class NetworkConnectionPool
         int nextResponseId;
 
         private MutableDirectBuffer localDecodeBuffer;
+        private int localDecodeCapacity;
 
         private AbstractNetworkConnection()
         {
@@ -589,14 +590,11 @@ final class NetworkConnectionPool
                             {
                                 int requiredCapacity = response.sizeof() + response.size();
                                 int currentCapacity = localDecodeBuffer != null ? localDecodeBuffer.capacity() : 0;
-                                if (currentCapacity >= requiredCapacity)
-                                {
-                                    networkSlotOffset = currentCapacity - requiredCapacity;
-                                }
-                                else
+                                if (currentCapacity < requiredCapacity)
                                 {
                                     localDecodeBuffer = new UnsafeBuffer(allocateDirect(requiredCapacity));
                                 }
+                                localDecodeCapacity = requiredCapacity;
                                 networkSlot = LOCAL_SLOT;
                                 bufferSlot = localDecodeBuffer;
                             }
@@ -674,7 +672,7 @@ final class NetworkConnectionPool
 
         void doOfferResponseBudget()
         {
-            final int slotCapacity = networkSlot == LOCAL_SLOT ? localDecodeBuffer.capacity() : bufferPool.slotCapacity();
+            final int slotCapacity = networkSlot == LOCAL_SLOT ? localDecodeCapacity : bufferPool.slotCapacity();
             final int networkResponseCredit =
                     Math.max(slotCapacity - networkSlotOffset - networkResponseBudget, 0);
 
