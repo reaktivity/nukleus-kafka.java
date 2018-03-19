@@ -128,7 +128,8 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
     {
         buffer.wrap(key, 0, key.capacity());
         long[] offset = offsetsByKey.get(buffer);
-        return offset == null || messageOffset > offset[0];
+        long lastKnownOffsetForKey = offset == null ? highestOffset : offset[0];
+        return messageOffset > lastKnownOffsetForKey;
     }
 
 }
