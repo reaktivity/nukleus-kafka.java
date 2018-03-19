@@ -144,6 +144,18 @@ public final class KeyMessageDispatcherTest
     }
 
     @Test
+    public void shouldReportLastOffsetZero()
+    {
+        assertEquals(0L, dispatcher.lastOffset(0, null));
+    }
+
+    @Test
+    public void shouldReportLowestOffsetZero()
+    {
+        assertEquals(0L, dispatcher.lowestOffset(0));
+    }
+
+    @Test
     public void shouldRemoveDispatchers()
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");

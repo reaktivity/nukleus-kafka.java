@@ -97,10 +97,12 @@ public final class ClientStreamFactory implements StreamFactory
     private final MutableDirectBuffer writeBuffer;
 
     final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
+
     private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools;
+    private final int fetchMaxBytes;
 
     public ClientStreamFactory(
-        KafkaConfiguration configuration,
+        KafkaConfiguration config,
         RouteManager router,
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
@@ -108,6 +110,7 @@ public final class ClientStreamFactory implements StreamFactory
         LongSupplier supplyCorrelationId,
         Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations)
     {
+        this.fetchMaxBytes = config.fetchMaxBytes();
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
         this.bufferPool = requireNonNull(bufferPool);
@@ -169,7 +172,7 @@ public final class ClientStreamFactory implements StreamFactory
                     connectionPools.computeIfAbsent(networkName, this::newConnectionPoolsByRef);
 
                 NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef, ref ->
-                    new NetworkConnectionPool(this, networkName, ref, bufferPool));
+                    new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, bufferPool));
 
                 newStream = new ClientAcceptStream(applicationThrottle, applicationId, connectionPool)::handleStream;
             }
