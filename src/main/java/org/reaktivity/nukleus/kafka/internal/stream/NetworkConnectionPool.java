@@ -586,7 +586,7 @@ final class NetworkConnectionPool
                         if (networkSlot == NO_SLOT)
                         {
                             final MutableDirectBuffer bufferSlot;
-                            if (responseSize > bufferPool.slotCapacity())
+                            if (responseSize + BitUtil.SIZE_OF_INT > bufferPool.slotCapacity())
                             {
                                 int requiredCapacity = response.sizeof() + response.size();
                                 int currentCapacity = localDecodeBuffer != null ? localDecodeBuffer.capacity() : 0;
@@ -641,7 +641,12 @@ final class NetworkConnectionPool
                 {
                     if (networkSlotOffset == 0 && networkSlot != NO_SLOT)
                     {
-                        if (networkSlot != LOCAL_SLOT)
+                        if (networkSlot == LOCAL_SLOT)
+                        {
+                            localDecodeCapacity = 0;
+                            localDecodeBuffer = null;
+                        }
+                        else
                         {
                             bufferPool.release(networkSlot);
                         }
