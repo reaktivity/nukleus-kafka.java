@@ -110,6 +110,7 @@ public final class HeaderValueMessageDispatcherTest
         Function<DirectBuffer, DirectBuffer> supplyHeader = context.mock(Function.class, "header");
 
         final long timestamp = System.currentTimeMillis() - 123;
+        final long traceId = 0L;
 
         context.checking(new Expectations()
         {
@@ -119,14 +120,14 @@ public final class HeaderValueMessageDispatcherTest
                 oneOf(supplyHeader).apply(with(bufferMatching("header2")));
                 will(returnValue(asBuffer("value2")));
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
-                        with(supplyHeader), with(timestamp), with((DirectBuffer) null));
+                        with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
                 will(returnValue(1));
                 oneOf(child2).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
-                        with(supplyHeader), with(timestamp), with((DirectBuffer) null));
+                        with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
                 will(returnValue(1));
             }
         });
-        assertEquals(2, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, null));
+        assertEquals(2, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, null));
     }
 
     @Test
@@ -151,6 +152,7 @@ public final class HeaderValueMessageDispatcherTest
         Function<DirectBuffer, DirectBuffer> supplyHeader = context.mock(Function.class, "header");
 
         final long timestamp = System.currentTimeMillis() - 123;
+        final long traceId = 0L;
 
         context.checking(new Expectations()
         {
@@ -160,11 +162,11 @@ public final class HeaderValueMessageDispatcherTest
                 oneOf(supplyHeader).apply(with(bufferMatching("header2")));
                 will(returnValue(null));
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
-                        with(supplyHeader), with(timestamp), with((DirectBuffer) null));
+                        with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
                 will(returnValue(1));
             }
         });
-        assertEquals(1, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, null));
+        assertEquals(1, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, null));
     }
 
     @Test
@@ -195,7 +197,7 @@ public final class HeaderValueMessageDispatcherTest
                 will(returnValue(asBuffer("no match")));
             }
         });
-        assertEquals(0, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, 123L, null));
+        assertEquals(0, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, 123L, 0L, null));
     }
 
     @Test

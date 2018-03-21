@@ -29,6 +29,7 @@ public interface MessageDispatcher
         DirectBuffer key,
         Function<DirectBuffer, DirectBuffer> supplyHeader,
         long timestamp,
+        long traceId,
         DirectBuffer value);
 
     void flush(

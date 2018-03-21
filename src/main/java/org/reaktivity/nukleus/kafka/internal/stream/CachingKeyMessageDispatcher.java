@@ -37,7 +37,7 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
          DirectBuffer key,
          Function<DirectBuffer, DirectBuffer> supplyHeader,
          long timestamp,
-         DirectBuffer value)
+         long traceId, DirectBuffer value)
     {
         long messageStartOffset = messageOffset - 1;
         buffer.wrap(key, 0, key.capacity());
@@ -67,7 +67,7 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
             highestOffset = messageOffset;
         }
 
-        int dispatched = super.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, value);
+        int dispatched = super.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
 
         // detect historical message stream
         if (dispatched > 0 && messageOffset < highestOffset)

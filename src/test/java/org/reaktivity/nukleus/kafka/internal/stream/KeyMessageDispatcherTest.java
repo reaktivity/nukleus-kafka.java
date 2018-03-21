@@ -86,23 +86,24 @@ public final class KeyMessageDispatcherTest
         Function<DirectBuffer, DirectBuffer> header = context.mock(Function.class, "header");
 
         final long timestamp = System.currentTimeMillis() - 123;
+        final long traceId = 0L;
 
         context.checking(new Expectations()
         {
             {
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key1")),
-                        with(header), with(timestamp), with((DirectBuffer) null));
+                        with(header), with(timestamp), with(traceId), with((DirectBuffer) null));
                 will(returnValue(1));
                 oneOf(child2).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key1")),
-                        with(header), with(timestamp), with((DirectBuffer) null));
+                        with(header), with(timestamp), with(traceId), with((DirectBuffer) null));
                 will(returnValue(1));
                 oneOf(child3).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key2")),
-                        with(header), with(timestamp), with((DirectBuffer) null));
+                        with(header), with(timestamp), with(traceId), with((DirectBuffer) null));
                 will(returnValue(1));
             }
         });
-        assertEquals(2, dispatcher.dispatch(1, 10L, 12L, asBuffer("key1"), header, timestamp, null));
-        assertEquals(1, dispatcher.dispatch(1, 10L, 12L, asBuffer("key2"), header, timestamp, null));
+        assertEquals(2, dispatcher.dispatch(1, 10L, 12L, asBuffer("key1"), header, timestamp, traceId, null));
+        assertEquals(1, dispatcher.dispatch(1, 10L, 12L, asBuffer("key2"), header, timestamp, traceId, null));
     }
 
     @Test
@@ -123,7 +124,7 @@ public final class KeyMessageDispatcherTest
             {
             }
         });
-        assertEquals(0, dispatcher.dispatch(1, 10L, 12L, asBuffer("key2"), header, timestamp, null));
+        assertEquals(0, dispatcher.dispatch(1, 10L, 12L, asBuffer("key2"), header, timestamp, 0L, null));
     }
 
     @Test
