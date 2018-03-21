@@ -637,12 +637,7 @@ final class NetworkConnectionPool
                 {
                     if (networkSlotOffset == 0 && networkSlot != NO_SLOT)
                     {
-                        if (networkSlot == LOCAL_SLOT)
-                        {
-                            localDecodeCapacity = 0;
-                            localDecodeBuffer = null;
-                        }
-                        else
+                        if (networkSlot != LOCAL_SLOT)
                         {
                             bufferPool.release(networkSlot);
                         }
