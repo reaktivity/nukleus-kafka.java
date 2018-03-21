@@ -39,12 +39,13 @@ public class KeyMessageDispatcher implements MessageDispatcher
                  DirectBuffer key,
                  Function<DirectBuffer, DirectBuffer> supplyHeader,
                  long timestamp,
+                 long traceId,
                  DirectBuffer value)
     {
         buffer.wrap(key, 0, key.capacity());
         MessageDispatcher result = dispatchersByKey.get(buffer);
         return result == null ? 0 :
-            result.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, value);
+            result.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
     }
 
     @Override

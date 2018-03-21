@@ -202,11 +202,8 @@ final class NetworkConnectionPool
         IntConsumer onMetadataError)
     {
         final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
-        metadata.doAttach((m) ->
-        {
-            doAttach(topicName, fetchOffsets, partitionHash,  fetchKey, headers, dispatcher, supplyWindow,
-                    progressHandlerConsumer, newAttachDetailsConsumer, onMetadataError, m);
-        });
+        metadata.doAttach(m -> doAttach(topicName, fetchOffsets, partitionHash, fetchKey,  headers, dispatcher, supplyWindow,
+                                        progressHandlerConsumer, newAttachDetailsConsumer, onMetadataError, m));
 
         metadataConnection.doRequestIfNeeded();
     }
@@ -394,13 +391,11 @@ final class NetworkConnectionPool
 
         void doBeginIfNotConnected()
         {
-            doBeginIfNotConnected((b, o, m) ->
-            {
-                return 0;
-            });
+            doBeginIfNotConnected((b, o, m) -> 0);
         }
 
-        final void doBeginIfNotConnected(Flyweight.Builder.Visitor extensionVisitor)
+        final void doBeginIfNotConnected(
+            Flyweight.Builder.Visitor extensionVisitor)
         {
             if (networkId == 0L)
             {
@@ -543,6 +538,7 @@ final class NetworkConnectionPool
             DataFW data)
         {
             final OctetsFW payload = data.payload();
+            final long networkTraceId = data.trace();
 
             networkResponseBudget -= payload.sizeof() + data.padding();
 
@@ -611,7 +607,7 @@ final class NetworkConnectionPool
                     }
                     else
                     {
-                        handleResponse(networkBuffer, networkOffset, networkLimit);
+                        handleResponse(networkTraceId, networkBuffer, networkOffset, networkLimit);
                         networkOffset += response.size();
                         nextResponseId++;
 
@@ -652,6 +648,7 @@ final class NetworkConnectionPool
         }
 
         abstract void handleResponse(
+            long networkTraceId,
             DirectBuffer networkBuffer,
             int networkOffset,
             int networkLimit);
@@ -676,10 +673,13 @@ final class NetworkConnectionPool
             final int networkResponseCredit =
                     Math.max(slotCapacity - networkSlotOffset - networkResponseBudget, 0);
 
-            NetworkConnectionPool.this.clientStreamFactory.doWindow(
-                    networkReplyThrottle, networkReplyId, networkResponseCredit, 0, 0);
+            if (networkResponseCredit > 0)
+            {
+                NetworkConnectionPool.this.clientStreamFactory.doWindow(
+                        networkReplyThrottle, networkReplyId, networkResponseCredit, 0, 0);
 
-            this.networkResponseBudget += networkResponseCredit;
+                this.networkResponseBudget += networkResponseCredit;
+            }
         }
 
         private void doReinitialize()
@@ -804,27 +804,28 @@ final class NetworkConnectionPool
                     if (topicCount > 0 && encodeLimit - encodeOffset + networkRequestPadding <= networkRequestBudget)
                     {
                         NetworkConnectionPool.this.fetchRequestRW
-                        .wrap(NetworkConnectionPool.this.encodeBuffer, fetchRequest.offset(), fetchRequest.limit())
-                        .maxWaitTimeMillis(fetchRequest.maxWaitTimeMillis())
-                        .minBytes(fetchRequest.minBytes())
-                        .maxBytes(fetchRequest.maxBytes())
-                        .isolationLevel(fetchRequest.isolationLevel())
-                        .topicCount(topicCount)
-                        .build();
+                            .wrap(NetworkConnectionPool.this.encodeBuffer, fetchRequest.offset(), fetchRequest.limit())
+                            .maxWaitTimeMillis(fetchRequest.maxWaitTimeMillis())
+                            .minBytes(fetchRequest.minBytes())
+                            .maxBytes(fetchRequest.maxBytes())
+                            .isolationLevel(fetchRequest.isolationLevel())
+                            .topicCount(topicCount)
+                            .build();
 
                         int newCorrelationId = nextRequestId++;
                         NetworkConnectionPool.this.requestRW
-                                 .wrap(NetworkConnectionPool.this.encodeBuffer, request.offset(), request.limit())
-                                 .size(encodeLimit - encodeOffset - RequestHeaderFW.FIELD_OFFSET_API_KEY)
-                                 .apiKey(FETCH_API_KEY)
-                                 .apiVersion(FETCH_API_VERSION)
-                                 .correlationId(newCorrelationId)
-                                 .clientId((String) null)
-                                 .build();
+                            .wrap(NetworkConnectionPool.this.encodeBuffer, request.offset(), request.limit())
+                            .size(encodeLimit - encodeOffset - RequestHeaderFW.FIELD_OFFSET_API_KEY)
+                            .apiKey(FETCH_API_KEY)
+                            .apiVersion(FETCH_API_VERSION)
+                            .correlationId(newCorrelationId)
+                            .clientId((String) null)
+                            .build();
+
                         OctetsFW payload = NetworkConnectionPool.this.payloadRW
-                                .wrap(NetworkConnectionPool.this.encodeBuffer, encodeOffset, encodeLimit)
-                                .set((b, o, m) -> m - o)
-                                .build();
+                            .wrap(NetworkConnectionPool.this.encodeBuffer, encodeOffset, encodeLimit)
+                            .set((b, o, m) -> m - o)
+                            .build();
 
                         NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId,
                                 networkRequestPadding, payload);
@@ -845,6 +846,7 @@ final class NetworkConnectionPool
 
         @Override
         final void handleResponse(
+            long networkTraceId,
             DirectBuffer networkBuffer,
             int networkOffset,
             int networkLimit)
@@ -881,7 +883,8 @@ final class NetworkConnectionPool
                         long requiredOffset = getRequiredOffset(topicName, partitionResponse.partitionId());
                         if (requiredOffset != NO_OFFSET)
                         {
-                            topic.onPartitionResponse(partitionResponse.buffer(),
+                            topic.onPartitionResponse(networkTraceId,
+                                                      partitionResponse.buffer(),
                                                       partitionResponse.offset(),
                                                       partitionResponseSize,
                                                       requiredOffset);
@@ -1040,6 +1043,7 @@ final class NetworkConnectionPool
         private void doDescribeConfigsRequest()
         {
             doBeginIfNotConnected();
+
             if (networkRequestBudget > networkRequestPadding)
             {
                 final int encodeOffset = 0;
@@ -1165,21 +1169,23 @@ final class NetworkConnectionPool
 
         @Override
         void handleResponse(
+            long networkTraceId,
             DirectBuffer networkBuffer,
             int networkOffset,
             final int networkLimit)
         {
             if (awaitingDescribeConfigs)
             {
-                handleDescribeConfigsResponse(networkBuffer, networkOffset, networkLimit);
+                handleDescribeConfigsResponse(networkTraceId, networkBuffer, networkOffset, networkLimit);
             }
             else
             {
-                handleMetadataResponse(networkBuffer, networkOffset, networkLimit);
+                handleMetadataResponse(networkTraceId, networkBuffer, networkOffset, networkLimit);
             }
         }
 
         void handleDescribeConfigsResponse(
+            long networkTraceId,
             DirectBuffer networkBuffer,
             int networkOffset,
             final int networkLimit)
@@ -1224,6 +1230,7 @@ final class NetworkConnectionPool
         }
 
         void handleMetadataResponse(
+            long networkTraceId,
             DirectBuffer networkBuffer,
             int networkOffset,
             final int networkLimit)
@@ -1443,10 +1450,10 @@ final class NetworkConnectionPool
         }
 
         void onPartitionResponse(
+            long traceId,
             DirectBuffer buffer,
             int offset,
-            int length,
-            long requestedOffset)
+            int length, long requestedOffset)
         {
             final int maxLimit = offset + length;
             int networkOffset = offset;
@@ -1533,7 +1540,7 @@ final class NetworkConnectionPool
                                 value = valueBuffer;
                             }
                             dispatcher.dispatch(partitionId, requestedOffset, nextFetchAt,
-                                         key, headers::supplyHeader, timestamp, value);
+                                         key, headers::supplyHeader, timestamp, traceId, value);
                         }
                         // If there are deleted records, the last offset reported on record batch may exceed the offset of the
                         // last record in the batch. We must use this to make sure we continue to advance.

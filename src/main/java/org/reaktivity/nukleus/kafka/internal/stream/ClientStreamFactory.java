@@ -92,6 +92,7 @@ public final class ClientStreamFactory implements StreamFactory
 
     final RouteManager router;
     final LongSupplier supplyStreamId;
+    final LongSupplier supplyTrace;
     final LongSupplier supplyCorrelationId;
     final BufferPool bufferPool;
     private final MutableDirectBuffer writeBuffer;
@@ -107,6 +108,7 @@ public final class ClientStreamFactory implements StreamFactory
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
         LongSupplier supplyStreamId,
+        LongSupplier supplyTrace,
         LongSupplier supplyCorrelationId,
         Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations)
     {
@@ -115,6 +117,7 @@ public final class ClientStreamFactory implements StreamFactory
         this.writeBuffer = requireNonNull(writeBuffer);
         this.bufferPool = requireNonNull(bufferPool);
         this.supplyStreamId = requireNonNull(supplyStreamId);
+        this.supplyTrace = requireNonNull(supplyTrace);
         this.supplyCorrelationId = supplyCorrelationId;
         this.correlations = requireNonNull(correlations);
         this.connectionPools = new LinkedHashMap<String, Long2ObjectHashMap<NetworkConnectionPool>>();
@@ -248,6 +251,7 @@ public final class ClientStreamFactory implements StreamFactory
     {
         final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
+                .trace(supplyTrace.getAsLong())
                 .source("kafka")
                 .sourceRef(targetRef)
                 .correlationId(correlationId)
@@ -265,6 +269,7 @@ public final class ClientStreamFactory implements StreamFactory
     {
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
+                .trace(supplyTrace.getAsLong())
                 .groupId(0)
                 .padding(padding)
                 .payload(p -> p.set(payload.buffer(), payload.offset(), payload.sizeof()))
@@ -279,6 +284,7 @@ public final class ClientStreamFactory implements StreamFactory
     {
         final EndFW end = endRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
+                .trace(supplyTrace.getAsLong())
                 .build();
 
         target.accept(end.typeId(), end.buffer(), end.offset(), end.sizeof());
@@ -290,6 +296,7 @@ public final class ClientStreamFactory implements StreamFactory
     {
         final AbortFW abort = abortRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
+                .trace(supplyTrace.getAsLong())
                 .build();
 
         target.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());
@@ -304,6 +311,7 @@ public final class ClientStreamFactory implements StreamFactory
     {
         final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(throttleId)
+                .trace(supplyTrace.getAsLong())
                 .credit(credit)
                 .padding(padding)
                 .groupId(groupId)
@@ -318,6 +326,7 @@ public final class ClientStreamFactory implements StreamFactory
     {
         final ResetFW reset = resetRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                .streamId(throttleId)
+               .trace(supplyTrace.getAsLong())
                .build();
 
         throttle.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
@@ -332,6 +341,7 @@ public final class ClientStreamFactory implements StreamFactory
     {
         final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
+                .trace(supplyTrace.getAsLong())
                 .source("kafka")
                 .sourceRef(targetRef)
                 .correlationId(correlationId)
@@ -344,6 +354,7 @@ public final class ClientStreamFactory implements StreamFactory
     private void doKafkaData(
         final MessageConsumer target,
         final long targetId,
+        final long traceId,
         final int padding,
         final DirectBuffer messageKey,
         final long timestamp,
@@ -354,6 +365,7 @@ public final class ClientStreamFactory implements StreamFactory
         OctetsFW value = messageValue == null ? null : messageValueRO.wrap(messageValue, 0, messageValue.capacity());
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
+                .trace(traceId)
                 .groupId(0)
                 .padding(padding)
                 .payload(value)
@@ -425,10 +437,10 @@ public final class ClientStreamFactory implements StreamFactory
         private boolean messagePending;;
         private DirectBuffer pendingMessageKey;
         private long pendingMessageTimestamp;
+        private long pendingMessageTraceId;
         private DirectBuffer pendingMessageValue;
         private long progressStartOffset = UNSET;
         private long progressEndOffset;
-
 
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
@@ -450,6 +462,7 @@ public final class ClientStreamFactory implements StreamFactory
             DirectBuffer key,
             Function<DirectBuffer, DirectBuffer> supplyHeader,
             long timestamp,
+            long traceId,
             DirectBuffer value)
         {
             int  messagesDelivered = 0;
@@ -474,6 +487,7 @@ public final class ClientStreamFactory implements StreamFactory
                 {
                     pendingMessageKey = wrap(messageKeyBuffer, key);
                     pendingMessageTimestamp = timestamp;
+                    pendingMessageTraceId = traceId;
                     pendingMessageValue = wrap(messageValueBuffer, value);
                     messagePending = true;
                     messagesDelivered++;
@@ -516,7 +530,7 @@ public final class ClientStreamFactory implements StreamFactory
             if (messagePending)
             {
                 this.fetchOffsets.put(partition, messageOffset);
-                doKafkaData(applicationReply, applicationReplyId, applicationReplyPadding,
+                doKafkaData(applicationReply, applicationReplyId, pendingMessageTraceId, applicationReplyPadding,
                             compacted ? pendingMessageKey : null,
                             pendingMessageTimestamp, pendingMessageValue, fetchOffsets);
                 messagePending = false;
@@ -611,8 +625,7 @@ public final class ClientStreamFactory implements StreamFactory
                 byte hashCodesCount = beginEx.fetchKeyHashCount();
                 if ((fetchKey != null && this.fetchOffsets.size() > 1) ||
                     (hashCodesCount > 1) ||
-                    (hashCodesCount == 1 && fetchKey == null)
-                   )
+                    (hashCodesCount == 1 && fetchKey == null))
                 {
                     doReset(applicationThrottle, applicationId);
                 }
@@ -660,7 +673,8 @@ public final class ClientStreamFactory implements StreamFactory
             this.applicationReplyId = newReplyId;
         }
 
-        private void onMetadataError(int errorCode)
+        private void onMetadataError(
+            int errorCode)
         {
             doReset(applicationThrottle, applicationId);
         }
