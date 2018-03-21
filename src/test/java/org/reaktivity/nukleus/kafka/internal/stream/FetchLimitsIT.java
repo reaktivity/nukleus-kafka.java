@@ -72,10 +72,10 @@ public class FetchLimitsIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset/client",
-        "${server}/zero.offset.message.response.exceeds.requested.256.bytes/server" })
+        "${client}/zero.offset.messages.response.exceeds.requested.256.bytes/client",
+        "${server}/zero.offset.messages.response.exceeds.requested.256.bytes/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldHandleFetchResponseSizeExceedingSlotCapacity() throws Exception
+    public void shouldHandleFetchResponsesWithSizeExceedingSlotCapacity() throws Exception
     {
         k3po.start();
         k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
