@@ -357,6 +357,7 @@ final class NetworkConnectionPool
         long networkReplyId;
 
         private MessageConsumer streamState;
+        private DecoderState decoderState;
 
         int networkSlot = NO_SLOT;
         int networkSlotOffset;
@@ -880,14 +881,14 @@ final class NetworkConnectionPool
                     if (topic != null)
                     {
                         int partitionResponseSize = networkOffset - partitionResponse.offset();
-                        long requiredOffset = getRequiredOffset(topicName, partitionResponse.partitionId());
-                        if (requiredOffset != NO_OFFSET)
+                        long requestedOffset = getRequestedOffset(topicName, partitionResponse.partitionId());
+                        if (requestedOffset != NO_OFFSET)
                         {
                             topic.onPartitionResponse(networkTraceId,
                                                       partitionResponse.buffer(),
                                                       partitionResponse.offset(),
                                                       partitionResponseSize,
-                                                      requiredOffset);
+                                                      requestedOffset);
                         }
                     }
 
@@ -895,7 +896,7 @@ final class NetworkConnectionPool
             }
         }
 
-        final long getRequiredOffset(String topicName, int partitionId)
+        final long getRequestedOffset(String topicName, int partitionId)
         {
             return requestedFetchOffsetsByTopic.get(topicName)[partitionId];
         }
@@ -1847,5 +1848,11 @@ final class NetworkConnectionPool
             value2.wrap(buffer);
             return value1.equals(value2);
         }
+    }
+
+    @FunctionalInterface
+    private interface DecoderState
+    {
+        int decode(DirectBuffer buffer, int offset, int length);
     }
 }
