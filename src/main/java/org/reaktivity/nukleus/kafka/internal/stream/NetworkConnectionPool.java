@@ -357,7 +357,6 @@ final class NetworkConnectionPool
         long networkReplyId;
 
         private MessageConsumer streamState;
-        private DecoderState decoderState;
 
         int networkSlot = NO_SLOT;
         int networkSlotOffset;
@@ -1848,11 +1847,5 @@ final class NetworkConnectionPool
             value2.wrap(buffer);
             return value1.equals(value2);
         }
-    }
-
-    @FunctionalInterface
-    private interface DecoderState
-    {
-        int decode(DirectBuffer buffer, int offset, int length);
     }
 }
