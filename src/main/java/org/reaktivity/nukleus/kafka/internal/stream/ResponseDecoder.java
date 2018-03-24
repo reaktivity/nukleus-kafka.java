@@ -24,7 +24,8 @@ interface ResponseDecoder
      * @param payload to decode
      * @return true if the response is complete, false if more data is needed
      */
-    boolean decode(OctetsFW data);
+    boolean decode(OctetsFW data,
+                   long traceId);
 
     void free();
 

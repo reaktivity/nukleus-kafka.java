@@ -20,16 +20,33 @@ import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 
 import java.util.function.BiFunction;
 
+import org.agrona.BitUtil;
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.kafka.internal.function.StringIntToLongFunction;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.ResponseHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.FetchResponseFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.HeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.PartitionResponseFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordBatchFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordSetFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TopicResponseFW;
 
 public class FetchResponseDecoder
 {
-    private final BiFunction<String, Integer, MessageDispatcher> getDispatcher;
-    private final StringIntToLongFunction getRequestedOffsetForPartition;
+    final ResponseHeaderFW responseRO = new ResponseHeaderFW();
+    final FetchResponseFW fetchResponseRO = new FetchResponseFW();
+    final TopicResponseFW topicResponseRO = new TopicResponseFW();
+    final PartitionResponseFW partitionResponseRO = new PartitionResponseFW();
+    final RecordSetFW recordSetRO = new RecordSetFW();
+
+    private final RecordBatchFW recordBatchRO = new RecordBatchFW();
+    private final RecordFW recordRO = new RecordFW();
+    private final HeaderFW headerRO = new HeaderFW();
+
     private final BufferPool bufferPool;
     private final long streamId;
 
@@ -39,6 +56,12 @@ public class FetchResponseDecoder
     int slot = NO_SLOT;
     int slotOffset;
     int slotLimit;
+
+    private final BiFunction<String, Integer, MessageDispatcher> getDispatcher;
+    private final StringIntToLongFunction getRequestedOffsetForPartition;
+    private int topicCount;
+    private Object topicName;
+    private Object partitionCount;
 
     FetchResponseDecoder(
         BiFunction<String, Integer, MessageDispatcher> getDispatcher,
@@ -50,10 +73,11 @@ public class FetchResponseDecoder
         this.getRequestedOffsetForPartition = getRequestedOffsetForPartition;
         this.bufferPool = requireNonNull(bufferPool);
         this.streamId = streamId;
-        this.decoderState = this::decodeResponse;
+        this.decoderState = this::decodeResponseHeader;
     }
 
-    public boolean decode(OctetsFW payload)
+    public boolean decode(OctetsFW payload,
+                          long traceId)
     {
         boolean responseComplete = false;
         DirectBuffer buffer = payload.buffer();
@@ -65,7 +89,7 @@ public class FetchResponseDecoder
             offset = slotOffset;
             limit = slotLimit;
         }
-        int newOffset = decode(buffer, offset, limit);
+        int newOffset = decode(buffer, offset, limit, traceId);
         responseBytesProcessed += limit - newOffset;
         if (newOffset == limit && responseBytesProcessed == responseSize)
         {
@@ -95,6 +119,8 @@ public class FetchResponseDecoder
             slotLimit = 0;
             responseSize = -1;
             responseBytesProcessed = 0;
+            topicCount = 0;
+            partitionCount = 0;
         }
     }
 
@@ -107,24 +133,75 @@ public class FetchResponseDecoder
         return bufferSlot;
     }
 
-    private int decode(DirectBuffer buffer, int offset, int limit)
+    private int decode(
+        DirectBuffer buffer,
+        int offset,
+        int limit,
+        long traceId)
     {
         boolean decoderStateChanged = true;
         while (offset < limit && decoderStateChanged)
         {
             DecoderState previous = decoderState;
-            offset = decoderState.decode(buffer, offset, limit);
+            offset = decoderState.decode(buffer, offset, limit, traceId);
             decoderStateChanged = previous != decoderState;
         }
         return offset;
     }
 
-    private int decodeResponse(
+    private int decodeResponseHeader(
         DirectBuffer buffer,
         int offset,
-        int length)
+        int limit,
+        long traceId)
     {
-        return offset;
+        int newOffset = offset;
+        if (offset + BitUtil.SIZE_OF_INT >= limit) // TODO: if responseRO.canWrap
+        {
+            ResponseHeaderFW response = null;
+            response = responseRO.wrap(buffer, offset, limit);
+            newOffset = response.limit();
+            responseSize = response.size();
+        }
+        decoderState = this::decodeFetchResponse;
+        return newOffset;
+    }
+
+    private int decodeFetchResponse(
+        DirectBuffer buffer,
+        int offset,
+        int limit,
+        long traceId)
+    {
+        int newOffset = offset;
+        if (offset + 4 * BitUtil.SIZE_OF_INT >= limit) // TODO: if fetchResponseRO.canWrap
+        {
+            FetchResponseFW response = null;
+            response = fetchResponseRO.wrap(buffer, offset, limit);
+            newOffset = response.limit();
+            topicCount = response.topicCount();
+        }
+        decoderState = this::decodeTopicResponse;
+        return newOffset;
+    }
+
+    private int decodeTopicResponse(
+        DirectBuffer buffer,
+        int offset,
+        int limit,
+        long traceId)
+    {
+        int newOffset = offset;
+        if (offset + BitUtil.SIZE_OF_INT + 50 /*max topic name length*/ >= limit) // TODO: if topicResponseRO.canWrap
+        {
+            TopicResponseFW response = null;
+            response = topicResponseRO.wrap(buffer, offset, limit);
+            newOffset = response.limit();
+            topicName = response.name().asString();
+            partitionCount = response.partitionCount();
+        }
+        decoderState = this::decodeTopicResponse;
+        return newOffset;
     }
 
     @FunctionalInterface
@@ -133,6 +210,7 @@ public class FetchResponseDecoder
         int decode(
             DirectBuffer buffer,
             int offset,
-            int length);
+            int limit,
+            long traceId);
     }
 }

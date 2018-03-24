@@ -534,7 +534,7 @@ final class NetworkConnectionPool
         }
 
 
-        private void handleData(
+        void handleData(
             DataFW data)
         {
             final OctetsFW payload = data.payload();
