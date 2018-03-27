@@ -171,6 +171,50 @@ scope protocol
               octets[valueLen] value;
             }
         }
+        
+        scope offset
+        {
+	        enum IsolationLevel
+	        {
+				READ_UNCOMMITTED,
+				READ_COMMITTED
+	        }
+	        
+            struct ListOffsetsRequest // version 2
+            {
+				int32 replicaId = -1;
+				protocol::codec::offset::IsolationLevel isolationLevel;
+				int32 topicCount;
+            }
+            
+            struct ListOffsetsTopic
+            {
+                string16 name;
+                int32 partitionCount;
+            }
+            
+            struct ListOffsetsPartitionRequest
+            {
+                int32 partitionId;
+                int64 timestamp = -2;
+            }
+            
+            struct ListOffsetsResponse
+            {
+                int32 correlationId;
+                int32 throttleTimeMillis;
+                int32 topicCount;
+            }
+            
+            struct ListOffsetsPartitionResponse
+            {
+                int32 partitionId;
+                int16 errorCode;
+                int64 timestamp;
+                int64 offset;
+            }
+        }
+        
 
         scope metadata
         {
