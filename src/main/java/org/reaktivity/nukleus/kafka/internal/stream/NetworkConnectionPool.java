@@ -60,6 +60,7 @@ import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
+import org.reaktivity.nukleus.kafka.internal.types.Varint32FW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.RequestHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.ResponseHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.config.ConfigResponseFW;
@@ -133,6 +134,7 @@ final class NetworkConnectionPool
     final RecordSetFW recordSetRO = new RecordSetFW();
 
     private final RecordBatchFW recordBatchRO = new RecordBatchFW();
+    private final Varint32FW varint32RO = new Varint32FW();
     private final RecordFW recordRO = new RecordFW();
     private final HeaderFW headerRO = new HeaderFW();
 
@@ -1493,16 +1495,21 @@ final class NetworkConnectionPool
                         final long firstOffset = recordBatch.firstOffset();
                         final long firstTimestamp = recordBatch.firstTimestamp();
                         nextFetchAt = firstOffset;
-                        while (networkOffset < recordBatchLimit - 7 /* minimum RecordFW size */)
+                        while (networkOffset < recordBatchLimit)
                         {
-                            final RecordFW record = recordRO.wrap(buffer, networkOffset, recordBatchLimit);
-                            networkOffset = record.limit();
-                            final int recordLimit = record.offset() +
-                                    RecordFW.FIELD_OFFSET_ATTRIBUTES + record.length();
-                            if (recordLimit > recordSetLimit)
+                            int recordLength = 7; // minimum record size
+                            if (recordBatchLimit - networkOffset > 5 /* minimum varint32 size */)
                             {
+                                recordLength = varint32RO.wrap(buffer, networkOffset, recordBatchLimit).value();
+                            }
+                            if (networkOffset + recordLength > recordBatchLimit)
+                            {
+                                // Make sure we attempt to re-fetch the truncated record
+                                nextFetchAt = recordBatch.firstOffset() + recordBatch.lastOffsetDelta();
                                 break loop;
                             }
+                            final RecordFW record = recordRO.wrap(buffer, networkOffset, recordBatchLimit);
+                            networkOffset = record.limit();
 
                             final long currentFetchAt = firstOffset + record.offsetDelta();
                             if (currentFetchAt < requestedOffset)
