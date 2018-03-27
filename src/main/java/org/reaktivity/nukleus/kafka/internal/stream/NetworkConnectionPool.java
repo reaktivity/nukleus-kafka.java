@@ -1495,11 +1495,17 @@ final class NetworkConnectionPool
                         final long firstOffset = recordBatch.firstOffset();
                         final long firstTimestamp = recordBatch.firstTimestamp();
                         nextFetchAt = firstOffset;
-                        while (networkOffset < recordBatchLimit - 5 /* minimum varint32 length */)
+                        while (networkOffset < recordBatchLimit)
                         {
-                            final Varint32FW recordLength = varint32RO.wrap(buffer, networkOffset, recordBatchLimit);
-                            if (networkOffset + recordLength.value() > recordSetLimit)
+                            int recordLength = 7; // minimum record size
+                            if (recordBatchLimit - networkOffset > 5 /* minimum varint32 size */)
                             {
+                                recordLength = varint32RO.wrap(buffer, networkOffset, recordBatchLimit).value();
+                            }
+                            if (networkOffset + recordLength > recordBatchLimit)
+                            {
+                                // Make sure we attempt to re-fetch the truncated record
+                                nextFetchAt = recordBatch.firstOffset() + recordBatch.lastOffsetDelta();
                                 break loop;
                             }
                             final RecordFW record = recordRO.wrap(buffer, networkOffset, recordBatchLimit);
