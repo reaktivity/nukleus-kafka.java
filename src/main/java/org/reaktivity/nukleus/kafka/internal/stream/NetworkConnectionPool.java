@@ -1400,7 +1400,8 @@ final class NetworkConnectionPool
                 {
                     pendingTopicMetadata = topicMetadata.get();
                 }
-                if (pendingTopicMetadata != null)
+                int partitionCount = pendingTopicMetadata == null ? 0 : pendingTopicMetadata.partitionCount(brokerId);
+                if (partitionCount > 0)
                 {
                     final int encodeOffset = 0;
                     int encodeLimit = encodeOffset;
@@ -1426,8 +1427,6 @@ final class NetworkConnectionPool
 
                     encodeLimit = listOffsetsRequest.limit();
 
-                    int partitionCount = pendingTopicMetadata.partitionCount();
-
                     ListOffsetsTopicFW listOffsetsTopic = listOffsetsTopicRW.wrap(
                             NetworkConnectionPool.this.encodeBuffer, encodeLimit,
                             NetworkConnectionPool.this.encodeBuffer.capacity())
@@ -1439,14 +1438,17 @@ final class NetworkConnectionPool
 
                     for (int partitionId=0; partitionId <  partitionCount; partitionId++)
                     {
-                        ListOffsetsPartitionRequestFW listOffsetsPartitionRequest = listOffsetsPartitionRequestRW.wrap(
-                                NetworkConnectionPool.this.encodeBuffer, encodeLimit,
-                                NetworkConnectionPool.this.encodeBuffer.capacity())
-                                .partitionId(partitionId)
-                                .timestamp(EARLIEST_AVAILABLE_OFFSET)
-                                .build();
+                        if (pendingTopicMetadata.nodeIdsByPartition[partitionId] == brokerId)
+                        {
+                            ListOffsetsPartitionRequestFW listOffsetsPartitionRequest = listOffsetsPartitionRequestRW.wrap(
+                                    NetworkConnectionPool.this.encodeBuffer, encodeLimit,
+                                    NetworkConnectionPool.this.encodeBuffer.capacity())
+                                    .partitionId(partitionId)
+                                    .timestamp(EARLIEST_AVAILABLE_OFFSET)
+                                    .build();
 
-                        encodeLimit = listOffsetsPartitionRequest.limit();
+                            encodeLimit = listOffsetsPartitionRequest.limit();
+                        }
                     }
 
                     // TODO: stream large requests in multiple DATA frames as needed
@@ -2074,6 +2076,19 @@ final class NetworkConnectionPool
         int partitionCount()
         {
             return nodeIdsByPartition.length;
+        }
+
+        int partitionCount(int nodeId)
+        {
+            int result = 0;
+            for (int i=0; i < nodeIdsByPartition.length; i++)
+            {
+                if (nodeIdsByPartition[i] == nodeId)
+                {
+                    result++;
+                }
+            }
+            return result;
         }
 
         void reset()
