@@ -141,6 +141,19 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/earliest.offset.message/client",
+        "${server}/earliest.offset.message/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageAtEarliestAvailableOffset() throws Exception
+    {
+        k3po.start();
+        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/fanout.with.historical.message/client",
         "${server}/fanout.with.historical.message/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -210,8 +223,8 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/fetch.key.default.partioner.picks.partition.one/client",
-        "${server}/fetch.key.default.partioner.picks.partition.one/server"})
+        "${client}/fetch.key.default.partitioner.picks.partition.one/client",
+        "${server}/fetch.key.default.partitioner.picks.partition.one/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveMessageUsingFetchKeyAndDefaultPartitioner() throws Exception
     {
@@ -293,6 +306,17 @@ public class FetchIT
         "${server}/fetch.key.nonzero.offset.first.matches/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveMessageMatchingFetchKeyFirstNonZeroOffset() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/fetch.key.nonzero.offset.LT.earliest.message/client",
+        "${server}/fetch.key.nonzero.offset.LT.earliest.first.matches/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldUseEarliestAvailableOffsetIfGreaterThanRequestedOffset() throws Exception
     {
         k3po.finish();
     }
@@ -610,6 +634,17 @@ public class FetchIT
         "${server}/record.batch.ends.with.deleted.record/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldUseLastOffsetFromRecordBatch() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/record.batch.ends.with.truncated.record/client",
+        "${server}/record.batch.ends.with.truncated.record/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageWithTruncatedRecord() throws Exception
     {
         k3po.finish();
     }
