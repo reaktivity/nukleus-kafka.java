@@ -211,7 +211,7 @@ scope protocol
                 int32 partitionId;
                 int16 errorCode;
                 int64 timestamp;
-                int64 offset;
+                int64 firstOffset;
             }
         }
         

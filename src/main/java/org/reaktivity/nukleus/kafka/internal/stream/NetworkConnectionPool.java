@@ -259,18 +259,24 @@ final class NetworkConnectionPool
             if (fetchKey != null)
             {
                 int partitionId = BufferUtil.partition(partitionHash, topicMetadata.partitionCount());
-                fetchOffsets.computeIfAbsent(0L, v -> 0L);
+                long offset = fetchOffsets.computeIfAbsent(0L, v -> 0L);
+                long lowestOffset = topicMetadata.lowestAvailableOffset(partitionId);
+                offset = Math.max(offset,  lowestOffset);
                 if (partitionId != 0)
                 {
-                    long offset = fetchOffsets.remove(0L);
-                    fetchOffsets.put(partitionId, offset);
+                    fetchOffsets.remove(0L);
                 }
+                fetchOffsets.put(partitionId, offset);
             }
             else
             {
-                while(fetchOffsets.size() < topicMetadata.partitionCount())
+                final int partitionCount = topicMetadata.partitionCount();
+                for (int partition=0; partition < partitionCount; partition++)
                 {
-                    fetchOffsets.put(fetchOffsets.size(), 0L);
+                    long offset = fetchOffsets.computeIfAbsent(partition, v -> 0L);
+                    long lowestOffset = topicMetadata.lowestAvailableOffset(partition);
+                    offset = Math.max(offset,  lowestOffset);
+                    fetchOffsets.put(partition, offset);
                 }
             }
             finishAttach(topicName, fetchOffsets, fetchKey, headers, dispatcher, supplyWindow,
@@ -1369,8 +1375,8 @@ final class NetworkConnectionPool
                     {
                         break;
                     }
-                    final long offset = partition.offset();
-                    pendingTopicMetadata.setEarliestOffset(partitionIndex, offset);
+                    final long offset = partition.firstOffset();
+                    pendingTopicMetadata.setLowestAvailableOffset(partitionIndex, offset);
                     networkOffset = partition.limit();
                 }
             }
@@ -1881,7 +1887,7 @@ final class NetworkConnectionPool
             this.topicName = topicName;
         }
 
-        public MetadataRequestType nextRequiredRequestType()
+        MetadataRequestType nextRequiredRequestType()
         {
             return nextRequiredRequestType;
         }
@@ -1923,7 +1929,13 @@ final class NetworkConnectionPool
             nodeIdsByPartition[partitionId] = nodeId;
         }
 
-        void setEarliestOffset(int partitionId, long offset)
+        long lowestAvailableOffset(
+            int partitionId)
+        {
+            return offsetsByPartition[partitionId];
+        }
+
+        void setLowestAvailableOffset(int partitionId, long offset)
         {
             offsetsByPartition[partitionId] = offset;
         }
