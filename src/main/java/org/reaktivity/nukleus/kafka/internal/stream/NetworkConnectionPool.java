@@ -1204,6 +1204,7 @@ final class NetworkConnectionPool
                     NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId,
                             networkRequestPadding, payload);
                     networkRequestBudget -= payload.sizeof() + networkRequestPadding;
+                    pendingRequest = MetadataRequestType.METADATA;
                 }
             }
         }
@@ -1960,13 +1961,16 @@ final class NetworkConnectionPool
             int nodeId)
         {
             boolean result = false;
-            for (int i=0; i < nodeIdsByPartition.length; i++)
+            if (nodeIdsByPartition != null)
             {
-                if (nodeIdsByPartition[i] == nodeId &&
-                    offsetsByPartition[i] == UNKNOWN_OFFSET)
+                for (int i=0; i < nodeIdsByPartition.length; i++)
                 {
-                    result = true;
-                    break;
+                    if (nodeIdsByPartition[i] == nodeId &&
+                        offsetsByPartition[i] == UNKNOWN_OFFSET)
+                    {
+                        result = true;
+                        break;
+                    }
                 }
             }
             return result;
