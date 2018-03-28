@@ -1436,7 +1436,7 @@ final class NetworkConnectionPool
 
                     encodeLimit = listOffsetsTopic.limit();
 
-                    for (int partitionId=0; partitionId <  partitionCount; partitionId++)
+                    for (int partitionId=0; partitionId <  pendingTopicMetadata.nodeIdsByPartition.length; partitionId++)
                     {
                         if (pendingTopicMetadata.nodeIdsByPartition[partitionId] == brokerId)
                         {
@@ -1500,10 +1500,8 @@ final class NetworkConnectionPool
                 networkOffset = topic.limit();
 
                 final int partitionCount = topic.partitionCount();
-                assert partitionCount == pendingTopicMetadata.partitionCount();
 
-
-                for (int partitionIndex = 0; partitionIndex < partitionCount && errorCode == NONE; partitionIndex++)
+                for (int i = 0; i < partitionCount && errorCode == NONE; i++)
                 {
                     final ListOffsetsPartitionResponseFW partition =
                             listOffsetsPartitionResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
@@ -1513,7 +1511,8 @@ final class NetworkConnectionPool
                         break;
                     }
                     final long offset = partition.firstOffset();
-                    pendingTopicMetadata.setLowestAvailableOffset(partitionIndex, offset);
+                    final int partitionId = partition.partitionId();
+                    pendingTopicMetadata.setLowestAvailableOffset(partitionId, offset);
                     networkOffset = partition.limit();
                 }
             }
