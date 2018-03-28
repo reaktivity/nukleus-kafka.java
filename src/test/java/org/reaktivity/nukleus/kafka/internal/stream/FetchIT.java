@@ -617,6 +617,17 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/record.batch.ends.with.truncated.record/client",
+        "${server}/record.batch.ends.with.truncated.record/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageWithTruncatedRecord() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/zero.offset.message/client",
         "${server}/live.fetch.reset.reconnect.and.message/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
