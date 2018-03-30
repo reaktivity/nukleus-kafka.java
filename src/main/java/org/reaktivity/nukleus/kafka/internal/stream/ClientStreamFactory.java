@@ -494,6 +494,9 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 else
                 {
+                    groupManager.decApplicationReplyBudget(applicationReplyId, payloadLength + applicationReplyPadding);
+                    assert groupManager.applicationReplyBudget() >= 0;
+
                     pendingMessageKey = wrap(messageKeyBuffer, key);
                     pendingMessageTimestamp = timestamp;
                     pendingMessageTraceId = traceId;
@@ -544,12 +547,6 @@ public final class ClientStreamFactory implements StreamFactory
                             compacted ? pendingMessageKey : null,
                             pendingMessageTimestamp, pendingMessageValue, fetchOffsets);
                 messagePending = false;
-                if (pendingMessageValue != null)
-                {
-                    groupManager.decApplicationReplyBudget(applicationReplyId, pendingMessageValue.capacity());
-                }
-                groupManager.decApplicationReplyBudget(applicationReplyId, applicationReplyPadding);
-                assert groupManager.applicationReplyBudget() >= 0;
                 progressEndOffset = messageOffset;
             }
         }
