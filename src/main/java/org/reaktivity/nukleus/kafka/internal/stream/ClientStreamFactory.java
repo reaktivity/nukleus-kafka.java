@@ -99,8 +99,8 @@ public final class ClientStreamFactory implements StreamFactory
 
     final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
 
-    final Long2LongHashMap groupBudget;
-    final Long2LongHashMap groupMembers;
+    private final Long2LongHashMap groupBudget;
+    private final Long2LongHashMap groupMembers;
 
     private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools;
     private final int fetchMaxBytes;
@@ -447,7 +447,7 @@ public final class ClientStreamFactory implements StreamFactory
         private long progressEndOffset;
         private boolean firstWindow = true;
         private long groupId;
-        private GroupManager groupManager;
+        private BudgetManager budgetManager;
 
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
@@ -459,7 +459,7 @@ public final class ClientStreamFactory implements StreamFactory
             this.networkPool = networkPool;
             this.fetchOffsets = new Long2LongHashMap(-1L);
             this.streamState = this::beforeBegin;
-            groupManager = new ZeroGroupManagerImpl();
+            budgetManager = new StreamBudget();
         }
 
         @Override
@@ -487,21 +487,20 @@ public final class ClientStreamFactory implements StreamFactory
             {
                 final int payloadLength = value == null ? 0 : value.capacity();
 
-                int applicationReplyBudget = groupManager.applicationReplyBudget();
+                int applicationReplyBudget = budgetManager.applicationReplyBudget();
                 if (applicationReplyBudget == 0 || applicationReplyBudget < payloadLength + applicationReplyPadding)
                 {
                     writeableBytesMinimum = payloadLength + applicationReplyPadding;
                 }
                 else
                 {
-                    groupManager.decApplicationReplyBudget(applicationReplyId, payloadLength + applicationReplyPadding);
-                    assert groupManager.applicationReplyBudget() >= 0;
+                    budgetManager.decApplicationReplyBudget(applicationReplyId, payloadLength + applicationReplyPadding);
+                    assert budgetManager.applicationReplyBudget() >= 0;
 
                     pendingMessageKey = wrap(messageKeyBuffer, key);
                     pendingMessageTimestamp = timestamp;
                     pendingMessageTraceId = traceId;
                     pendingMessageValue = wrap(messageValueBuffer, value);
-                    assert !messagePending;
                     messagePending = true;
                     messagesDelivered++;
                 }
@@ -593,7 +592,7 @@ public final class ClientStreamFactory implements StreamFactory
                 // accept reply stream is allowed to outlive accept stream, so ignore END
                 break;
             case AbortFW.TYPE_ID:
-                groupManager.memberLeavingGroup(applicationReplyId);
+                budgetManager.leaveGroup(applicationReplyId);
                 doAbort(applicationReply, applicationReplyId);
                 networkPool.doDetach(networkAttachId, fetchOffsets);
                 networkAttachId = UNATTACHED;
@@ -718,14 +717,14 @@ public final class ClientStreamFactory implements StreamFactory
             {
                 if (groupId != 0)
                 {
-                    groupManager = new GroupManagerImpl(groupId);
+                    budgetManager = new GroupBudget(groupId);
                 }
                 firstWindow = false;
-                groupManager.memberJoiningGroup(window.streamId(), window.credit());
+                budgetManager.joinGroup(window.streamId(), window.credit());
             }
             else
             {
-                groupManager.incApplicationReplyBudget(window.streamId(), window.credit());
+                budgetManager.incApplicationReplyBudget(window.streamId(), window.credit());
             }
 
             networkPool.doFlush();
@@ -736,7 +735,7 @@ public final class ClientStreamFactory implements StreamFactory
         {
             networkPool.doDetach(networkAttachId, fetchOffsets);
             networkAttachId = UNATTACHED;
-            groupManager.memberLeavingGroup(applicationReplyId);
+            budgetManager.leaveGroup(applicationReplyId);
             doReset(applicationThrottle, applicationId);
         }
 
@@ -753,14 +752,14 @@ public final class ClientStreamFactory implements StreamFactory
 
         private int writeableBytes()
         {
-            final int writeableBytes = groupManager.applicationReplyBudget() - applicationReplyPadding;
+            final int writeableBytes = budgetManager.applicationReplyBudget() - applicationReplyPadding;
             return writeableBytes > writeableBytesMinimum ? writeableBytes : 0;
         }
 
     }
 
 
-    interface GroupManager
+    private interface BudgetManager
     {
         int applicationReplyBudget();
 
@@ -770,13 +769,12 @@ public final class ClientStreamFactory implements StreamFactory
 
         void incApplicationReplyBudget(long streamId, int data);
 
-        void memberJoiningGroup(long streamId, int credit);
+        void joinGroup(long streamId, int credit);
 
-        void memberLeavingGroup(long streamId);
-
+        void leaveGroup(long streamId);
     }
 
-    final class ZeroGroupManagerImpl implements GroupManager
+    private final class StreamBudget implements BudgetManager
     {
         int applicationReplyBudget;
 
@@ -796,7 +794,6 @@ public final class ClientStreamFactory implements StreamFactory
         public void decApplicationReplyBudget(long streamId, int data)
         {
             applicationReplyBudget -= data;
-            System.out.printf("after -groupBudget streamId=%d groupId=%d budget=%d\n", streamId, 0, applicationReplyBudget);
             assert applicationReplyBudget >= 0;
         }
 
@@ -804,29 +801,27 @@ public final class ClientStreamFactory implements StreamFactory
         public void incApplicationReplyBudget(long streamId, int credit)
         {
             applicationReplyBudget += credit;
-            System.out.printf("after +groupBudget streamId=%d groupId=%d budget=%d\n", streamId, 0, applicationReplyBudget);
         }
 
         @Override
-        public void memberJoiningGroup(long streamId, int credit)
+        public void joinGroup(long streamId, int credit)
         {
             applicationReplyBudget += credit;
         }
 
         @Override
-        public void memberLeavingGroup(long streamId)
+        public void leaveGroup(long streamId)
         {
 
         }
     }
 
-    final class GroupManagerImpl implements GroupManager
+    private final class GroupBudget implements BudgetManager
     {
-
         private final long groupId;
         private int uncreditedBudget;
 
-        GroupManagerImpl(long groupId)
+        GroupBudget(long groupId)
         {
             this.groupId = groupId;
         }
@@ -853,7 +848,6 @@ public final class ClientStreamFactory implements StreamFactory
             assert groupBudget.containsKey(groupId);
 
             int budget = applicationReplyBudget();
-System.out.printf("after %d-%d streamId=%d groupId=%d budget=%d\n", budget, data, streamId, groupId, budget - data);
 
             assert budget - data >= 0;
             uncreditedBudget += data;
@@ -866,15 +860,13 @@ System.out.printf("after %d-%d streamId=%d groupId=%d budget=%d\n", budget, data
             assert groupBudget.containsKey(groupId);
 
             int budget = applicationReplyBudget();
-System.out.printf("after %d+%d streamId=%d groupId=%d budget=%d\n", budget, credit, streamId, groupId, budget + credit);
             uncreditedBudget -= credit;
             applicationReplyBudget(budget + credit);
         }
 
         @Override
-        public void memberJoiningGroup(long streamId, int credit)
+        public void joinGroup(long streamId, int credit)
         {
-            System.out.printf("Joining: streamId=%d in groupId=%d\n", streamId, groupId);
             long memberCount = groupMembers.get(groupId);
             memberCount = (memberCount == -1) ? 1 : memberCount + 1;
             groupMembers.put(groupId, memberCount);
@@ -887,9 +879,8 @@ System.out.printf("after %d+%d streamId=%d groupId=%d budget=%d\n", budget, cred
         }
 
         @Override
-        public void memberLeavingGroup(long streamId)
+        public void leaveGroup(long streamId)
         {
-            System.out.printf("Leaving: streamId=%d from groupId=%d\n", streamId, groupId);
             long memberCount = groupMembers.get(groupId);
             if (memberCount != -1)
             {
