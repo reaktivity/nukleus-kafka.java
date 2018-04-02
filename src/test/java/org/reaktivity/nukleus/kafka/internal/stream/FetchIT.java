@@ -809,7 +809,7 @@ public class FetchIT
             "${client}/zero.offset.messages.group.budget/client",
             "${server}/zero.offset.messages.group.budget/server" })
     @ScriptProperty({"networkAccept \"nukleus://target/streams/kafka\"",
-                     "applicationConnectWindow 12"})
+                     "applicationConnectWindow 24"})
     public void shouldFanoutMessagesAtZeroOffsetUsingGroupBudget() throws Exception
     {
         k3po.start();
