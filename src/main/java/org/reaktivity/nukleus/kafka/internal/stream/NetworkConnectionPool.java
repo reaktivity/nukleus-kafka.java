@@ -28,6 +28,7 @@ import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.UNKNOWN_T
 
 import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.BitSet;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -1043,16 +1044,21 @@ final class NetworkConnectionPool
                     if (topic != null && requestedOffset != NO_OFFSET)
                         // we still have subscribers
                     {
+                        int totalPartitions = topicMetadataByName.get(topicName).partitionCount();
+                        long[] previousNextFetchOffsets = previousNextFetchOffsetsByTopic.computeIfAbsent(
+                                topicName,
+                                k  ->
+                                {
+                                    long[] result = new long[totalPartitions];
+                                    Arrays.fill(result, -1L);
+                                    return result;
+                                });
                         final short errorCode = partitionResponse.errorCode();
                         switch(errorCode)
                         {
                         case NONE:
                             int partitionResponseSize = networkOffset - partitionResponse.offset();
                             int partitionId = partitionResponse.partitionId();
-                            int totalPartitions = topicMetadataByName.get(topicName).partitionCount();
-                            long[] previousNextFetchOffsets = previousNextFetchOffsetsByTopic.computeIfAbsent(
-                                    topicName,
-                                    k  ->  new long[totalPartitions]);
                             long [] previousRequestedFetchOffsets = previousRequestedFetchOffsetsByTopic.computeIfAbsent(
                                     topicName,
                                     k  ->  new long[totalPartitions]);
