@@ -694,7 +694,6 @@ public class FetchIT
         expected.expectMessage("stalled fetch");
         k3po.start();
         k3po.awaitBarrier("FINAL_FETCH_RESPONSE_WRITTEN");
-        Thread.sleep(500);
         k3po.finish();
     }
 

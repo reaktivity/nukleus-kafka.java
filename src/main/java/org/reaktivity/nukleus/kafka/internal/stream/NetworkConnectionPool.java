@@ -1062,6 +1062,7 @@ final class NetworkConnectionPool
                             long [] previousRequestedFetchOffsets = previousRequestedFetchOffsetsByTopic.computeIfAbsent(
                                     topicName,
                                     k  ->  new long[totalPartitions]);
+
                             long nextFetchAt = topic.onPartitionResponse(networkTraceId,
                                     partitionResponse.buffer(),
                                     partitionResponse.offset(),
@@ -1070,18 +1071,6 @@ final class NetworkConnectionPool
                                     previousRequestedFetchOffsets[partitionId],
                                     previousNextFetchOffsets[partitionId]);
 
-                            long highWaterMark = partitionResponse.highWatermark();
-                            if (requestedOffset == previousRequestedFetchOffsets[partitionId] &&
-                                nextFetchAt == previousNextFetchOffsets[partitionId] &&
-                                nextFetchAt < highWaterMark)
-                            {
-                                // Stuck progress, fetches are not advancing towards high watermark
-                                throw new IllegalStateException(format(
-                                        "[nukleus-kafka] %s: stalled fetch for topic: %s partition: %d (requestedOffset=%d, " +
-                                        "nextFetchAt: %d, highWaterMark: %d)",
-                                        this.toString(), topicName, partitionId, requestedOffset, nextFetchAt, highWaterMark));
-
-                            }
                             previousNextFetchOffsets[partitionId] = nextFetchAt;
                             previousRequestedFetchOffsets[partitionId] = requestedOffset;
                             break;
@@ -1732,6 +1721,7 @@ final class NetworkConnectionPool
             networkOffset = partition.limit();
             final int partitionId = partition.partitionId();
             long nextFetchAt = requestedOffset;
+            int dispatchAttempts = 0;
 
             // TODO: determine appropriate reaction to different non-zero error codes
             if (partition.errorCode() == 0 && networkOffset < maxLimit - BitUtil.SIZE_OF_INT)
@@ -1817,6 +1807,7 @@ final class NetworkConnectionPool
                             }
                             dispatcher.dispatch(partitionId, requestedOffset, nextFetchAt,
                                          key, headers::supplyHeader, timestamp, traceId, value);
+                            dispatchAttempts++;
                         }
                         // If there are deleted records, the last offset reported on record batch may exceed the offset of the
                         // last record in the batch. We must use this to make sure we continue to advance.
@@ -1824,6 +1815,18 @@ final class NetworkConnectionPool
                     }
                     dispatcher.flush(partitionId, requestedOffset, nextFetchAt);
                 }
+            }
+            long highWaterMark = partition.highWatermark();
+            if (dispatchAttempts == 0 &&
+                requestedOffset == previousRequestedOffset &&
+                nextFetchAt == previousNextFetchOffset &&
+                nextFetchAt < highWaterMark)
+            {
+                // Stuck progress, fetches are not advancing towards high watermark
+                throw new IllegalStateException(format(
+                        "[nukleus-kafka] %s: stalled fetch for topic: %s partition: %d (requestedOffset=%d, " +
+                        "nextFetchAt: %d, highWaterMark: %d)",
+                        this.toString(), topicName, partitionId, requestedOffset, nextFetchAt, highWaterMark));
             }
             return nextFetchAt;
         }
