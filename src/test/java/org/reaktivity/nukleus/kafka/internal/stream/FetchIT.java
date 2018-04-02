@@ -821,6 +821,22 @@ public class FetchIT
 
     @Test
     @Specification({
+            "${route}/client/controller",
+            "${client}/zero.offset.messages.group.budget.reset/client",
+            "${server}/zero.offset.messages.group.budget.reset/server" })
+    @ScriptProperty({"networkAccept \"nukleus://target/streams/kafka\"",
+            "applicationConnectWindow 24"})
+    public void shouldFanoutMessagesAtZeroOffsetUsingGroupBudgetReset() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
+        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
+        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
         "${route}/client/controller",
         "${client}/zero.offset.messages.multiple.partitions/client",
         "${server}/zero.offset.messages.multiple.nodes/server" })
