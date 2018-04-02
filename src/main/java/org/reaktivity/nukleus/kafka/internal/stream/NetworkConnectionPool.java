@@ -1722,12 +1722,14 @@ final class NetworkConnectionPool
             final int partitionId = partition.partitionId();
             long nextFetchAt = requestedOffset;
             int dispatchAttempts = 0;
+            int responseSize = 0;
 
             // TODO: determine appropriate reaction to different non-zero error codes
             if (partition.errorCode() == 0 && networkOffset < maxLimit - BitUtil.SIZE_OF_INT)
             {
                 final RecordSetFW recordSet = recordSetRO.wrap(buffer, networkOffset, maxLimit);
                 networkOffset = recordSet.limit();
+                responseSize = recordSet.recordBatchSize();
 
                 final int recordSetLimit = networkOffset + recordSet.recordBatchSize();
                 if (recordSetLimit <= maxLimit)
@@ -1818,6 +1820,7 @@ final class NetworkConnectionPool
             }
             long highWaterMark = partition.highWatermark();
             if (dispatchAttempts == 0 &&
+                responseSize > 0 &&
                 requestedOffset == previousRequestedOffset &&
                 nextFetchAt == previousNextFetchOffset &&
                 nextFetchAt < highWaterMark)
