@@ -447,7 +447,7 @@ public final class ClientStreamFactory implements StreamFactory
         private long progressEndOffset;
         private boolean firstWindow = true;
         private long groupId;
-        private BudgetManager budgetManager;
+        private Budget budget;
 
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
@@ -459,7 +459,7 @@ public final class ClientStreamFactory implements StreamFactory
             this.networkPool = networkPool;
             this.fetchOffsets = new Long2LongHashMap(-1L);
             this.streamState = this::beforeBegin;
-            budgetManager = new StreamBudget();
+            budget = new StreamBudget();
         }
 
         @Override
@@ -487,15 +487,15 @@ public final class ClientStreamFactory implements StreamFactory
             {
                 final int payloadLength = value == null ? 0 : value.capacity();
 
-                int applicationReplyBudget = budgetManager.applicationReplyBudget();
+                int applicationReplyBudget = budget.applicationReplyBudget();
                 if (applicationReplyBudget == 0 || applicationReplyBudget < payloadLength + applicationReplyPadding)
                 {
                     writeableBytesMinimum = payloadLength + applicationReplyPadding;
                 }
                 else
                 {
-                    budgetManager.decApplicationReplyBudget(payloadLength + applicationReplyPadding);
-                    assert budgetManager.applicationReplyBudget() >= 0;
+                    budget.decApplicationReplyBudget(payloadLength + applicationReplyPadding);
+                    assert budget.applicationReplyBudget() >= 0;
 
                     pendingMessageKey = wrap(messageKeyBuffer, key);
                     pendingMessageTimestamp = timestamp;
@@ -592,7 +592,7 @@ public final class ClientStreamFactory implements StreamFactory
                 // accept reply stream is allowed to outlive accept stream, so ignore END
                 break;
             case AbortFW.TYPE_ID:
-                budgetManager.leaveGroup();
+                budget.leaveGroup();
                 doAbort(applicationReply, applicationReplyId);
                 networkPool.doDetach(networkAttachId, fetchOffsets);
                 networkAttachId = UNATTACHED;
@@ -717,14 +717,14 @@ public final class ClientStreamFactory implements StreamFactory
             {
                 if (groupId != 0)
                 {
-                    budgetManager = new GroupBudget(groupId, window.streamId(), networkPool);
+                    budget = new GroupBudget(groupId, window.streamId(), networkPool);
                 }
                 firstWindow = false;
-                budgetManager.joinGroup(window.credit());
+                budget.joinGroup(window.credit());
             }
             else
             {
-                budgetManager.incApplicationReplyBudget(window.credit());
+                budget.incApplicationReplyBudget(window.credit());
             }
 
             networkPool.doFlush();
@@ -735,7 +735,7 @@ public final class ClientStreamFactory implements StreamFactory
         {
             networkPool.doDetach(networkAttachId, fetchOffsets);
             networkAttachId = UNATTACHED;
-            budgetManager.leaveGroup();
+            budget.leaveGroup();
             doReset(applicationThrottle, applicationId);
         }
 
@@ -752,14 +752,14 @@ public final class ClientStreamFactory implements StreamFactory
 
         private int writeableBytes()
         {
-            final int writeableBytes = budgetManager.applicationReplyBudget() - applicationReplyPadding;
+            final int writeableBytes = budget.applicationReplyBudget() - applicationReplyPadding;
             return writeableBytes > writeableBytesMinimum ? writeableBytes : 0;
         }
 
     }
 
 
-    private interface BudgetManager
+    private interface Budget
     {
         int applicationReplyBudget();
 
@@ -774,7 +774,7 @@ public final class ClientStreamFactory implements StreamFactory
         void leaveGroup();
     }
 
-    private final class StreamBudget implements BudgetManager
+    private final class StreamBudget implements Budget
     {
         int applicationReplyBudget;
 
@@ -816,7 +816,7 @@ public final class ClientStreamFactory implements StreamFactory
         }
     }
 
-    private final class GroupBudget implements BudgetManager
+    private final class GroupBudget implements Budget
     {
         private final long groupId;
         private final long streamId;
