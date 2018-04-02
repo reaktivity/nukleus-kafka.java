@@ -21,7 +21,6 @@ import static org.junit.rules.RuleChain.outerRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.DisableOnDebug;
-import org.junit.rules.ExpectedException;
 import org.junit.rules.TestRule;
 import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
@@ -54,9 +53,6 @@ public class FetchLimitsIT
 
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
-
-    @Rule
-    public ExpectedException expected = ExpectedException.none();
 
     @Test
     @Specification({

@@ -750,6 +750,8 @@ final class NetworkConnectionPool
         int encodeLimit;
         boolean offsetsNeeded;
         Map<String, long[]> requestedFetchOffsetsByTopic = new HashMap<>();
+        Map<String, long[]> previousRequestedFetchOffsetsByTopic = new HashMap<>();
+        Map<String, long[]> previousNextFetchOffsetsByTopic = new HashMap<>();
 
         private AbstractFetchConnection(BrokerMetadata broker)
         {
@@ -1046,11 +1048,36 @@ final class NetworkConnectionPool
                         {
                         case NONE:
                             int partitionResponseSize = networkOffset - partitionResponse.offset();
-                            topic.onPartitionResponse(networkTraceId,
+                            int partitionId = partitionResponse.partitionId();
+                            int totalPartitions = topicMetadataByName.get(topicName).partitionCount();
+                            long[] previousNextFetchOffsets = previousNextFetchOffsetsByTopic.computeIfAbsent(
+                                    topicName,
+                                    k  ->  new long[totalPartitions]);
+                            long [] previousRequestedFetchOffsets = previousRequestedFetchOffsetsByTopic.computeIfAbsent(
+                                    topicName,
+                                    k  ->  new long[totalPartitions]);
+                            long nextFetchAt = topic.onPartitionResponse(networkTraceId,
                                     partitionResponse.buffer(),
                                     partitionResponse.offset(),
                                     partitionResponseSize,
-                                    requestedOffset);
+                                    requestedOffset,
+                                    previousRequestedFetchOffsets[partitionId],
+                                    previousNextFetchOffsets[partitionId]);
+
+                            long highWaterMark = partitionResponse.highWatermark();
+                            if (requestedOffset == previousRequestedFetchOffsets[partitionId] &&
+                                nextFetchAt == previousNextFetchOffsets[partitionId] &&
+                                nextFetchAt < highWaterMark)
+                            {
+                                // Stuck progress, fetches are not advancing towards high watermark
+                                throw new IllegalStateException(format(
+                                        "[nukleus-kafka] %s: stalled fetch for topic: %s partition: %d (requestedOffset=%d, " +
+                                        "nextFetchAt: %d, highWaterMark: %d)",
+                                        this.toString(), topicName, partitionId, requestedOffset, nextFetchAt, highWaterMark));
+
+                            }
+                            previousNextFetchOffsets[partitionId] = nextFetchAt;
+                            previousRequestedFetchOffsets[partitionId] = requestedOffset;
                             break;
                         case OFFSET_OUT_OF_RANGE:
                             offsetsNeeded = true;
@@ -1684,17 +1711,21 @@ final class NetworkConnectionPool
             }
         }
 
-        void onPartitionResponse(
+        long onPartitionResponse(
             long traceId,
             DirectBuffer buffer,
             int offset,
-            int length, long requestedOffset)
+            int length,
+            long requestedOffset,
+            long previousRequestedOffset,
+            long previousNextFetchOffset)
         {
             final int maxLimit = offset + length;
             int networkOffset = offset;
             final PartitionResponseFW partition = partitionResponseRO.wrap(buffer, networkOffset, maxLimit);
             networkOffset = partition.limit();
             final int partitionId = partition.partitionId();
+            long nextFetchAt = requestedOffset;
 
             // TODO: determine appropriate reaction to different non-zero error codes
             if (partition.errorCode() == 0 && networkOffset < maxLimit - BitUtil.SIZE_OF_INT)
@@ -1705,7 +1736,6 @@ final class NetworkConnectionPool
                 final int recordSetLimit = networkOffset + recordSet.recordBatchSize();
                 if (recordSetLimit <= maxLimit)
                 {
-                    long nextFetchAt = requestedOffset;
                     loop:
                     while (networkOffset < recordSetLimit - RecordBatchFW.FIELD_OFFSET_RECORD_COUNT - BitUtil.SIZE_OF_INT)
                     {
@@ -1789,6 +1819,7 @@ final class NetworkConnectionPool
                     dispatcher.flush(partitionId, requestedOffset, nextFetchAt);
                 }
             }
+            return nextFetchAt;
         }
 
         int maximumWritableBytes()

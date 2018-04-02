@@ -22,6 +22,7 @@ import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.DisableOnDebug;
+import org.junit.rules.ExpectedException;
 import org.junit.rules.TestRule;
 import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
@@ -50,6 +51,9 @@ public class FetchIT
 
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
+
+    @Rule
+    public ExpectedException expected = ExpectedException.none();
 
     @Ignore("BEGIN vs RESET read order not yet guaranteed to match write order")
     @Test
@@ -676,6 +680,21 @@ public class FetchIT
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveMessageWithTruncatedRecord() throws Exception
     {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/record.batch.ends.with.truncated.record.then.stall/client",
+        "${server}/record.batch.ends.with.truncated.record.then.stall/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReportFetchesStalled() throws Exception
+    {
+        expected.expectMessage("stalled fetch");
+        k3po.start();
+        k3po.awaitBarrier("FINAL_FETCH_RESPONSE_WRITTEN");
+        Thread.sleep(500);
         k3po.finish();
     }
 
