@@ -1055,9 +1055,10 @@ final class NetworkConnectionPool
                         case OFFSET_OUT_OF_RANGE:
                             offsetsNeeded = true;
                             TopicMetadata topicMetadata = topicMetadataByName.get(topicName);
+                            int partitionId = partitionResponse.partitionId();
 
                             // logStartOffset is always -1 in this case so we can't use it
-                            topicMetadata.setFirstOffset(partitionIndex, TopicMetadata.UNKNOWN_OFFSET);
+                            topicMetadata.setFirstOffset(partitionId, TopicMetadata.UNKNOWN_OFFSET);
 
                             break;
                         default:
