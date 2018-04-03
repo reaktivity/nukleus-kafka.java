@@ -182,7 +182,7 @@ final class NetworkConnectionPool
     private final BufferPool bufferPool;
     private AbstractFetchConnection[] connections = new LiveFetchConnection[0];
     private HistoricalFetchConnection[] historicalConnections = new HistoricalFetchConnection[0];
-    private final MetadataConnection metadataConnection;
+    private MetadataConnection metadataConnection;
 
     private final Map<String, TopicMetadata> topicMetadataByName;
     private final Map<String, NetworkTopic> topicsByName;
@@ -203,7 +203,6 @@ final class NetworkConnectionPool
         this.networkRef = networkRef;
         this.fetchMaxBytes = fetchMaxBytes;
         this.bufferPool = bufferPool;
-        this.metadataConnection = new MetadataConnection();
         this.encodeBuffer = new UnsafeBuffer(new byte[clientStreamFactory.bufferPool.slotCapacity()]);
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
@@ -227,6 +226,11 @@ final class NetworkConnectionPool
         final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
         metadata.doAttach(m -> doAttach(topicName, fetchOffsets, partitionHash, fetchKey,  headers, dispatcher, supplyWindow,
                     progressHandlerConsumer, newAttachDetailsConsumer, onMetadataError, m));
+
+        if (metadataConnection == null)
+        {
+            metadataConnection = new MetadataConnection();
+        }
 
         metadataConnection.doRequestIfNeeded();
     }
@@ -1051,9 +1055,10 @@ final class NetworkConnectionPool
                         case OFFSET_OUT_OF_RANGE:
                             offsetsNeeded = true;
                             TopicMetadata topicMetadata = topicMetadataByName.get(topicName);
+                            int partitionId = partitionResponse.partitionId();
 
                             // logStartOffset is always -1 in this case so we can't use it
-                            topicMetadata.setFirstOffset(partitionIndex, TopicMetadata.UNKNOWN_OFFSET);
+                            topicMetadata.setFirstOffset(partitionId, TopicMetadata.UNKNOWN_OFFSET);
 
                             break;
                         default:
