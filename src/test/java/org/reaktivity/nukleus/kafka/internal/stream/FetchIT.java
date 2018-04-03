@@ -646,6 +646,17 @@ public class FetchIT
     @Test
     @Specification({
         "${routeAnyTopic}/client/controller",
+        "${client}/offset.too.early.multiple.nodes/client",
+        "${server}/offset.too.early.multiple.nodes/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldRefetchUsingReportedFirstOffsetOnMultipleNodes() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${routeAnyTopic}/client/controller",
         "${client}/offset.too.early.multiple.topics/client",
         "${server}/offset.too.early.multiple.topics/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
