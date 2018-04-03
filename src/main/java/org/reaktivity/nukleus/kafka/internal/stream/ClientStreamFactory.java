@@ -99,6 +99,9 @@ public final class ClientStreamFactory implements StreamFactory
 
     final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
 
+    private final Long2LongHashMap groupBudget;
+    private final Long2LongHashMap groupMembers;
+
     private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools;
     private final int fetchMaxBytes;
 
@@ -121,6 +124,8 @@ public final class ClientStreamFactory implements StreamFactory
         this.supplyCorrelationId = supplyCorrelationId;
         this.correlations = requireNonNull(correlations);
         this.connectionPools = new LinkedHashMap<String, Long2ObjectHashMap<NetworkConnectionPool>>();
+        groupBudget = new Long2LongHashMap(-1);
+        groupMembers = new Long2LongHashMap(-1);
     }
 
     @Override
@@ -424,7 +429,6 @@ public final class ClientStreamFactory implements StreamFactory
         private byte[] applicationBeginExtension;
         private MessageConsumer applicationReply;
         private long applicationReplyId;
-        private int applicationReplyBudget;
         private int applicationReplyPadding;
 
         private int networkAttachId = UNATTACHED;
@@ -441,6 +445,9 @@ public final class ClientStreamFactory implements StreamFactory
         private DirectBuffer pendingMessageValue;
         private long progressStartOffset = UNSET;
         private long progressEndOffset;
+        private boolean firstWindow = true;
+        private long groupId;
+        private Budget budget;
 
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
@@ -452,6 +459,7 @@ public final class ClientStreamFactory implements StreamFactory
             this.networkPool = networkPool;
             this.fetchOffsets = new Long2LongHashMap(-1L);
             this.streamState = this::beforeBegin;
+            budget = new StreamBudget();
         }
 
         @Override
@@ -479,14 +487,15 @@ public final class ClientStreamFactory implements StreamFactory
             {
                 final int payloadLength = value == null ? 0 : value.capacity();
 
+                int applicationReplyBudget = budget.applicationReplyBudget();
                 if (applicationReplyBudget == 0 || applicationReplyBudget < payloadLength + applicationReplyPadding)
                 {
                     writeableBytesMinimum = payloadLength + applicationReplyPadding;
                 }
                 else
                 {
-                    applicationReplyBudget -= payloadLength + applicationReplyPadding;
-                    assert applicationReplyBudget >= 0;
+                    budget.decApplicationReplyBudget(payloadLength + applicationReplyPadding);
+                    assert budget.applicationReplyBudget() >= 0;
 
                     pendingMessageKey = wrap(messageKeyBuffer, key);
                     pendingMessageTimestamp = timestamp;
@@ -583,6 +592,7 @@ public final class ClientStreamFactory implements StreamFactory
                 // accept reply stream is allowed to outlive accept stream, so ignore END
                 break;
             case AbortFW.TYPE_ID:
+                budget.leaveGroup();
                 doAbort(applicationReply, applicationReplyId);
                 networkPool.doDetach(networkAttachId, fetchOffsets);
                 networkAttachId = UNATTACHED;
@@ -701,8 +711,21 @@ public final class ClientStreamFactory implements StreamFactory
         private void handleWindow(
             final WindowFW window)
         {
-            applicationReplyBudget += window.credit();
             applicationReplyPadding = window.padding();
+            groupId = window.groupId();
+            if (firstWindow)
+            {
+                if (groupId != 0)
+                {
+                    budget = new GroupBudget(groupId, window.streamId(), networkPool);
+                }
+                firstWindow = false;
+                budget.joinGroup(window.credit());
+            }
+            else
+            {
+                budget.incApplicationReplyBudget(window.credit());
+            }
 
             networkPool.doFlush();
         }
@@ -712,6 +735,7 @@ public final class ClientStreamFactory implements StreamFactory
         {
             networkPool.doDetach(networkAttachId, fetchOffsets);
             networkAttachId = UNATTACHED;
+            budget.leaveGroup();
             doReset(applicationThrottle, applicationId);
         }
 
@@ -728,8 +752,170 @@ public final class ClientStreamFactory implements StreamFactory
 
         private int writeableBytes()
         {
-            final int writeableBytes = applicationReplyBudget - applicationReplyPadding;
+            final int writeableBytes = budget.applicationReplyBudget() - applicationReplyPadding;
             return writeableBytes > writeableBytesMinimum ? writeableBytes : 0;
+        }
+
+    }
+
+
+    private interface Budget
+    {
+        int applicationReplyBudget();
+
+        void applicationReplyBudget(int budget);
+
+        void decApplicationReplyBudget(int data);
+
+        void incApplicationReplyBudget(int data);
+
+        void joinGroup(int credit);
+
+        void leaveGroup();
+    }
+
+    private final class StreamBudget implements Budget
+    {
+        int applicationReplyBudget;
+
+        @Override
+        public int applicationReplyBudget()
+        {
+            return applicationReplyBudget;
+        }
+
+        @Override
+        public void applicationReplyBudget(int budget)
+        {
+            applicationReplyBudget = budget;
+        }
+
+        @Override
+        public void decApplicationReplyBudget(int data)
+        {
+            applicationReplyBudget -= data;
+            assert applicationReplyBudget >= 0;
+        }
+
+        @Override
+        public void incApplicationReplyBudget(int credit)
+        {
+            applicationReplyBudget += credit;
+        }
+
+        @Override
+        public void joinGroup(int credit)
+        {
+            applicationReplyBudget += credit;
+        }
+
+        @Override
+        public void leaveGroup()
+        {
+
+        }
+    }
+
+    private final class GroupBudget implements Budget
+    {
+        private final long groupId;
+        private final long streamId;
+        private final NetworkConnectionPool networkPool;
+        private int uncreditedBudget;
+
+        GroupBudget(long groupId, long streamId, NetworkConnectionPool networkPool)
+        {
+            this.groupId = groupId;
+            this.streamId = streamId;
+            this.networkPool = networkPool;
+        }
+
+        @Override
+        public int applicationReplyBudget()
+        {
+            long budget = groupBudget.get(groupId);
+            return budget == -1 ? 0 : (int) budget;
+        }
+
+        @Override
+        public void applicationReplyBudget(int budget)
+        {
+            assert groupBudget.containsKey(groupId);
+            assert budget >= 0;
+
+            groupBudget.put(groupId, budget);
+        }
+
+        @Override
+        public void decApplicationReplyBudget(int data)
+        {
+            assert groupBudget.containsKey(groupId);
+
+            int budget = applicationReplyBudget();
+            assert budget - data >= 0;
+            applicationReplyBudget(budget - data);
+
+            uncreditedBudget += data;
+        }
+
+        @Override
+        public void incApplicationReplyBudget(int credit)
+        {
+            assert groupBudget.containsKey(groupId);
+
+            int budget = applicationReplyBudget();
+            applicationReplyBudget(budget + credit);
+
+            uncreditedBudget -= credit;
+        }
+
+        @Override
+        public void joinGroup(int credit)
+        {
+            long memberCount = groupMembers.get(groupId);
+            memberCount = (memberCount == -1) ? 1 : memberCount + 1;
+            groupMembers.put(groupId, memberCount);
+
+            if (memberCount == 1)
+            {
+                assert !groupBudget.containsKey(groupId);
+                groupBudget.put(groupId, credit);
+            }
+        }
+
+        @Override
+        public void leaveGroup()
+        {
+            long memberCount = groupMembers.get(groupId);
+            if (memberCount != -1)
+            {
+                memberCount--;
+                assert memberCount >= 0;
+
+                if (memberCount == 0)
+                {
+                    groupMembers.remove(groupId);
+                    groupBudget.remove(groupId);
+                }
+                else
+                {
+                    groupMembers.put(groupId, memberCount);
+
+                    assert groupBudget.containsKey(groupId);
+                    int budget = applicationReplyBudget();
+                    applicationReplyBudget(budget + uncreditedBudget);
+                    uncreditedBudget = 0;
+
+                    // more (from uncredited) group budget available, some messages can be sent
+                    networkPool.doFlush();
+                }
+            }
+        }
+
+        @Override
+        public String toString()
+        {
+            return String.format("(groupId=%d, streamId=%d)", groupId, streamId);
         }
     }
 }
