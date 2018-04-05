@@ -660,6 +660,11 @@ final class NetworkConnectionPool
                         {
                             assert networkOffset == networkLimit;
                             networkSlotOffset = 0;
+                            if (networkSlot == LOCAL_SLOT)
+                            {
+                                // so that response budget credit is computed w.r.t bufferPool slot
+                                networkSlot = NO_SLOT;
+                            }
                         }
 
                         doOfferResponseBudget();
