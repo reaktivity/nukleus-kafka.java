@@ -37,7 +37,7 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
          DirectBuffer key,
          Function<DirectBuffer, DirectBuffer> supplyHeader,
          long timestamp,
-         DirectBuffer value)
+         long traceId, DirectBuffer value)
     {
         long messageStartOffset = messageOffset - 1;
         buffer.wrap(key, 0, key.capacity());
@@ -67,7 +67,7 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
             highestOffset = messageOffset;
         }
 
-        int dispatched = super.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, value);
+        int dispatched = super.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
 
         // detect historical message stream
         if (dispatched > 0 && messageOffset < highestOffset)
@@ -78,10 +78,25 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
             // fast-forward to live stream after observing most recent cached offset for message key
             if (offset != null  && offset[0] == messageStartOffset)
             {
-                super.flush(partition, requestOffset, highestOffset);
+                flush(partition, requestOffset, highestOffset, key);
             }
         }
         return dispatched;
+    }
+
+    @Override
+    public void flush(
+        int partition,
+        long requestOffset,
+        long lastOffset)
+    {
+        // highestOffset must only be incremented if we originally queried from offset zero
+        // so it can be used as the starting offset for absent keys
+        if (requestOffset <= highestOffset && lastOffset > highestOffset)
+        {
+            highestOffset = lastOffset;
+        }
+        super.flush(partition, requestOffset, lastOffset);
     }
 
     @Override
@@ -92,6 +107,29 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
         buffer.wrap(key.buffer(), key.offset(), key.sizeof());
         long[] offset = offsetsByKey.get(buffer);
         return offset == null ? highestOffset : offset[0];
+    }
+
+    @Override
+    public long lowestOffset(
+        int partition)
+    {
+        long lowestOffset = Long.MAX_VALUE;
+        for (long[] offset : offsetsByKey.values())
+        {
+            lowestOffset = Math.min(offset[0], lowestOffset);
+        }
+        return lowestOffset == Long.MAX_VALUE ? 0L : lowestOffset;
+    }
+
+    @Override
+    public boolean shouldDispatch(
+        DirectBuffer key,
+        long messageOffset)
+    {
+        buffer.wrap(key, 0, key.capacity());
+        long[] offset = offsetsByKey.get(buffer);
+        long lastKnownOffsetForKey = offset == null ? highestOffset : offset[0];
+        return messageOffset > lastKnownOffsetForKey;
     }
 
 }

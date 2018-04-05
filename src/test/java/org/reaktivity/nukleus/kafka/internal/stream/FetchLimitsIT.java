@@ -27,6 +27,7 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
+import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.reaktor.internal.ReaktorConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
@@ -48,7 +49,8 @@ public class FetchLimitsIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
         .clean()
-        .configure(ReaktorConfiguration.BUFFER_SLOT_CAPACITY_PROPERTY, 256);
+        .configure(ReaktorConfiguration.BUFFER_SLOT_CAPACITY_PROPERTY, 256)
+        .configure(KafkaConfiguration.FETCH_MAX_BYTES_PROPERTY, 256);
 
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
@@ -70,10 +72,10 @@ public class FetchLimitsIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset/client",
-        "${server}/zero.offset.message.response.exceeds.requested.256.bytes/server" })
+        "${client}/zero.offset.messages.response.exceeds.requested.256.bytes/client",
+        "${server}/zero.offset.messages.response.exceeds.requested.256.bytes/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldHandleFetchResponseSizeExceedingSlotCapacity() throws Exception
+    public void shouldHandleFetchResponsesWithSizeExceedingSlotCapacity() throws Exception
     {
         k3po.start();
         k3po.notifyBarrier("WRITE_FETCH_RESPONSE");

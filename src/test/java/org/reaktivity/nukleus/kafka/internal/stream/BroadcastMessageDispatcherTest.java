@@ -56,20 +56,21 @@ public final class BroadcastMessageDispatcherTest
         dispatcher.add(child1);
         dispatcher.add(child2);
         final long timestamp = System.currentTimeMillis() - 123;
+        final long traceId = 0L;
         @SuppressWarnings("unchecked")
         Function<DirectBuffer, DirectBuffer> header = context.mock(Function.class, "header");
         context.checking(new Expectations()
         {
             {
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
-                        with(header), with(timestamp), with((DirectBuffer) null));
+                        with(header), with(timestamp), with(traceId), with((DirectBuffer) null));
                 will(returnValue(1));
                 oneOf(child2).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
-                        with(header), with(timestamp), with((DirectBuffer) null));
+                        with(header), with(timestamp), with(traceId), with((DirectBuffer) null));
                 will(returnValue(1));
             }
         });
-        assertEquals(2, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), header, timestamp, null));
+        assertEquals(2, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), header, timestamp, traceId, null));
     }
 
     @Test
@@ -98,12 +99,6 @@ public final class BroadcastMessageDispatcherTest
         dispatcher.add(child2);
         assertTrue(dispatcher.remove(child1));
         assertTrue(dispatcher.remove(child2));
-    }
-
-    @Test
-    public void shouldReportLastOffsetZero()
-    {
-        assertEquals(0L, dispatcher.lastOffset(0, null));
     }
 
     @Test

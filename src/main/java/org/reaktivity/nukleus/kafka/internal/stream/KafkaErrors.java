@@ -18,10 +18,13 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 public class KafkaErrors
 {
     static final short NONE = 0;
+    static final short OFFSET_OUT_OF_RANGE = 1;
     static final short UNKNOWN_TOPIC_OR_PARTITION = 3;
     static final short LEADER_NOT_AVAILABLE = 5;
+    static final short NOT_LEADER_FOR_PARTITION = 6;
     static final short INVALID_TOPIC_EXCEPTION = 17;
     static final short TOPIC_AUTHORIZATION_FAILED = 29;
+    static final short UNKNOWN = -1;
 
     static boolean isRecoverable(short errorCode)
     {

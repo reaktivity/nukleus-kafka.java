@@ -39,12 +39,13 @@ public class KeyMessageDispatcher implements MessageDispatcher
                  DirectBuffer key,
                  Function<DirectBuffer, DirectBuffer> supplyHeader,
                  long timestamp,
+                 long traceId,
                  DirectBuffer value)
     {
         buffer.wrap(key, 0, key.capacity());
         MessageDispatcher result = dispatchersByKey.get(buffer);
         return result == null ? 0 :
-            result.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, value);
+            result.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
     }
 
     @Override
@@ -59,6 +60,26 @@ public class KeyMessageDispatcher implements MessageDispatcher
         }
     }
 
+    public long lastOffset(
+        int partition,
+        OctetsFW key)
+    {
+        return 0L;
+    }
+
+    public long lowestOffset(
+        int partition)
+    {
+        return 0L;
+    }
+
+    public boolean shouldDispatch(
+        DirectBuffer key,
+        long messageOffset)
+    {
+        return true;
+    }
+
     public void add(OctetsFW key, ListFW<KafkaHeaderFW> headers, MessageDispatcher dispatcher)
     {
         buffer.wrap(key.buffer(), key.offset(), key.sizeof());
@@ -71,6 +92,20 @@ public class KeyMessageDispatcher implements MessageDispatcher
             dispatchersByKey.put(keyCopy, existing);
         }
         existing.add(headers, 0, dispatcher);
+    }
+
+    protected void flush(
+            int partition,
+            long requestOffset,
+            long lastOffset,
+            DirectBuffer key)
+    {
+        buffer.wrap(key, 0, key.capacity());
+        MessageDispatcher dispatcher = dispatchersByKey.get(buffer);
+        if (dispatcher != null)
+        {
+            dispatcher.flush(partition, requestOffset, lastOffset);
+        }
     }
 
     public boolean remove(OctetsFW key, ListFW<KafkaHeaderFW> headers, MessageDispatcher dispatcher)

@@ -33,13 +33,14 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
                  DirectBuffer key,
                  Function<DirectBuffer, DirectBuffer> supplyHeader,
                  long timestamp,
+                 long traceId,
                  DirectBuffer value)
     {
         int result = 0;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
-            result += dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, value);
+            result += dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
         }
         return result;
     }
