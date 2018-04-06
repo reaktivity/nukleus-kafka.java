@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import java.util.Map;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.IntUnaryOperator;
 import java.util.function.LongFunction;
@@ -25,7 +27,6 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
-import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
@@ -33,8 +34,9 @@ import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
 {
     private final KafkaConfiguration config;
-    private final Consumer<Consumer<RouteFW>> registerTopicBootstrapper;
+    private final Consumer<BiFunction<String, Long, NetworkConnectionPool>> connectPoolFactoryConsumer;
     private final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
+    private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools;
 
     private RouteManager router;
     private MutableDirectBuffer writeBuffer;
@@ -45,11 +47,13 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
 
     public ClientStreamFactoryBuilder(
         KafkaConfiguration config,
-        Consumer<Consumer<RouteFW>> registerTopicBootstrapper)
+        Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools,
+        Consumer<BiFunction<String, Long, NetworkConnectionPool>> connectPoolFactoryConsumer)
     {
         this.config = config;
-        this.registerTopicBootstrapper = registerTopicBootstrapper;
+        this.connectPoolFactoryConsumer = connectPoolFactoryConsumer;
         this.correlations = new Long2ObjectHashMap<>();
+        this.connectionPools = connectionPools;
     }
 
     @Override
@@ -119,7 +123,7 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     {
         final BufferPool bufferPool = supplyBufferPool.get();
 
-        return new ClientStreamFactory(config, router, writeBuffer, bufferPool,
-                supplyStreamId, supplyTrace, supplyCorrelationId, correlations, registerTopicBootstrapper);
+        return new ClientStreamFactory(config, router, writeBuffer, bufferPool, supplyStreamId, supplyTrace,
+                supplyCorrelationId, correlations, connectionPools, connectPoolFactoryConsumer);
     }
 }

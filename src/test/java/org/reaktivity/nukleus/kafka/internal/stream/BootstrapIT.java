@@ -45,7 +45,6 @@ public class BootstrapIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
-        //.configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "true")
         .clean();
 
     @Rule
@@ -58,6 +57,19 @@ public class BootstrapIT
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldBootstrapWhenTopicBootstrapIsEnabledAndTopicIsCompacted() throws Exception
     {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/no.offsets.message/client",
+        "${server}/zero.offset.message/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldNotBootstrapWhenTopicBootstrapIsEnabledButTopicIsNotCompacted() throws Exception
+    {
+        k3po.start();
+        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
 }

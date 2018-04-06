@@ -15,34 +15,51 @@
  */
 package org.reaktivity.nukleus.kafka.internal;
 
+import static java.lang.String.format;
 import static org.reaktivity.nukleus.route.RouteKind.CLIENT;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.nio.ByteBuffer;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
 import org.agrona.DirectBuffer;
+import org.agrona.MutableDirectBuffer;
+import org.agrona.collections.Long2ObjectHashMap;
+import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.Configuration;
 import org.reaktivity.nukleus.Nukleus;
 import org.reaktivity.nukleus.NukleusBuilder;
 import org.reaktivity.nukleus.NukleusFactorySpi;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.stream.ClientStreamFactoryBuilder;
+import org.reaktivity.nukleus.kafka.internal.stream.NetworkConnectionPool;
+import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
+import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
 
-public final class KafkaNukleusFactorySpi implements NukleusFactorySpi
+public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
 {
     private static final MessagePredicate DEFAULT_ROUTE_HANDLER = (m, b, i, l) ->
     {
         return true;
     };
-    private static final Consumer<Consumer<RouteFW>> DEFAULT_ROUTE_CONSUMER = b ->
-    {
+    private static final Consumer<BiFunction<String, Long, NetworkConnectionPool>>
+        DEFAULT_CONNECT_POOL_FACTORY_CONSUMER = f ->
+        {
 
-    };
+        };
+
+    private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools =
+                      new LinkedHashMap<String, Long2ObjectHashMap<NetworkConnectionPool>>();
 
     private final RouteFW routeRO = new RouteFW();
-    private List<Consumer<RouteFW>> topicBootstrappers;
+    private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
+
+    private RouteFW pendingRoute;
+    private MutableDirectBuffer pendingRouteBuffer = new UnsafeBuffer(ByteBuffer.allocateDirect(1000));
+    private BiFunction<String, Long, NetworkConnectionPool> createNetworkConnectionPool;
 
     @Override
     public String name()
@@ -57,19 +74,22 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi
     {
         KafkaConfiguration kafkaConfig = new KafkaConfiguration(config);
 
-        Consumer<Consumer<RouteFW>> registerTopicBootstrapper = DEFAULT_ROUTE_CONSUMER;
+        Consumer<BiFunction<String, Long, NetworkConnectionPool>> connectionPoolFactoryConsumer =
+            DEFAULT_CONNECT_POOL_FACTORY_CONSUMER;
         MessagePredicate routeHandler = DEFAULT_ROUTE_HANDLER;
+
         if (kafkaConfig.bootstrapEnabled())
         {
-            topicBootstrappers = new ArrayList<>();
-            registerTopicBootstrapper = topicBootstrappers::add;
             routeHandler = this::handleRouteForBootstrap;
+            connectionPoolFactoryConsumer = f -> createNetworkConnectionPool = f;
         }
 
-        ClientStreamFactoryBuilder streamFactoryBuilder = new ClientStreamFactoryBuilder(kafkaConfig, registerTopicBootstrapper);
+        ClientStreamFactoryBuilder streamFactoryBuilder = new ClientStreamFactoryBuilder(kafkaConfig,
+                connectionPools, connectionPoolFactoryConsumer);
 
         return builder.streamFactory(CLIENT, streamFactoryBuilder)
-                       .routeHandler(CLIENT, routeHandler)
+                      .routeHandler(CLIENT, routeHandler)
+                      .inject(this)
                       .build();
     }
 
@@ -80,13 +100,51 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi
         {
         case RouteFW.TYPE_ID:
             {
-                final RouteFW route = routeRO.wrap(buffer, index, index + length);
-                topicBootstrappers.forEach(c -> c.accept(route));
+                buffer.getBytes(index, pendingRouteBuffer, 0, length);
+                pendingRoute = routeRO.wrap(pendingRouteBuffer, 0, length);
             }
             break;
         default:
             break;
         }
         return result;
+    }
+
+    @Override
+    public int process()
+    {
+        if (pendingRoute != null && createNetworkConnectionPool != null)
+        {
+            startTopicBootstrap(pendingRoute);
+            pendingRoute = null;
+        }
+        return 0;
+    }
+
+    public void startTopicBootstrap(RouteFW route)
+    {
+        final OctetsFW extension = route.extension();
+        if (extension.sizeof() > 0)
+        {
+            final KafkaRouteExFW routeEx = extension.get(routeExRO::wrap);
+            final String topicName = routeEx.topicName().asString();
+            System.out.println(String.format("Starting bootstrap for topic %s on route \"%s\"", topicName, route));
+
+            final String networkName = route.target().asString();
+            final long networkRef = route.targetRef();
+
+            Long2ObjectHashMap<NetworkConnectionPool> connectionPoolsByRef =
+                connectionPools.computeIfAbsent(networkName, name -> new Long2ObjectHashMap<>());
+
+            NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef, ref ->
+                createNetworkConnectionPool.apply(networkName, networkRef));
+
+            connectionPool.doBootstrap(topicName, errorCode ->
+            {
+                throw new IllegalStateException(format(
+                    " Received error code %d from Kafka while attempting to bootstrap topic \"%s\"",
+                    errorCode, topicName));
+            });
+        }
     }
 }

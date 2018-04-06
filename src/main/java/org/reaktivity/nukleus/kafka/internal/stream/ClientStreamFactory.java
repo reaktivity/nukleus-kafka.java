@@ -15,10 +15,11 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
@@ -115,7 +116,8 @@ public final class ClientStreamFactory implements StreamFactory
         LongSupplier supplyTrace,
         LongSupplier supplyCorrelationId,
         Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations,
-        Consumer<Consumer<RouteFW>> registerTopicBootstrapper)
+        Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools,
+        Consumer<BiFunction<String, Long, NetworkConnectionPool>> connectPoolFactoryConsumer)
     {
         this.fetchMaxBytes = config.fetchMaxBytes();
         this.router = requireNonNull(router);
@@ -125,10 +127,11 @@ public final class ClientStreamFactory implements StreamFactory
         this.supplyTrace = requireNonNull(supplyTrace);
         this.supplyCorrelationId = supplyCorrelationId;
         this.correlations = requireNonNull(correlations);
-        this.connectionPools = new LinkedHashMap<String, Long2ObjectHashMap<NetworkConnectionPool>>();
+        this.connectionPools = connectionPools;
         groupBudget = new Long2LongHashMap(-1);
         groupMembers = new Long2LongHashMap(-1);
-        registerTopicBootstrapper.accept(this::startTopicBootstrap);
+        connectPoolFactoryConsumer.accept((networkName, ref) ->
+            new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, bufferPool));
     }
 
     @Override
@@ -162,8 +165,8 @@ public final class ClientStreamFactory implements StreamFactory
         if (extension.sizeof() > 0)
         {
             final KafkaRouteExFW routeEx = extension.get(routeExRO::wrap);
-            String topicName = routeEx.topicName().asString();
-            System.out.println(String.format("Starting bootstrap for topic %s on route %s", topicName, route));
+            final String topicName = routeEx.topicName().asString();
+            System.out.println(String.format("Starting bootstrap for topic %s on route \"%s\"", topicName, route));
 
             final String networkName = route.target().asString();
             final long networkRef = route.targetRef();
@@ -172,9 +175,14 @@ public final class ClientStreamFactory implements StreamFactory
                 connectionPools.computeIfAbsent(networkName, this::newConnectionPoolsByRef);
 
             NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef, ref ->
-                new NetworkConnectionPool(this, networkName, ref, bufferPool));
+                new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, bufferPool));
 
-            connectionPool.doAttach(topicName, null, 0, extension, null, null, null, null, null, null);
+            connectionPool.doBootstrap(topicName, errorCode ->
+            {
+                throw new IllegalStateException(format(
+                    " Received error code %d from Kafka while attempting to bootstrap topic \"%s\"",
+                    errorCode, topicName));
+            });
         }
     }
 

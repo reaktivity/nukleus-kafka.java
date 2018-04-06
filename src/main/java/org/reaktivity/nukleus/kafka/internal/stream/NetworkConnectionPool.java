@@ -101,7 +101,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.TcpBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
 
-final class NetworkConnectionPool
+public final class NetworkConnectionPool
 {
     private static final short FETCH_API_VERSION = 5;
     private static final short FETCH_API_KEY = 1;
@@ -284,33 +284,66 @@ final class NetworkConnectionPool
                     fetchOffsets.put(partition, offset);
                 }
             }
-            finishAttach(topicName, fetchOffsets, fetchKey, headers, dispatcher, supplyWindow,
-                    progressHandlerConsumer, newAttachDetailsConsumer, topicMetadata);
+            final NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
+                    name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, false));
+            progressHandlerConsumer.accept(topic.doAttach(fetchOffsets, fetchKey, headers, dispatcher, supplyWindow));
+            final int newAttachId = nextAttachId++;
+            detachersById.put(newAttachId, f -> topic.doDetach(f, fetchKey, headers, dispatcher, supplyWindow));
+            doConnections(topicMetadata);
+            newAttachDetailsConsumer.accept(newAttachId, topicMetadata.compacted);
             break;
         default:
             throw new RuntimeException(format("Unexpected errorCode %d from metadata query", errorCode));
         }
     }
 
-    private void finishAttach(
+    public void doBootstrap(
         String topicName,
-        Long2LongHashMap fetchOffsets,
-        OctetsFW fetchKey,
-        ListFW<KafkaHeaderFW> headers,
-        MessageDispatcher dispatcher,
-        IntSupplier supplyWindow,
-        Consumer<PartitionProgressHandler> progressHandlerConsumer,
-        IntBooleanConsumer newAttachDetailsConsumer,
+        IntConsumer onMetadataError)
+    {
+        final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
+        metadata.doAttach(m -> doBootstrap(topicName, onMetadataError, m));
+
+        if (metadataConnection == null)
+        {
+            metadataConnection = new MetadataConnection();
+        }
+        metadataConnection.doRequestIfNeeded();
+    }
+
+    private void doBootstrap(
+        String topicName,
+        IntConsumer onMetadataError,
         TopicMetadata topicMetadata)
     {
-        final NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
-                name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted));
-        progressHandlerConsumer.accept(topic.doAttach(fetchOffsets, fetchKey, headers, dispatcher, supplyWindow));
+        short errorCode = topicMetadata.errorCode();
+        switch(errorCode)
+        {
+        case UNKNOWN_TOPIC_OR_PARTITION:
+            onMetadataError.accept(errorCode);
+            break;
+        case INVALID_TOPIC_EXCEPTION:
+            onMetadataError.accept(errorCode);
+            break;
+        case LEADER_NOT_AVAILABLE:
+            // recoverable
+            break;
+        case NONE:
+            if (topicMetadata.compacted)
+            {
+                topicsByName.computeIfAbsent(topicName,
+                        name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, true));
+                doConnections(topicMetadata);
+                doFlush();
+            }
+            break;
+        default:
+            throw new RuntimeException(format("Unexpected errorCode %d from metadata query", errorCode));
+        }
+    }
 
-        final int newAttachId = nextAttachId++;
-
-        detachersById.put(newAttachId, f -> topic.doDetach(f, fetchKey, headers, dispatcher, supplyWindow));
-
+    private void doConnections(TopicMetadata topicMetadata)
+    {
         topicMetadata.visitBrokers(broker ->
         {
             connections = applyBrokerMetadata(connections, broker, LiveFetchConnection::new);
@@ -319,7 +352,6 @@ final class NetworkConnectionPool
         {
             historicalConnections = applyBrokerMetadata(historicalConnections, broker,  HistoricalFetchConnection::new);
         });
-        newAttachDetailsConsumer.accept(newAttachId, topicMetadata.compacted);
     }
 
     private <T extends AbstractFetchConnection> T[] applyBrokerMetadata(
@@ -1141,7 +1173,7 @@ final class NetworkConnectionPool
             IntLongConsumer partitionOffsets)
         {
             final NetworkTopic topic = topicsByName.get(topicName);
-            final int maxPartitionBytes = limitMaximumBytes(topic.maximumWritableBytes());
+            final int maxPartitionBytes = limitMaximumBytes(topic.maximumWritableBytes(true));
 
             int partitionCount = 0;
 
@@ -1198,7 +1230,7 @@ final class NetworkConnectionPool
             NetworkTopic topic = topicsByName.get(topicName);
             if (topic.needsHistorical())
             {
-                final int maxPartitionBytes = limitMaximumBytes(topic.maximumWritableBytes());
+                final int maxPartitionBytes = limitMaximumBytes(topic.maximumWritableBytes(false));
                 if (maxPartitionBytes > 0)
                 {
                     final TopicMetadata metadata = topicMetadataByName.get(topicName);
@@ -1548,6 +1580,7 @@ final class NetworkConnectionPool
         private final PartitionProgressHandler progressHandler;
 
         private BitSet needsHistoricalByPartition = new BitSet();
+        private final boolean bootstrap;
 
         @Override
         public String toString()
@@ -1558,7 +1591,8 @@ final class NetworkConnectionPool
         NetworkTopic(
             String topicName,
             int partitionCount,
-            boolean compacted)
+            boolean compacted,
+            boolean bootstrap)
         {
             this.topicName = topicName;
             this.compacted = compacted;
@@ -1568,6 +1602,14 @@ final class NetworkConnectionPool
             this.progressHandler = this::handleProgress;
             this.dispatcher = new TopicMessageDispatcher(partitionCount,
                     compacted ? CachingKeyMessageDispatcher::new : KeyMessageDispatcher::new);
+            this.bootstrap = bootstrap;
+            if (bootstrap)
+            {
+                 for (int i=0; i < partitionCount; i++)
+                 {
+                     attachToPartition(i, 0L, 1);
+                 }
+            }
         }
 
         PartitionProgressHandler doAttach(
@@ -1797,16 +1839,22 @@ final class NetworkConnectionPool
             }
         }
 
-        int maximumWritableBytes()
+        int maximumWritableBytes(boolean live)
         {
-            // TODO: eliminate iterator allocation
-            int writeableBytes = 0;
-            for (IntSupplier supplyWindow : windowSuppliers)
+            int writableBytes = 0;
+            if (live && bootstrap)
             {
-                writeableBytes = Math.max(writeableBytes, supplyWindow.getAsInt());
+                writableBytes = bufferPool.slotCapacity();
             }
-
-            return writeableBytes;
+            else
+            {
+                // TODO: eliminate iterator allocation
+                for (IntSupplier supplyWindow : windowSuppliers)
+                {
+                    writableBytes = Math.max(writableBytes, supplyWindow.getAsInt());
+                }
+            }
+            return writableBytes;
         }
 
         private void handleProgress(
