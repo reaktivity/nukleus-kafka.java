@@ -26,7 +26,6 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
-import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
 public class BootstrapIT
@@ -46,7 +45,7 @@ public class BootstrapIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
-        .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "true")
+        //.configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "true")
         .clean();
 
     @Rule
@@ -55,11 +54,9 @@ public class BootstrapIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/fetch.key.zero.offset.three.messages/client",
-        "${server}/fetch.key.three.matches.flow.controlled/server"})
-    @ScriptProperty({"networkAccept \"nukleus://target/streams/kafka\"",
-                     "applicationConnectWindow 15"})
-    public void shouldReceiveMessagesThreeMatchingFetchKeyFlowControlled() throws Exception
+        "${server}/bootstrap/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldBootstrapWhenTopicBootstrapIsEnabledAndTopicIsCompacted() throws Exception
     {
         k3po.finish();
     }

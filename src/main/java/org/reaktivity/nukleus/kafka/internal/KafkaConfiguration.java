@@ -24,7 +24,7 @@ public class KafkaConfiguration extends Configuration
     /**
      * @see java.nio.channels.ServerSocketChannel#bind(java.net.SocketAddress, int)
      */
-    private static final boolean TOPIC_BOOTSTRAP_ENABLED_DEFAULT = false;
+    private static final boolean TOPIC_BOOTSTRAP_ENABLED_DEFAULT = true;
 
     public static final String FETCH_MAX_BYTES_PROPERTY = "nukleus.kafka.fetch.max.bytes";
 
