@@ -15,7 +15,6 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
-import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
 import java.util.Map;
@@ -157,33 +156,6 @@ public final class ClientStreamFactory implements StreamFactory
         }
 
         return newStream;
-    }
-
-    public void startTopicBootstrap(RouteFW route)
-    {
-        final OctetsFW extension = route.extension();
-        if (extension.sizeof() > 0)
-        {
-            final KafkaRouteExFW routeEx = extension.get(routeExRO::wrap);
-            final String topicName = routeEx.topicName().asString();
-            System.out.println(String.format("Starting bootstrap for topic %s on route \"%s\"", topicName, route));
-
-            final String networkName = route.target().asString();
-            final long networkRef = route.targetRef();
-
-            Long2ObjectHashMap<NetworkConnectionPool> connectionPoolsByRef =
-                connectionPools.computeIfAbsent(networkName, this::newConnectionPoolsByRef);
-
-            NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef, ref ->
-                new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, bufferPool));
-
-            connectionPool.doBootstrap(topicName, errorCode ->
-            {
-                throw new IllegalStateException(format(
-                    " Received error code %d from Kafka while attempting to bootstrap topic \"%s\"",
-                    errorCode, topicName));
-            });
-        }
     }
 
     private MessageConsumer newAcceptStream(

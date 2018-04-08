@@ -1582,6 +1582,40 @@ public final class NetworkConnectionPool
         private BitSet needsHistoricalByPartition = new BitSet();
         private final boolean bootstrap;
 
+        private final class BootstrapMessageDispatcher  implements MessageDispatcher
+        {
+            private final long[] offsets;
+
+            BootstrapMessageDispatcher(int partitions)
+            {
+                offsets = new long[partitions];
+            }
+
+            @Override
+            public int dispatch(
+                int partition,
+                long requestOffset,
+                long messageOffset,
+                DirectBuffer key,
+                java.util.function.Function<DirectBuffer, DirectBuffer> supplyHeader,
+                long timestamp,
+                long traceId,
+                DirectBuffer value)
+            {
+                return 1;
+            };
+
+            @Override
+            public void flush(
+                int partition,
+                long requestOffset,
+                long lastOffset)
+            {
+                progressHandler.handle(partition, offsets[partition], lastOffset);
+                offsets[partition] = lastOffset;
+            };
+        };
+
         @Override
         public String toString()
         {
@@ -1609,6 +1643,8 @@ public final class NetworkConnectionPool
                  {
                      attachToPartition(i, 0L, 1);
                  }
+                 MessageDispatcher bootstrapDispatcher = new BootstrapMessageDispatcher(partitionCount);
+                 this.dispatcher.add(null, -1, null, bootstrapDispatcher);
             }
         }
 
