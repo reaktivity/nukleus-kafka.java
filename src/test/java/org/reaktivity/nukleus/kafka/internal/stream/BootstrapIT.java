@@ -86,7 +86,7 @@ public class BootstrapIT
 
     @Test
     @Specification({
-        "${control}/route.ext.multiple.networks/client/controller",
+        "${control}/route/client/controller",
         "${client}/no.offsets.message/client",
         "${server}/zero.offset.message/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -110,7 +110,6 @@ public class BootstrapIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
         "${route}/client/controller",
         "${client}/ktable.bootstrap.historical.uses.cached.key.then.live/client",
         "${server}/ktable.bootstrap.historical.uses.cached.key.then.live/server"})
