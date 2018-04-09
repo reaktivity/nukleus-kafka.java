@@ -115,8 +115,9 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
     {
         if (pendingRoute != null && createNetworkConnectionPool != null)
         {
-            startTopicBootstrap(pendingRoute);
+            final RouteFW route = pendingRoute;
             pendingRoute = null;
+            startTopicBootstrap(route);
         }
         return 0;
     }

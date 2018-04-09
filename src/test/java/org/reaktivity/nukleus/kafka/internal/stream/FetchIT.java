@@ -621,8 +621,8 @@ public class FetchIT
     @Test
     @Specification({
         "${control}/route.ext.multiple.topics/client/controller",
-        "${client}/ktable.messages.multiple.topics/client",
-        "${server}/ktable.messages.multiple.topics/server"})
+        "${client}/ktable.message.multiple.topics/client",
+        "${server}/ktable.message.multiple.topics/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveMessagesFromMultipleTopics() throws Exception
     {

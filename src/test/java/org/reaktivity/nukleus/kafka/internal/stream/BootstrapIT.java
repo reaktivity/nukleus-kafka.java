@@ -73,8 +73,20 @@ public class BootstrapIT
 
     @Test
     @Specification({
+        "${control}/route.ext.multiple.networks/client/controller",
+        "${server}/ktable.message.multiple.networks/server"})
+    @ScriptProperty({
+        "networkAccept1 \"nukleus://target1/streams/kafka\"",
+        "networkAccept2 \"nukleus://target2/streams/kafka\""})
+    public void shouldBootstrapMultipleNetworks() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
         "${control}/route.ext.multiple.topics/client/controller",
-        "${server}/ktable.messages.multiple.topics/server"})
+        "${server}/ktable.message.multiple.topics/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldBootstrapMultipleTopics() throws Exception
     {
@@ -120,6 +132,8 @@ public class BootstrapIT
         k3po.awaitBarrier("SECOND_LIVE_FETCH_REQUEST_RECEIVED");
         k3po.notifyBarrier("CONNECT_CLIENT");
         k3po.awaitBarrier("HISTORICAL_FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("DELIVER_HISTORICAL_FETCH_RESPONSE");
+        k3po.awaitBarrier("HISTORICAL_FETCH_RESPONSE_WRITTEN");
         k3po.notifyBarrier("DELIVER_SECOND_LIVE_FETCH_RESPONSE");
         k3po.finish();
     }
