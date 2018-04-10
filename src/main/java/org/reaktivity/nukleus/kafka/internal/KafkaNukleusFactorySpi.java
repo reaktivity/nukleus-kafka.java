@@ -89,7 +89,11 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                       .build();
     }
 
-    public boolean handleRouteForBootstrap(int msgTypeId, DirectBuffer buffer, int index, int length)
+    public boolean handleRouteForBootstrap(
+        int msgTypeId,
+        DirectBuffer buffer,
+        int index,
+        int length)
     {
         boolean result = true;
         switch(msgTypeId)
@@ -118,7 +122,8 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
         return 0;
     }
 
-    public void startTopicBootstrap(RouteFW route)
+    public void startTopicBootstrap(
+        RouteFW route)
     {
         final OctetsFW extension = route.extension();
         if (extension.sizeof() > 0)
