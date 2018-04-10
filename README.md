@@ -24,3 +24,10 @@ The extension data contains the following fields:
 ### Data (reply stream from nukleus-kafka)
 
 Each data frame represents the value of one Kafka message (a.k.a. record). The extension data gives the high watermark offsets which could be used subsequently to fetch all messages following this message (if the client disconnect and reconnects later).
+
+### Compacted Topics
+
+Topics which are configured in Kafka with property "cleanup.policy" set to "compact" are treated specially, in the following ways:
+
+- A cache is maintained in order to enhance performance for subscriptions to a particular message key, and where possible only deliver the latest message for the key.
+- This cache is kept up to date all the time by doing proactive fetches, unless this turned off by setting system property "nukleus.kafka.topic.bootstrap.enabled" to "false".
