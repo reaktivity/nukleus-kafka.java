@@ -18,8 +18,9 @@ package org.reaktivity.nukleus.kafka.internal;
 import static java.lang.String.format;
 import static org.reaktivity.nukleus.route.RouteKind.CLIENT;
 
-import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -53,8 +54,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
     private final RouteFW routeRO = new RouteFW();
     private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
 
-    private RouteFW pendingRoute;
-    private MutableDirectBuffer pendingRouteBuffer = new UnsafeBuffer(ByteBuffer.allocateDirect(1000));
+    private List<RouteFW> routesToBootstrap = new ArrayList<>();
     private BiFunction<String, Long, NetworkConnectionPool> createNetworkConnectionPool;
 
     @Override
@@ -100,8 +100,14 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
         {
         case RouteFW.TYPE_ID:
             {
-                buffer.getBytes(index, pendingRouteBuffer, 0, length);
-                pendingRoute = routeRO.wrap(pendingRouteBuffer, 0, length);
+                RouteFW route = routeRO.wrap(buffer, index, index + length);
+                final OctetsFW extension = route.extension();
+                if (extension.sizeof() > 0)
+                {
+                    MutableDirectBuffer routeBuffer = new UnsafeBuffer(new byte[length]);
+                    buffer.getBytes(index,  routeBuffer, 0, length);
+                    routesToBootstrap.add(new RouteFW().wrap(routeBuffer, 0, length));
+                }
             }
             break;
         default:
@@ -113,39 +119,41 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
     @Override
     public int process()
     {
-        if (pendingRoute != null && createNetworkConnectionPool != null)
+        if (!routesToBootstrap.isEmpty() && createNetworkConnectionPool != null)
         {
-            final RouteFW route = pendingRoute;
-            pendingRoute = null;
-            startTopicBootstrap(route);
+            startTopicBootstrap(routesToBootstrap);
+            routesToBootstrap.clear();
         }
         return 0;
     }
 
     public void startTopicBootstrap(
-        RouteFW route)
+        List<RouteFW> routes)
     {
-        final OctetsFW extension = route.extension();
-        if (extension.sizeof() > 0)
+        for (RouteFW route : routes)
         {
-            final KafkaRouteExFW routeEx = extension.get(routeExRO::wrap);
-            final String topicName = routeEx.topicName().asString();
-
-            final String networkName = route.target().asString();
-            final long networkRef = route.targetRef();
-
-            Long2ObjectHashMap<NetworkConnectionPool> connectionPoolsByRef =
-                connectionPools.computeIfAbsent(networkName, name -> new Long2ObjectHashMap<>());
-
-            NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef, ref ->
-                createNetworkConnectionPool.apply(networkName, networkRef));
-
-            connectionPool.doBootstrap(topicName, errorCode ->
+            final OctetsFW extension = route.extension();
+            if (extension.sizeof() > 0)
             {
-                throw new IllegalStateException(format(
-                    " Received error code %d from Kafka while attempting to bootstrap topic \"%s\"",
-                    errorCode, topicName));
-            });
+                final KafkaRouteExFW routeEx = extension.get(routeExRO::wrap);
+                final String topicName = routeEx.topicName().asString();
+
+                final String networkName = route.target().asString();
+                final long networkRef = route.targetRef();
+
+                Long2ObjectHashMap<NetworkConnectionPool> connectionPoolsByRef =
+                    connectionPools.computeIfAbsent(networkName, name -> new Long2ObjectHashMap<>());
+
+                NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef, ref ->
+                    createNetworkConnectionPool.apply(networkName, networkRef));
+
+                connectionPool.doBootstrap(topicName, errorCode ->
+                {
+                    throw new IllegalStateException(format(
+                        " Received error code %d from Kafka while attempting to bootstrap topic \"%s\"",
+                        errorCode, topicName));
+                });
+            }
         }
     }
 }
