@@ -627,7 +627,7 @@ public class FetchIT
     public void shouldReceiveMessagesFromMultipleTopics() throws Exception
     {
         k3po.start();
-        k3po.awaitBarrier("SECOND_METADATA_RESPONSE_WRITTEN");
+        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
         k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
         k3po.finish();
     }
