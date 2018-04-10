@@ -17,8 +17,9 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.Objects.requireNonNull;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
 import java.util.function.Predicate;
@@ -113,7 +114,9 @@ public final class ClientStreamFactory implements StreamFactory
         LongSupplier supplyStreamId,
         LongSupplier supplyTrace,
         LongSupplier supplyCorrelationId,
-        Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations)
+        Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations,
+        Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools,
+        Consumer<BiFunction<String, Long, NetworkConnectionPool>> connectPoolFactoryConsumer)
     {
         this.fetchMaxBytes = config.fetchMaxBytes();
         this.router = requireNonNull(router);
@@ -123,9 +126,11 @@ public final class ClientStreamFactory implements StreamFactory
         this.supplyTrace = requireNonNull(supplyTrace);
         this.supplyCorrelationId = supplyCorrelationId;
         this.correlations = requireNonNull(correlations);
-        this.connectionPools = new LinkedHashMap<String, Long2ObjectHashMap<NetworkConnectionPool>>();
+        this.connectionPools = connectionPools;
         groupBudget = new Long2LongHashMap(-1);
         groupMembers = new Long2LongHashMap(-1);
+        connectPoolFactoryConsumer.accept((networkName, ref) ->
+            new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, bufferPool));
     }
 
     @Override

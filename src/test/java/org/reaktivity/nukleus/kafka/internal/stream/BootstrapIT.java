@@ -26,18 +26,19 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
-import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
-public class MetadataIT
+public class BootstrapIT
 {
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
-            .addScriptRoot("metadata", "org/reaktivity/specification/kafka/metadata.v5")
+            .addScriptRoot("routeAnyTopic", "org/reaktivity/specification/nukleus/kafka/control/route")
+            .addScriptRoot("control", "org/reaktivity/specification/nukleus/kafka/control")
             .addScriptRoot("server", "org/reaktivity/specification/kafka/fetch.v5")
+            .addScriptRoot("metadata", "org/reaktivity/specification/kafka/metadata.v5")
             .addScriptRoot("client", "org/reaktivity/specification/nukleus/kafka/streams/fetch");
 
-    private final TestRule timeout = new DisableOnDebug(new Timeout(15, SECONDS));
+    private final TestRule timeout = new DisableOnDebug(new Timeout(10, SECONDS));
 
     private final ReaktorRule reaktor = new ReaktorRule()
         .nukleus("kafka"::equals)
@@ -45,7 +46,6 @@ public class MetadataIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
-        .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false")
         .clean();
 
     @Rule
@@ -54,10 +54,9 @@ public class MetadataIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset/client",
-        "${metadata}/one.topic.leader.not.available.and.retry/server"})
+        "${server}/ktable.message/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldRetryWhenLeaderNotAvailable() throws Exception
+    public void shouldBootstrapTopic() throws Exception
     {
         k3po.finish();
     }
@@ -65,10 +64,58 @@ public class MetadataIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset/client",
-        "${metadata}/broker.connection.reset.and.retry/server" })
+        "${server}/ktable.messages.multiple.nodes/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldRetryWhenBrokerNotAvailable() throws Exception
+    public void shouldBootstrapTopicWithMultiplePartitionsOnMultipleNodes() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${control}/route.ext.multiple.networks/client/controller",
+        "${server}/ktable.message.multiple.networks/server"})
+    @ScriptProperty({
+        "networkAccept1 \"nukleus://target1/streams/kafka\"",
+        "networkAccept2 \"nukleus://target2/streams/kafka\""})
+    public void shouldBootstrapMultipleNetworks() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${control}/route.ext.multiple.topics/client/controller",
+        "${server}/ktable.message.multiple.topics/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldBootstrapMultipleTopics() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("SECOND_METADATA_RESPONSE_WRITTEN");
+        k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${control}/route/client/controller",
+        "${client}/no.offsets.message/client",
+        "${server}/zero.offset.message/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldNotBootstrapWhenTopicBootstrapIsEnabledButTopicIsNotCompacted() throws Exception
+    {
+        k3po.start();
+        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${routeAnyTopic}/client/controller",
+        "${client}/ktable.message/client",
+        "${server}/ktable.message/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldNotBootstrapWhenRouteDoesNotNameATopic() throws Exception
     {
         k3po.finish();
     }
@@ -76,44 +123,18 @@ public class MetadataIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset/client",
-        "${metadata}/one.topic.multiple.nodes/server"})
+        "${client}/ktable.bootstrap.historical.uses.cached.key.then.live/client",
+        "${server}/ktable.bootstrap.historical.uses.cached.key.then.live/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldHandleMetadataResponseOneTopicOnMultipleNodes() throws Exception
+    public void shouldBootstrapTopicAndUseCachedKeyOffsetThenLive() throws Exception
     {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/zero.offset/client",
-        "${metadata}/one.topic.multiple.nodes.and.replicas/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldHandleMetadataResponseOneTopicMultipleNodesAndReplicas() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/zero.offset/client",
-        "${metadata}/one.topic.multiple.partitions/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldHandleMetadataResponseOneTopicMultiplePartitionsSingleNode() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/zero.offset/client",
-        "${metadata}/one.topic.single.partition/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldHandleMetadataResponseOneTopicSinglePartition() throws Exception
-    {
+        k3po.start();
+        k3po.awaitBarrier("SECOND_LIVE_FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("CONNECT_CLIENT");
+        k3po.awaitBarrier("HISTORICAL_FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("DELIVER_HISTORICAL_FETCH_RESPONSE");
+        k3po.awaitBarrier("HISTORICAL_FETCH_RESPONSE_WRITTEN");
+        k3po.notifyBarrier("DELIVER_SECOND_LIVE_FETCH_RESPONSE");
         k3po.finish();
     }
 
