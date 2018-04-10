@@ -19,11 +19,8 @@ import org.reaktivity.nukleus.Configuration;
 
 public class KafkaConfiguration extends Configuration
 {
-    public static final String TOPIC_BOOTSTRAP_ENABLED = "nukleus.kafka.enable.topic.bootstrap";
+    public static final String TOPIC_BOOTSTRAP_ENABLED = "nukleus.kafka.topic.bootstrap.enabled";
 
-    /**
-     * @see java.nio.channels.ServerSocketChannel#bind(java.net.SocketAddress, int)
-     */
     private static final boolean TOPIC_BOOTSTRAP_ENABLED_DEFAULT = true;
 
     public static final String FETCH_MAX_BYTES_PROPERTY = "nukleus.kafka.fetch.max.bytes";
@@ -36,7 +33,7 @@ public class KafkaConfiguration extends Configuration
         super(config);
     }
 
-    public boolean bootstrapEnabled()
+    public boolean topicBootstrapEnabled()
     {
         return getBoolean(TOPIC_BOOTSTRAP_ENABLED, TOPIC_BOOTSTRAP_ENABLED_DEFAULT);
     }

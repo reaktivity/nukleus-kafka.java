@@ -1580,7 +1580,7 @@ public final class NetworkConnectionPool
         private final PartitionProgressHandler progressHandler;
 
         private BitSet needsHistoricalByPartition = new BitSet();
-        private final boolean bootstrap;
+        private final boolean proactive;
 
         private final class BootstrapMessageDispatcher  implements MessageDispatcher
         {
@@ -1626,7 +1626,7 @@ public final class NetworkConnectionPool
             String topicName,
             int partitionCount,
             boolean compacted,
-            boolean bootstrap)
+            boolean proactive)
         {
             this.topicName = topicName;
             this.compacted = compacted;
@@ -1636,8 +1636,8 @@ public final class NetworkConnectionPool
             this.progressHandler = this::handleProgress;
             this.dispatcher = new TopicMessageDispatcher(partitionCount,
                     compacted ? CachingKeyMessageDispatcher::new : KeyMessageDispatcher::new);
-            this.bootstrap = bootstrap;
-            if (bootstrap)
+            this.proactive = proactive;
+            if (proactive)
             {
                  for (int i=0; i < partitionCount; i++)
                  {
@@ -1878,7 +1878,7 @@ public final class NetworkConnectionPool
         int maximumWritableBytes(boolean live)
         {
             int writableBytes = 0;
-            if (live && bootstrap)
+            if (live && proactive)
             {
                 writableBytes = bufferPool.slotCapacity();
             }

@@ -46,13 +46,9 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
         return true;
     };
     private static final Consumer<BiFunction<String, Long, NetworkConnectionPool>>
-        DEFAULT_CONNECT_POOL_FACTORY_CONSUMER = f ->
-        {
+        DEFAULT_CONNECT_POOL_FACTORY_CONSUMER = f -> {};
 
-        };
-
-    private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools =
-                      new LinkedHashMap<String, Long2ObjectHashMap<NetworkConnectionPool>>();
+    private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools = new LinkedHashMap<>();
 
     private final RouteFW routeRO = new RouteFW();
     private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
@@ -78,7 +74,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
             DEFAULT_CONNECT_POOL_FACTORY_CONSUMER;
         MessagePredicate routeHandler = DEFAULT_ROUTE_HANDLER;
 
-        if (kafkaConfig.bootstrapEnabled())
+        if (kafkaConfig.topicBootstrapEnabled())
         {
             routeHandler = this::handleRouteForBootstrap;
             connectionPoolFactoryConsumer = f -> createNetworkConnectionPool = f;
@@ -129,7 +125,6 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
         {
             final KafkaRouteExFW routeEx = extension.get(routeExRO::wrap);
             final String topicName = routeEx.topicName().asString();
-            System.out.println(String.format("Starting bootstrap for topic %s on route \"%s\"", topicName, route));
 
             final String networkName = route.target().asString();
             final long networkRef = route.targetRef();
