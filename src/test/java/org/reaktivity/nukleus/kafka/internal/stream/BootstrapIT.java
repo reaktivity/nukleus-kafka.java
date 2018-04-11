@@ -138,4 +138,14 @@ public class BootstrapIT
         k3po.finish();
     }
 
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${metadata}/one.topic.error.unknown.topic/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldIssueWarningWhenBootstrapUnkownTopic() throws Exception
+    {
+        k3po.finish();
+    }
+
 }

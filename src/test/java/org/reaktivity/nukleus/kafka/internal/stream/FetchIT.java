@@ -117,7 +117,7 @@ public class FetchIT
     @Specification({
         "${routeAnyTopic}/client/controller",
         "${client}/unknown.topic.name/client",
-        "${metadata}/one.topic.error.unknown.topic/server" })
+        "${metadata}/two.topics.error.unknown.topic/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldRejectWhenTopicIsUnknown() throws Exception
     {
