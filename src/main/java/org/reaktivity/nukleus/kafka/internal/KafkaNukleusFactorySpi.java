@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal;
 
 import static java.lang.String.format;
+import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.UNKNOWN_TOPIC_OR_PARTITION;
 import static org.reaktivity.nukleus.route.RouteKind.CLIENT;
 
 import java.util.ArrayList;
@@ -149,9 +150,18 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
 
                 connectionPool.doBootstrap(topicName, errorCode ->
                 {
-                    throw new IllegalStateException(format(
-                        " Received error code %d from Kafka while attempting to bootstrap topic \"%s\"",
-                        errorCode, topicName));
+                    switch(errorCode)
+                    {
+                    case UNKNOWN_TOPIC_OR_PARTITION:
+                        System.out.println(format(
+                            "WARNING: bootstrap failed for topic \"%s\" with error \"unknown topic\"",
+                            topicName));
+                        break;
+                    default:
+                        throw new IllegalStateException(format(
+                            "Received error code %d from Kafka while attempting to bootstrap topic \"%s\"",
+                            errorCode, topicName));
+                    }
                 });
             }
         }
