@@ -194,6 +194,40 @@ public class ControllerIT
 
     @Test
     @Specification({
+        "${control}/route.ext.multiple.networks/client/nukleus",
+        "${control}/unroute.ext.multiple.networks/client/nukleus"
+    })
+    public void shouldUnrouteClientWithMultipleRoutesDifferentNetworks() throws Exception
+    {
+        long targetRef1 = new Random().nextLong();
+        long targetRef2 = new Random().nextLong();
+        String topicName = "test";
+
+        k3po.start();
+
+        long applicationRouteRef1 = reaktor.controller(KafkaController.class)
+               .routeClient("source", 0L, "target1", targetRef1, topicName)
+               .get();
+
+        long applicationRouteRef2 = reaktor.controller(KafkaController.class)
+               .routeClient("source", 0L, "target2", targetRef2, topicName)
+               .get();
+
+        k3po.notifyBarrier("ROUTED_CLIENT");
+
+        reaktor.controller(KafkaController.class)
+               .unrouteClient("source", applicationRouteRef1, "target1",  targetRef1, topicName)
+               .get();
+
+        reaktor.controller(KafkaController.class)
+               .unrouteClient("source", applicationRouteRef2, "target2",  targetRef2, topicName)
+               .get();
+
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
         "${freeze}/nukleus"
     })
     @ScriptProperty("nameF00N \"kafka\"")

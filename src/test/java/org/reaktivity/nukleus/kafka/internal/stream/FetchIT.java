@@ -556,6 +556,9 @@ public class FetchIT
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveKtableMessage() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("ROUTED_CLIENT");
+        k3po.notifyBarrier("CONNECT_CLIENT");
         k3po.finish();
     }
 
@@ -629,6 +632,8 @@ public class FetchIT
         k3po.start();
         k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
         k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
+        k3po.awaitBarrier("CLIENT_THREE_CONNECTED");
+        k3po.notifyBarrier("WRITE_SECOND_FETCH_RESPONSE");
         k3po.finish();
     }
 
