@@ -86,9 +86,6 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
 
         return builder.streamFactory(CLIENT, streamFactoryBuilder)
                       .routeHandler(CLIENT, routeHandler)
-                      //.unrouteExtensionPredicate BuffersPredicate
-                      // boolean test(buffer1, offset1, length1, buffer2, offset2, length2)
-                      // or compare extensions in Router.routeMatchesUnroute
                       .inject(this)
                       .build();
     }
