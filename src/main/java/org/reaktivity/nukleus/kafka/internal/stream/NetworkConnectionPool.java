@@ -1073,7 +1073,7 @@ public final class NetworkConnectionPool
                     final int recordBatchSize = recordSet.recordBatchSize();
                     networkOffset = recordSet.limit() + recordBatchSize;
 
-                    long requestedOffset = getRueqestedOffset(topicName, partitionResponse.partitionId());
+                    long requestedOffset = getRequestedOffset(topicName, partitionResponse.partitionId());
 
                     if (topic != null && requestedOffset != NO_OFFSET)
                         // we still have subscribers
