@@ -179,6 +179,7 @@ public final class NetworkConnectionPool
     private final String networkName;
     private final long networkRef;
     private final int fetchMaxBytes;
+    private final int fetchPartitionMaxBytes;
     private final BufferPool bufferPool;
     private AbstractFetchConnection[] connections = new LiveFetchConnection[0];
     private HistoricalFetchConnection[] historicalConnections = new HistoricalFetchConnection[0];
@@ -196,12 +197,14 @@ public final class NetworkConnectionPool
         String networkName,
         long networkRef,
         int fetchMaxBytes,
+        int fetchPartitionMaxBytes,
         BufferPool bufferPool)
     {
         this.clientStreamFactory = clientStreamFactory;
         this.networkName = networkName;
         this.networkRef = networkRef;
         this.fetchMaxBytes = fetchMaxBytes;
+        this.fetchPartitionMaxBytes = fetchPartitionMaxBytes;
         this.bufferPool = bufferPool;
         this.encodeBuffer = new UnsafeBuffer(new byte[clientStreamFactory.bufferPool.slotCapacity()]);
         this.topicsByName = new LinkedHashMap<>();
@@ -1880,7 +1883,7 @@ public final class NetworkConnectionPool
             int writableBytes = 0;
             if (live && proactive)
             {
-                writableBytes = bufferPool.slotCapacity();
+                writableBytes = fetchPartitionMaxBytes;
             }
             else
             {
