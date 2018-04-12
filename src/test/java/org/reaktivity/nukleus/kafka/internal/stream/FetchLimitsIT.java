@@ -49,6 +49,7 @@ public class FetchLimitsIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
         .clean()
+        .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false")
         .configure(ReaktorConfiguration.BUFFER_SLOT_CAPACITY_PROPERTY, 256)
         .configure(KafkaConfiguration.FETCH_MAX_BYTES_PROPERTY, 256);
 

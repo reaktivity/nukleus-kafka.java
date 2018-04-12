@@ -15,6 +15,9 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import java.util.Map;
+import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.IntUnaryOperator;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
@@ -31,7 +34,9 @@ import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
 {
     private final KafkaConfiguration config;
+    private final Consumer<BiFunction<String, Long, NetworkConnectionPool>> connectPoolFactoryConsumer;
     private final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
+    private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools;
 
     private RouteManager router;
     private MutableDirectBuffer writeBuffer;
@@ -41,10 +46,14 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     private Supplier<BufferPool> supplyBufferPool;
 
     public ClientStreamFactoryBuilder(
-        KafkaConfiguration config)
+        KafkaConfiguration config,
+        Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools,
+        Consumer<BiFunction<String, Long, NetworkConnectionPool>> connectPoolFactoryConsumer)
     {
         this.config = config;
+        this.connectPoolFactoryConsumer = connectPoolFactoryConsumer;
         this.correlations = new Long2ObjectHashMap<>();
+        this.connectionPools = connectionPools;
     }
 
     @Override
@@ -114,7 +123,7 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     {
         final BufferPool bufferPool = supplyBufferPool.get();
 
-        return new ClientStreamFactory(config, router, writeBuffer, bufferPool,
-                supplyStreamId, supplyTrace, supplyCorrelationId, correlations);
+        return new ClientStreamFactory(config, router, writeBuffer, bufferPool, supplyStreamId, supplyTrace,
+                supplyCorrelationId, correlations, connectionPools, connectPoolFactoryConsumer);
     }
 }

@@ -23,8 +23,10 @@ import org.junit.Test;
 import org.junit.rules.DisableOnDebug;
 import org.junit.rules.TestRule;
 import org.junit.rules.Timeout;
+import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
+import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
 public class ControlIT
@@ -33,7 +35,8 @@ public class ControlIT
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route")
             .addScriptRoot("unroute", "org/reaktivity/specification/nukleus/kafka/control/unroute")
             .addScriptRoot("routeEx", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
-            .addScriptRoot("unrouteEx", "org/reaktivity/specification/nukleus/kafka/control/unroute.ext");
+            .addScriptRoot("unrouteEx", "org/reaktivity/specification/nukleus/kafka/control/unroute.ext")
+            .addScriptRoot("freeze", "org/reaktivity/specification/nukleus/control/freeze");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(5, SECONDS));
 
@@ -42,7 +45,8 @@ public class ControlIT
             .directory("target/nukleus-itests")
             .commandBufferCapacity(1024)
             .responseBufferCapacity(1024)
-            .counterValuesBufferCapacity(1024);
+            .counterValuesBufferCapacity(1024)
+            .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false");
 
     @Rule
     public final TestRule chain = outerRule(k3po).around(timeout).around(reaktor);
@@ -81,6 +85,16 @@ public class ControlIT
         "${unrouteEx}/client/controller"
     })
     public void shouldUnrouteClientWithExtension() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${freeze}/controller",
+    })
+    @ScriptProperty("nameF00C \"kafka\"")
+    public void shouldFreeze() throws Exception
     {
         k3po.finish();
     }

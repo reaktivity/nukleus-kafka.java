@@ -25,6 +25,7 @@ import org.junit.Test;
 import org.junit.rules.DisableOnDebug;
 import org.junit.rules.TestRule;
 import org.junit.rules.Timeout;
+import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.nukleus.kafka.internal.KafkaController;
@@ -36,19 +37,20 @@ public class ControllerIT
         .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route")
         .addScriptRoot("unroute", "org/reaktivity/specification/nukleus/kafka/control/unroute")
         .addScriptRoot("routeEx", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
-        .addScriptRoot("unrouteEx", "org/reaktivity/specification/nukleus/kafka/control/unroute.ext");
+        .addScriptRoot("unrouteEx", "org/reaktivity/specification/nukleus/kafka/control/unroute.ext")
+        .addScriptRoot("freeze", "org/reaktivity/specification/nukleus/control/freeze");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(5, SECONDS));
 
-    private final ReaktorRule controller = new ReaktorRule()
+    private final ReaktorRule reaktor = new ReaktorRule()
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
-        .controller(KafkaController.class::isAssignableFrom);
+        .controller("kafka"::equals);
 
     @Rule
-    public final TestRule chain = outerRule(k3po).around(timeout).around(controller);
+    public final TestRule chain = outerRule(k3po).around(timeout).around(reaktor);
 
     @Test
     @Specification({
@@ -60,9 +62,9 @@ public class ControllerIT
 
         k3po.start();
 
-        controller.controller(KafkaController.class)
-                  .routeClient("source", 0L, "target", targetRef, null)
-                  .get();
+        reaktor.controller(KafkaController.class)
+               .routeClient("source", 0L, "target", targetRef, null)
+               .get();
 
         k3po.finish();
     }
@@ -79,15 +81,15 @@ public class ControllerIT
 
         k3po.start();
 
-        long sourceRef = controller.controller(KafkaController.class)
-                  .routeClient("source", 0L, "target", targetRef, null)
-                  .get();
+        long sourceRef = reaktor.controller(KafkaController.class)
+              .routeClient("source", 0L, "target", targetRef, null)
+              .get();
 
         k3po.notifyBarrier("ROUTED_CLIENT");
 
-        controller.controller(KafkaController.class)
-                  .unrouteClient("source", sourceRef, "target", targetRef, null)
-                  .get();
+        reaktor.controller(KafkaController.class)
+               .unrouteClient("source", sourceRef, "target", targetRef, null)
+               .get();
 
         k3po.finish();
     }
@@ -103,9 +105,9 @@ public class ControllerIT
 
         k3po.start();
 
-        controller.controller(KafkaController.class)
-                  .routeClient("source", 0L, "target", targetRef, topicName)
-                  .get();
+        reaktor.controller(KafkaController.class)
+               .routeClient("source", 0L, "target", targetRef, topicName)
+               .get();
 
         k3po.finish();
     }
@@ -123,15 +125,31 @@ public class ControllerIT
 
         k3po.start();
 
-        long sourceRef = controller.controller(KafkaController.class)
-                  .routeClient("source", 0L, "target", targetRef, topicName)
-                  .get();
+        long sourceRef = reaktor.controller(KafkaController.class)
+              .routeClient("source", 0L, "target", targetRef, topicName)
+              .get();
 
         k3po.notifyBarrier("ROUTED_CLIENT");
 
-        controller.controller(KafkaController.class)
-                  .unrouteClient("source", sourceRef, "target", targetRef, topicName)
-                  .get();
+        reaktor.controller(KafkaController.class)
+               .unrouteClient("source", sourceRef, "target", targetRef, topicName)
+               .get();
+
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${freeze}/nukleus"
+    })
+    @ScriptProperty("nameF00N \"kafka\"")
+    public void shouldFreeze() throws Exception
+    {
+        k3po.start();
+
+        reaktor.controller(KafkaController.class)
+               .freeze()
+               .get();
 
         k3po.finish();
     }
