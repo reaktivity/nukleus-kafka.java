@@ -21,11 +21,15 @@ public class KafkaConfiguration extends Configuration
 {
     public static final String TOPIC_BOOTSTRAP_ENABLED = "nukleus.kafka.topic.bootstrap.enabled";
 
-    private static final boolean TOPIC_BOOTSTRAP_ENABLED_DEFAULT = true;
-
     public static final String FETCH_MAX_BYTES_PROPERTY = "nukleus.kafka.fetch.max.bytes";
 
-    public static final int FETCH_MAX_BYTES_DEFAULT = 50 * 1024 * 1024;
+    public static final String FETCH_PARTITION_MAX_BYTES_PROPERTY = "nukleus.kafka.fetch.partition.max.bytes";
+
+    private static final boolean TOPIC_BOOTSTRAP_ENABLED_DEFAULT = true;
+
+    private static final int FETCH_MAX_BYTES_DEFAULT = 50 * 1024 * 1024;
+
+    private static final int FETCH_PARTITION_MAX_BYTES_DEFAULT = 1 * 1024 * 1024;
 
     public KafkaConfiguration(
         Configuration config)
@@ -41,5 +45,10 @@ public class KafkaConfiguration extends Configuration
     public int fetchMaxBytes()
     {
         return getInteger(FETCH_MAX_BYTES_PROPERTY, FETCH_MAX_BYTES_DEFAULT);
+    }
+
+    public int fetchPartitionMaxBytes()
+    {
+        return getInteger(FETCH_PARTITION_MAX_BYTES_PROPERTY, FETCH_PARTITION_MAX_BYTES_DEFAULT);
     }
 }
