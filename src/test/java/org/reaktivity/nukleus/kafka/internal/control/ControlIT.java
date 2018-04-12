@@ -18,7 +18,6 @@ package org.reaktivity.nukleus.kafka.internal.control;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.DisableOnDebug;
@@ -119,7 +118,6 @@ public class ControlIT
         k3po.finish();
     }
 
-    @Ignore("TODO: first unroute currently removes both routes, need a way to compare unroute and route extensions")
     @Test
     @Specification({
         "${control}/route.ext.multiple.topics/client/controller",
