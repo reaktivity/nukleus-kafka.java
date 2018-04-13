@@ -624,6 +624,7 @@ public class FetchIT
         k3po.finish();
     }
 
+    @Ignore("May fail due to unpredicable read ordering of window frames from clients and first fetch response")
     @Test
     @Specification({
         "${control}/route.ext.multiple.topics/client/controller",
