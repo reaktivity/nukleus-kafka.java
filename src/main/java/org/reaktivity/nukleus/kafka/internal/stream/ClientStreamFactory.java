@@ -492,8 +492,7 @@ public final class ClientStreamFactory implements StreamFactory
             flushPreviousMessage(partition, messageOffset - 1);
 
             if (requestOffset <= progressStartOffset // avoid out of order delivery
-                && messageOffset > progressStartOffset
-                && writeableBytesMinimum == 0)
+                && messageOffset > progressStartOffset)
             {
                 final int payloadLength = value == null ? 0 : value.capacity();
 
@@ -504,6 +503,7 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 else
                 {
+                    writeableBytesMinimum = 0;
                     budget.decApplicationReplyBudget(payloadLength + applicationReplyPadding);
                     assert budget.applicationReplyBudget() >= 0;
 
@@ -541,7 +541,6 @@ public final class ClientStreamFactory implements StreamFactory
                 this.fetchOffsets.put(partition, endOffset);
                 progressHandler.handle(partition, startOffset, endOffset);
             }
-            writeableBytesMinimum = 0;
             progressStartOffset = UNSET;
         }
 
@@ -746,7 +745,6 @@ public final class ClientStreamFactory implements StreamFactory
             {
                 budget.incApplicationReplyBudget(window.credit());
             }
-
             networkPool.doFlush();
         }
 
@@ -773,7 +771,7 @@ public final class ClientStreamFactory implements StreamFactory
         private int writeableBytes()
         {
             final int writeableBytes = budget.applicationReplyBudget() - applicationReplyPadding;
-            return writeableBytes > writeableBytesMinimum ? writeableBytes : 0;
+            return writeableBytes >= writeableBytesMinimum ? writeableBytes : 0;
         }
 
     }
