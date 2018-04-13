@@ -5,7 +5,7 @@ before_install:
   - git clone https://github.com/cmebarrow/nukleus-kafka.spec
   - cd nukleus-kafka.spec
   - git checkout bootstrap_more_tests
-  - mvn clean install
+  - mvn clean install -DskipTests
   - cd ..
 jdk:
   - oraclejdk8
