@@ -33,6 +33,7 @@ import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
+import org.reaktivity.nukleus.kafka.internal.function.IntBooleanConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
@@ -456,6 +457,8 @@ public final class ClientStreamFactory implements StreamFactory
         private long groupId;
         private Budget budget;
 
+        private Consumer<IntBooleanConsumer> attacher;
+
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
             long applicationId,
@@ -662,16 +665,16 @@ public final class ClientStreamFactory implements StreamFactory
                                 : BufferUtil.defaultHashCode(fetchKey.buffer(), fetchKey.offset(), fetchKey.limit());
                     }
                     networkPool.doAttach(topicName, this.fetchOffsets, hashCode, fetchKey, headers,
-                            this, this::writeableBytes, h -> progressHandler = h, this::onAttached, this::onMetadataError);
+                            this, this::writeableBytes, h -> progressHandler = h, this::onAttachPrepared, this::onMetadataError);
                     this.streamState = this::afterBegin;
                 }
             }
         }
 
-        private void onAttached(
-            int newNetworkAttachId,
-            boolean compacted)
+        private void onAttachPrepared(
+            Consumer<IntBooleanConsumer> attacher)
         {
+            this.attacher = attacher;
             final long newReplyId = supplyStreamId.getAsLong();
             final String replyName = applicationName;
             final MessageConsumer newReply = router.supplyTarget(replyName);
@@ -680,11 +683,16 @@ public final class ClientStreamFactory implements StreamFactory
             router.setThrottle(applicationName, newReplyId, this::handleThrottle);
 
             doWindow(applicationThrottle, applicationId, 0, 0, 0);
-
-            this.networkAttachId = newNetworkAttachId;
-            this.compacted = compacted;
             this.applicationReply = newReply;
             this.applicationReplyId = newReplyId;
+        }
+
+        private void onAttached(
+            int newNetworkAttachId,
+            boolean compacted)
+        {
+            this.networkAttachId = newNetworkAttachId;
+            this.compacted = compacted;
         }
 
         private void onMetadataError(
@@ -728,6 +736,11 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 firstWindow = false;
                 budget.joinGroup(window.credit());
+                if (attacher != null)
+                {
+                    attacher.accept(this::onAttached);
+                    attacher = null;
+                }
             }
             else
             {

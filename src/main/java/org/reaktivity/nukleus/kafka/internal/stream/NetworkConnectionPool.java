@@ -223,12 +223,12 @@ public final class NetworkConnectionPool
         MessageDispatcher dispatcher,
         IntSupplier supplyWindow,
         Consumer<PartitionProgressHandler> progressHandlerConsumer,
-        IntBooleanConsumer newAttachDetailsConsumer,
+        Consumer<Consumer<IntBooleanConsumer>> finishAttachConsumer,
         IntConsumer onMetadataError)
     {
         final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
         metadata.doAttach(m -> doAttach(topicName, fetchOffsets, partitionHash, fetchKey,  headers, dispatcher, supplyWindow,
-                    progressHandlerConsumer, newAttachDetailsConsumer, onMetadataError, m));
+                    progressHandlerConsumer, finishAttachConsumer, onMetadataError, m));
 
         if (metadataConnection == null)
         {
@@ -247,7 +247,7 @@ public final class NetworkConnectionPool
         MessageDispatcher dispatcher,
         IntSupplier supplyWindow,
         Consumer<PartitionProgressHandler> progressHandlerConsumer,
-        IntBooleanConsumer newAttachDetailsConsumer,
+        Consumer<Consumer<IntBooleanConsumer>> finishAttachConsumer,
         IntConsumer onMetadataError,
         TopicMetadata topicMetadata)
     {
@@ -289,11 +289,15 @@ public final class NetworkConnectionPool
             }
             final NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
                     name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, false));
-            progressHandlerConsumer.accept(topic.doAttach(fetchOffsets, fetchKey, headers, dispatcher, supplyWindow));
-            final int newAttachId = nextAttachId++;
-            detachersById.put(newAttachId, f -> topic.doDetach(f, fetchKey, headers, dispatcher, supplyWindow));
-            doConnections(topicMetadata);
-            newAttachDetailsConsumer.accept(newAttachId, topicMetadata.compacted);
+            finishAttachConsumer.accept(attachDetailsConsumer ->
+            {
+                progressHandlerConsumer.accept(topic.doAttach(fetchOffsets, fetchKey, headers, dispatcher, supplyWindow));
+                final int newAttachId = nextAttachId++;
+                detachersById.put(newAttachId, f -> topic.doDetach(f, fetchKey, headers, dispatcher, supplyWindow));
+                doConnections(topicMetadata);
+                attachDetailsConsumer.accept(newAttachId, topicMetadata.compacted);
+            });
+
             break;
         default:
             throw new RuntimeException(format("Unexpected errorCode %d from metadata query", errorCode));
