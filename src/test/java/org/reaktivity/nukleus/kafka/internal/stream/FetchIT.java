@@ -171,6 +171,9 @@ public class FetchIT
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldFanoutWithSlowConsumer() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_TWO_RECEIVED_SECOND_MESSAGE");
+        k3po.notifyBarrier("SERVER_DELIVER_LIVE_RESPONSE_TWO");
         k3po.finish();
     }
 
