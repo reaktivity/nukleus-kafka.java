@@ -112,9 +112,11 @@ public class BootstrapIT
         k3po.awaitBarrier("FIRST_LIVE_FETCH_REQUEST_RECEIVED");
         k3po.notifyBarrier("CONNECT_CLIENT");
         k3po.awaitBarrier("CLIENT_CONNECTED");
+        awaitWindowFromClient();
         k3po.notifyBarrier("WRITE_FIRST_LIVE_FETCH_RESPONSE");
         k3po.awaitBarrier("SECOND_LIVE_FETCH_REQUEST_RECEIVED");
         k3po.awaitBarrier("HISTORICAL_FETCH_REQUEST_RECEIVED");
+        awaitWindowFromClient();
         k3po.notifyBarrier("WRITE_HISTORICAL_FETCH_RESPONSE");
         k3po.notifyBarrier("WRITE_SECOND_LIVE_FETCH_RESPONSE");
         k3po.finish();
@@ -173,6 +175,20 @@ public class BootstrapIT
     public void shouldIssueWarningWhenBootstrapUnkownTopic() throws Exception
     {
         k3po.finish();
+    }
+
+    private void awaitWindowFromClient()
+    {
+        // Allow the reaktor process loop to process Window frame from client (and any other frames)
+        try
+        {
+            Thread.sleep(200);
+        }
+        catch (InterruptedException e)
+        {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
     }
 
 }

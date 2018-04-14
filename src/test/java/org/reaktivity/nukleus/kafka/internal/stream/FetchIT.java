@@ -137,6 +137,7 @@ public class FetchIT
         k3po.awaitBarrier("SERVER_LIVE_REQUEST_RECEIVED");
         k3po.notifyBarrier("CONNECT_CLIENT_TWO");
         k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
+        awaitWindowFromClient();
         k3po.notifyBarrier("SERVER_DELIVER_LIVE_RESPONSE");
         k3po.finish();
     }
@@ -173,6 +174,7 @@ public class FetchIT
     {
         k3po.start();
         k3po.awaitBarrier("CLIENT_TWO_RECEIVED_SECOND_MESSAGE");
+        awaitWindowFromClient();
         k3po.notifyBarrier("SERVER_DELIVER_LIVE_RESPONSE_TWO");
         k3po.finish();
     }
@@ -496,6 +498,7 @@ public class FetchIT
     {
         k3po.start();
         k3po.awaitBarrier("CLIENT_THREE_CONNECTED");
+        awaitWindowFromClient();
         k3po.notifyBarrier("DELIVER_SECOND_LIVE_RESPONSE");
         k3po.finish();
     }
@@ -691,6 +694,7 @@ public class FetchIT
         k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
         k3po.notifyBarrier("WRITE_SECOND_DESCRIBE_CONFIGS_RESPONSE");
         k3po.awaitBarrier("CLIENT_TWO_SUBSCRIBED");
+        awaitWindowFromClient();
         k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
         k3po.finish();
     }
@@ -869,6 +873,7 @@ public class FetchIT
         k3po.start();
         k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
         k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
+        awaitWindowFromClient();
         k3po.notifyBarrier("SERVER_DELIVER_RESPONSE");
         k3po.finish();
     }
@@ -994,5 +999,19 @@ public class FetchIT
         k3po.awaitBarrier("CLIENT_ONE_RECEIVED_THIRD_MESSAGE");
         k3po.notifyBarrier("SERVER_DELIVER_HISTORICAL_RESPONSE");
         k3po.finish();
+    }
+
+    private void awaitWindowFromClient()
+    {
+        // Allow the reaktor process loop to process Window frame from client (and any other frames)
+        try
+        {
+            Thread.sleep(200);
+        }
+        catch (InterruptedException e)
+        {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
     }
 }
