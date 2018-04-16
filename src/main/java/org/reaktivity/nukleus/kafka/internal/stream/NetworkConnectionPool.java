@@ -1795,10 +1795,11 @@ public final class NetworkConnectionPool
 
                 final int recordBatchSize = recordSet.recordBatchSize();
                 final int recordSetLimit = networkOffset + recordBatchSize;
-                if (recordSet.recordBatchSize() == 0)
+                if (recordSet.recordBatchSize() == 0 && partition.highWatermark() > requestedOffset)
                 {
-                    System.out.format("[nukleus-kafka] skipping topic: %s partition: %d offset: %d record batch size: %d\n",
-                            topicName, partitionId, requestedOffset, recordBatchSize);
+                    System.out.format(
+                            "[nukleus-kafka] skipping topic: %s partition: %d offset: %d because record batch size is 0\n",
+                            topicName, partitionId, requestedOffset);
                     dispatcher.flush(partitionId, requestedOffset, requestedOffset + 1);
                 }
                 else if (recordSetLimit <= maxLimit)
