@@ -1788,13 +1788,20 @@ public final class NetworkConnectionPool
             final int partitionId = partition.partitionId();
 
             // TODO: determine appropriate reaction to different non-zero error codes
-            if (partition.errorCode() == 0 && networkOffset < maxLimit - BitUtil.SIZE_OF_INT)
+            if (partition.errorCode() == 0 && networkOffset <= maxLimit - BitUtil.SIZE_OF_INT)
             {
                 final RecordSetFW recordSet = recordSetRO.wrap(buffer, networkOffset, maxLimit);
                 networkOffset = recordSet.limit();
 
-                final int recordSetLimit = networkOffset + recordSet.recordBatchSize();
-                if (recordSetLimit <= maxLimit)
+                final int recordBatchSize = recordSet.recordBatchSize();
+                final int recordSetLimit = networkOffset + recordBatchSize;
+                if (recordSet.recordBatchSize() == 0)
+                {
+                    System.out.format("[nukleus-kafka] skipping topic: %s partition: %d offset: %d record batch size: %d\n",
+                            topicName, partitionId, requestedOffset, recordBatchSize);
+                    dispatcher.flush(partitionId, requestedOffset, requestedOffset + 1);
+                }
+                else if (recordSetLimit <= maxLimit)
                 {
                     long nextFetchAt = requestedOffset;
                     loop:
