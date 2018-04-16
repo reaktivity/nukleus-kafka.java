@@ -667,7 +667,7 @@ public final class ClientStreamFactory implements StreamFactory
                 else
                 {
                     ListFW<KafkaHeaderFW> headers = beginEx.headers();
-                    if (headers != null)
+                    if (headers != null && headers.sizeof() > 0)
                     {
                         MutableDirectBuffer headersBuffer = new UnsafeBuffer(new byte[headers.limit() - headers.offset()]);
                         headersBuffer.putBytes(0, headers.buffer(),  headers.offset(), headers.sizeof());
