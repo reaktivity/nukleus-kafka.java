@@ -63,6 +63,9 @@ public final class ClientStreamFactory implements StreamFactory
 
     static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
 
+    private final UnsafeBuffer workBuffer1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    private final UnsafeBuffer workBuffer2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+
     private final RouteFW routeRO = new RouteFW();
 
     final BeginFW beginRO = new BeginFW();
@@ -429,8 +432,7 @@ public final class ClientStreamFactory implements StreamFactory
         private final NetworkConnectionPool networkPool;
         private final Long2LongHashMap fetchOffsets;
 
-        private final DirectBuffer messageKeyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-        private final DirectBuffer messageValueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+        private boolean subscribedByKey;
 
         private String applicationName;
         private long applicationCorrelationId;
@@ -446,11 +448,15 @@ public final class ClientStreamFactory implements StreamFactory
         private MessageConsumer streamState;
         private int writeableBytesMinimum;
 
+        private final DirectBuffer pendingMessageKeyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+        private final DirectBuffer pendingMessageValueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+
         private boolean messagePending;;
         private DirectBuffer pendingMessageKey;
         private long pendingMessageTimestamp;
         private long pendingMessageTraceId;
         private DirectBuffer pendingMessageValue;
+
         private long progressStartOffset = UNSET;
         private long progressEndOffset;
         private boolean firstWindow = true;
@@ -489,13 +495,26 @@ public final class ClientStreamFactory implements StreamFactory
                 progressStartOffset = fetchOffsets.get(partition);
                 progressEndOffset = progressStartOffset;
             }
-            flushPreviousMessage(partition, messageOffset - 1);
+            if (compacted && (subscribedByKey || equals(key, pendingMessageKey)))
+            {
+                // This message replaces the last one
+                if (messagePending)
+                {
+                    messagePending = false;
+                    final int previousLength = pendingMessageValue == null ? 0 : pendingMessageValue.capacity();
+                    budget.incApplicationReplyBudget(previousLength + applicationReplyPadding);
+                }
+                writeableBytesMinimum = 0;
+            }
+            else
+            {
+                flushPreviousMessage(partition, messageOffset - 1);
+            }
 
             if (requestOffset <= progressStartOffset // avoid out of order delivery
                 && messageOffset > progressStartOffset)
             {
                 final int payloadLength = value == null ? 0 : value.capacity();
-
                 int applicationReplyBudget = budget.applicationReplyBudget();
                 if (applicationReplyBudget == 0 || applicationReplyBudget < payloadLength + applicationReplyPadding)
                 {
@@ -507,10 +526,10 @@ public final class ClientStreamFactory implements StreamFactory
                     budget.decApplicationReplyBudget(payloadLength + applicationReplyPadding);
                     assert budget.applicationReplyBudget() >= 0;
 
-                    pendingMessageKey = wrap(messageKeyBuffer, key);
+                    pendingMessageKey = wrap(pendingMessageKeyBuffer, key);
                     pendingMessageTimestamp = timestamp;
                     pendingMessageTraceId = traceId;
-                    pendingMessageValue = wrap(messageValueBuffer, value);
+                    pendingMessageValue = wrap(pendingMessageValueBuffer, value);
                     messagePending = true;
                     messagesDelivered++;
                 }
@@ -657,6 +676,7 @@ public final class ClientStreamFactory implements StreamFactory
                     int hashCode = -1;
                     if (fetchKey != null)
                     {
+                        subscribedByKey = true;
                         MutableDirectBuffer keyBuffer = new UnsafeBuffer(new byte[fetchKey.limit() - fetchKey.offset()]);
                         keyBuffer.putBytes(0, fetchKey.buffer(),  fetchKey.offset(), fetchKey.sizeof());
                         fetchKey = new OctetsFW().wrap(keyBuffer, 0, keyBuffer.capacity());
@@ -746,6 +766,26 @@ public final class ClientStreamFactory implements StreamFactory
                 budget.incApplicationReplyBudget(window.credit());
             }
             networkPool.doFlush();
+        }
+
+        private boolean equals(DirectBuffer buffer1, DirectBuffer buffer2)
+        {
+            boolean result = false;
+            if (buffer1 == buffer2)
+            {
+                result = true;
+            }
+            else if (buffer1 == null || buffer2 == null)
+            {
+                result = false;
+            }
+            else
+            {
+                workBuffer1.wrap(buffer1);
+                workBuffer2.wrap(buffer2);
+                result = workBuffer1.equals(workBuffer2);
+            }
+            return result;
         }
 
         private void handleReset(

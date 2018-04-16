@@ -589,7 +589,31 @@ public class FetchIT
         "${client}/ktable.messages/client",
         "${server}/ktable.messages/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveKtableMessages() throws Exception
+    public void shouldReceiveCompactedAdjacentMessages() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/ktable.message.subscribed.to.key/client",
+        "${server}/ktable.messages/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveLastMatchingMessageOnlyWhenSubscribedByKey() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/ktable.message.subscribed.to.key/client",
+        "${server}/ktable.messages/server"})
+    @ScriptProperty({"networkAccept \"nukleus://target/streams/kafka\"",
+                     "applicationConnectWindow 25",
+                     "applicationConnectPadding 10"})
+    public void shouldReceiveLastMatchingMessageSkippingMessageLargerThanWindow() throws Exception
     {
         k3po.finish();
     }
