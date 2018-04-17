@@ -117,7 +117,7 @@ public class FetchIT
     @Specification({
         "${routeAnyTopic}/client/controller",
         "${client}/unknown.topic.name/client",
-        "${metadata}/one.topic.error.unknown.topic/server" })
+        "${metadata}/two.topics.error.unknown.topic/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldRejectWhenTopicIsUnknown() throws Exception
     {
@@ -137,6 +137,7 @@ public class FetchIT
         k3po.awaitBarrier("SERVER_LIVE_REQUEST_RECEIVED");
         k3po.notifyBarrier("CONNECT_CLIENT_TWO");
         k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
+        awaitWindowFromClient();
         k3po.notifyBarrier("SERVER_DELIVER_LIVE_RESPONSE");
         k3po.finish();
     }
@@ -171,6 +172,10 @@ public class FetchIT
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldFanoutWithSlowConsumer() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_TWO_RECEIVED_SECOND_MESSAGE");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("SERVER_DELIVER_LIVE_RESPONSE_TWO");
         k3po.finish();
     }
 
@@ -493,6 +498,7 @@ public class FetchIT
     {
         k3po.start();
         k3po.awaitBarrier("CLIENT_THREE_CONNECTED");
+        awaitWindowFromClient();
         k3po.notifyBarrier("DELIVER_SECOND_LIVE_RESPONSE");
         k3po.finish();
     }
@@ -551,11 +557,28 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/zero.offset.message/client",
+        "${server}/zero.offset.message.zero.length.record.batch.is.skipped/server"})
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "messageOffset 2"
+    })
+    public void shouldSkipZeroLengthRecordBatch() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/ktable.message/client",
         "${server}/ktable.message/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveKtableMessage() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("ROUTED_CLIENT");
+        k3po.notifyBarrier("CONNECT_CLIENT");
         k3po.finish();
     }
 
@@ -580,7 +603,31 @@ public class FetchIT
         "${client}/ktable.messages/client",
         "${server}/ktable.messages/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveKtableMessages() throws Exception
+    public void shouldReceiveCompactedAdjacentMessages() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/ktable.message.subscribed.to.key/client",
+        "${server}/ktable.messages/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveLastMatchingMessageOnlyWhenSubscribedByKey() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/ktable.message.subscribed.to.key/client",
+        "${server}/ktable.messages/server"})
+    @ScriptProperty({"networkAccept \"nukleus://target/streams/kafka\"",
+                     "applicationConnectWindow 25",
+                     "applicationConnectPadding 10"})
+    public void shouldReceiveLastMatchingMessageSkippingMessageLargerThanWindow() throws Exception
     {
         k3po.finish();
     }
@@ -618,6 +665,7 @@ public class FetchIT
         k3po.finish();
     }
 
+    @Ignore("May fail due to unpredicable read ordering of window frames from clients and first fetch response")
     @Test
     @Specification({
         "${control}/route.ext.multiple.topics/client/controller",
@@ -628,7 +676,10 @@ public class FetchIT
     {
         k3po.start();
         k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
+        k3po.awaitBarrier("CLIENT_THREE_CONNECTED");
+        k3po.awaitBarrier("ALL_METADATA_RESPONSES_WRITTEN");
         k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
+        k3po.notifyBarrier("WRITE_SECOND_FETCH_RESPONSE");
         k3po.finish();
     }
 
@@ -681,6 +732,7 @@ public class FetchIT
         k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
         k3po.notifyBarrier("WRITE_SECOND_DESCRIBE_CONFIGS_RESPONSE");
         k3po.awaitBarrier("CLIENT_TWO_SUBSCRIBED");
+        awaitWindowFromClient();
         k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
         k3po.finish();
     }
@@ -725,6 +777,17 @@ public class FetchIT
         "${server}/zero.offset/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldRequestMessagesAtZeroOffset() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset/client",
+        "${server}/zero.offset.no.messages/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldNotSkipZeroLenthRecordBatchIfAtHighWatermark() throws Exception
     {
         k3po.finish();
     }
@@ -859,6 +922,7 @@ public class FetchIT
         k3po.start();
         k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
         k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
+        awaitWindowFromClient();
         k3po.notifyBarrier("SERVER_DELIVER_RESPONSE");
         k3po.finish();
     }
@@ -984,5 +1048,19 @@ public class FetchIT
         k3po.awaitBarrier("CLIENT_ONE_RECEIVED_THIRD_MESSAGE");
         k3po.notifyBarrier("SERVER_DELIVER_HISTORICAL_RESPONSE");
         k3po.finish();
+    }
+
+    private void awaitWindowFromClient()
+    {
+        // Allow the reaktor process loop to process Window frame from client (and any other frames)
+        try
+        {
+            Thread.sleep(200);
+        }
+        catch (InterruptedException e)
+        {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
     }
 }
