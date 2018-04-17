@@ -32,6 +32,7 @@ import org.reaktivity.reaktor.test.ReaktorRule;
 public class ControlIT
 {
     private final K3poRule k3po = new K3poRule()
+            .addScriptRoot("control", "org/reaktivity/specification/nukleus/kafka/control")
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route")
             .addScriptRoot("unroute", "org/reaktivity/specification/nukleus/kafka/control/unroute")
             .addScriptRoot("routeEx", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
@@ -81,10 +82,48 @@ public class ControlIT
 
     @Test
     @Specification({
+        "${control}/route.ext.multiple.networks/client/controller"
+    })
+    public void shouldRouteClientWithMultipleRoutesDifferentNetworks() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${control}/route.ext.multiple.topics/client/controller"
+    })
+    public void shouldRouteClientWithMultipleRoutesDifferentTopics() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
         "${routeEx}/client/controller",
         "${unrouteEx}/client/controller"
     })
     public void shouldUnrouteClientWithExtension() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${control}/route.ext.multiple.networks/client/controller",
+        "${control}/unroute.ext.multiple.networks/client/controller"
+    })
+    public void shouldUnrouteClientMultipleRoutesDifferentNetworks() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${control}/route.ext.multiple.topics/client/controller",
+        "${control}/unroute.ext.multiple.topics/client/controller"
+    })
+    public void shouldUnrouteClientMultipleRoutesDifferentTopics() throws Exception
     {
         k3po.finish();
     }
