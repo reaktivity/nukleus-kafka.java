@@ -1025,11 +1025,6 @@ public final class NetworkConnectionPool
             String topicName,
             IntLongConsumer partitionsOffsets);
 
-        final int limitMaximumBytes(int maximumBytes)
-        {
-            return Math.min(maximumBytes, maximumFetchBytesLimit);
-        }
-
         @Override
         final void handleResponse(
             long networkTraceId,
@@ -1180,7 +1175,7 @@ public final class NetworkConnectionPool
             IntLongConsumer partitionOffsets)
         {
             final NetworkTopic topic = topicsByName.get(topicName);
-            final int maxPartitionBytes = limitMaximumBytes(topic.maximumWritableBytes(true));
+            final int maxPartitionBytes = topic.maximumWritableBytes(true);
 
             int partitionCount = 0;
 
@@ -1237,7 +1232,7 @@ public final class NetworkConnectionPool
             NetworkTopic topic = topicsByName.get(topicName);
             if (topic.needsHistorical())
             {
-                final int maxPartitionBytes = limitMaximumBytes(topic.maximumWritableBytes(false));
+                final int maxPartitionBytes = topic.maximumWritableBytes(false);
                 if (maxPartitionBytes > 0)
                 {
                     final TopicMetadata metadata = topicMetadataByName.get(topicName);
@@ -1904,6 +1899,7 @@ public final class NetworkConnectionPool
                 {
                     writableBytes = Math.max(writableBytes, supplyWindow.getAsInt());
                 }
+                writableBytes = Math.min(writableBytes, maximumFetchBytesLimit);
             }
             return writableBytes;
         }

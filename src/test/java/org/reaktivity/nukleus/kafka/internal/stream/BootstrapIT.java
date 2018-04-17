@@ -26,6 +26,7 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
+import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
 public class BootstrapIT
@@ -46,6 +47,7 @@ public class BootstrapIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
+        .configure(KafkaConfiguration.FETCH_PARTITION_MAX_BYTES_PROPERTY, "123000")
         .clean();
 
     @Rule
@@ -55,7 +57,10 @@ public class BootstrapIT
     @Specification({
         "${route}/client/controller",
         "${server}/ktable.message/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "maxPartitionBytes 123000"
+})
     public void shouldBootstrapTopic() throws Exception
     {
         k3po.finish();
