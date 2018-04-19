@@ -33,6 +33,7 @@ import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
+import org.reaktivity.nukleus.kafka.internal.function.IntBooleanConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
@@ -61,6 +62,9 @@ public final class ClientStreamFactory implements StreamFactory
     static final long UNSET = -1;
 
     static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
+
+    private final UnsafeBuffer workBuffer1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    private final UnsafeBuffer workBuffer2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
     private final RouteFW routeRO = new RouteFW();
 
@@ -105,6 +109,7 @@ public final class ClientStreamFactory implements StreamFactory
 
     private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools;
     private final int fetchMaxBytes;
+    private final int fetchPartitionMaxBytes;
 
     public ClientStreamFactory(
         KafkaConfiguration config,
@@ -119,6 +124,7 @@ public final class ClientStreamFactory implements StreamFactory
         Consumer<BiFunction<String, Long, NetworkConnectionPool>> connectPoolFactoryConsumer)
     {
         this.fetchMaxBytes = config.fetchMaxBytes();
+        this.fetchPartitionMaxBytes = config.fetchPartitionMaxBytes();
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
         this.bufferPool = requireNonNull(bufferPool);
@@ -130,7 +136,7 @@ public final class ClientStreamFactory implements StreamFactory
         groupBudget = new Long2LongHashMap(-1);
         groupMembers = new Long2LongHashMap(-1);
         connectPoolFactoryConsumer.accept((networkName, ref) ->
-            new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, bufferPool));
+            new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes, bufferPool));
     }
 
     @Override
@@ -185,7 +191,7 @@ public final class ClientStreamFactory implements StreamFactory
                     connectionPools.computeIfAbsent(networkName, this::newConnectionPoolsByRef);
 
                 NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef, ref ->
-                    new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, bufferPool));
+                    new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes, bufferPool));
 
                 newStream = new ClientAcceptStream(applicationThrottle, applicationId, connectionPool)::handleStream;
             }
@@ -426,8 +432,7 @@ public final class ClientStreamFactory implements StreamFactory
         private final NetworkConnectionPool networkPool;
         private final Long2LongHashMap fetchOffsets;
 
-        private final DirectBuffer messageKeyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-        private final DirectBuffer messageValueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+        private boolean subscribedByKey;
 
         private String applicationName;
         private long applicationCorrelationId;
@@ -443,16 +448,22 @@ public final class ClientStreamFactory implements StreamFactory
         private MessageConsumer streamState;
         private int writeableBytesMinimum;
 
+        private final DirectBuffer pendingMessageKeyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+        private final DirectBuffer pendingMessageValueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+
         private boolean messagePending;;
         private DirectBuffer pendingMessageKey;
         private long pendingMessageTimestamp;
         private long pendingMessageTraceId;
         private DirectBuffer pendingMessageValue;
+
         private long progressStartOffset = UNSET;
         private long progressEndOffset;
         private boolean firstWindow = true;
         private long groupId;
         private Budget budget;
+
+        private Consumer<IntBooleanConsumer> attacher;
 
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
@@ -484,14 +495,26 @@ public final class ClientStreamFactory implements StreamFactory
                 progressStartOffset = fetchOffsets.get(partition);
                 progressEndOffset = progressStartOffset;
             }
-            flushPreviousMessage(partition, messageOffset - 1);
+            if (compacted && (subscribedByKey || equals(key, pendingMessageKey)))
+            {
+                // This message replaces the last one
+                if (messagePending)
+                {
+                    messagePending = false;
+                    final int previousLength = pendingMessageValue == null ? 0 : pendingMessageValue.capacity();
+                    budget.incApplicationReplyBudget(previousLength + applicationReplyPadding);
+                }
+                writeableBytesMinimum = 0;
+            }
+            else
+            {
+                flushPreviousMessage(partition, messageOffset - 1);
+            }
 
             if (requestOffset <= progressStartOffset // avoid out of order delivery
-                && messageOffset > progressStartOffset
-                && writeableBytesMinimum == 0)
+                && messageOffset > progressStartOffset)
             {
                 final int payloadLength = value == null ? 0 : value.capacity();
-
                 int applicationReplyBudget = budget.applicationReplyBudget();
                 if (applicationReplyBudget == 0 || applicationReplyBudget < payloadLength + applicationReplyPadding)
                 {
@@ -499,13 +522,14 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 else
                 {
+                    writeableBytesMinimum = 0;
                     budget.decApplicationReplyBudget(payloadLength + applicationReplyPadding);
                     assert budget.applicationReplyBudget() >= 0;
 
-                    pendingMessageKey = wrap(messageKeyBuffer, key);
+                    pendingMessageKey = wrap(pendingMessageKeyBuffer, key);
                     pendingMessageTimestamp = timestamp;
                     pendingMessageTraceId = traceId;
-                    pendingMessageValue = wrap(messageValueBuffer, value);
+                    pendingMessageValue = wrap(pendingMessageValueBuffer, value);
                     messagePending = true;
                     messagesDelivered++;
                 }
@@ -536,7 +560,6 @@ public final class ClientStreamFactory implements StreamFactory
                 this.fetchOffsets.put(partition, endOffset);
                 progressHandler.handle(partition, startOffset, endOffset);
             }
-            writeableBytesMinimum = 0;
             progressStartOffset = UNSET;
         }
 
@@ -644,7 +667,7 @@ public final class ClientStreamFactory implements StreamFactory
                 else
                 {
                     ListFW<KafkaHeaderFW> headers = beginEx.headers();
-                    if (headers != null)
+                    if (headers != null && headers.sizeof() > 0)
                     {
                         MutableDirectBuffer headersBuffer = new UnsafeBuffer(new byte[headers.limit() - headers.offset()]);
                         headersBuffer.putBytes(0, headers.buffer(),  headers.offset(), headers.sizeof());
@@ -653,6 +676,7 @@ public final class ClientStreamFactory implements StreamFactory
                     int hashCode = -1;
                     if (fetchKey != null)
                     {
+                        subscribedByKey = true;
                         MutableDirectBuffer keyBuffer = new UnsafeBuffer(new byte[fetchKey.limit() - fetchKey.offset()]);
                         keyBuffer.putBytes(0, fetchKey.buffer(),  fetchKey.offset(), fetchKey.sizeof());
                         fetchKey = new OctetsFW().wrap(keyBuffer, 0, keyBuffer.capacity());
@@ -660,16 +684,16 @@ public final class ClientStreamFactory implements StreamFactory
                                 : BufferUtil.defaultHashCode(fetchKey.buffer(), fetchKey.offset(), fetchKey.limit());
                     }
                     networkPool.doAttach(topicName, this.fetchOffsets, hashCode, fetchKey, headers,
-                            this, this::writeableBytes, h -> progressHandler = h, this::onAttached, this::onMetadataError);
+                            this, this::writeableBytes, h -> progressHandler = h, this::onAttachPrepared, this::onMetadataError);
                     this.streamState = this::afterBegin;
                 }
             }
         }
 
-        private void onAttached(
-            int newNetworkAttachId,
-            boolean compacted)
+        private void onAttachPrepared(
+            Consumer<IntBooleanConsumer> attacher)
         {
+            this.attacher = attacher;
             final long newReplyId = supplyStreamId.getAsLong();
             final String replyName = applicationName;
             final MessageConsumer newReply = router.supplyTarget(replyName);
@@ -678,11 +702,16 @@ public final class ClientStreamFactory implements StreamFactory
             router.setThrottle(applicationName, newReplyId, this::handleThrottle);
 
             doWindow(applicationThrottle, applicationId, 0, 0, 0);
-
-            this.networkAttachId = newNetworkAttachId;
-            this.compacted = compacted;
             this.applicationReply = newReply;
             this.applicationReplyId = newReplyId;
+        }
+
+        private void onAttached(
+            int newNetworkAttachId,
+            boolean compacted)
+        {
+            this.networkAttachId = newNetworkAttachId;
+            this.compacted = compacted;
         }
 
         private void onMetadataError(
@@ -726,13 +755,37 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 firstWindow = false;
                 budget.joinGroup(window.credit());
+                if (attacher != null)
+                {
+                    attacher.accept(this::onAttached);
+                    attacher = null;
+                }
             }
             else
             {
                 budget.incApplicationReplyBudget(window.credit());
             }
-
             networkPool.doFlush();
+        }
+
+        private boolean equals(DirectBuffer buffer1, DirectBuffer buffer2)
+        {
+            boolean result = false;
+            if (buffer1 == buffer2)
+            {
+                result = true;
+            }
+            else if (buffer1 == null || buffer2 == null)
+            {
+                result = false;
+            }
+            else
+            {
+                workBuffer1.wrap(buffer1);
+                workBuffer2.wrap(buffer2);
+                result = workBuffer1.equals(workBuffer2);
+            }
+            return result;
         }
 
         private void handleReset(
@@ -758,7 +811,7 @@ public final class ClientStreamFactory implements StreamFactory
         private int writeableBytes()
         {
             final int writeableBytes = budget.applicationReplyBudget() - applicationReplyPadding;
-            return writeableBytes > writeableBytesMinimum ? writeableBytes : 0;
+            return writeableBytes >= writeableBytesMinimum ? writeableBytes : 0;
         }
 
     }

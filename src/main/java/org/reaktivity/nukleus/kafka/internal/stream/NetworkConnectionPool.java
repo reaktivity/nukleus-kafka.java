@@ -179,6 +179,7 @@ public final class NetworkConnectionPool
     private final String networkName;
     private final long networkRef;
     private final int fetchMaxBytes;
+    private final int fetchPartitionMaxBytes;
     private final BufferPool bufferPool;
     private AbstractFetchConnection[] connections = new LiveFetchConnection[0];
     private HistoricalFetchConnection[] historicalConnections = new HistoricalFetchConnection[0];
@@ -196,12 +197,14 @@ public final class NetworkConnectionPool
         String networkName,
         long networkRef,
         int fetchMaxBytes,
+        int fetchPartitionMaxBytes,
         BufferPool bufferPool)
     {
         this.clientStreamFactory = clientStreamFactory;
         this.networkName = networkName;
         this.networkRef = networkRef;
         this.fetchMaxBytes = fetchMaxBytes;
+        this.fetchPartitionMaxBytes = fetchPartitionMaxBytes;
         this.bufferPool = bufferPool;
         this.encodeBuffer = new UnsafeBuffer(new byte[clientStreamFactory.bufferPool.slotCapacity()]);
         this.topicsByName = new LinkedHashMap<>();
@@ -220,12 +223,12 @@ public final class NetworkConnectionPool
         MessageDispatcher dispatcher,
         IntSupplier supplyWindow,
         Consumer<PartitionProgressHandler> progressHandlerConsumer,
-        IntBooleanConsumer newAttachDetailsConsumer,
+        Consumer<Consumer<IntBooleanConsumer>> finishAttachConsumer,
         IntConsumer onMetadataError)
     {
         final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
         metadata.doAttach(m -> doAttach(topicName, fetchOffsets, partitionHash, fetchKey,  headers, dispatcher, supplyWindow,
-                    progressHandlerConsumer, newAttachDetailsConsumer, onMetadataError, m));
+                    progressHandlerConsumer, finishAttachConsumer, onMetadataError, m));
 
         if (metadataConnection == null)
         {
@@ -244,7 +247,7 @@ public final class NetworkConnectionPool
         MessageDispatcher dispatcher,
         IntSupplier supplyWindow,
         Consumer<PartitionProgressHandler> progressHandlerConsumer,
-        IntBooleanConsumer newAttachDetailsConsumer,
+        Consumer<Consumer<IntBooleanConsumer>> finishAttachConsumer,
         IntConsumer onMetadataError,
         TopicMetadata topicMetadata)
     {
@@ -286,11 +289,15 @@ public final class NetworkConnectionPool
             }
             final NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
                     name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, false));
-            progressHandlerConsumer.accept(topic.doAttach(fetchOffsets, fetchKey, headers, dispatcher, supplyWindow));
-            final int newAttachId = nextAttachId++;
-            detachersById.put(newAttachId, f -> topic.doDetach(f, fetchKey, headers, dispatcher, supplyWindow));
-            doConnections(topicMetadata);
-            newAttachDetailsConsumer.accept(newAttachId, topicMetadata.compacted);
+            finishAttachConsumer.accept(attachDetailsConsumer ->
+            {
+                progressHandlerConsumer.accept(topic.doAttach(fetchOffsets, fetchKey, headers, dispatcher, supplyWindow));
+                final int newAttachId = nextAttachId++;
+                detachersById.put(newAttachId, f -> topic.doDetach(f, fetchKey, headers, dispatcher, supplyWindow));
+                doConnections(topicMetadata);
+                attachDetailsConsumer.accept(newAttachId, topicMetadata.compacted);
+            });
+
             break;
         default:
             throw new RuntimeException(format("Unexpected errorCode %d from metadata query", errorCode));
@@ -1018,11 +1025,6 @@ public final class NetworkConnectionPool
             String topicName,
             IntLongConsumer partitionsOffsets);
 
-        final int limitMaximumBytes(int maximumBytes)
-        {
-            return Math.min(maximumBytes, maximumFetchBytesLimit);
-        }
-
         @Override
         final void handleResponse(
             long networkTraceId,
@@ -1173,7 +1175,7 @@ public final class NetworkConnectionPool
             IntLongConsumer partitionOffsets)
         {
             final NetworkTopic topic = topicsByName.get(topicName);
-            final int maxPartitionBytes = limitMaximumBytes(topic.maximumWritableBytes(true));
+            final int maxPartitionBytes = topic.maximumWritableBytes(true);
 
             int partitionCount = 0;
 
@@ -1230,7 +1232,7 @@ public final class NetworkConnectionPool
             NetworkTopic topic = topicsByName.get(topicName);
             if (topic.needsHistorical())
             {
-                final int maxPartitionBytes = limitMaximumBytes(topic.maximumWritableBytes(false));
+                final int maxPartitionBytes = topic.maximumWritableBytes(false);
                 if (maxPartitionBytes > 0)
                 {
                     final TopicMetadata metadata = topicMetadataByName.get(topicName);
@@ -1781,13 +1783,21 @@ public final class NetworkConnectionPool
             final int partitionId = partition.partitionId();
 
             // TODO: determine appropriate reaction to different non-zero error codes
-            if (partition.errorCode() == 0 && networkOffset < maxLimit - BitUtil.SIZE_OF_INT)
+            if (partition.errorCode() == 0 && networkOffset <= maxLimit - BitUtil.SIZE_OF_INT)
             {
                 final RecordSetFW recordSet = recordSetRO.wrap(buffer, networkOffset, maxLimit);
                 networkOffset = recordSet.limit();
 
-                final int recordSetLimit = networkOffset + recordSet.recordBatchSize();
-                if (recordSetLimit <= maxLimit)
+                final int recordBatchSize = recordSet.recordBatchSize();
+                final int recordSetLimit = networkOffset + recordBatchSize;
+                if (recordSet.recordBatchSize() == 0 && partition.highWatermark() > requestedOffset)
+                {
+                    System.out.format(
+                            "[nukleus-kafka] skipping topic: %s partition: %d offset: %d because record batch size is 0\n",
+                            topicName, partitionId, requestedOffset);
+                    dispatcher.flush(partitionId, requestedOffset, requestedOffset + 1);
+                }
+                else if (recordSetLimit <= maxLimit)
                 {
                     long nextFetchAt = requestedOffset;
                     loop:
@@ -1880,7 +1890,7 @@ public final class NetworkConnectionPool
             int writableBytes = 0;
             if (live && proactive)
             {
-                writableBytes = bufferPool.slotCapacity();
+                writableBytes = fetchPartitionMaxBytes;
             }
             else
             {
@@ -1889,6 +1899,7 @@ public final class NetworkConnectionPool
                 {
                     writableBytes = Math.max(writableBytes, supplyWindow.getAsInt());
                 }
+                writableBytes = Math.min(writableBytes, maximumFetchBytesLimit);
             }
             return writableBytes;
         }

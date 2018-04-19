@@ -26,6 +26,7 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
+import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
 public class BootstrapIT
@@ -46,6 +47,7 @@ public class BootstrapIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
+        .configure(KafkaConfiguration.FETCH_PARTITION_MAX_BYTES_PROPERTY, "123000")
         .clean();
 
     @Rule
@@ -55,7 +57,10 @@ public class BootstrapIT
     @Specification({
         "${route}/client/controller",
         "${server}/ktable.message/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "maxPartitionBytes 123000"
+})
     public void shouldBootstrapTopic() throws Exception
     {
         k3po.finish();
@@ -91,8 +96,34 @@ public class BootstrapIT
     public void shouldBootstrapMultipleTopics() throws Exception
     {
         k3po.start();
-        k3po.awaitBarrier("SECOND_METADATA_RESPONSE_WRITTEN");
+        k3po.awaitBarrier("ALL_METADATA_RESPONSES_WRITTEN");
         k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
+        k3po.notifyBarrier("WRITE_SECOND_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/ktable.message/client",
+        "${server}/ktable.bootstrap.uses.historical/server"})
+    @ScriptProperty({"networkAccept \"nukleus://target/streams/kafka\"",
+                     "offset \"4\""
+    })
+    public void shouldBootstrapWithHistoricalWhenClientSubscribesAtHigherOffset() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("ROUTED_CLIENT");
+        k3po.awaitBarrier("FIRST_LIVE_FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("CONNECT_CLIENT");
+        k3po.awaitBarrier("CLIENT_CONNECTED");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("WRITE_FIRST_LIVE_FETCH_RESPONSE");
+        k3po.awaitBarrier("SECOND_LIVE_FETCH_REQUEST_RECEIVED");
+        k3po.awaitBarrier("HISTORICAL_FETCH_REQUEST_RECEIVED");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("WRITE_HISTORICAL_FETCH_RESPONSE");
+        k3po.notifyBarrier("WRITE_SECOND_LIVE_FETCH_RESPONSE");
         k3po.finish();
     }
 
@@ -117,6 +148,9 @@ public class BootstrapIT
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldNotBootstrapWhenRouteDoesNotNameATopic() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("ROUTED_CLIENT");
+        k3po.notifyBarrier("CONNECT_CLIENT");
         k3po.finish();
     }
 
@@ -136,6 +170,30 @@ public class BootstrapIT
         k3po.awaitBarrier("HISTORICAL_FETCH_RESPONSE_WRITTEN");
         k3po.notifyBarrier("DELIVER_SECOND_LIVE_FETCH_RESPONSE");
         k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${metadata}/one.topic.error.unknown.topic/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldIssueWarningWhenBootstrapUnkownTopic() throws Exception
+    {
+        k3po.finish();
+    }
+
+    private void awaitWindowFromClient()
+    {
+        // Allow the reaktor process loop to process Window frame from client (and any other frames)
+        try
+        {
+            Thread.sleep(200);
+        }
+        catch (InterruptedException e)
+        {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
     }
 
 }
