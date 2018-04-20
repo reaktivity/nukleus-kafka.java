@@ -17,15 +17,18 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
+import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
 
-import java.util.function.BiFunction;
+import java.util.function.Function;
 
 import org.agrona.BitUtil;
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.reaktivity.nukleus.buffer.BufferPool;
+import org.reaktivity.nukleus.kafka.internal.function.StringIntShortConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.StringIntToLongFunction;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
+import org.reaktivity.nukleus.kafka.internal.types.Varint32FW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.ResponseHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.FetchResponseFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.HeaderFW;
@@ -34,6 +37,7 @@ import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordBatchFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordSetFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TopicResponseFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TransactionResponseFW;
 
 public class FetchResponseDecoder
 {
@@ -41,37 +45,57 @@ public class FetchResponseDecoder
     final FetchResponseFW fetchResponseRO = new FetchResponseFW();
     final TopicResponseFW topicResponseRO = new TopicResponseFW();
     final PartitionResponseFW partitionResponseRO = new PartitionResponseFW();
+    final TransactionResponseFW transactionResponseRO = new TransactionResponseFW();
     final RecordSetFW recordSetRO = new RecordSetFW();
+    private final Varint32FW varint32RO = new Varint32FW();
 
     private final RecordBatchFW recordBatchRO = new RecordBatchFW();
     private final RecordFW recordRO = new RecordFW();
     private final HeaderFW headerRO = new HeaderFW();
 
+    private final Function<String, MessageDispatcher> getDispatcher;
+    private final StringIntToLongFunction getRequestedOffsetForPartition;
+    private final StringIntShortConsumer errorHandler;
+    private final int maximumFetchBytesLimit;
     private final BufferPool bufferPool;
     private final long streamId;
 
     private DecoderState decoderState;
     private int responseSize = -1;
     private int responseBytesProcessed;
-    int slot = NO_SLOT;
-    int slotOffset;
-    int slotLimit;
+    private int slot = NO_SLOT;
+    private int slotOffset;
+    private int slotLimit;
 
-    private final BiFunction<String, Integer, MessageDispatcher> getDispatcher;
-    private final StringIntToLongFunction getRequestedOffsetForPartition;
     private int topicCount;
-    private Object topicName;
-    private Object partitionCount;
+    private String topicName;
+    private MessageDispatcher topicDispatcher;
+    private int partitionCount;
+    private int recordSetLimit;
+    private int recordBatchSize;
+    private long highWatermark;
+    private int partition;
+    private int abortedTransactionCount;
+    private long requestedOffset;
+    private long nextFetchAt;
+    private int recordCount;
+    private long firstOffset;
+    private int lastOffsetDelta;
+    private long firstTimestamp;
 
     FetchResponseDecoder(
-        BiFunction<String, Integer, MessageDispatcher> getDispatcher,
+        Function<String, MessageDispatcher> getDispatcher,
         StringIntToLongFunction getRequestedOffsetForPartition,
+        StringIntShortConsumer errorHandler,
         BufferPool bufferPool,
+        int maxFetchBytesLimit,
         long streamId)
     {
         this.getDispatcher = getDispatcher;
         this.getRequestedOffsetForPartition = getRequestedOffsetForPartition;
+        this.errorHandler = errorHandler;
         this.bufferPool = requireNonNull(bufferPool);
+        this.maximumFetchBytesLimit = maxFetchBytesLimit;
         this.streamId = streamId;
         this.decoderState = this::decodeResponseHeader;
     }
@@ -139,12 +163,13 @@ public class FetchResponseDecoder
         int limit,
         long traceId)
     {
-        boolean decoderStateChanged = true;
-        while (offset < limit && decoderStateChanged)
+        boolean workWasDone = true;
+        while (offset < limit && workWasDone)
         {
-            DecoderState previous = decoderState;
+            int previousOffset = offset;
+            DecoderState previousState = decoderState;
             offset = decoderState.decode(buffer, offset, limit, traceId);
-            decoderStateChanged = previous != decoderState;
+            workWasDone = offset != previousOffset || decoderState != previousState;
         }
         return offset;
     }
@@ -156,14 +181,13 @@ public class FetchResponseDecoder
         long traceId)
     {
         int newOffset = offset;
-        if (offset + BitUtil.SIZE_OF_INT >= limit) // TODO: if responseRO.canWrap
+        ResponseHeaderFW response = responseRO.tryWrap(buffer, offset, limit);
+        if (response != null)
         {
-            ResponseHeaderFW response = null;
-            response = responseRO.wrap(buffer, offset, limit);
-            newOffset = response.limit();
             responseSize = response.size();
+            decoderState = this::decodeFetchResponse;
+            newOffset = response.limit();
         }
-        decoderState = this::decodeFetchResponse;
         return newOffset;
     }
 
@@ -174,12 +198,11 @@ public class FetchResponseDecoder
         long traceId)
     {
         int newOffset = offset;
-        if (offset + 4 * BitUtil.SIZE_OF_INT >= limit) // TODO: if fetchResponseRO.canWrap
+        FetchResponseFW response = fetchResponseRO.tryWrap(buffer, offset, limit);
+        if (response != null)
         {
-            FetchResponseFW response = null;
-            response = fetchResponseRO.wrap(buffer, offset, limit);
-            newOffset = response.limit();
             topicCount = response.topicCount();
+            newOffset = response.limit();
         }
         decoderState = this::decodeTopicResponse;
         return newOffset;
@@ -192,15 +215,209 @@ public class FetchResponseDecoder
         long traceId)
     {
         int newOffset = offset;
-        if (offset + BitUtil.SIZE_OF_INT + 50 /*max topic name length*/ >= limit) // TODO: if topicResponseRO.canWrap
+        if (topicCount > 0)
         {
-            TopicResponseFW response = null;
-            response = topicResponseRO.wrap(buffer, offset, limit);
-            newOffset = response.limit();
-            topicName = response.name().asString();
-            partitionCount = response.partitionCount();
+            TopicResponseFW response = topicResponseRO.tryWrap(buffer, offset, limit);
+            if (response != null)
+            {
+                topicCount--;
+                topicName = response.name().asString();
+                topicDispatcher = getDispatcher.apply(topicName);
+                partitionCount = response.partitionCount();
+                decoderState = this::decodePartitionResponse;
+                newOffset = response.limit();
+            }
         }
-        decoderState = this::decodeTopicResponse;
+        else
+        {
+            decoderState = this::decodeResponseHeader;
+        }
+        return newOffset;
+    }
+
+    private int decodePartitionResponse(
+        DirectBuffer buffer,
+        int offset,
+        int limit,
+        long traceId)
+    {
+        int newOffset = offset;
+        if (partitionCount > 0)
+        {
+            PartitionResponseFW response = partitionResponseRO.tryWrap(buffer, offset, limit);
+            if (response != null)
+            {
+                partitionCount--;
+                newOffset = response.limit();
+                partition = response.partitionId();
+                short errorCode = response.errorCode();
+                if (errorCode != NONE)
+                {
+                    errorHandler.accept(topicName, partition, errorCode);
+                }
+                else
+                {
+                    highWatermark = response.highWatermark();
+                    abortedTransactionCount = response.abortedTransactionCount();
+                    decoderState = abortedTransactionCount > 0 ? this::decodeTransactionResponse : this::decodeRecordSet;
+                }
+            }
+        }
+        else
+        {
+            this.decoderState = this::decodeTopicResponse;
+        }
+        return newOffset;
+    }
+
+    private int decodeTransactionResponse(
+        DirectBuffer buffer,
+        int offset,
+        int limit,
+        long traceId)
+    {
+        int newOffset = offset;
+        if (abortedTransactionCount > 0)
+        {
+            TransactionResponseFW response = transactionResponseRO.tryWrap(buffer, offset, limit);
+            if (response != null)
+            {
+                abortedTransactionCount--;
+                newOffset = response.limit();
+            }
+        }
+        else
+        {
+            decoderState = this::decodeRecordSet;
+        }
+        return newOffset;
+    }
+
+    private int decodeRecordSet(
+        DirectBuffer buffer,
+        int offset,
+        int limit,
+        long traceId)
+    {
+        int newOffset = offset;
+        RecordSetFW response = recordSetRO.tryWrap(buffer, offset, limit);
+        if (response != null)
+        {
+            recordBatchSize = response.recordBatchSize();
+            recordSetLimit = response.limit() + recordBatchSize;
+            if (recordBatchSize == 0)
+            {
+                long requestedOffset = getRequestedOffsetForPartition.apply(topicName, partition);
+                if (highWatermark > requestedOffset)
+                {
+                    System.out.format(
+                            "[nukleus-kafka] skipping topic: %s partition: %d offset: %d because record batch size is 0\n",
+                            topicName, partition, requestedOffset);
+                    topicDispatcher.flush(partition, requestedOffset, requestedOffset + 1);
+                }
+                decoderState = this::decodeSkipRecordSet;
+            }
+            else
+            {
+                decoderState = this::decodeRecordBatch;
+            }
+        }
+        return newOffset;
+    }
+
+    private int decodeRecordBatch(
+        DirectBuffer buffer,
+        int offset,
+        int limit,
+        long traceId)
+    {
+        int newOffset = offset;
+        RecordBatchFW recordBatch = recordBatchRO.tryWrap(buffer, offset, limit);
+        if (recordBatch != null)
+        {
+            final int recordBatchLimit = offset +
+                    RecordBatchFW.FIELD_OFFSET_LENGTH + BitUtil.SIZE_OF_INT + recordBatch.length();
+            requestedOffset = getRequestedOffsetForPartition.apply(topicName, partition);
+            if (recordBatchLimit > recordSetLimit)
+            {
+                if (recordBatch.lastOffsetDelta() == 0 && recordBatch.length() > maximumFetchBytesLimit)
+                {
+                    System.out.format("[nukleus-kafka] skipping topic: %s partition: %d offset: %d batch-size: %d\n",
+                                      topicName, partition, recordBatch.firstOffset(), recordBatch.length());
+                    nextFetchAt = recordBatch.firstOffset() + 1;
+                    topicDispatcher.flush(partition, requestedOffset, nextFetchAt);
+                }
+                decoderState = this::decodeSkipRecordSet;
+            }
+            else
+            {
+                firstOffset = recordBatch.firstOffset();
+                lastOffsetDelta = recordBatch.lastOffsetDelta();
+                firstTimestamp = recordBatch.firstTimestamp();
+                recordCount = recordBatch.recordCount();
+                nextFetchAt = firstOffset;
+                decoderState = this::decodeRecord;
+                newOffset = recordBatch.limit();
+            }
+        }
+        return newOffset;
+    }
+
+    private int decodeSkipRecordSet(
+        DirectBuffer buffer,
+        int offset,
+        int limit,
+        long traceId)
+    {
+        int newOffset = offset;
+        if (limit >= recordSetLimit)
+        {
+            decoderState = this::decodePartitionResponse;
+            newOffset =  recordSetLimit;
+        }
+        else
+        {
+            newOffset =  limit;
+        }
+        return newOffset;
+    }
+
+    private int decodeRecord(
+        DirectBuffer buffer,
+        int offset,
+        int limit,
+        long traceId)
+    {
+        int newOffset = offset;
+        if (recordCount > 0)
+        {
+            RecordFW record = recordRO.tryWrap(buffer, offset, limit);
+            if (record != null)
+            {
+                recordCount--;
+
+                // TODO: dispatch the record and adjust nextFetchAt
+                topicDispatcher.dispatch();
+
+                newOffset = record.limit();
+            }
+            else
+            {
+                Varint32FW recordLength = varint32RO.tryWrap(buffer, offset, recordSetLimit);
+                if (recordLength != null && offset + recordLength.value()  > recordSetLimit)
+                {
+                    // Truncated record at end of batch, make sure we attempt to re-fetch it
+                    nextFetchAt = firstOffset + lastOffsetDelta;
+                    topicDispatcher.flush(partition, requestedOffset, nextFetchAt);
+                    decoderState = this::decodeSkipRecordSet;
+                }
+            }
+        }
+        else
+        {
+            topicDispatcher.flush(partition, requestedOffset, nextFetchAt);
+            decoderState = this::decodePartitionResponse;
+        }
         return newOffset;
     }
 
