@@ -43,6 +43,8 @@ import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TransactionRespon
 
 public class FetchResponseDecoder
 {
+    private static final int UNKNOWN_RESPONSE_SIZE = -1;
+
     final ResponseHeaderFW responseRO = new ResponseHeaderFW();
     final FetchResponseFW fetchResponseRO = new FetchResponseFW();
     final TopicResponseFW topicResponseRO = new TopicResponseFW();
@@ -55,6 +57,10 @@ public class FetchResponseDecoder
     private final RecordFW recordRO = new RecordFW();
     private final HeaderFW headerRO = new HeaderFW();
 
+    private final Headers headers = new Headers();
+    private final UnsafeBuffer keyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    private final UnsafeBuffer valueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+
     private final Function<String, MessageDispatcher> getDispatcher;
     private final StringIntToLongFunction getRequestedOffsetForPartition;
     private final StringIntShortConsumer errorHandler;
@@ -62,8 +68,9 @@ public class FetchResponseDecoder
     private final BufferPool bufferPool;
     private final long streamId;
 
+
     private DecoderState decoderState;
-    private int responseSize = -1;
+    private int responseSize = UNKNOWN_RESPONSE_SIZE;
     private int responseBytesProcessed;
     private int slot = NO_SLOT;
     private int slotOffset;
@@ -73,8 +80,7 @@ public class FetchResponseDecoder
     private String topicName;
     private MessageDispatcher topicDispatcher;
     private int partitionCount;
-    private int recordSetLimit;
-    private int recordBatchSize;
+    private int recordBatchBytesRemaining;
     private long highWatermark;
     private int partition;
     private int abortedTransactionCount;
@@ -84,10 +90,10 @@ public class FetchResponseDecoder
     private long firstOffset;
     private int lastOffsetDelta;
     private long firstTimestamp;
-    private int recordLimit;
-    private final Headers headers = new Headers();
-    private final UnsafeBuffer keyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-    private final UnsafeBuffer valueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+
+    private final SkipBytesDecoderState skipBytesDecoderState = new SkipBytesDecoderState();
+
+    private final BufferBytesDecoderState bufferBytesDecoderState = new BufferBytesDecoderState();
 
     FetchResponseDecoder(
         Function<String, MessageDispatcher> getDispatcher,
@@ -106,7 +112,7 @@ public class FetchResponseDecoder
         this.decoderState = this::decodeResponseHeader;
     }
 
-    public boolean decode(OctetsFW payload,
+    public int decode(OctetsFW payload,
                           long traceId)
     {
         boolean responseComplete = false;
@@ -120,26 +126,29 @@ public class FetchResponseDecoder
             limit = slotLimit;
         }
         int newOffset = decode(buffer, offset, limit, traceId);
-        responseBytesProcessed += limit - newOffset;
-        if (newOffset == limit && responseBytesProcessed == responseSize)
+        responseBytesProcessed += newOffset - offset;
+        if (responseBytesProcessed == responseSize)
         {
+            assert newOffset == limit : "no pipelined requests";
             responseComplete = true;
-            free();
+            reset();
         }
-        else
+        else if (newOffset == limit && slot != NO_SLOT)
         {
-            if (slot == NO_SLOT)
-            {
-                slot = bufferPool.acquire(streamId);
-                slotOffset = 0;
-                slotLimit = 0;
-                appendToSlot(buffer, newOffset, limit);
-            }
+            bufferPool.release(slot);
+            slot = NO_SLOT;
         }
-        return responseComplete;
+        else if (newOffset < limit && slot == NO_SLOT)
+        {
+            slot = bufferPool.acquire(streamId);
+            slotOffset = 0;
+            slotLimit = 0;
+            appendToSlot(buffer, newOffset, limit);
+        }
+        return responseComplete ? limit - newOffset : -1;
     }
 
-    public void free()
+    public void reset()
     {
         if (slot != NO_SLOT)
         {
@@ -147,20 +156,40 @@ public class FetchResponseDecoder
             slot = NO_SLOT;
             slotOffset = 0;
             slotLimit = 0;
-            responseSize = -1;
-            responseBytesProcessed = 0;
-            topicCount = 0;
-            partitionCount = 0;
         }
+        responseSize = UNKNOWN_RESPONSE_SIZE;
+        responseBytesProcessed = 0;
+        topicCount = 0;
+        partitionCount = 0;
     }
 
     private DirectBuffer appendToSlot(DirectBuffer buffer, int offset, int limit)
     {
         final MutableDirectBuffer bufferSlot = bufferPool.buffer(slot);
         final int bytesToCopy = limit -  offset;
-        bufferSlot.putBytes(slotOffset, buffer, offset, bytesToCopy);
+        if (bytesToCopy + slotLimit > buffer.capacity())
+        {
+            int remaining = buffer.capacity() - (slotLimit - slotOffset);
+            if (bytesToCopy > remaining)
+            {
+                throw new IllegalStateException(String.format("decode buffer %s does not have space for %d bytes", bytesToCopy));
+            }
+            else
+            {
+                alignSlotData(bufferSlot);
+            }
+        }
+        bufferSlot.putBytes(slotLimit, buffer, offset, bytesToCopy);
         slotLimit += bytesToCopy;
         return bufferSlot;
+    }
+
+    private void alignSlotData(MutableDirectBuffer slot)
+    {
+        int dataLength = slotLimit - slotOffset;
+        slot.putBytes(0, slot, slotOffset, dataLength);
+        slotOffset = 0;
+        slotLimit = dataLength;
     }
 
     private int decode(
@@ -209,8 +238,8 @@ public class FetchResponseDecoder
         {
             topicCount = response.topicCount();
             newOffset = response.limit();
+            decoderState = this::decodeTopicResponse;
         }
-        decoderState = this::decodeTopicResponse;
         return newOffset;
     }
 
@@ -309,9 +338,9 @@ public class FetchResponseDecoder
         RecordSetFW response = recordSetRO.tryWrap(buffer, offset, limit);
         if (response != null)
         {
-            recordBatchSize = response.recordBatchSize();
-            recordSetLimit = response.limit() + recordBatchSize;
-            if (recordBatchSize == 0)
+            recordBatchBytesRemaining = response.recordBatchSize();
+            newOffset = response.limit();
+            if (recordBatchBytesRemaining == 0)
             {
                 long requestedOffset = getRequestedOffsetForPartition.apply(topicName, partition);
                 if (highWatermark > requestedOffset)
@@ -321,7 +350,7 @@ public class FetchResponseDecoder
                             topicName, partition, requestedOffset);
                     topicDispatcher.flush(partition, requestedOffset, requestedOffset + 1);
                 }
-                decoderState = this::decodeSkipRecordSet;
+                decoderState = this::decodePartitionResponse;
             }
             else
             {
@@ -341,19 +370,23 @@ public class FetchResponseDecoder
         RecordBatchFW recordBatch = recordBatchRO.tryWrap(buffer, offset, limit);
         if (recordBatch != null)
         {
-            final int recordBatchLimit = offset +
+            final int recordBatchActualSize =
                     RecordBatchFW.FIELD_OFFSET_LENGTH + BitUtil.SIZE_OF_INT + recordBatch.length();
             requestedOffset = getRequestedOffsetForPartition.apply(topicName, partition);
-            if (recordBatchLimit > recordSetLimit)
+            if (recordBatchActualSize > recordBatchBytesRemaining)
+                //  record batch was truncated in response due to max fetch bytes or max partition bytes limit set on request
             {
                 if (recordBatch.lastOffsetDelta() == 0 && recordBatch.length() > messageSizeLimit)
                 {
-                    System.out.format("[nukleus-kafka] skipping topic: %s partition: %d offset: %d batch-size: %d\n",
-                                      topicName, partition, recordBatch.firstOffset(), recordBatch.length());
+                    System.out.format(
+                            "[nukleus-kafka] skipping large message at topic: %s partition: %d offset: %d batch-size: %d\n",
+                            topicName, partition, recordBatch.firstOffset(), recordBatch.length());
                     nextFetchAt = recordBatch.firstOffset() + 1;
                     topicDispatcher.flush(partition, requestedOffset, nextFetchAt);
                 }
-                decoderState = this::decodeSkipRecordSet;
+                skipBytesDecoderState.bytesToSkip = recordBatchBytesRemaining;
+                skipBytesDecoderState.nextState = this::decodePartitionResponse;
+                decoderState = skipBytesDecoderState;
             }
             else
             {
@@ -362,28 +395,12 @@ public class FetchResponseDecoder
                 firstTimestamp = recordBatch.firstTimestamp();
                 recordCount = recordBatch.recordCount();
                 nextFetchAt = firstOffset;
-                decoderState = this::decodeRecord;
+                recordBatchBytesRemaining -= recordBatch.sizeof();
+                bufferBytesDecoderState.bytesToAwait = Math.min(recordBatchBytesRemaining,  bufferPool.slotCapacity());
+                bufferBytesDecoderState.nextState = this::decodeRecordLength;
+                decoderState = bufferBytesDecoderState;
                 newOffset = recordBatch.limit();
             }
-        }
-        return newOffset;
-    }
-
-    private int decodeSkipRecordSet(
-        DirectBuffer buffer,
-        int offset,
-        int limit,
-        long traceId)
-    {
-        int newOffset = offset;
-        if (limit >= recordSetLimit)
-        {
-            decoderState = this::decodePartitionResponse;
-            newOffset =  recordSetLimit;
-        }
-        else
-        {
-            newOffset =  limit;
         }
         return newOffset;
     }
@@ -400,7 +417,8 @@ public class FetchResponseDecoder
             Varint32FW recordLength = varint32RO.tryWrap(buffer, offset, limit);
             if (recordLength != null)
             {
-                if (offset + recordLength.value()  > recordSetLimit)
+                int recordSize = recordLength.sizeof() + recordLength.value();
+                if (recordSize > recordBatchBytesRemaining)
                 {
                     // Truncated record at end of batch, make sure we attempt to re-fetch it
                     nextFetchAt = firstOffset + lastOffsetDelta;
@@ -410,21 +428,19 @@ public class FetchResponseDecoder
                         nextFetchAt++;
                     }
                     topicDispatcher.flush(partition, requestedOffset, nextFetchAt);
-                    decoderState = this::decodeSkipRecordSet;
+                    skipBytesDecoderState.bytesToSkip = recordBatchBytesRemaining;
+                    skipBytesDecoderState.nextState = this::decodePartitionResponse;
+                    decoderState = skipBytesDecoderState;
                 }
                 else
                 {
-                    recordLimit = offset + recordLength.limit();
+                    recordBatchBytesRemaining -= recordSize;
                     decoderState = this::decodeRecord;
                 }
             }
         }
         else
         {
-            // If there are deleted records, the last offset reported on record batch may exceed the offset of the
-            // last record in the batch. We must use this to make sure we continue to advance.
-            nextFetchAt = firstOffset + lastOffsetDelta + 1;
-            topicDispatcher.flush(partition, requestedOffset, nextFetchAt);
             decoderState = this::decodePartitionResponse;
         }
         return newOffset;
@@ -438,13 +454,13 @@ public class FetchResponseDecoder
     {
         int newOffset = offset;
         RecordFW record = recordRO.tryWrap(buffer, offset, limit);
-        if (record != null && limit >= recordLimit)
+        if (record != null)
         {
             recordCount--;
             final long currentFetchAt = firstOffset + record.offsetDelta();
             if (currentFetchAt >= requestedOffset)
-            {
                 // The only guarantee is the response will encompass the requested offset.
+            {
                 nextFetchAt = currentFetchAt + 1;
 
                 int headersOffset = record.limit();
@@ -477,8 +493,19 @@ public class FetchResponseDecoder
                 topicDispatcher.dispatch(partition, requestedOffset, nextFetchAt,
                              key, headers::supplyHeader, timestamp, traceId, value);
             }
-            newOffset = recordLimit;
-            decoderState = this::decodeRecordLength;
+            newOffset = record.limit();
+            if (recordBatchBytesRemaining == 0)
+            {
+                // If there are deleted records, the last offset reported on record batch may exceed the offset of the
+                // last record in the batch. We must use this to make sure we continue to advance.
+                nextFetchAt = firstOffset + lastOffsetDelta + 1;
+                topicDispatcher.flush(partition, requestedOffset, nextFetchAt);
+                decoderState = this::decodePartitionResponse;
+            }
+            else
+            {
+                decoderState = this::decodeRecordLength;
+            }
         }
         return newOffset;
     }
@@ -492,6 +519,51 @@ public class FetchResponseDecoder
             int limit,
             long traceId);
     }
+
+    final class BufferBytesDecoderState implements DecoderState
+    {
+        int bytesToAwait;
+        DecoderState nextState;
+
+        @Override
+        public int decode(
+            DirectBuffer buffer,
+            int offset,
+            int limit,
+            long traceId)
+        {
+            int availableBytes = limit - offset;
+            if (availableBytes == bytesToAwait)
+            {
+                decoderState = nextState;
+            }
+            return offset;
+        }
+    }
+
+    final class SkipBytesDecoderState implements DecoderState
+    {
+        int bytesToSkip;
+        DecoderState nextState;
+
+        @Override
+        public int decode(
+            DirectBuffer buffer,
+            int offset,
+            int limit,
+            long traceId)
+        {
+            int bytesSkipped = Math.min(limit - offset, bytesToSkip);
+            int newOffset = offset + bytesSkipped;
+            bytesToSkip -= bytesSkipped;
+            if (bytesToSkip == 0)
+            {
+                decoderState = nextState;
+            }
+            return newOffset;
+        }
+    }
+
 
     private static final class Headers
     {

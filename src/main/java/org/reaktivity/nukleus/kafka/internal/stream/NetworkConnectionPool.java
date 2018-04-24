@@ -794,6 +794,7 @@ public final class NetworkConnectionPool
         int encodeLimit;
         boolean offsetsNeeded;
         Map<String, long[]> requestedFetchOffsetsByTopic = new HashMap<>();
+        final FetchResponseDecoder fetchResponseDecoder;
 
         private AbstractFetchConnection(BrokerMetadata broker)
         {
@@ -801,6 +802,14 @@ public final class NetworkConnectionPool
             this.brokerId = broker.nodeId;
             this.host = broker.host;
             this.port = broker.port;
+            fetchResponseDecoder = new FetchResponseDecoder(
+                    this::getTopicDispatcher,
+                    this::getRequestedOffset,
+                    this::handlePartitionResponseError,
+                    bufferPool,
+                    maximumFetchBytesLimit,
+                    networkReplyId
+                    );
         }
 
         @Override
@@ -1026,6 +1035,27 @@ public final class NetworkConnectionPool
             IntLongConsumer partitionsOffsets);
 
         @Override
+        void handleData(
+            DataFW data)
+        {
+            if (offsetsNeeded)
+            {
+                super.handleData(data);
+            }
+            else
+            {
+                int excessBytes = fetchResponseDecoder.decode(data.payload(), data.trace());
+                doOfferResponseBudget();
+                if (excessBytes >= 0) // response complete
+                {
+                    assert excessBytes == 0 : "unexpected pipelined response, pipelined requests are not being used";
+                    nextResponseId++;
+                    doRequestIfNeeded();
+                }
+            }
+        }
+
+        @Override
         final void handleResponse(
             long networkTraceId,
             DirectBuffer networkBuffer,
@@ -1152,6 +1182,33 @@ public final class NetworkConnectionPool
         final long getRequestedOffset(String topicName, int partitionId)
         {
             return requestedFetchOffsetsByTopic.get(topicName)[partitionId];
+        }
+
+        private MessageDispatcher getTopicDispatcher(String topicName)
+        {
+            return topicsByName.get(topicName).dispatcher;
+        }
+
+        private void handlePartitionResponseError(
+            String topicName,
+            int partition,
+            short errorCode)
+        {
+            switch(errorCode)
+            {
+            case OFFSET_OUT_OF_RANGE:
+                offsetsNeeded = true;
+                TopicMetadata topicMetadata = topicMetadataByName.get(topicName);
+
+                // logStartOffset is always -1 in this case so we can't use it
+                topicMetadata.setFirstOffset(partition, TopicMetadata.UNKNOWN_OFFSET);
+
+                break;
+            default:
+                throw new IllegalStateException(format(
+                    "%s: unexpected error code %d from fetch, topic %s, partition %d, requested offset %d",
+                    this, errorCode, topicName, partition, getRequestedOffset(topicName, partition)));
+            }
         }
 
         @Override
