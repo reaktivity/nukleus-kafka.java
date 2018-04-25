@@ -121,7 +121,7 @@ public final class NetworkConnectionPool
 
     private static final byte[] ANY_IP_ADDR = new byte[4];
 
-    private static final int MAX_MESSAGE_SIZE = 10000;
+    private static final int MAX_PADDING = 5 * 1024;
 
     enum MetadataRequestType
     {
@@ -188,7 +188,7 @@ public final class NetworkConnectionPool
     private final Map<String, TopicMetadata> topicMetadataByName;
     private final Map<String, NetworkTopic> topicsByName;
     private final Int2ObjectHashMap<Consumer<Long2LongHashMap>> detachersById;
-    private final int maximumFetchBytesLimit;
+    private final int maximumMessageSize;
 
     private int nextAttachId;
 
@@ -210,8 +210,10 @@ public final class NetworkConnectionPool
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
         this.detachersById = new Int2ObjectHashMap<>();
-        this.maximumFetchBytesLimit = bufferPool.slotCapacity() > MAX_MESSAGE_SIZE ?
-                bufferPool.slotCapacity() - MAX_MESSAGE_SIZE : bufferPool.slotCapacity();
+
+        // TODO: remove this and use multiple data frames for large messages
+        this.maximumMessageSize = bufferPool.slotCapacity() > MAX_PADDING ?
+                bufferPool.slotCapacity() - MAX_PADDING : bufferPool.slotCapacity();
     }
 
     void doAttach(
@@ -436,12 +438,13 @@ public final class NetworkConnectionPool
         int nextRequestId;
         int nextResponseId;
 
-        private MutableDirectBuffer localDecodeBuffer;
-        private int localDecodeCapacity;
+        final MutableDirectBuffer localDecodeBuffer;
 
         private AbstractNetworkConnection()
         {
             this.networkTarget = NetworkConnectionPool.this.clientStreamFactory.router.supplyTarget(networkName);
+            localDecodeBuffer = new UnsafeBuffer(allocateDirect(fetchPartitionMaxBytes));
+
         }
 
         @Override
@@ -653,24 +656,9 @@ public final class NetworkConnectionPool
                     {
                         if (networkSlot == NO_SLOT)
                         {
-                            final MutableDirectBuffer bufferSlot;
-                            if (responseSize + BitUtil.SIZE_OF_INT > bufferPool.slotCapacity())
-                            {
-                                int requiredCapacity = response.sizeof() + response.size();
-                                int currentCapacity = localDecodeBuffer != null ? localDecodeBuffer.capacity() : 0;
-                                if (currentCapacity < requiredCapacity)
-                                {
-                                    localDecodeBuffer = new UnsafeBuffer(allocateDirect(requiredCapacity));
-                                }
-                                localDecodeCapacity = requiredCapacity;
-                                networkSlot = LOCAL_SLOT;
-                                bufferSlot = localDecodeBuffer;
-                            }
-                            else
-                            {
-                                networkSlot = bufferPool.acquire(networkReplyId);
-                                bufferSlot = bufferPool.buffer(networkSlot);
-                            }
+                            final MutableDirectBuffer bufferSlot = localDecodeBuffer;
+                            networkSlotOffset = 0;
+                            networkSlot = LOCAL_SLOT;
                             bufferSlot.putBytes(networkSlotOffset, payload.buffer(), payload.offset(), payload.sizeof());
                             networkSlotOffset += payload.sizeof();
 
@@ -714,10 +702,6 @@ public final class NetworkConnectionPool
                 {
                     if (networkSlotOffset == 0 && networkSlot != NO_SLOT)
                     {
-                        if (networkSlot != LOCAL_SLOT)
-                        {
-                            bufferPool.release(networkSlot);
-                        }
                         networkSlot = NO_SLOT;
                     }
                 }
@@ -746,9 +730,9 @@ public final class NetworkConnectionPool
 
         void doOfferResponseBudget()
         {
-            final int slotCapacity = networkSlot == LOCAL_SLOT ? localDecodeCapacity : bufferPool.slotCapacity();
+            final int slotCapacity = localDecodeBuffer.capacity();
             final int networkResponseCredit =
-                    Math.max(slotCapacity - networkSlotOffset - networkResponseBudget, 0);
+                    Math.max(slotCapacity - networkResponseBudget, 0);
 
             if (networkResponseCredit > 0)
             {
@@ -761,18 +745,6 @@ public final class NetworkConnectionPool
 
         private void doReinitialize()
         {
-            if (networkSlot != NO_SLOT)
-            {
-                if (networkSlot == LOCAL_SLOT)
-                {
-                    localDecodeBuffer = null;
-                }
-                else
-                {
-                    bufferPool.release(networkSlot);
-                }
-                networkSlot = NO_SLOT;
-            }
             networkSlotOffset = 0;
             networkRequestBudget = 0;
             networkRequestPadding = 0;
@@ -793,6 +765,7 @@ public final class NetworkConnectionPool
 
         int encodeLimit;
         boolean offsetsNeeded;
+        boolean offsetsRequested;
         Map<String, long[]> requestedFetchOffsetsByTopic = new HashMap<>();
         final FetchResponseDecoder fetchResponseDecoder;
 
@@ -806,10 +779,8 @@ public final class NetworkConnectionPool
                     this::getTopicDispatcher,
                     this::getRequestedOffset,
                     this::handlePartitionResponseError,
-                    bufferPool,
-                    maximumFetchBytesLimit,
-                    networkReplyId
-                    );
+                    localDecodeBuffer,
+                    maximumMessageSize);
         }
 
         @Override
@@ -832,6 +803,7 @@ public final class NetworkConnectionPool
                     if (offsetsNeeded)
                     {
                         doListOffsetsRequest();
+                        offsetsRequested = true;
                     }
                     else
                     {
@@ -1038,13 +1010,19 @@ public final class NetworkConnectionPool
         void handleData(
             DataFW data)
         {
-            if (offsetsNeeded)
+            if (offsetsRequested)
             {
                 super.handleData(data);
             }
             else
             {
-                int excessBytes = fetchResponseDecoder.decode(data.payload(), data.trace());
+                final OctetsFW payload = data.payload();
+                networkResponseBudget -= payload.sizeof() + data.padding();
+                if (networkResponseBudget < 0)
+                {
+                    NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
+                }
+                int excessBytes = fetchResponseDecoder.decode(payload, data.trace());
                 doOfferResponseBudget();
                 if (excessBytes >= 0) // response complete
                 {
@@ -1066,6 +1044,7 @@ public final class NetworkConnectionPool
             {
                 handleListOffsetsResponse(networkTraceId, networkBuffer, networkOffset, networkLimit);
                 offsetsNeeded = false;
+                offsetsRequested = false;
             }
             else
             {
@@ -1867,7 +1846,7 @@ public final class NetworkConnectionPool
                                 RecordBatchFW.FIELD_OFFSET_LENGTH + BitUtil.SIZE_OF_INT + recordBatch.length();
                         if (recordBatchLimit > recordSetLimit)
                         {
-                            if (recordBatch.lastOffsetDelta() == 0 && recordBatch.length() > maximumFetchBytesLimit)
+                            if (recordBatch.lastOffsetDelta() == 0 && recordBatch.length() > maximumMessageSize)
                             {
                                 System.out.format("[nukleus-kafka] skipping topic: %s partition: %d offset: %d batch-size: %d\n",
                                                   topicName, partitionId, recordBatch.firstOffset(), recordBatch.length());
@@ -1956,7 +1935,7 @@ public final class NetworkConnectionPool
                 {
                     writableBytes = Math.max(writableBytes, supplyWindow.getAsInt());
                 }
-                writableBytes = Math.min(writableBytes, maximumFetchBytesLimit);
+                writableBytes = Math.min(writableBytes, maximumMessageSize);
             }
             return writableBytes;
         }

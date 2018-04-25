@@ -22,10 +22,12 @@ interface ResponseDecoder
 
     /**
      * @param payload to decode
-     * @return true if the response is complete, false if more data is needed
+     * @return A negative value if the response is incomplete, else the number of bytes
+     *         remaining following the first complete response
      */
-    boolean decode(OctetsFW data,
-                   long traceId);
+    int decode(
+        OctetsFW data,
+        long traceId);
 
     void free();
 
