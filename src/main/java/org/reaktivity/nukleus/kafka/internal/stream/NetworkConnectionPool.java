@@ -19,7 +19,6 @@ import static java.lang.String.format;
 import static java.nio.ByteBuffer.allocateDirect;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
-import static org.reaktivity.nukleus.kafka.internal.stream.ClientStreamFactory.EMPTY_BYTE_ARRAY;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.INVALID_TOPIC_EXCEPTION;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.LEADER_NOT_AVAILABLE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
@@ -61,7 +60,6 @@ import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
-import org.reaktivity.nukleus.kafka.internal.types.Varint32FW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.RequestHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.ResponseHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.config.ConfigResponseFW;
@@ -71,11 +69,8 @@ import org.reaktivity.nukleus.kafka.internal.types.codec.config.ResourceRequestF
 import org.reaktivity.nukleus.kafka.internal.types.codec.config.ResourceResponseFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.FetchRequestFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.FetchResponseFW;
-import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.HeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.PartitionRequestFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.PartitionResponseFW;
-import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordBatchFW;
-import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordSetFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TopicRequestFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TopicResponseFW;
@@ -116,7 +111,6 @@ public final class NetworkConnectionPool
     private static final String CLEANUP_POLICY = "cleanup.policy";
     private static final String COMPACT = "compact";
 
-    private static final long NO_OFFSET = -1L;
     private static final int LOCAL_SLOT = -2;
 
     private static final byte[] ANY_IP_ADDR = new byte[4];
@@ -176,16 +170,6 @@ public final class NetworkConnectionPool
     final TopicResponseFW topicResponseRO = new TopicResponseFW();
     final PartitionResponseFW partitionResponseRO = new PartitionResponseFW();
     final RecordSetFW recordSetRO = new RecordSetFW();
-
-    private final RecordBatchFW recordBatchRO = new RecordBatchFW();
-    private final Varint32FW varint32RO = new Varint32FW();
-    private final RecordFW recordRO = new RecordFW();
-    private final HeaderFW headerRO = new HeaderFW();
-
-    private final UnsafeBuffer keyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-    private final UnsafeBuffer valueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-
-    private final Headers headers = new Headers();
 
     final MetadataResponseFW metadataResponseRO = new MetadataResponseFW();
     final BrokerMetadataFW brokerMetadataRO = new BrokerMetadataFW();
@@ -1066,83 +1050,10 @@ public final class NetworkConnectionPool
             int networkOffset,
             int networkLimit)
         {
-            if (offsetsNeeded)
-            {
-                handleListOffsetsResponse(networkTraceId, networkBuffer, networkOffset, networkLimit);
-                offsetsNeeded = false;
-                offsetsRequested = false;
-            }
-            else
-            {
-                handleFetchResponse(networkTraceId, networkBuffer, networkOffset, networkLimit);
-            }
-        }
-
-        final void handleFetchResponse(
-            long networkTraceId,
-            DirectBuffer networkBuffer,
-            int networkOffset,
-            int networkLimit)
-        {
-            final FetchResponseFW fetchResponse =
-                    NetworkConnectionPool.this.fetchResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
-            final int topicCount = fetchResponse.topicCount();
-
-            networkOffset = fetchResponse.limit();
-            for (int topicIndex = 0; topicIndex < topicCount; topicIndex++)
-            {
-                final TopicResponseFW topicResponse =
-                        NetworkConnectionPool.this.topicResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
-                final String topicName = topicResponse.name().asString();
-                final int partitionCount = topicResponse.partitionCount();
-
-                networkOffset = topicResponse.limit();
-
-                final NetworkTopic topic = topicsByName.get(topicName);
-                for (int partitionIndex = 0; partitionIndex < partitionCount; partitionIndex++)
-                {
-                    final PartitionResponseFW partitionResponse =
-                            NetworkConnectionPool.this.partitionResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
-                    networkOffset = partitionResponse.limit();
-
-                    final RecordSetFW recordSet =
-                            NetworkConnectionPool.this.recordSetRO.wrap(networkBuffer, networkOffset, networkLimit);
-                    final int recordBatchSize = recordSet.recordBatchSize();
-                    networkOffset = recordSet.limit() + recordBatchSize;
-
-                    long requestedOffset = getRequestedOffset(topicName, partitionResponse.partitionId());
-
-                    if (topic != null && requestedOffset != NO_OFFSET)
-                        // we still have subscribers
-                    {
-                        final short errorCode = partitionResponse.errorCode();
-                        switch(errorCode)
-                        {
-                        case NONE:
-                            int partitionResponseSize = networkOffset - partitionResponse.offset();
-                            topic.onPartitionResponse(networkTraceId,
-                                    partitionResponse.buffer(),
-                                    partitionResponse.offset(),
-                                    partitionResponseSize,
-                                    requestedOffset);
-                            break;
-                        case OFFSET_OUT_OF_RANGE:
-                            offsetsNeeded = true;
-                            TopicMetadata topicMetadata = topicMetadataByName.get(topicName);
-                            int partitionId = partitionResponse.partitionId();
-
-                            // logStartOffset is always -1 in this case so we can't use it
-                            topicMetadata.setFirstOffset(partitionId, TopicMetadata.UNKNOWN_OFFSET);
-
-                            break;
-                        default:
-                            throw new IllegalStateException(format(
-                                "%s: unexpected error code %d from fetch, topic %s, partition %d, requested offset %d",
-                                this, errorCode, topicName, partitionIndex, requestedOffset));
-                        }
-                    }
-                }
-            }
+            assert offsetsNeeded;
+            handleListOffsetsResponse(networkTraceId, networkBuffer, networkOffset, networkLimit);
+            offsetsNeeded = false;
+            offsetsRequested = false;
         }
 
         final void handleListOffsetsResponse(
@@ -1842,121 +1753,6 @@ public final class NetworkConnectionPool
             }
         }
 
-        void onPartitionResponse(
-            long traceId,
-            DirectBuffer buffer,
-            int offset,
-            int length, long requestedOffset)
-        {
-            final int maxLimit = offset + length;
-            int networkOffset = offset;
-            final PartitionResponseFW partition = partitionResponseRO.wrap(buffer, networkOffset, maxLimit);
-            networkOffset = partition.limit();
-            final int partitionId = partition.partitionId();
-
-            // TODO: determine appropriate reaction to different non-zero error codes
-            if (partition.errorCode() == 0 && networkOffset <= maxLimit - BitUtil.SIZE_OF_INT)
-            {
-                final RecordSetFW recordSet = recordSetRO.wrap(buffer, networkOffset, maxLimit);
-                networkOffset = recordSet.limit();
-
-                final int recordBatchSize = recordSet.recordBatchSize();
-                final int recordSetLimit = networkOffset + recordBatchSize;
-                if (recordSet.recordBatchSize() == 0 && partition.highWatermark() > requestedOffset)
-                {
-                    System.out.format(
-                            "[nukleus-kafka] skipping topic: %s partition: %d offset: %d because record batch size is 0\n",
-                            topicName, partitionId, requestedOffset);
-                    dispatcher.flush(partitionId, requestedOffset, requestedOffset + 1);
-                }
-                else if (recordSetLimit <= maxLimit)
-                {
-                    long nextFetchAt = requestedOffset;
-                    loop:
-                    while (networkOffset < recordSetLimit - RecordBatchFW.FIELD_OFFSET_RECORD_COUNT - BitUtil.SIZE_OF_INT)
-                    {
-                        final RecordBatchFW recordBatch = recordBatchRO.wrap(buffer, networkOffset, recordSetLimit);
-                        networkOffset = recordBatch.limit();
-
-                        final int recordBatchLimit = recordBatch.offset() +
-                                RecordBatchFW.FIELD_OFFSET_LENGTH + BitUtil.SIZE_OF_INT + recordBatch.length();
-                        if (recordBatchLimit > recordSetLimit)
-                        {
-                            if (recordBatch.lastOffsetDelta() == 0 && recordBatch.length() > maximumMessageSize)
-                            {
-                                System.out.format("[nukleus-kafka] skipping topic: %s partition: %d offset: %d batch-size: %d\n",
-                                                  topicName, partitionId, recordBatch.firstOffset(), recordBatch.length());
-                                nextFetchAt = recordBatch.firstOffset() + recordBatch.lastOffsetDelta() + 1;
-                            }
-                            break loop;
-                        }
-
-                        final long firstOffset = recordBatch.firstOffset();
-                        final long firstTimestamp = recordBatch.firstTimestamp();
-                        nextFetchAt = firstOffset;
-                        while (networkOffset < recordBatchLimit)
-                        {
-                            int recordLength = 7; // minimum record size
-                            if (recordBatchLimit - networkOffset > 5 /* minimum varint32 size */)
-                            {
-                                recordLength = varint32RO.wrap(buffer, networkOffset, recordBatchLimit).value();
-                            }
-                            if (networkOffset + recordLength > recordBatchLimit)
-                            {
-                                // Make sure we attempt to re-fetch the truncated record
-                                nextFetchAt = recordBatch.firstOffset() + recordBatch.lastOffsetDelta();
-                                break loop;
-                            }
-                            final RecordFW record = recordRO.wrap(buffer, networkOffset, recordBatchLimit);
-                            networkOffset = record.limit();
-
-                            final long currentFetchAt = firstOffset + record.offsetDelta();
-                            if (currentFetchAt < requestedOffset)
-                            {
-                                // The only guarantee is the response will encompass the requested offset.
-                                continue;
-                            }
-                            nextFetchAt = currentFetchAt + 1;
-
-                            int headersOffset = networkOffset;
-                            final int headerCount = record.headerCount();
-                            for (int i = 0; i < headerCount; i++)
-                            {
-                                final HeaderFW header = headerRO.wrap(buffer, networkOffset, recordBatchLimit);
-                                networkOffset = header.limit();
-                            }
-                            int headersLimit = networkOffset;
-                            headers.wrap(buffer, headersOffset, headersLimit);
-
-                            DirectBuffer key = null;
-                            final OctetsFW messageKey = record.key();
-                            if (messageKey != null)
-                            {
-                                keyBuffer.wrap(messageKey.buffer(), messageKey.offset(), messageKey.sizeof());
-                                key = keyBuffer;
-                            }
-
-                            final long timestamp = firstTimestamp + record.timestampDelta();
-
-                            DirectBuffer value = null;
-                            final OctetsFW messageValue = record.value();
-                            if (messageValue != null)
-                            {
-                                valueBuffer.wrap(messageValue.buffer(), messageValue.offset(), messageValue.sizeof());
-                                value = valueBuffer;
-                            }
-                            dispatcher.dispatch(partitionId, requestedOffset, nextFetchAt,
-                                         key, headers::supplyHeader, timestamp, traceId, value);
-                        }
-                        // If there are deleted records, the last offset reported on record batch may exceed the offset of the
-                        // last record in the batch. We must use this to make sure we continue to advance.
-                        nextFetchAt = recordBatch.firstOffset() + recordBatch.lastOffsetDelta() + 1;
-                    }
-                    dispatcher.flush(partitionId, requestedOffset, nextFetchAt);
-                }
-            }
-        }
-
         int maximumWritableBytes(boolean live)
         {
             int writableBytes = 0;
@@ -2265,51 +2061,4 @@ public final class NetworkConnectionPool
         }
     }
 
-    private static final class Headers
-    {
-        private int offset;
-        private int limit;
-        private DirectBuffer buffer;
-
-        private final HeaderFW headerRO = new HeaderFW();
-        private final UnsafeBuffer header = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-        private final UnsafeBuffer value1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-        private final UnsafeBuffer value2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-
-        void wrap(DirectBuffer buffer,
-                  int offset,
-                  int limit)
-        {
-            this.buffer = buffer;
-            this.offset = offset;
-            this.limit = limit;
-        }
-
-        DirectBuffer supplyHeader(DirectBuffer headerName)
-        {
-            DirectBuffer result = null;
-            if (limit > offset)
-            {
-                for (int offset = this.offset; offset < limit; offset = headerRO.limit())
-                {
-                    headerRO.wrap(buffer, offset, limit);
-                    if (matches(headerRO.key(), headerName))
-                    {
-                        OctetsFW value = headerRO.value();
-                        header.wrap(value.buffer(), value.offset(), value.sizeof());
-                        result = header;
-                        break;
-                    }
-                }
-            }
-            return result;
-        }
-
-        private boolean matches(OctetsFW octets, DirectBuffer buffer)
-        {
-            value1.wrap(octets.buffer(), octets.offset(), octets.sizeof());
-            value2.wrap(buffer);
-            return value1.equals(value2);
-        }
-    }
 }

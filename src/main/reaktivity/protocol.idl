@@ -130,7 +130,7 @@ scope protocol
 
             struct RecordSet
             {
-              int32 recordBatchSize;
+              int32 recordSetSize;
             }
 
             struct RecordBatch

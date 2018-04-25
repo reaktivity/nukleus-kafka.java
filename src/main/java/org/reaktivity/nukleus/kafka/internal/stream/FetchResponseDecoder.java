@@ -39,6 +39,14 @@ import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordSetFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TopicResponseFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TransactionResponseFW;
 
+/**
+ * <h1>Assumptions about the Kafka fetch response format</h1>
+ *
+ * <li> Each partition response contains one record set
+ * <li> Record sets may contain 0 or more record batches
+ * <li> The record set length (confusingly referred to as the record batch length
+ *
+ */
 public class FetchResponseDecoder implements ResponseDecoder
 {
     final ResponseHeaderFW responseRO = new ResponseHeaderFW();
@@ -187,7 +195,7 @@ public class FetchResponseDecoder implements ResponseDecoder
         long traceId)
     {
         boolean workWasDone = true;
-        while (offset < limit && workWasDone)
+        while (workWasDone)
         {
             int previousOffset = offset;
             DecoderState previousState = decoderState;
@@ -324,7 +332,7 @@ public class FetchResponseDecoder implements ResponseDecoder
         RecordSetFW response = recordSetRO.tryWrap(buffer, offset, limit);
         if (response != null)
         {
-            recordSetBytesRemaining = response.recordBatchSize();
+            recordSetBytesRemaining = response.recordSetSize();
             assert recordSetBytesRemaining + response.sizeof() <= responseBytesRemaining :
                 "protocol violation, record set goes beyond end of response";
             newOffset = response.limit();
@@ -376,20 +384,19 @@ public class FetchResponseDecoder implements ResponseDecoder
             final int recordBatchActualSize =
                     RecordBatchFW.FIELD_OFFSET_LENGTH + BitUtil.SIZE_OF_INT + recordBatch.length();
             requestedOffset = getRequestedOffsetForPartition.apply(topicName, partition);
-            if (recordBatchActualSize > recordSetBytesRemaining)
+            if (recordBatchActualSize > recordSetBytesRemaining
+                && recordBatch.lastOffsetDelta() == 0 && recordBatchActualSize > maxRecordBatchSize)
                 // record batch was truncated in response due to max fetch bytes or max partition bytes limit set on request
+                // and contains only one (necessarily incomplete) message
             {
-                if (recordBatch.lastOffsetDelta() == 0 && recordBatchActualSize > maxRecordBatchSize)
-                {
                     System.out.format(
                             "[nukleus-kafka] skipping large message at topic: %s partition: %d offset: %d batch-size: %d\n",
                             topicName, partition, recordBatch.firstOffset(), recordBatch.length());
                     nextFetchAt = recordBatch.firstOffset() + 1;
                     topicDispatcher.flush(partition, requestedOffset, nextFetchAt);
-                }
-                skipBytesDecoderState.bytesToSkip = recordSetBytesRemaining;
-                skipBytesDecoderState.nextState = this::decodePartitionResponse;
-                decoderState = skipBytesDecoderState;
+                    skipBytesDecoderState.bytesToSkip = recordSetBytesRemaining;
+                    skipBytesDecoderState.nextState = this::decodePartitionResponse;
+                    decoderState = skipBytesDecoderState;
             }
             else
             {
@@ -414,7 +421,27 @@ public class FetchResponseDecoder implements ResponseDecoder
         long traceId)
     {
         int newOffset = offset;
-        if (recordCount > 0)
+        if (recordSetBytesRemaining == 0)
+        {
+            if (recordBatchBytesRemaining > 0 || recordCount > 0)
+            {
+                //  record batch truncated at a record boundary, make sure we  attempt to fetch the truncated records
+                nextFetchAt = firstOffset + lastOffsetDelta;
+            }
+            else
+            {
+                // If there are deleted records, the last offset reported on the record batch may exceed the
+                // offset of the last record in the batch. We must use this to make sure we continue to advance.
+                nextFetchAt = firstOffset + lastOffsetDelta + 1;
+            }
+            topicDispatcher.flush(partition, requestedOffset, nextFetchAt);
+            decoderState = this::decodePartitionResponse;
+        }
+        else if (recordBatchBytesRemaining == 0)
+        {
+            decoderState = this::decodeRecordBatch;
+        }
+        else if (recordCount > 0)
         {
             Varint32FW recordLength = varint32RO.tryWrap(buffer, offset, limit);
             if (recordLength != null)
@@ -505,22 +532,7 @@ public class FetchResponseDecoder implements ResponseDecoder
                 }
             }
             newOffset = headersLimit;
-            if (recordSetBytesRemaining == 0)
-            {
-                // If there are deleted records, the last offset reported on record batch may exceed the offset of the
-                // last record in the batch. We must use this to make sure we continue to advance.
-                nextFetchAt = firstOffset + lastOffsetDelta + 1;
-                topicDispatcher.flush(partition, requestedOffset, nextFetchAt);
-                decoderState = this::decodePartitionResponse;
-            }
-            else if (recordBatchBytesRemaining == 0)
-            {
-                decoderState = this::decodeRecordBatch;
-            }
-            else
-            {
-                decoderState = this::decodeRecordLength;
-            }
+            decoderState = this::decodeRecordLength;
         }
         return newOffset;
     }
