@@ -122,6 +122,32 @@ public final class NetworkConnectionPool
     private static final byte[] ANY_IP_ADDR = new byte[4];
 
     private static final int MAX_PADDING = 5 * 1024;
+    public static final MessageDispatcher NOOP_DISPATCHER = new MessageDispatcher()
+    {
+
+        @Override
+        public int dispatch(
+            int partition,
+            long requestOffset,
+            long messageOffset,
+            DirectBuffer key,
+            Function<DirectBuffer, DirectBuffer> supplyHeader,
+            long timestamp,
+            long traceId,
+            DirectBuffer value)
+        {
+            return 1;
+        }
+
+        @Override
+        public void flush(
+            int partition,
+            long requestOffset,
+            long lastOffset)
+        {
+        }
+
+    };
 
     enum MetadataRequestType
     {
@@ -743,7 +769,7 @@ public final class NetworkConnectionPool
             }
         }
 
-        private void doReinitialize()
+        void doReinitialize()
         {
             networkSlotOffset = 0;
             networkRequestBudget = 0;
@@ -767,7 +793,7 @@ public final class NetworkConnectionPool
         boolean offsetsNeeded;
         boolean offsetsRequested;
         Map<String, long[]> requestedFetchOffsetsByTopic = new HashMap<>();
-        final FetchResponseDecoder fetchResponseDecoder;
+        final ResponseDecoder fetchResponseDecoder;
 
         private AbstractFetchConnection(BrokerMetadata broker)
         {
@@ -1026,7 +1052,7 @@ public final class NetworkConnectionPool
                 doOfferResponseBudget();
                 if (excessBytes >= 0) // response complete
                 {
-                    assert excessBytes == 0 : "unexpected pipelined response, pipelined requests are not being used";
+                    assert excessBytes == 0 : "bytes remaining after fetch response, pipelined requests are not being used";
                     nextResponseId++;
                     doRequestIfNeeded();
                 }
@@ -1163,9 +1189,19 @@ public final class NetworkConnectionPool
             return requestedFetchOffsetsByTopic.get(topicName)[partitionId];
         }
 
+        @Override
+        void doReinitialize()
+        {
+            fetchResponseDecoder.reinitialize();
+            super.doReinitialize();
+        }
+
         private MessageDispatcher getTopicDispatcher(String topicName)
         {
-            return topicsByName.get(topicName).dispatcher;
+            NetworkTopic topic = topicsByName.get(topicName);
+
+            // topic may be null if everyone has unsubscribed
+            return topic == null ? NOOP_DISPATCHER : topic.dispatcher;
         }
 
         private void handlePartitionResponseError(

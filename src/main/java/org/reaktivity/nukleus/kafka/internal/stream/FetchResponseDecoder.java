@@ -126,7 +126,7 @@ public class FetchResponseDecoder implements ResponseDecoder
         {
             assert newOffset == limit : "no pipelined requests";
             responseComplete = true;
-            free();
+            reinitialize();
         }
         else if (newOffset == limit)
         {
@@ -142,13 +142,14 @@ public class FetchResponseDecoder implements ResponseDecoder
     }
 
     @Override
-    public void free()
+    public void reinitialize()
     {
         slotOffset = 0;
         slotLimit = 0;
         responseBytesRemaining = 0;
         topicCount = 0;
         partitionCount = 0;
+        decoderState = this::decodeResponseHeader;
     }
 
     private DirectBuffer appendToSlot(DirectBuffer source, int offset, int limit)
@@ -324,6 +325,8 @@ public class FetchResponseDecoder implements ResponseDecoder
         if (response != null)
         {
             recordSetBytesRemaining = response.recordBatchSize();
+            assert recordSetBytesRemaining + response.sizeof() <= responseBytesRemaining :
+                "protocol violation, record set goes beyond end of response";
             newOffset = response.limit();
             if (recordSetBytesRemaining == 0)
             {
@@ -350,6 +353,8 @@ public class FetchResponseDecoder implements ResponseDecoder
             }
             else
             {
+                // Buffer the record set so we can compact records, and dispatch them without
+                // allocating buffers for each message key, headers, and value
                 bufferBytesDecoderState.bytesToAwait = recordSetBytesRemaining;
                 bufferBytesDecoderState.nextState = this::decodeRecordBatch;
                 decoderState = bufferBytesDecoderState;
@@ -523,6 +528,9 @@ public class FetchResponseDecoder implements ResponseDecoder
     @FunctionalInterface
     interface DecoderState
     {
+        /**
+         * @return The new offset. If unchanged from offset, more data is required.
+         */
         int decode(
             DirectBuffer buffer,
             int offset,

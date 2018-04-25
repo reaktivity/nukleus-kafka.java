@@ -23,12 +23,13 @@ interface ResponseDecoder
     /**
      * @param payload to decode
      * @return A negative value if the response is incomplete, else the number of bytes
-     *         remaining following the first complete response
+     *         remaining following the first complete response (this will always be 0
+     *         unless pipelined requests were issued)
      */
     int decode(
         OctetsFW data,
         long traceId);
 
-    void free();
+    void reinitialize();
 
 }

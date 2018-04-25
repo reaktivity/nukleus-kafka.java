@@ -77,7 +77,7 @@ public class FetchLimitsIT
     @Specification({
         "${route}/client/controller",
         "${client}/zero.offset.large.message/client",
-        "${server}/zero.offset.message.response.exceeds.256.bytes/server"})
+        "${server}/zero.offset.large.response/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldHandleFetchResponseWithSizeExceedingMaxRecordBatchSize() throws Exception
     {
@@ -90,7 +90,7 @@ public class FetchLimitsIT
     @Specification({
         "${route}/client/controller",
         "${client}/zero.offset.large.message/client",
-        "${server}/zero.offset.first.record.batch.exceeds.336.bytes/server"})
+        "${server}/zero.offset.first.record.batch.large/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldSkipRecordBatchExceedingMaxRecordBatchSize() throws Exception
     {
