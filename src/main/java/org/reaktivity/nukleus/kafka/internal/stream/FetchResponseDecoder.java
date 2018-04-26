@@ -44,8 +44,13 @@ import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TransactionRespon
  *
  * <li> Each partition response contains one record set
  * <li> Record sets may contain 0 or more record batches
- * <li> The record set length (confusingly referred to as the record batch length
- *
+ * <li> The record set length gives the actual number of bytes in the following record batches
+ * <li> The last record batch in a record set may be truncated (if it would exceed the max fetch bytes
+ *      or max partition bytes set in the fetch request). In this case its length may or may not exceed
+ *      the remaining bytes of record set length.
+ * <li> When a record batch is truncated, it may be truncated at a record boundary (i.e. one or
+ *      more records at the end are absent), or in the middle of a record. In the latter case, the record
+ *      length field (which is the first field, and is a varint) will always be present, and not truncated.
  */
 public class FetchResponseDecoder implements ResponseDecoder
 {
@@ -342,7 +347,7 @@ public class FetchResponseDecoder implements ResponseDecoder
                 if (highWatermark > requestedOffset)
                 {
                     System.out.format(
-                            "[nukleus-kafka] skipping topic: %s partition: %d offset: %d because record batch size is 0\n",
+                            "[nukleus-kafka] skipping topic: %s partition: %d offset: %d because record set size is 0\n",
                             topicName, partition, requestedOffset);
                     topicDispatcher.flush(partition, requestedOffset, requestedOffset + 1);
                 }
@@ -351,8 +356,8 @@ public class FetchResponseDecoder implements ResponseDecoder
             else if (recordSetBytesRemaining > maxRecordBatchSize)
             {
                 System.out.format(
-                        "[nukleus-kafka] WARNING: skipping topic: %s partition: %d offset: %d because record batch size %d " +
-                        "exceeds configured maximum of %d bytes",
+                        "[nukleus-kafka] WARNING: skipping topic: %s partition: %d offset: %d because record set size %d " +
+                        "exceeds configured partition.max.bytes %d",
                         topicName, partition, requestedOffset, recordSetBytesRemaining, maxRecordBatchSize);
                 topicDispatcher.flush(partition, requestedOffset, requestedOffset + 1);
                 skipBytesDecoderState.bytesToSkip = recordSetBytesRemaining;
@@ -386,7 +391,7 @@ public class FetchResponseDecoder implements ResponseDecoder
             requestedOffset = getRequestedOffsetForPartition.apply(topicName, partition);
             if (recordBatchActualSize > recordSetBytesRemaining
                 && recordBatch.lastOffsetDelta() == 0 && recordBatchActualSize > maxRecordBatchSize)
-                // record batch was truncated in response due to max fetch bytes or max partition bytes limit set on request
+                // record batch was truncated in response due to max fetch bytes or max partition bytes limit set on request,
                 // and contains only one (necessarily incomplete) message
             {
                     System.out.format(
@@ -425,13 +430,13 @@ public class FetchResponseDecoder implements ResponseDecoder
         {
             if (recordBatchBytesRemaining > 0 || recordCount > 0)
             {
-                //  record batch truncated at a record boundary, make sure we  attempt to fetch the truncated records
+                //  record batch truncated at a record boundary, make sure we attempt to fetch the missing records
                 nextFetchAt = firstOffset + lastOffsetDelta;
             }
             else
             {
                 // If there are deleted records, the last offset reported on the record batch may exceed the
-                // offset of the last record in the batch. We must use this to make sure we continue to advance.
+                // offset of the last record in the batch. So we must use this to make sure we continue to advance.
                 nextFetchAt = firstOffset + lastOffsetDelta + 1;
             }
             topicDispatcher.flush(partition, requestedOffset, nextFetchAt);
@@ -441,8 +446,9 @@ public class FetchResponseDecoder implements ResponseDecoder
         {
             decoderState = this::decodeRecordBatch;
         }
-        else if (recordCount > 0)
+        else
         {
+            assert recordCount > 0 : "protocol violation: excess bytes following partition response or incorrect record count";
             Varint32FW recordLength = varint32RO.tryWrap(buffer, offset, limit);
             if (recordLength != null)
             {
@@ -464,10 +470,6 @@ public class FetchResponseDecoder implements ResponseDecoder
                     decoderState = this::decodeRecord;
                 }
             }
-        }
-        else
-        {
-            decoderState = this::decodePartitionResponse;
         }
         return newOffset;
     }
