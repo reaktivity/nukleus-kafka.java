@@ -19,7 +19,6 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 interface ResponseDecoder
 {
-
     /**
      * @param payload to decode
      * @return A negative value if the response is incomplete, else the number of bytes
@@ -31,5 +30,4 @@ interface ResponseDecoder
         long traceId);
 
     void reinitialize();
-
 }
