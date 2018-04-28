@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.kafka.internal.stream.ClientStreamFactory.EMPTY_BYTE_ARRAY;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
@@ -151,6 +152,10 @@ public class FetchResponseDecoder implements ResponseDecoder
             slotLimit = 0;
             appendToSlot(buffer, newOffset, limit);
         }
+        else
+        {
+             slotOffset = newOffset;
+        }
         return responseComplete ? limit - newOffset : -responseBytesRemaining;
     }
 
@@ -173,7 +178,10 @@ public class FetchResponseDecoder implements ResponseDecoder
             int remaining = buffer.capacity() - (slotLimit - slotOffset);
             if (bytesToCopy > remaining)
             {
-                throw new IllegalStateException(String.format("decode buffer %s does not have space for %d bytes", bytesToCopy));
+                throw new IllegalStateException(
+                    format("decode buffer capacity %d does not have space for %d bytes " +
+                           "(slotOffset=%d, slotLimit=%d, decoderState=%s)",
+                        buffer.capacity(), bytesToCopy, slotOffset, slotLimit, decoderState));
             }
             else
             {
@@ -565,7 +573,7 @@ public class FetchResponseDecoder implements ResponseDecoder
             long traceId)
         {
             int availableBytes = limit - offset;
-            if (availableBytes == bytesToAwait)
+            if (availableBytes >= bytesToAwait)
             {
                 decoderState = nextState;
             }
