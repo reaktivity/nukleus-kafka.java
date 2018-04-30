@@ -15,7 +15,6 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
-import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.kafka.internal.stream.ClientStreamFactory.EMPTY_BYTE_ARRAY;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
@@ -124,13 +123,26 @@ public class FetchResponseDecoder implements ResponseDecoder
         OctetsFW payload,
         long traceId)
     {
-        boolean responseComplete = false;
-        DirectBuffer buffer = payload.buffer();
-        int offset = payload.offset();
-        int limit = payload.limit();
+        int remaining = decodePayload(payload.buffer(), payload.offset(), payload.limit(), traceId);
+        if (remaining > 0)
+        {
+            int newOffset = payload.limit() - remaining;
+            remaining = decodePayload(payload.buffer(), newOffset, payload.limit(), traceId);
+        }
+        return responseBytesRemaining == 0 ? remaining : -responseBytesRemaining;
+    }
+
+    private int decodePayload(
+        DirectBuffer buffer,
+        int offset,
+        int limit,
+        long traceId)
+    {
+        int unconsumedBytes = 0;
         if (slotLimit > 0)
         {
-            buffer = appendToSlot(buffer, offset, limit);
+            unconsumedBytes = appendToSlot(buffer, offset, limit);
+            buffer = this.buffer;
             offset = slotOffset;
             limit = slotLimit;
         }
@@ -139,7 +151,6 @@ public class FetchResponseDecoder implements ResponseDecoder
         if (responseBytesRemaining == 0)
         {
             assert newOffset == limit : "no pipelined requests";
-            responseComplete = true;
             reinitialize();
         }
         else if (newOffset == limit)
@@ -150,13 +161,13 @@ public class FetchResponseDecoder implements ResponseDecoder
         {
             slotOffset = 0;
             slotLimit = 0;
-            appendToSlot(buffer, newOffset, limit);
+            unconsumedBytes = appendToSlot(buffer, newOffset, limit);
         }
         else
         {
              slotOffset = newOffset;
         }
-        return responseComplete ? limit - newOffset : -responseBytesRemaining;
+        return unconsumedBytes;
     }
 
     @Override
@@ -170,27 +181,18 @@ public class FetchResponseDecoder implements ResponseDecoder
         decoderState = this::decodeResponseHeader;
     }
 
-    private DirectBuffer appendToSlot(DirectBuffer source, int offset, int limit)
+    private int appendToSlot(DirectBuffer source, int offset, int limit)
     {
+        final int remaining = buffer.capacity() - (slotLimit - slotOffset);
         final int bytesToCopy = limit -  offset;
+        final int bytesCopied = Math.min(bytesToCopy, remaining);
         if (bytesToCopy + slotLimit > buffer.capacity())
         {
-            int remaining = buffer.capacity() - (slotLimit - slotOffset);
-            if (bytesToCopy > remaining)
-            {
-                throw new IllegalStateException(
-                    format("decode buffer capacity %d does not have space for %d bytes " +
-                           "(slotOffset=%d, slotLimit=%d, decoderState=%s)",
-                        buffer.capacity(), bytesToCopy, slotOffset, slotLimit, decoderState));
-            }
-            else
-            {
-                alignSlotData(buffer);
-            }
+            alignSlotData(buffer);
         }
-        buffer.putBytes(slotLimit, source, offset, bytesToCopy);
-        slotLimit += bytesToCopy;
-        return buffer;
+        buffer.putBytes(slotLimit, source, offset, bytesCopied);
+        slotLimit += bytesCopied;
+        return bytesToCopy - bytesCopied;
     }
 
     private void alignSlotData(MutableDirectBuffer slot)
