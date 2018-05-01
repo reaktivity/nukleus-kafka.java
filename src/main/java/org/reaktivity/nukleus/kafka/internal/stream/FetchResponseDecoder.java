@@ -127,11 +127,15 @@ public class FetchResponseDecoder implements ResponseDecoder
         long traceId)
     {
         int remaining = decodePayload(payload.buffer(), payload.offset(), payload.limit(), traceId);
+
+        // Process any bytes which could not be fitted into the decoding buffer (which is sized to the
+        // maximum size of a partition response, so this concerns bytes following a partition response)
         if (remaining > 0)
         {
             int newOffset = payload.limit() - remaining;
             remaining = decodePayload(payload.buffer(), newOffset, payload.limit(), traceId);
         }
+
         return responseBytesRemaining == 0 ? remaining : -responseBytesRemaining;
     }
 
@@ -304,6 +308,8 @@ public class FetchResponseDecoder implements ResponseDecoder
                 short errorCode = response.errorCode();
                 highWatermark = response.highWatermark();
                 abortedTransactionCount = response.abortedTransactionCount();
+                requestedOffset = getRequestedOffsetForPartition.apply(topicName, partition);
+                nextFetchAt = requestedOffset;
                 decoderState = abortedTransactionCount > 0 ? this::decodeTransactionResponse : this::decodeRecordSet;
                 if (errorCode != NONE)
                 {
@@ -352,7 +358,7 @@ public class FetchResponseDecoder implements ResponseDecoder
         if (response != null)
         {
             recordSetBytesRemaining = response.recordSetSize();
-            assert recordSetBytesRemaining >- 0 : "protocol violation: negative recordSetSize";
+            assert recordSetBytesRemaining >= 0 : "protocol violation: negative recordSetSize";
             assert recordSetBytesRemaining + response.sizeof() <= responseBytesRemaining :
                 "protocol violation, record set goes beyond end of response";
             newOffset = response.limit();
@@ -364,6 +370,7 @@ public class FetchResponseDecoder implements ResponseDecoder
                     System.out.format(
                             "[nukleus-kafka] skipping topic: %s partition: %d offset: %d because record set size is 0\n",
                             topicName, partition, requestedOffset);
+                    nextFetchAt = requestedOffset + 1;
                     topicDispatcher.flush(partition, requestedOffset, requestedOffset + 1);
                 }
                 decoderState = this::decodePartitionResponse;
@@ -403,6 +410,10 @@ public class FetchResponseDecoder implements ResponseDecoder
         if (recordBatch == null)
         {
             // Truncated record batch at end of record set
+            if (nextFetchAt > requestedOffset)
+            {
+                topicDispatcher.flush(partition, requestedOffset, nextFetchAt);
+            }
             skipBytesDecoderState.bytesToSkip = recordSetBytesRemaining;
             skipBytesDecoderState.nextState = this::decodePartitionResponse;
             decoderState = skipBytesDecoderState;
@@ -411,7 +422,6 @@ public class FetchResponseDecoder implements ResponseDecoder
         {
             final int recordBatchActualSize =
                     RecordBatchFW.FIELD_OFFSET_LENGTH + BitUtil.SIZE_OF_INT + recordBatch.length();
-            requestedOffset = getRequestedOffsetForPartition.apply(topicName, partition);
             if (recordBatchActualSize > recordSetBytesRemaining
                 && recordBatch.lastOffsetDelta() == 0 && recordBatchActualSize > maxRecordBatchSize)
                 // record batch was truncated in response due to max fetch bytes or max partition bytes limit set on request,
@@ -489,7 +499,7 @@ public class FetchResponseDecoder implements ResponseDecoder
                 }
                 else
                 {
-                    assert recordSize >= recordBatchBytesRemaining :
+                    assert recordSize <= recordBatchBytesRemaining :
                         "protocol violation: truncated record batch not last in record set";
                     recordBatchBytesRemaining -= recordSize;
                     recordSetBytesRemaining -= recordSize;
