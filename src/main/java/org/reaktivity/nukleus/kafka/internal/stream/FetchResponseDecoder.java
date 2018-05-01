@@ -75,6 +75,7 @@ public class FetchResponseDecoder implements ResponseDecoder
     private final StringIntShortConsumer errorHandler;
     private final int maxRecordBatchSize;
     private final MutableDirectBuffer buffer;
+    private final UnsafeBuffer temporaryBuffer;
     private final int messageSizeLimit;
 
     private DecoderState decoderState;
@@ -107,6 +108,7 @@ public class FetchResponseDecoder implements ResponseDecoder
         StringIntToLongFunction getRequestedOffsetForPartition,
         StringIntShortConsumer errorHandler,
         MutableDirectBuffer decodingBuffer,
+        final UnsafeBuffer temporaryBuffer,
         int messageSizeLimit)
     {
         this.getDispatcher = getDispatcher;
@@ -116,6 +118,7 @@ public class FetchResponseDecoder implements ResponseDecoder
         this.maxRecordBatchSize = buffer.capacity();
         this.messageSizeLimit = messageSizeLimit;
         this.decoderState = this::decodeResponseHeader;
+        this.temporaryBuffer = temporaryBuffer;
     }
 
     @Override
@@ -186,7 +189,7 @@ public class FetchResponseDecoder implements ResponseDecoder
         final int remaining = buffer.capacity() - (slotLimit - slotOffset);
         final int bytesToCopy = limit -  offset;
         final int bytesCopied = Math.min(bytesToCopy, remaining);
-        if (bytesToCopy + slotLimit > buffer.capacity())
+        if (bytesCopied + slotLimit > buffer.capacity())
         {
             alignSlotData(buffer);
         }
@@ -198,7 +201,8 @@ public class FetchResponseDecoder implements ResponseDecoder
     private void alignSlotData(MutableDirectBuffer slot)
     {
         int dataLength = slotLimit - slotOffset;
-        slot.putBytes(0, slot, slotOffset, dataLength);
+        temporaryBuffer.putBytes(0, slot, slotOffset, dataLength);
+        slot.putBytes(0, temporaryBuffer, 0, dataLength);
         slotOffset = 0;
         slotLimit = dataLength;
     }
@@ -348,6 +352,7 @@ public class FetchResponseDecoder implements ResponseDecoder
         if (response != null)
         {
             recordSetBytesRemaining = response.recordSetSize();
+            assert recordSetBytesRemaining >- 0 : "protocol violation: negative recordSetSize";
             assert recordSetBytesRemaining + response.sizeof() <= responseBytesRemaining :
                 "protocol violation, record set goes beyond end of response";
             newOffset = response.limit();
@@ -366,7 +371,7 @@ public class FetchResponseDecoder implements ResponseDecoder
             else if (recordSetBytesRemaining > maxRecordBatchSize)
             {
                 System.out.format(
-                        "[nukleus-kafka] WARNING: skipping topic: %s partition: %d offset: %d because record set size %d " +
+                        "[nukleus-kafka] skipping topic: %s partition: %d offset: %d because record set size %d " +
                         "exceeds configured partition.max.bytes %d",
                         topicName, partition, requestedOffset, recordSetBytesRemaining, maxRecordBatchSize);
                 topicDispatcher.flush(partition, requestedOffset, requestedOffset + 1);
@@ -393,8 +398,16 @@ public class FetchResponseDecoder implements ResponseDecoder
         long traceId)
     {
         int newOffset = offset;
-        RecordBatchFW recordBatch = recordBatchRO.tryWrap(buffer, offset, limit);
-        if (recordBatch != null)
+        int boundedLimit = Math.min(offset + recordSetBytesRemaining,  limit);
+        RecordBatchFW recordBatch = recordBatchRO.tryWrap(buffer, offset, boundedLimit);
+        if (recordBatch == null)
+        {
+            // Truncated record batch at end of record set
+            skipBytesDecoderState.bytesToSkip = recordSetBytesRemaining;
+            skipBytesDecoderState.nextState = this::decodePartitionResponse;
+            decoderState = skipBytesDecoderState;
+        }
+        else
         {
             final int recordBatchActualSize =
                     RecordBatchFW.FIELD_OFFSET_LENGTH + BitUtil.SIZE_OF_INT + recordBatch.length();
@@ -402,11 +415,11 @@ public class FetchResponseDecoder implements ResponseDecoder
             if (recordBatchActualSize > recordSetBytesRemaining
                 && recordBatch.lastOffsetDelta() == 0 && recordBatchActualSize > maxRecordBatchSize)
                 // record batch was truncated in response due to max fetch bytes or max partition bytes limit set on request,
-                // and contains only one (necessarily incomplete) message
+                // contains only one (necessarily incomplete) message, and is too large for our decoding buffer
             {
                     System.out.format(
-                            "[nukleus-kafka] skipping large message at topic: %s partition: %d offset: %d batch-size: %d\n",
-                            topicName, partition, recordBatch.firstOffset(), recordBatch.length());
+                        "[nukleus-kafka] skipping large message at topic: %s partition: %d offset: %d batch-size: %d\n",
+                        topicName, partition, recordBatch.firstOffset(), recordBatch.length());
                     nextFetchAt = recordBatch.firstOffset() + 1;
                     topicDispatcher.flush(partition, requestedOffset, nextFetchAt);
                     skipBytesDecoderState.bytesToSkip = recordSetBytesRemaining;
@@ -421,7 +434,9 @@ public class FetchResponseDecoder implements ResponseDecoder
                 recordCount = recordBatch.recordCount();
                 nextFetchAt = firstOffset;
                 recordSetBytesRemaining -= recordBatch.sizeof();
+                assert recordSetBytesRemaining >= 0;
                 recordBatchBytesRemaining = recordBatchActualSize - recordBatch.sizeof();
+                assert recordBatchBytesRemaining >= 0;
                 decoderState = this::decodeRecordLength;
                 newOffset = recordBatch.limit();
             }
@@ -463,21 +478,28 @@ public class FetchResponseDecoder implements ResponseDecoder
             if (recordLength != null)
             {
                 int recordSize = recordLength.sizeof() + recordLength.value();
-                if (recordSize > recordBatchBytesRemaining)
+                if (recordSize > recordSetBytesRemaining)
                 {
                     // Truncated record at end of batch, make sure we attempt to re-fetch it
                     nextFetchAt = firstOffset + lastOffsetDelta;
                     topicDispatcher.flush(partition, requestedOffset, nextFetchAt);
-                    recordSetBytesRemaining -= recordBatchBytesRemaining;
-                    skipBytesDecoderState.bytesToSkip = recordBatchBytesRemaining;
-                    skipBytesDecoderState.nextState = this::decodeRecordBatch;
+                    skipBytesDecoderState.bytesToSkip = recordSetBytesRemaining;
+                    skipBytesDecoderState.nextState = this::decodePartitionResponse;
                     decoderState = skipBytesDecoderState;
                 }
                 else
                 {
+                    assert recordSize >= recordBatchBytesRemaining :
+                        "protocol violation: truncated record batch not last in record set";
                     recordBatchBytesRemaining -= recordSize;
                     recordSetBytesRemaining -= recordSize;
                     decoderState = this::decodeRecord;
+                    if (recordSetBytesRemaining < 0)
+                    {
+                        System.out.println(String.format(
+                                "W2: recordCount=%d, recordSize=%d, recordSetBytesRemaining=%d, recordBatchBytesRemaining=%d",
+                                recordCount, recordSize, recordSetBytesRemaining, recordBatchBytesRemaining));
+                    }
                 }
             }
         }
