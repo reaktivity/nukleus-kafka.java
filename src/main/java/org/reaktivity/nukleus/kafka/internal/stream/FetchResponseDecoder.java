@@ -40,17 +40,17 @@ import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TopicResponseFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TransactionResponseFW;
 
 /**
- * <h1>Assumptions about the Kafka fetch response format</h1>
+ * Assumptions about the Kafka fetch response format
  *
- * <li> Each partition response contains one record set
- * <li> Record sets may contain 0 or more record batches
- * <li> The record set length gives the actual number of bytes in the following record batches
- * <li> The last record batch in a record set may be truncated (if it would exceed the max fetch bytes
- *      or max partition bytes set in the fetch request). In this case its length may or may not exceed
- *      the remaining bytes of record set length.
- * <li> When a record batch is truncated, it may be truncated at a record boundary (i.e. one or
- *      more records at the end are absent), or in the middle of a record. In the latter case, the record
- *      length field (which is the first field, and is a varint) will always be present, and not truncated.
+ * o Each partition response contains one record set
+ * o Record sets may contain 0 or more record batches
+ * o The record set length gives the actual number of bytes in the following record batches
+ * o The last record batch in a record set may be truncated (if it would exceed the max fetch bytes
+ *   or max partition bytes set in the fetch request). In this case its length may or may not exceed
+ *   the remaining bytes of record set length.
+ * o When a record batch is truncated, it may be truncated at a record boundary (i.e. one or
+ *   more records at the end are absent), or in the middle of a record. In the latter case, the record
+ *   length field (which is the first field, and is a varint) will always be present, and not truncated.
  */
 public class FetchResponseDecoder implements ResponseDecoder
 {
