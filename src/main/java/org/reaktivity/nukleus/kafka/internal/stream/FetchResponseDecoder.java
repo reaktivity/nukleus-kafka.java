@@ -75,7 +75,6 @@ public class FetchResponseDecoder implements ResponseDecoder
     private final StringIntShortConsumer errorHandler;
     private final int maxRecordBatchSize;
     private final MutableDirectBuffer buffer;
-    private final UnsafeBuffer temporaryBuffer;
     private final int messageSizeLimit;
 
     private DecoderState decoderState;
@@ -108,7 +107,6 @@ public class FetchResponseDecoder implements ResponseDecoder
         StringIntToLongFunction getRequestedOffsetForPartition,
         StringIntShortConsumer errorHandler,
         MutableDirectBuffer decodingBuffer,
-        final UnsafeBuffer temporaryBuffer,
         int messageSizeLimit)
     {
         this.getDispatcher = getDispatcher;
@@ -118,7 +116,6 @@ public class FetchResponseDecoder implements ResponseDecoder
         this.maxRecordBatchSize = buffer.capacity();
         this.messageSizeLimit = messageSizeLimit;
         this.decoderState = this::decodeResponseHeader;
-        this.temporaryBuffer = temporaryBuffer;
     }
 
     @Override
@@ -205,8 +202,7 @@ public class FetchResponseDecoder implements ResponseDecoder
     private void alignSlotData(MutableDirectBuffer slot)
     {
         int dataLength = slotLimit - slotOffset;
-        temporaryBuffer.putBytes(0, slot, slotOffset, dataLength);
-        slot.putBytes(0, temporaryBuffer, 0, dataLength);
+        slot.putBytes(0, slot, slotOffset, dataLength);
         slotOffset = 0;
         slotLimit = dataLength;
     }
@@ -367,9 +363,6 @@ public class FetchResponseDecoder implements ResponseDecoder
                 long requestedOffset = getRequestedOffsetForPartition.apply(topicName, partition);
                 if (highWatermark > requestedOffset)
                 {
-                    System.out.format(
-                            "[nukleus-kafka] skipping topic: %s partition: %d offset: %d because record set size is 0\n",
-                            topicName, partition, requestedOffset);
                     nextFetchAt = requestedOffset + 1;
                     topicDispatcher.flush(partition, requestedOffset, requestedOffset + 1);
                 }

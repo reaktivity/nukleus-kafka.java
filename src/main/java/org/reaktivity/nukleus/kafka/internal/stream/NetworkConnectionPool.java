@@ -25,7 +25,6 @@ import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.OFFSET_OUT_OF_RANGE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.UNKNOWN_TOPIC_OR_PARTITION;
 
-import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.BitSet;
@@ -185,7 +184,6 @@ public final class NetworkConnectionPool
     final ListOffsetsPartitionResponseFW listOffsetsPartitionResponseRO = new ListOffsetsPartitionResponseFW();
 
     final MutableDirectBuffer encodeBuffer;
-    final UnsafeBuffer temporaryBuffer;
 
     private final ClientStreamFactory clientStreamFactory;
     private final String networkName;
@@ -222,7 +220,6 @@ public final class NetworkConnectionPool
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
         this.detachersById = new Int2ObjectHashMap<>();
-        this.temporaryBuffer = new UnsafeBuffer(ByteBuffer.allocateDirect(fetchPartitionMaxBytes));
 
         // TODO: remove this and use multiple data frames to deliver large messages
         this.maximumMessageSize = bufferPool.slotCapacity() > MAX_PADDING ?
@@ -793,7 +790,6 @@ public final class NetworkConnectionPool
                     this::getRequestedOffset,
                     this::handlePartitionResponseError,
                     localDecodeBuffer,
-                    temporaryBuffer,
                     maximumMessageSize);
         }
 
