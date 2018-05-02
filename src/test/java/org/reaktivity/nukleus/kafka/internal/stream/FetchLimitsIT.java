@@ -51,7 +51,8 @@ public class FetchLimitsIT
         .clean()
         .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false")
         .configure(ReaktorConfiguration.BUFFER_SLOT_CAPACITY_PROPERTY, 256)
-        .configure(KafkaConfiguration.FETCH_MAX_BYTES_PROPERTY, 256);
+        .configure(KafkaConfiguration.FETCH_MAX_BYTES_PROPERTY, 256)
+        .configure(KafkaConfiguration.FETCH_PARTITION_MAX_BYTES_PROPERTY, 336);
 
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
@@ -62,21 +63,36 @@ public class FetchLimitsIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.messages.multiple.partitions.max.bytes.256/client",
-        "${server}/zero.offset.messages.multiple.partitions.max.bytes.256/server" })
+        "${client}/zero.offset.large.message/client",
+        "${server}/zero.offset.messages.first.exceeds.256.bytes/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveMessagesFromMultiplePartitionsWhenResponseSizeEqualsSlotSize() throws Exception
+    public void shouldSkipMessageExceedingMaximumSupportedMessageSize() throws Exception
     {
+        k3po.start();
+        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.messages.response.exceeds.requested.256.bytes/client",
-        "${server}/zero.offset.messages.response.exceeds.requested.256.bytes/server" })
+        "${client}/zero.offset.large.response/client",
+        "${server}/zero.offset.large.response/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldHandleFetchResponsesWithSizeExceedingSlotCapacity() throws Exception
+    public void shouldHandleLargeFetchResponseProvidedEachRecordBatchLessThanMaxPartitionBytes() throws Exception
+    {
+        k3po.start();
+        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset.large.message/client",
+        "${server}/zero.offset.first.record.batch.large/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldSkipRecordBatchExceedingMaxRecordBatchSize() throws Exception
     {
         k3po.start();
         k3po.notifyBarrier("WRITE_FETCH_RESPONSE");

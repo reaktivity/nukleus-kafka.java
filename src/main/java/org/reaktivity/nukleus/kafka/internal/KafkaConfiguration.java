@@ -23,6 +23,8 @@ public class KafkaConfiguration extends Configuration
 
     public static final String FETCH_MAX_BYTES_PROPERTY = "nukleus.kafka.fetch.max.bytes";
 
+    // Maximum record batch size, corresponding to Kafka broker and topic configuration
+    // property "max.message.bytes"
     public static final String FETCH_PARTITION_MAX_BYTES_PROPERTY = "nukleus.kafka.fetch.partition.max.bytes";
 
     private static final boolean TOPIC_BOOTSTRAP_ENABLED_DEFAULT = true;
