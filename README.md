@@ -30,4 +30,12 @@ Each data frame represents the value of one Kafka message (a.k.a. record). The e
 Topics which are configured in Kafka with property "cleanup.policy" set to "compact" are treated specially, in the following ways:
 
 - A cache is maintained in order to enhance performance for subscriptions to a particular message key, and where possible only deliver the latest message for the key.
-- This cache is kept up to date all the time by doing proactive fetches, unless this turned off by setting system property "nukleus.kafka.topic.bootstrap.enabled" to "false".
+- This cache is kept up to date all the time by doing proactive fetches, unless this turned off by setting system property `nukleus.kafka.topic.bootstrap.enabled` to "false".
+
+### Configuration
+
+The following system properties are currently supported for configuration:
+
+- `nukleus.kafka.fetch.max.bytes` (integer, default 50 MiB): maximum value that will be specified as fetch.max.bytes in fetch requests made to Kafka.
+- `nukleus.kafka.fetch.partition.max.bytes` (integer, default 1 MiB): maximum size of a partition response. Should be set to the highest configured value for Kafka broker or topic configuration property "max.message.bytes".
+- `nukleus.kafka.topic.bootstrap.enabled` (boolean default true): caching of message keys and latest offsets is enabled for compacted topics to improve performance.

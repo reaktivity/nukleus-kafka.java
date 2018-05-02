@@ -558,7 +558,7 @@ public class FetchIT
     @Specification({
         "${route}/client/controller",
         "${client}/zero.offset.message/client",
-        "${server}/zero.offset.message.zero.length.record.batch.is.skipped/server"})
+        "${server}/zero.length.record.batch/server"})
     @ScriptProperty({
         "networkAccept \"nukleus://target/streams/kafka\"",
         "messageOffset 2"
@@ -751,10 +751,32 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/record.batch.ends.with.truncated.record/client",
+        "${client}/record.batch.truncated/client",
         "${server}/record.batch.ends.with.truncated.record/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveMessageWithTruncatedRecord() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/record.batch.truncated/client",
+        "${server}/record.batch.truncated/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageRecordSetEndsWithTruncatedRecordBatch() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/record.batch.truncated/client",
+        "${server}/record.batch.truncated.at.record.boundary/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageRecordBatchTruncatedOnRecordBoundary() throws Exception
     {
         k3po.finish();
     }
