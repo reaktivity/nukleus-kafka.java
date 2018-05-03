@@ -56,7 +56,7 @@ public class BootstrapIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${server}/ktable.message/server"})
+        "${server}/compacted.message/server"})
     @ScriptProperty({
         "networkAccept \"nukleus://target/streams/kafka\"",
         "maxPartitionBytes 123000"
@@ -69,7 +69,7 @@ public class BootstrapIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${server}/ktable.messages.multiple.nodes/server"})
+        "${server}/compacted.messages.multiple.nodes/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldBootstrapTopicWithMultiplePartitionsOnMultipleNodes() throws Exception
     {
@@ -79,7 +79,7 @@ public class BootstrapIT
     @Test
     @Specification({
         "${control}/route.ext.multiple.networks/client/controller",
-        "${server}/ktable.message.multiple.networks/server"})
+        "${server}/compacted.message.multiple.networks/server"})
     @ScriptProperty({
         "networkAccept1 \"nukleus://target1/streams/kafka\"",
         "networkAccept2 \"nukleus://target2/streams/kafka\""})
@@ -91,7 +91,7 @@ public class BootstrapIT
     @Test
     @Specification({
         "${control}/route.ext.multiple.topics/client/controller",
-        "${server}/ktable.message.multiple.topics/server"})
+        "${server}/compacted.message.multiple.topics/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldBootstrapMultipleTopics() throws Exception
     {
@@ -105,8 +105,8 @@ public class BootstrapIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/ktable.message/client",
-        "${server}/ktable.bootstrap.uses.historical/server"})
+        "${client}/compacted.message/client",
+        "${server}/compacted.bootstrap.uses.historical/server"})
     @ScriptProperty({"networkAccept \"nukleus://target/streams/kafka\"",
                      "offset \"4\""
     })
@@ -143,8 +143,8 @@ public class BootstrapIT
     @Test
     @Specification({
         "${routeAnyTopic}/client/controller",
-        "${client}/ktable.message/client",
-        "${server}/ktable.message/server"})
+        "${client}/compacted.message/client",
+        "${server}/compacted.message/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldNotBootstrapWhenRouteDoesNotNameATopic() throws Exception
     {
@@ -157,8 +157,8 @@ public class BootstrapIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/ktable.bootstrap.historical.uses.cached.key.then.live/client",
-        "${server}/ktable.bootstrap.historical.uses.cached.key.then.live/server"})
+        "${client}/compacted.bootstrap.historical.uses.cached.key.then.live/client",
+        "${server}/compacted.bootstrap.historical.uses.cached.key.then.live/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldBootstrapTopicAndUseCachedKeyOffsetThenLive() throws Exception
     {
