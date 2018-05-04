@@ -56,6 +56,7 @@ import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.IntBooleanConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.IntLongConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
+import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
@@ -191,6 +192,7 @@ public final class NetworkConnectionPool
     private final int fetchMaxBytes;
     private final int fetchPartitionMaxBytes;
     private final BufferPool bufferPool;
+    private final MemoryManager memoryManager;
     private AbstractFetchConnection[] connections = new LiveFetchConnection[0];
     private HistoricalFetchConnection[] historicalConnections = new HistoricalFetchConnection[0];
     private MetadataConnection metadataConnection;
@@ -208,7 +210,8 @@ public final class NetworkConnectionPool
         long networkRef,
         int fetchMaxBytes,
         int fetchPartitionMaxBytes,
-        BufferPool bufferPool)
+        BufferPool bufferPool,
+        MemoryManager memoryManager)
     {
         this.clientStreamFactory = clientStreamFactory;
         this.networkName = networkName;
@@ -216,6 +219,7 @@ public final class NetworkConnectionPool
         this.fetchMaxBytes = fetchMaxBytes;
         this.fetchPartitionMaxBytes = fetchPartitionMaxBytes;
         this.bufferPool = bufferPool;
+        this.memoryManager = memoryManager;
         this.encodeBuffer = new UnsafeBuffer(new byte[clientStreamFactory.bufferPool.slotCapacity()]);
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
