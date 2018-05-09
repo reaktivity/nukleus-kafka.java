@@ -35,6 +35,7 @@ public class FetchIT
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
             .addScriptRoot("routeAnyTopic", "org/reaktivity/specification/nukleus/kafka/control/route")
+            .addScriptRoot("routeHeader", "org/reaktivity/specification/nukleus/kafka/control/route.ext.header")
             .addScriptRoot("control", "org/reaktivity/specification/nukleus/kafka/control")
             .addScriptRoot("server", "org/reaktivity/specification/kafka/fetch.v5")
             .addScriptRoot("metadata", "org/reaktivity/specification/kafka/metadata.v5")
@@ -161,6 +162,28 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/compacted.header.messages.and.tombstone/client",
+        "${server}/compacted.header.matches.removed.in.subsequent.response/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageAndTombstoneWithHeaderRemovedInSubsequentResponse() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/compacted.header.messages.and.tombstone/client",
+        "${server}/compacted.header.matches.then.updated/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageAndTombstoneWithHeaderUpdated() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/compacted.historical.uses.cached.key.after.unsubscribe/client",
         "${server}/compacted.historical.uses.cached.key.after.unsubscribe/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -237,7 +260,6 @@ public class FetchIT
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveCompactedMessagesWithUncachedKeyUsingZeroOffset() throws Exception
     {
-        k3po.start();
         k3po.finish();
     }
 

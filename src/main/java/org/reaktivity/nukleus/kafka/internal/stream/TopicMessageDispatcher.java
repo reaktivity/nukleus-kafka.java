@@ -16,7 +16,6 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import java.util.function.Function;
-import java.util.function.Supplier;
 
 import org.agrona.DirectBuffer;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
@@ -26,18 +25,20 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 public class TopicMessageDispatcher implements MessageDispatcher
 {
     private final KeyMessageDispatcher[] keys;
-    private final HeadersMessageDispatcher headers = new HeadersMessageDispatcher();
+    private final HeadersMessageDispatcher headers;
     private final BroadcastMessageDispatcher broadcast = new BroadcastMessageDispatcher();
 
     public TopicMessageDispatcher(
         int partitionCount,
-        Supplier<KeyMessageDispatcher> createKeyMessageDispatcher)
+        Function<Function<DirectBuffer, HeaderValueMessageDispatcher>, KeyMessageDispatcher> createKeyMessageDispatcher,
+        Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
     {
         keys = new KeyMessageDispatcher[partitionCount];
         for (int partition = 0; partition < partitionCount; partition++)
         {
-            keys[partition] = createKeyMessageDispatcher.get();
+            keys[partition] = createKeyMessageDispatcher.apply(createHeaderValueMessageDispatcher);
         }
+        headers = new HeadersMessageDispatcher(createHeaderValueMessageDispatcher);
     }
 
     @Override
