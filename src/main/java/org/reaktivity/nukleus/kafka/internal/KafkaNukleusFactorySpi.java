@@ -35,8 +35,6 @@ import org.reaktivity.nukleus.Nukleus;
 import org.reaktivity.nukleus.NukleusBuilder;
 import org.reaktivity.nukleus.NukleusFactorySpi;
 import org.reaktivity.nukleus.function.MessagePredicate;
-import org.reaktivity.nukleus.kafka.internal.memory.DefaultMemoryManager;
-import org.reaktivity.nukleus.kafka.internal.memory.MemoryLayout;
 import org.reaktivity.nukleus.kafka.internal.stream.ClientStreamFactoryBuilder;
 import org.reaktivity.nukleus.kafka.internal.stream.NetworkConnectionPool;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
@@ -77,15 +75,6 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
             DEFAULT_CONNECT_POOL_FACTORY_CONSUMER;
         MessagePredicate routeHandler = DEFAULT_ROUTE_HANDLER;
 
-        final MemoryLayout memoryLayout = new MemoryLayout.Builder()
-                // TODO: non-deprecated way of getting nukleus's home directory; change name of memory0?
-                .path(config.directory().resolve("kafka").resolve("memory0"))
-                .minimumBlockSize(kafkaConfig.messageCacheCapacity())
-                .maximumBlockSize(kafkaConfig.messageCacheBlockCapacity())
-                .create(true)
-                .build();
-        final DefaultMemoryManager memoryManager = new DefaultMemoryManager(memoryLayout);
-
         if (kafkaConfig.topicBootstrapEnabled())
         {
             routeHandler = this::handleRouteForBootstrap;
@@ -93,7 +82,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
         }
 
         ClientStreamFactoryBuilder streamFactoryBuilder = new ClientStreamFactoryBuilder(kafkaConfig,
-                memoryManager, connectionPools, connectionPoolFactoryConsumer);
+                connectionPools, connectionPoolFactoryConsumer);
 
         return builder.streamFactory(CLIENT, streamFactoryBuilder)
                       .routeHandler(CLIENT, routeHandler)
