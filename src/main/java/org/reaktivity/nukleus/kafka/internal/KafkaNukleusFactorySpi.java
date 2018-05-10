@@ -35,6 +35,9 @@ import org.reaktivity.nukleus.Nukleus;
 import org.reaktivity.nukleus.NukleusBuilder;
 import org.reaktivity.nukleus.NukleusFactorySpi;
 import org.reaktivity.nukleus.function.MessagePredicate;
+import org.reaktivity.nukleus.kafka.internal.memory.DefaultMemoryManager;
+import org.reaktivity.nukleus.kafka.internal.memory.MemoryLayout;
+import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.stream.ClientStreamFactoryBuilder;
 import org.reaktivity.nukleus.kafka.internal.stream.NetworkConnectionPool;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
@@ -49,6 +52,33 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
     };
     private static final Consumer<BiFunction<String, Long, NetworkConnectionPool>>
         DEFAULT_CONNECT_POOL_FACTORY_CONSUMER = f -> {};
+
+    private static final MemoryManager OUT_OF_SPACE_MEMORY_MANAGER = new MemoryManager()
+    {
+
+        @Override
+        public long acquire(
+            int capacity)
+        {
+            return -1;
+        }
+
+        @Override
+        public long resolve(
+            long address)
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void release(
+            long address,
+            int capacity)
+        {
+            throw new UnsupportedOperationException();
+        }
+
+    };
 
     private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools = new LinkedHashMap<>();
 
@@ -75,6 +105,8 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
             DEFAULT_CONNECT_POOL_FACTORY_CONSUMER;
         MessagePredicate routeHandler = DEFAULT_ROUTE_HANDLER;
 
+        final MemoryManager memoryManager = createMemoryManager(config, kafkaConfig);
+
         if (kafkaConfig.topicBootstrapEnabled())
         {
             routeHandler = this::handleRouteForBootstrap;
@@ -82,12 +114,37 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
         }
 
         ClientStreamFactoryBuilder streamFactoryBuilder = new ClientStreamFactoryBuilder(kafkaConfig,
-                connectionPools, connectionPoolFactoryConsumer);
+                memoryManager, connectionPools, connectionPoolFactoryConsumer);
 
         return builder.streamFactory(CLIENT, streamFactoryBuilder)
                       .routeHandler(CLIENT, routeHandler)
                       .inject(this)
                       .build();
+    }
+
+    private MemoryManager createMemoryManager(
+        Configuration config,
+        KafkaConfiguration kafkaConfig)
+    {
+        MemoryManager result;
+        int capacity = kafkaConfig.messageCacheCapacity();
+        if (capacity == 0)
+        {
+            result = OUT_OF_SPACE_MEMORY_MANAGER;
+        }
+        else
+        {
+            @SuppressWarnings("deprecation")
+            final MemoryLayout memoryLayout = new MemoryLayout.Builder()
+                    // TODO: non-deprecated way of getting nukleus's home directory; change name of memory0?
+                    .path(config.directory().resolve("kafka").resolve("memory0"))
+                    .minimumBlockSize(kafkaConfig.messageCacheBlockCapacity())
+                    .maximumBlockSize(capacity)
+                    .create(true)
+                    .build();
+            result = new DefaultMemoryManager(memoryLayout);
+        }
+        return result;
     }
 
     public boolean handleRouteForBootstrap(

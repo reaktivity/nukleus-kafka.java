@@ -30,7 +30,7 @@ import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
-public class FetchIT
+public class CachingFetchIT
 {
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
@@ -50,7 +50,6 @@ public class FetchIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
         .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false")
-        .configure(KafkaConfiguration.MESSAGE_CACHE_CAPACITY_PROPERTY, "0")
         .clean();
 
     @Rule
