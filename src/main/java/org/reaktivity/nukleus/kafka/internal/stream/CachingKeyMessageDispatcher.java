@@ -29,6 +29,12 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
 
     private long highestOffset;
 
+    public CachingKeyMessageDispatcher(
+        Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
+    {
+        super(createHeaderValueMessageDispatcher);
+    }
+
     @Override
     public int dispatch(
          int partition,

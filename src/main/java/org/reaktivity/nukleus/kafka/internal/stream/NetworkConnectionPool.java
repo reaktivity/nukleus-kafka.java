@@ -1620,7 +1620,8 @@ public final class NetworkConnectionPool
             this.candidate = new NetworkTopicPartition();
             this.progressHandler = this::handleProgress;
             this.dispatcher = new TopicMessageDispatcher(partitionCount,
-                    compacted ? CachingKeyMessageDispatcher::new : KeyMessageDispatcher::new);
+                    compacted ? CachingKeyMessageDispatcher::new : KeyMessageDispatcher::new,
+                    compacted ? CompactedHeaderValueMessageDispatcher::new : HeaderValueMessageDispatcher::new);
             this.proactive = proactive;
             if (proactive)
             {

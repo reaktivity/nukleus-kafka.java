@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
@@ -28,11 +29,11 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 
 public class HeaderValueMessageDispatcher implements MessageDispatcher
 {
-    private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
-    private final DirectBuffer headerName;
+    final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
+    final DirectBuffer headerName;
+    Map<DirectBuffer, HeadersMessageDispatcher> dispatchersByHeaderValue = new HashMap<>();
 
-    private Map<DirectBuffer, HeadersMessageDispatcher> dispatchersByHeaderValue = new HashMap<>();
-    private ArrayList<HeadersMessageDispatcher> dispatchers = new ArrayList<HeadersMessageDispatcher>();
+    private final List<HeadersMessageDispatcher> dispatchers = new ArrayList<>();
 
     public HeaderValueMessageDispatcher(DirectBuffer headerKey)
     {
@@ -91,11 +92,16 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
         {
             UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[headerValue.sizeof()]);
             keyCopy.putBytes(0,  headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
-            headersDispatcher =  new HeadersMessageDispatcher();
+            headersDispatcher =  new HeadersMessageDispatcher(HeaderValueMessageDispatcher::new);
             dispatchersByHeaderValue.put(keyCopy, headersDispatcher);
             dispatchers.add(headersDispatcher);
         }
         headersDispatcher.add(headers, index, dispatcher);
+    }
+
+    protected boolean topicIsCompacted()
+    {
+        return false;
     }
 
     public boolean remove(
@@ -114,9 +120,16 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             {
                 dispatchersByHeaderValue.remove(buffer);
                 dispatchers.remove(headersDispatcher);
+                onRemoved(headersDispatcher);
             }
         }
         return result;
+    }
+
+    protected void onRemoved(
+        HeadersMessageDispatcher headersDispatcher)
+    {
+
     }
 
     public HeadersMessageDispatcher get(
