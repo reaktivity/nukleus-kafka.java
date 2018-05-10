@@ -33,6 +33,13 @@ public class HeadersMessageDispatcher implements MessageDispatcher
     private final Map<DirectBuffer, HeaderValueMessageDispatcher> dispatchersByHeaderKey = new HashMap<>();
     private final List<HeaderValueMessageDispatcher> dispatchers = new ArrayList<HeaderValueMessageDispatcher>();
     private final BroadcastMessageDispatcher broadcast = new BroadcastMessageDispatcher();
+    private final Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher;
+
+    HeadersMessageDispatcher(
+        Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
+    {
+        this.createHeaderValueMessageDispatcher = createHeaderValueMessageDispatcher;
+    }
 
     @Override
     public int dispatch(
@@ -90,10 +97,10 @@ public class HeadersMessageDispatcher implements MessageDispatcher
             if (valueDispatcher == null)
             {
                 int bytesLength = headerKey.sizeof() - Short.BYTES;
-                UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[bytesLength]);
-                keyCopy.putBytes(0, headerKey.buffer(), valueOffset, valueLength);
-                valueDispatcher = new HeaderValueMessageDispatcher(keyCopy);
-                dispatchersByHeaderKey.put(keyCopy, valueDispatcher);
+                UnsafeBuffer headerKeyCopy = new UnsafeBuffer(new byte[bytesLength]);
+                headerKeyCopy.putBytes(0, headerKey.buffer(), valueOffset, valueLength);
+                valueDispatcher = createHeaderValueMessageDispatcher.apply(headerKeyCopy);
+                dispatchersByHeaderKey.put(headerKeyCopy, valueDispatcher);
                 dispatchers.add(valueDispatcher);
             }
             valueDispatcher.add(header.value(), headers, index + 1, dispatcher);

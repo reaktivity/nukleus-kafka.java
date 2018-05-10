@@ -28,8 +28,15 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 public class KeyMessageDispatcher implements MessageDispatcher
 {
     protected final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
+    private final Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher;
 
     private Map<UnsafeBuffer, HeadersMessageDispatcher> dispatchersByKey = new HashMap<>();
+
+    public KeyMessageDispatcher(
+        Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
+    {
+        this.createHeaderValueMessageDispatcher = createHeaderValueMessageDispatcher;
+    }
 
     @Override
     public int dispatch(
@@ -88,7 +95,7 @@ public class KeyMessageDispatcher implements MessageDispatcher
         {
             UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[key.sizeof()]);
             keyCopy.putBytes(0,  key.buffer(), key.offset(), key.sizeof());
-            existing = new HeadersMessageDispatcher();
+            existing = new HeadersMessageDispatcher(createHeaderValueMessageDispatcher);
             dispatchersByKey.put(keyCopy, existing);
         }
         existing.add(headers, 0, dispatcher);
