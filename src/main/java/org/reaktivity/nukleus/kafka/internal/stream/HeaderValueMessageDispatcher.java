@@ -33,7 +33,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
     final DirectBuffer headerName;
     Map<DirectBuffer, HeadersMessageDispatcher> dispatchersByHeaderValue = new HashMap<>();
 
-    private final List<HeadersMessageDispatcher> dispatchers = new ArrayList<HeadersMessageDispatcher>();
+    private final List<HeadersMessageDispatcher> dispatchers = new ArrayList<>();
 
     public HeaderValueMessageDispatcher(DirectBuffer headerKey)
     {
