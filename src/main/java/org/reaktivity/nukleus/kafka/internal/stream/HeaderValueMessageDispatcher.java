@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
@@ -32,7 +33,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
     final DirectBuffer headerName;
     Map<DirectBuffer, HeadersMessageDispatcher> dispatchersByHeaderValue = new HashMap<>();
 
-    private ArrayList<HeadersMessageDispatcher> dispatchers = new ArrayList<HeadersMessageDispatcher>();
+    private final List<HeadersMessageDispatcher> dispatchers = new ArrayList<HeadersMessageDispatcher>();
 
     public HeaderValueMessageDispatcher(DirectBuffer headerKey)
     {
