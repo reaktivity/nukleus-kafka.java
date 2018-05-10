@@ -147,7 +147,7 @@ public final class KeyMessageDispatcherTest
     @Test
     public void shouldReportLastOffsetZero()
     {
-        assertEquals(0L, dispatcher.lastOffset(0, null));
+        assertEquals(0L, dispatcher.latestOffset(0, null));
     }
 
     @Test

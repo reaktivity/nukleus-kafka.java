@@ -49,7 +49,8 @@ public class TopicMessageDispatcher implements MessageDispatcher
                  DirectBuffer key,
                  Function<DirectBuffer, DirectBuffer> supplyHeader,
                  long timestamp,
-                 long traceId, DirectBuffer value)
+                 long traceId,
+                 DirectBuffer value)
     {
         int result = 0;
         if (keys[partition].shouldDispatch(key, messageOffset))
@@ -76,11 +77,11 @@ public class TopicMessageDispatcher implements MessageDispatcher
         headers.flush(partition, requestOffset, lastOffset);
     }
 
-    public long lastOffset(
+    public long latestOffset(
         int partition,
         OctetsFW key)
     {
-        return keys[partition].lastOffset(partition, key);
+        return keys[partition].latestOffset(partition, key);
     }
 
     public long lowestOffset(

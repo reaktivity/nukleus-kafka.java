@@ -67,7 +67,7 @@ public class KeyMessageDispatcher implements MessageDispatcher
         }
     }
 
-    public long lastOffset(
+    public long latestOffset(
         int partition,
         OctetsFW key)
     {

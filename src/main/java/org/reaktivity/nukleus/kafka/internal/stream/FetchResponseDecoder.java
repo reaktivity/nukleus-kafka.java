@@ -631,7 +631,6 @@ public class FetchResponseDecoder implements ResponseDecoder
         }
     }
 
-
     private static final class Headers
     {
         private int offset;

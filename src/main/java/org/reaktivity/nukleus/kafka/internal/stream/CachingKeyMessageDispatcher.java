@@ -106,7 +106,7 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
     }
 
     @Override
-    public long lastOffset(
+    public long latestOffset(
         int partition,
         OctetsFW key)
     {

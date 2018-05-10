@@ -1670,7 +1670,7 @@ public final class NetworkConnectionPool
                 long fetchOffset = fetchOffsets.get(fetchKeyPartition);
                 if (compacted)
                 {
-                    long cachedOffset = this.dispatcher.lastOffset(fetchKeyPartition, fetchKey);
+                    long cachedOffset = this.dispatcher.latestOffset(fetchKeyPartition, fetchKey);
                     if (cachedOffset > fetchOffset)
                     {
                         fetchOffsets.put(fetchKeyPartition, cachedOffset);
