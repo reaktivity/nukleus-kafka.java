@@ -17,9 +17,26 @@ package org.reaktivity.nukleus.kafka.internal.memory;
 
 public interface MemoryManager
 {
+    long OUT_OF_MEMORY = -1L;
+
+    /**
+     * Allocates memory and returns the relative address
+     * @param capacity    Number of bytes of memory to allocate
+     * @return            Address, or OUT_OF_MEMORY if not enough memory is available
+     */
     long acquire(int capacity);
 
+    /**
+     * Converts a relative address into an absolute address
+     * @param address  Relative address
+     * @return         Absolute memory address
+     */
     long resolve(long address);
 
+    /**
+     * Releases a previously allocated area of memory
+     * @param address     Address previously allocated using acquire
+     * @param capacity    Number of bytes of memory previously allocated using acquire
+     */
     void release(long address, int capacity);
 }

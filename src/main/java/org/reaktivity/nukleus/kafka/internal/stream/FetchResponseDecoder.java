@@ -16,7 +16,6 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.Objects.requireNonNull;
-import static org.reaktivity.nukleus.kafka.internal.stream.ClientStreamFactory.EMPTY_BYTE_ARRAY;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
 
 import java.util.function.Function;
@@ -38,6 +37,7 @@ import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordSetFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TopicResponseFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TransactionResponseFW;
+import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
 
 /**
  * Assumptions about the Kafka fetch response format
@@ -66,9 +66,9 @@ public class FetchResponseDecoder implements ResponseDecoder
     private final RecordFW recordRO = new RecordFW();
     private final HeaderFW headerRO = new HeaderFW();
 
-    private final Headers headers = new Headers();
-    private final UnsafeBuffer keyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-    private final UnsafeBuffer valueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    private final HeadersFW headers = new HeadersFW();
+    private final UnsafeBuffer keyBuffer = new UnsafeBuffer(BufferUtil.EMPTY_BYTE_ARRAY);
+    private final UnsafeBuffer valueBuffer = new UnsafeBuffer(BufferUtil.EMPTY_BYTE_ARRAY);
 
     private final Function<String, MessageDispatcher> getDispatcher;
     private final StringIntToLongFunction getRequestedOffsetForPartition;
@@ -628,54 +628,6 @@ public class FetchResponseDecoder implements ResponseDecoder
                 decoderState = nextState;
             }
             return newOffset;
-        }
-    }
-
-    private static final class Headers
-    {
-        private int offset;
-        private int limit;
-        private DirectBuffer buffer;
-
-        private final HeaderFW headerRO = new HeaderFW();
-        private final UnsafeBuffer header = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-        private final UnsafeBuffer value1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-        private final UnsafeBuffer value2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-
-        void wrap(DirectBuffer buffer,
-                  int offset,
-                  int limit)
-        {
-            this.buffer = buffer;
-            this.offset = offset;
-            this.limit = limit;
-        }
-
-        DirectBuffer supplyHeader(DirectBuffer headerName)
-        {
-            DirectBuffer result = null;
-            if (limit > offset)
-            {
-                for (int offset = this.offset; offset < limit; offset = headerRO.limit())
-                {
-                    headerRO.wrap(buffer, offset, limit);
-                    if (matches(headerRO.key(), headerName))
-                    {
-                        OctetsFW value = headerRO.value();
-                        header.wrap(value.buffer(), value.offset(), value.sizeof());
-                        result = header;
-                        break;
-                    }
-                }
-            }
-            return result;
-        }
-
-        private boolean matches(OctetsFW octets, DirectBuffer buffer)
-        {
-            value1.wrap(octets.buffer(), octets.offset(), octets.sizeof());
-            value2.wrap(buffer);
-            return value1.equals(value2);
         }
     }
 }

@@ -139,4 +139,6 @@ public final class BufferUtil
         return result;
     }
 
+    public static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
+
 }

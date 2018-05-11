@@ -39,7 +39,7 @@ public class KafkaConfiguration extends Configuration
 
     public static final int MESSAGE_CACHE_CAPACITY_DEFAULT = 128 * 1024 * 1024;
 
-    public static final int MESSAGE_CACHE_BLOCK_CAPACITY_DEFAULT = 8 * 1024;
+    public static final int MESSAGE_CACHE_BLOCK_CAPACITY_DEFAULT = 1024;
 
     public KafkaConfiguration(
         Configuration config)

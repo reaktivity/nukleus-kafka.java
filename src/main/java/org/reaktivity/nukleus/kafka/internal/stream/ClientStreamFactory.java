@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.Objects.requireNonNull;
+import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 
 import java.util.Map;
 import java.util.function.BiFunction;
@@ -61,8 +62,6 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 public final class ClientStreamFactory implements StreamFactory
 {
     static final long UNSET = -1;
-
-    static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
 
     private final UnsafeBuffer workBuffer1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     private final UnsafeBuffer workBuffer2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
