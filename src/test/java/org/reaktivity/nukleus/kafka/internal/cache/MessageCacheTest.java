@@ -20,6 +20,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.reaktivity.nukleus.kafka.internal.cache.MessageCache.NO_MESSAGE;
+import static org.reaktivity.nukleus.kafka.internal.memory.MemoryManager.OUT_OF_MEMORY;
 
 import java.nio.ByteBuffer;
 
@@ -67,6 +69,21 @@ public final class MessageCacheTest
     };
 
     private MessageCache cache = new MessageCache(memoryManager);
+
+    @Test
+    public void shouldNotPutMessageWhenExceedsCacheSize()
+    {
+        int size = expected.sizeof();
+        context.checking(new Expectations()
+        {
+            {
+                exactly(2).of(memoryManager).acquire(size + Integer.BYTES);
+                will(returnValue(OUT_OF_MEMORY));
+            }
+        });
+        int handle = cache.put(123, 456, key, headers, value);
+        assertEquals(NO_MESSAGE, handle);
+    }
 
     @Test
     public void shouldPutMessage()
@@ -212,7 +229,7 @@ public final class MessageCacheTest
                 will(returnValue(memoryBuffer.addressOffset() + address2));
 
                 oneOf(memoryManager).acquire(size);
-                will(returnValue(MemoryManager.OUT_OF_MEMORY));
+                will(returnValue(OUT_OF_MEMORY));
                 oneOf(memoryManager).release(address2, size);
                 oneOf(memoryManager).acquire(size);
                 will(returnValue(address2));
@@ -300,7 +317,7 @@ public final class MessageCacheTest
                 will(returnValue(memoryBuffer.addressOffset() + address3));
 
                 oneOf(memoryManager).acquire(size + 1);
-                will(returnValue(MemoryManager.OUT_OF_MEMORY));
+                will(returnValue(OUT_OF_MEMORY));
                 oneOf(memoryManager).release(address1, size);
                 oneOf(memoryManager).release(address3, size);
                 oneOf(memoryManager).acquire(size + 1);
