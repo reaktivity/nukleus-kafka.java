@@ -48,16 +48,17 @@ public final class HeadersFW
         return limit - offset;
     }
 
-    void wrap(DirectBuffer buffer,
+    public HeadersFW wrap(DirectBuffer buffer,
               int offset,
               int limit)
     {
         this.buffer = buffer;
         this.offset = offset;
         this.limit = limit;
+        return this;
     }
 
-    DirectBuffer supplyHeader(DirectBuffer headerName)
+    public DirectBuffer supplyHeader(DirectBuffer headerName)
     {
         DirectBuffer result = null;
         if (limit > offset)

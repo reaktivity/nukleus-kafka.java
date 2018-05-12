@@ -300,13 +300,13 @@ public final class HeaderValueMessageDispatcherTest
         System.out.println(result);
     }
 
-    private DirectBuffer asBuffer(String value)
+    private static DirectBuffer asBuffer(String value)
     {
         byte[] bytes = value.getBytes(UTF_8);
         return new UnsafeBuffer(bytes);
     }
 
-    private OctetsFW asOctets(String value)
+    private static OctetsFW asOctets(String value)
     {
         DirectBuffer buffer = asBuffer(value);
         return new OctetsFW().wrap(buffer, 0, buffer.capacity());

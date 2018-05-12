@@ -29,8 +29,9 @@ import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 
 public class MessageCache
 {
+    public static final int NO_MESSAGE = -1;
+
     private static final long NO_ADDRESS = -1L;
-    private static final int NO_MESSAGE = -1;
     private static final int LRU_SCAN_SIZE = 10;
 
     private final MessageFW.Builder messageRW = new MessageFW.Builder();
@@ -60,24 +61,28 @@ public class MessageCache
         int messageHandle,
         MessageFW message)
     {
+        MessageFW result = null;
         long address = addresses.getLong(messageHandle);
-        long memoryAddress = memoryManager.resolve(address);
-        buffer.wrap(memoryAddress, Integer.BYTES);
-        int size = buffer.getInt(0);
-        buffer.wrap(memoryAddress, size);
-        accessTimes.set(messageHandle,  time++);
-        return message.wrap(buffer, 0, size);
+        if (address != NO_ADDRESS)
+        {
+            long memoryAddress = memoryManager.resolve(address);
+            buffer.wrap(memoryAddress, Integer.BYTES);
+            int size = buffer.getInt(0) + Integer.BYTES;
+            buffer.wrap(memoryAddress, size);
+            accessTimes.setLong(messageHandle,  time++);
+            result =  message.wrap(buffer, Integer.BYTES, size);
+        }
+        return result;
     }
 
     public int put(
-        DirectBuffer key,
-        HeadersFW headers,
         long timestamp,
         long traceId,
+        DirectBuffer key,
+        HeadersFW headers,
         DirectBuffer value)
     {
         int index = nextFreeIndex();
-        entries++;
         return set(index, timestamp, traceId, key, headers, value);
     }
 
@@ -88,19 +93,19 @@ public class MessageCache
         long memoryAddress = memoryManager.resolve(address);
         buffer.wrap(memoryAddress, Integer.BYTES);
         int size = buffer.getInt(0) + Integer.BYTES;
-        memoryManager.release(memoryAddress, size);
-        addresses.set(messageHandle, NO_ADDRESS);
-        accessTimes.set(messageHandle, Long.MAX_VALUE);
+        memoryManager.release(address, size);
+        addresses.setLong(messageHandle, NO_ADDRESS);
+        accessTimes.setLong(messageHandle, Long.MAX_VALUE);
         entries--;
         return size;
     }
 
     public int replace(
         int messageHandle,
-        DirectBuffer key,
-        HeadersFW headers,
         long timestamp,
         long traceId,
+        DirectBuffer key,
+        HeadersFW headers,
         DirectBuffer value)
     {
         release(messageHandle);
@@ -124,13 +129,13 @@ public class MessageCache
         Arrays.fill(lruTimes, Long.MAX_VALUE);
         for (int i = 0; i < entries; i++)
         {
-            final long time = accessTimes.get(i);
+            final long time = accessTimes.getLong(i);
             for (int j = 0; j < lruTimes.length; j++)
             {
                 if (time < lruTimes[j])
                 {
-                    System.arraycopy(lruTimes, j + 1, lruTimes, j + 2, lruTimes.length - j);
-                    System.arraycopy(lruHandles, j + 1, lruHandles, j + 2, lruHandles.length - j);
+                    System.arraycopy(lruTimes, j, lruTimes, j + 1, lruTimes.length - j - 1);
+                    System.arraycopy(lruHandles, j, lruHandles, j + 1, lruHandles.length - j - 1);
                     lruTimes[j] = time;
                     lruHandles[j] = i;
                 }
@@ -157,13 +162,18 @@ public class MessageCache
     private int nextFreeIndex()
     {
         int index = addresses.size();
-        if (entries < index)
+        if (entries == index)
         {
-            for (index = 0;  index < addresses.size() && addresses.get(index) != NO_ADDRESS; index++)
+            addresses.addLong(NO_ADDRESS);
+            accessTimes.addLong(Long.MAX_VALUE);
+        }
+        else
+        {
+            for (index = 0;  index < addresses.size() && addresses.getLong(index) != NO_ADDRESS; index++)
             {
 
             }
-            assert addresses.get(index) == NO_ADDRESS;
+            assert addresses.getLong(index) == NO_ADDRESS;
         }
         return index;
     }
@@ -182,6 +192,7 @@ public class MessageCache
             (key == null ? 0 : key.capacity()) +
             Integer.BYTES +
             (headers == null ? 0 : headers.sizeof()) +
+            Integer.BYTES +
             (value == null ? 0 : value.capacity());
 
         final int size = messageSize + Integer.BYTES;
@@ -193,8 +204,8 @@ public class MessageCache
         }
         if (address != OUT_OF_MEMORY)
         {
-            buffer.wrap(memoryManager.resolve(address), Integer.BYTES);
-            buffer.putInt(0, size);
+            buffer.wrap(memoryManager.resolve(address), size);
+            buffer.putInt(0, messageSize);
             messageRW.wrap(buffer, Integer.BYTES, size)
                      .timestamp(timestamp)
                      .traceId(traceId)
@@ -203,9 +214,9 @@ public class MessageCache
                      .value(value, 0, value.capacity())
                      .build();
             addresses.set(index,  address);
-            accessTimes.set(index, time++);
-            entries++;
+            accessTimes.setLong(index, time++);
             result = index;
+            entries++;
         }
         return result;
     }
