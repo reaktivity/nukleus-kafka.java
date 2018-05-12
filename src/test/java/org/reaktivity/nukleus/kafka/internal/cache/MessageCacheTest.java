@@ -185,11 +185,13 @@ public final class MessageCacheTest
     }
 
     @Test
-    public void shouldEvictLruMessage()
+    public void shouldEvictLruMessageAndNotReuseEvictedHandleUntilReleased()
     {
         int size = expected.sizeof() + Integer.BYTES;
         final long address1 = 0L;
-        final long address2 = 0L;
+        final long address2 = 100L;
+        final long address3 = 200L;
+        final long address4 = 300L;
 
         context.checking(new Expectations()
         {
@@ -197,7 +199,7 @@ public final class MessageCacheTest
                 oneOf(memoryManager).acquire(size);
                 will(returnValue(address1));
                 oneOf(memoryManager).resolve(address1);
-                will(returnValue(memoryBuffer.addressOffset()));
+                will(returnValue(memoryBuffer.addressOffset() + address1));
 
                 oneOf(memoryManager).acquire(size);
                 will(returnValue(address2));
@@ -214,18 +216,31 @@ public final class MessageCacheTest
                 will(returnValue(address2));
                 oneOf(memoryManager).resolve(address2);
                 will(returnValue(memoryBuffer.addressOffset() + address2));
+                oneOf(memoryManager).resolve(address2);
+                will(returnValue(memoryBuffer.addressOffset() + address2));
 
-                oneOf(memoryManager).resolve(address1);
-                will(returnValue(memoryBuffer.addressOffset() + address1));
                 oneOf(memoryManager).resolve(address1);
                 will(returnValue(memoryBuffer.addressOffset() + address1));
                 oneOf(memoryManager).resolve(address2);
                 will(returnValue(memoryBuffer.addressOffset() + address2));
+
+                oneOf(memoryManager).acquire(size);
+                will(returnValue(address3));
+                oneOf(memoryManager).resolve(address3);
+                will(returnValue(memoryBuffer.addressOffset() + address3));
+                oneOf(memoryManager).resolve(address3);
+                will(returnValue(memoryBuffer.addressOffset() + address3));
+
+                oneOf(memoryManager).acquire(size);
+                will(returnValue(address4));
+                oneOf(memoryManager).resolve(address4);
+                will(returnValue(memoryBuffer.addressOffset() + address4));
             }
         });
         int handle1 = cache.put(123, 456, key, headers, value);
         int handle2 = cache.put(124, 457, key, headers, value);
         assertNotNull(cache.get(handle1, messageRO));
+
         int handle3 = cache.put(125, 458, key, headers, value);
         MessageFW message = cache.get(handle1, messageRO);
         assertNotNull(message);
@@ -233,6 +248,18 @@ public final class MessageCacheTest
         message = cache.get(handle3, messageRO);
         assertEquals(125, message.timestamp());
         assertEquals(458, message.traceId());
+
+        // handle2 was evicted, not released, so must not be reused
+        int handle4 = cache.put(126, 459, key, headers, value);
+        assertNull(cache.get(handle2, messageRO));
+        message = cache.get(handle4, messageRO);
+        assertEquals(126, message.timestamp());
+        assertEquals(459, message.traceId());
+
+        // handle2 should be reused once it's released
+        cache.release(handle2);
+        int handle5 = cache.put(127, 460, key, headers, value);
+        assertEquals(handle2, handle5);
     }
 
     private static DirectBuffer asBuffer(String value)

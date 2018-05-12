@@ -32,6 +32,7 @@ public class MessageCache
     public static final int NO_MESSAGE = -1;
 
     private static final long NO_ADDRESS = -1L;
+    private static final long EVICTED = -2L;
     private static final int LRU_SCAN_SIZE = 10;
 
     private final MessageFW.Builder messageRW = new MessageFW.Builder();
@@ -63,7 +64,7 @@ public class MessageCache
     {
         MessageFW result = null;
         long address = addresses.getLong(messageHandle);
-        if (address != NO_ADDRESS)
+        if (address >= 0L)
         {
             long memoryAddress = memoryManager.resolve(address);
             buffer.wrap(memoryAddress, Integer.BYTES);
@@ -89,15 +90,11 @@ public class MessageCache
     public int release(
         int messageHandle)
     {
-        long address = addresses.getLong(messageHandle);
-        long memoryAddress = memoryManager.resolve(address);
-        buffer.wrap(memoryAddress, Integer.BYTES);
-        int size = buffer.getInt(0) + Integer.BYTES;
-        memoryManager.release(address, size);
+        int bytesReleased = releaseMemory(messageHandle);
         addresses.setLong(messageHandle, NO_ADDRESS);
         accessTimes.setLong(messageHandle, Long.MAX_VALUE);
         entries--;
-        return size;
+        return bytesReleased;
     }
 
     public int replace(
@@ -119,7 +116,9 @@ public class MessageCache
         int lruIndex = getLruHandle();
         while (released  < size && (lruIndex = getLruHandle()) != NO_MESSAGE)
         {
-            released += release(lruIndex);
+            released += releaseMemory(lruIndex);
+            addresses.set(lruIndex, EVICTED);
+            accessTimes.setLong(lruIndex, Long.MAX_VALUE);
         }
     }
 
@@ -176,6 +175,21 @@ public class MessageCache
             assert addresses.getLong(index) == NO_ADDRESS;
         }
         return index;
+    }
+
+    private int releaseMemory(
+        int messageHandle)
+    {
+        int bytesReleased = 0;
+        long address = addresses.getLong(messageHandle);
+        if (address >= 0)
+        {
+            long memoryAddress = memoryManager.resolve(address);
+            buffer.wrap(memoryAddress, Integer.BYTES);
+            bytesReleased = buffer.getInt(0) + Integer.BYTES;
+            memoryManager.release(address, bytesReleased);
+        }
+        return bytesReleased;
     }
 
     private int set(
