@@ -33,7 +33,17 @@ public final class HeadersFW
     private final UnsafeBuffer value1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     private final UnsafeBuffer value2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
-    public int sizeOf()
+    public DirectBuffer buffer()
+    {
+        return buffer;
+    }
+
+    public int offset()
+    {
+        return offset;
+    }
+
+    public int sizeof()
     {
         return limit - offset;
     }
