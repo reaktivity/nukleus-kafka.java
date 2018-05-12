@@ -71,6 +71,7 @@ public class MessageCache
             int size = buffer.getInt(0) + Integer.BYTES;
             buffer.wrap(memoryAddress, size);
             accessTimes.setLong(messageHandle,  time++);
+            clearLruEntries();
             result =  message.wrap(buffer, Integer.BYTES, size);
         }
         return result;
@@ -109,11 +110,16 @@ public class MessageCache
         return set(messageHandle, timestamp, traceId, key, headers, value);
     }
 
+    private void clearLruEntries()
+    {
+        lruPosition = lruHandles.length;
+    }
+
     private void evict(
         final int size)
     {
         int released = 0;
-        int lruIndex = getLruHandle();
+        int lruIndex;
         while (released  < size && (lruIndex = getLruHandle()) != NO_MESSAGE)
         {
             released += releaseMemory(lruIndex);
@@ -137,6 +143,7 @@ public class MessageCache
                     System.arraycopy(lruHandles, j, lruHandles, j + 1, lruHandles.length - j - 1);
                     lruTimes[j] = time;
                     lruHandles[j] = i;
+                    break;
                 }
             }
         }
