@@ -50,6 +50,7 @@ public class CachingFetchIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
         .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false")
+        .configure(KafkaConfiguration.MESSAGE_CACHE_CAPACITY_PROPERTY, Integer.toString(1024 * 1024))
         .clean();
 
     @Rule

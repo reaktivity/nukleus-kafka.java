@@ -17,8 +17,10 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 
-import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.agrona.DirectBuffer;
@@ -27,96 +29,170 @@ import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
 
 public class PartitionCache
 {
-    private static final long NO_OFFSET = -1L;
     private static final int NO_MESSAGE = -1;
+    private static final int NO_POSITION = -1;
 
     private final MessageCache messageCache;
-    private final Map<UnsafeBuffer, long[]> offsetsByKey;
-    private final long[] offsets;
-    private final int[] messages;
+    private final Map<UnsafeBuffer, Entry> offsetsByKey;
+    private final List<Entry> entries;
+    private int compactFrom = NO_POSITION;
+
+    private final LongIterator iterator = new LongIterator();
 
     private final UnsafeBuffer buffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-    private int entries;
-    private int size;
 
-    PartitionCache(
+    public PartitionCache(
         int initialCapacity,
         MessageCache messageCache)
     {
         this.messageCache = messageCache;
         this.offsetsByKey = new HashMap<>(initialCapacity);
-        offsets = new long[initialCapacity];
-        messages = new int[initialCapacity];
+        entries = new ArrayList<Entry>(initialCapacity);
     }
 
-    void add(
+    public void add(
         long requestOffset,
         long nextFetchOffset,
-        DirectBuffer key,
-        HeadersFW headers,
         long timestamp,
         long traceId,
+        DirectBuffer key,
+        HeadersFW headers,
         DirectBuffer value)
     {
         long messageOffset = nextFetchOffset - 1;
-        long highestOffset = offsets[size - 1];
-        int message = NO_MESSAGE;
+        long highestOffset = entries.get(entries.size() - 1).offset;
+        Entry entry = null;
 
         if (messageOffset > highestOffset)
         {
-            ensureCapacity();
             buffer.wrap(key, 0, key.capacity());
             if (value == null)
             {
-                offsetsByKey.remove(buffer);
+                entry = offsetsByKey.remove(buffer);
+                messageCache.release(entry.message);
+                compactFrom = Math.min(compactFrom, entry.position);
+                entry.position = NO_POSITION;
             }
             else
             {
-                long[] offset = offsetsByKey.get(buffer);
-                if (offset == null)
+                entry = offsetsByKey.get(buffer);
+                if (entry == null)
                 {
                     UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[key.capacity()]);
                     keyCopy.putBytes(0,  key, 0, key.capacity());
-                    offsetsByKey.put(keyCopy, new long[]{messageOffset});
+                    entry = new Entry(messageOffset, entries.size(), NO_MESSAGE);
+                    offsetsByKey.put(keyCopy, entry);
                 }
                 else
                 {
-                    offset[0] = Math.max(messageOffset, offset[0]);
+                    if (messageOffset > entry.offset)
+                    {
+                        compactFrom = Math.min(compactFrom, entry.position);
+                        entry.position = entries.size();
+                        entry.offset = messageOffset;
+                        entries.add(entry);
+                    }
                 }
+                entry.message = messageCache.put(timestamp, traceId, key, headers, value);
             }
-            // TODO: cache the message offset and message
-            // int index = messageCache.put(key, headers, timestamp, traceId, value);
         }
         else
         {
-            // cache the message if not already cached
+            // cache the message if it was previously evicted due to lack of space
+            buffer.wrap(key, 0, key.capacity());
+            entry = offsetsByKey.get(buffer);
+            if (entry.message == NO_MESSAGE)
+            {
+                // TODO: only cache if the message was of interest to at least one dispatcher
+                //       (call next dispatcher)
+                entry.message = messageCache.put(timestamp, traceId, key, headers, value);
+            }
         }
     }
 
-
-
-    private void ensureCapacity()
+    public void compact()
     {
-        // TODO: if insufficient capacity:
-        //           compact if worthwhile
-        //           reallocate if still necessary
-    }
-
-    private void remove(
-        long offset)
-    {
-        int index = locate(offset);
-        if (offsets[index] == offset)
+        if (compactFrom != NO_POSITION)
         {
-            offsets[index] = NO_OFFSET;
-            messages[index] = NO_MESSAGE;
+            int ceiling = NO_POSITION;
+            for (int i=0; i < entries.size(); i++)
+            {
+                Entry entry = entries.get(i);
+                if (entry.position != i)
+                {
+                    if (ceiling == NO_POSITION)
+                    {
+                        ceiling = i;
+                    }
+                }
+                else if (ceiling != NO_POSITION)
+                {
+                    entry.position = ceiling;
+                    entries.set(ceiling, entry);
+                    ceiling++;
+                }
+            }
+            if (ceiling > entries.size())
+            {
+
+            }
+            compactFrom = NO_POSITION;
         }
+    }
+
+    public LongIterator offsets(
+        long startOffset)
+    {
+        iterator.position = locate(startOffset);
+        return iterator;
     }
 
     private int locate(
         long offset)
     {
-        return Arrays.binarySearch(offsets, offset);
+        compact();
+        Entry candidate = new Entry(offset, NO_POSITION, NO_MESSAGE);
+        return Collections.binarySearch(entries, candidate);
+    }
+
+    public final class LongIterator
+    {
+        private int position;
+
+        public boolean hasNext()
+        {
+            return position < entries.size();
+        }
+
+        public long next()
+        {
+            return entries.get(position++).offset;
+        }
+    }
+
+    private static final class Entry implements Comparable<Entry>
+    {
+        long offset;
+        int  position;
+        int  message;
+
+        private  Entry(
+            long offset,
+            int  position,
+            int  message
+            )
+        {
+            this.offset = offset;
+            this.position = position;
+            this.message = message;
+        }
+
+        @Override
+        public int compareTo(
+            Entry o)
+        {
+            return (int) (this.offset - o.offset);
+        }
     }
 
 }
