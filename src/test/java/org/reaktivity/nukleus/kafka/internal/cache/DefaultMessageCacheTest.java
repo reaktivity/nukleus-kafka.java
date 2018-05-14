@@ -20,7 +20,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
-import static org.reaktivity.nukleus.kafka.internal.cache.MessageCache.NO_MESSAGE;
+import static org.reaktivity.nukleus.kafka.internal.cache.DefaultMessageCache.NO_MESSAGE;
 import static org.reaktivity.nukleus.kafka.internal.memory.MemoryManager.OUT_OF_MEMORY;
 
 import java.nio.ByteBuffer;
@@ -37,7 +37,7 @@ import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
-public final class MessageCacheTest
+public final class DefaultMessageCacheTest
 {
     private MemoryManager memoryManager;
     private MutableDirectBuffer memoryBuffer = new UnsafeBuffer(ByteBuffer.allocateDirect(1000));
@@ -68,7 +68,7 @@ public final class MessageCacheTest
         }
     };
 
-    private MessageCache cache = new MessageCache(memoryManager);
+    private MessageCache cache = new DefaultMessageCache(memoryManager);
 
     @Test
     public void shouldNotPutMessageWhenExceedsCacheSize()

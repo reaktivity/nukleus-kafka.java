@@ -20,6 +20,7 @@ import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_A
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -33,21 +34,20 @@ public class PartitionCache
     private static final int NO_POSITION = -1;
 
     private final MessageCache messageCache;
+    private final EntryIterator iterator = new EntryIterator();
+    private final UnsafeBuffer buffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+
     private final Map<UnsafeBuffer, Entry> offsetsByKey;
     private final List<Entry> entries;
     private int compactFrom = NO_POSITION;
-
-    private final LongIterator iterator = new LongIterator();
-
-    private final UnsafeBuffer buffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
     public PartitionCache(
         int initialCapacity,
         MessageCache messageCache)
     {
-        this.messageCache = messageCache;
         this.offsetsByKey = new HashMap<>(initialCapacity);
         entries = new ArrayList<Entry>(initialCapacity);
+        this.messageCache = messageCache;
     }
 
     public void add(
@@ -60,7 +60,7 @@ public class PartitionCache
         DirectBuffer value)
     {
         long messageOffset = nextFetchOffset - 1;
-        long highestOffset = entries.get(entries.size() - 1).offset;
+        long highestOffset = entries.isEmpty() ? -1L : entries.get(entries.size() - 1).offset;
         Entry entry = null;
 
         if (messageOffset > highestOffset)
@@ -70,7 +70,7 @@ public class PartitionCache
             {
                 entry = offsetsByKey.remove(buffer);
                 messageCache.release(entry.message);
-                compactFrom = Math.min(compactFrom, entry.position);
+                compactFrom = compactFrom == NO_POSITION ? entry.position : compactFrom;
                 entry.position = NO_POSITION;
             }
             else
@@ -82,18 +82,20 @@ public class PartitionCache
                     keyCopy.putBytes(0,  key, 0, key.capacity());
                     entry = new Entry(messageOffset, entries.size(), NO_MESSAGE);
                     offsetsByKey.put(keyCopy, entry);
+                    entries.add(entry);
+                    entry.message = messageCache.put(timestamp, traceId, key, headers, value);
                 }
                 else
                 {
                     if (messageOffset > entry.offset)
                     {
-                        compactFrom = Math.min(compactFrom, entry.position);
+                        compactFrom = compactFrom == NO_POSITION ? entry.position : compactFrom;
                         entry.position = entries.size();
                         entry.offset = messageOffset;
                         entries.add(entry);
+                        entry.message = messageCache.replace(entry.message, timestamp, traceId, key, headers, value);
                     }
                 }
-                entry.message = messageCache.put(timestamp, traceId, key, headers, value);
             }
         }
         else
@@ -132,15 +134,18 @@ public class PartitionCache
                     ceiling++;
                 }
             }
-            if (ceiling > entries.size())
+            if (ceiling < entries.size())
             {
-
+                for (int i=entries.size() - 1; i > ceiling - 1; i--)
+                {
+                    entries.remove(i);
+                }
             }
             compactFrom = NO_POSITION;
         }
     }
 
-    public LongIterator offsets(
+    public Iterator<Entry> entries(
         long startOffset)
     {
         iterator.position = locate(startOffset);
@@ -152,29 +157,32 @@ public class PartitionCache
     {
         compact();
         Entry candidate = new Entry(offset, NO_POSITION, NO_MESSAGE);
-        return Collections.binarySearch(entries, candidate);
+        int position = Collections.binarySearch(entries, candidate);
+        return Math.max(0, position);
     }
 
-    public final class LongIterator
+    public final class EntryIterator implements Iterator<Entry>
     {
         private int position;
 
+        @Override
         public boolean hasNext()
         {
             return position < entries.size();
         }
 
-        public long next()
+        @Override
+        public Entry next()
         {
-            return entries.get(position++).offset;
+            return entries.get(position++);
         }
     }
 
-    private static final class Entry implements Comparable<Entry>
+    public static final class Entry implements Comparable<Entry>
     {
-        long offset;
-        int  position;
-        int  message;
+        private long offset;
+        private int  position;
+        private int  message;
 
         private  Entry(
             long offset,
@@ -187,11 +195,27 @@ public class PartitionCache
             this.message = message;
         }
 
+        public long offset()
+        {
+            return offset;
+        }
+
+        public int message()
+        {
+            return message;
+        }
+
         @Override
         public int compareTo(
             Entry o)
         {
             return (int) (this.offset - o.offset);
+        }
+
+        @Override
+        public String toString()
+        {
+            return String.format("Entry[%d, %d, %d]", offset, position, message);
         }
     }
 
