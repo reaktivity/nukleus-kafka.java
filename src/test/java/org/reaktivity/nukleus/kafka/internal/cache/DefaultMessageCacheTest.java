@@ -103,6 +103,40 @@ public final class DefaultMessageCacheTest
     }
 
     @Test
+    public void shouldPutMessageWithNullKey()
+    {
+        int size = expected.sizeof() - key.capacity();
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(memoryManager).acquire(size + Integer.BYTES);
+                will(returnValue(0L));
+                oneOf(memoryManager).resolve(0L);
+                will(returnValue(memoryBuffer.addressOffset()));
+            }
+        });
+        int handle = cache.put(123, 456, null, headers, value);
+        assertNotEquals(MessageCache.NO_MESSAGE, handle);
+    }
+
+    @Test
+    public void shouldPutMessageWithNullValue()
+    {
+        int size = expected.sizeof() - value.capacity();
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(memoryManager).acquire(size + Integer.BYTES);
+                will(returnValue(0L));
+                oneOf(memoryManager).resolve(0L);
+                will(returnValue(memoryBuffer.addressOffset()));
+            }
+        });
+        int handle = cache.put(123, 456, key, headers, null);
+        assertNotEquals(MessageCache.NO_MESSAGE, handle);
+    }
+
+    @Test
     public void shouldGetMessage()
     {
         int size = expected.sizeof();

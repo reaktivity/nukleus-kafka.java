@@ -29,6 +29,7 @@ import org.agrona.DirectBuffer;
 import org.agrona.collections.LongArrayList;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
+import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public class PartitionCache
@@ -40,6 +41,7 @@ public class PartitionCache
     private static final long NO_EXPIRY_TIME = -1L;
 
     private final MessageCache messageCache;
+    private final MessageFW messageRO = new MessageFW();
     private final long tombstoneLifetimeMillis;
     private final Map<UnsafeBuffer, Entry> offsetsByKey;
     private final List<Entry> entries;
@@ -121,15 +123,14 @@ public class PartitionCache
                 }
             }
         }
-        else
+        else if (requestOffset <= validToOffset)
         {
             // cache the message if it was previously evicted due to lack of space
             buffer.wrap(key, 0, key.capacity());
             entry = offsetsByKey.get(buffer);
-            if (entry != null && entry.message == NO_MESSAGE)
+            if (messageCache.get(entry.message, messageRO) == null)
             {
-                // TODO: only cache the message if it was of was of interest to at least one dispatcher
-                entry.message = messageCache.put(timestamp, traceId, key, headers, value);
+                entry.message = messageCache.replace(entry.message, timestamp, traceId, key, headers, value);
             }
         }
     }
@@ -141,7 +142,7 @@ public class PartitionCache
         int position = locate(requestOffset);
         if (position == -1)
         {
-            long offset = requestOffset < validFromOffset ? requestOffset : Math.max(requestOffset, validToOffset);
+            long offset = Math.max(requestOffset, validToOffset);
             result = noMessagesIterator.reset(offset);
         }
         else
@@ -160,7 +161,7 @@ public class PartitionCache
         Entry result = offsetsByKey.get(buffer);
         if (result == null)
         {
-            long offset = requestOffset < validFromOffset ? requestOffset : validToOffset;
+            long offset = Math.max(requestOffset, validToOffset);
             result = noMessagesIterator.reset(offset).next();
         }
         return result;
@@ -169,7 +170,7 @@ public class PartitionCache
     public void setPartitionStartOffset(
         long firstOffset)
     {
-        assert validFromOffset == 0L && validToOffset == 0L;
+        assert firstOffset >= validFromOffset;
         validFromOffset = validToOffset = firstOffset;
     }
 
@@ -196,12 +197,9 @@ public class PartitionCache
                     ceiling++;
                 }
             }
-            if (ceiling < entries.size())
+            for (int i=entries.size() - 1; i > ceiling - 1; i--)
             {
-                for (int i=entries.size() - 1; i > ceiling - 1; i--)
-                {
-                    entries.remove(i);
-                }
+                entries.remove(i);
             }
             compactFrom = Integer.MAX_VALUE;
         }
@@ -230,7 +228,12 @@ public class PartitionCache
                     break;
                 }
             }
-            if (pos > 0)
+            if (pos == tombstoneKeys.size())
+            {
+                tombstoneKeys.clear();
+                tombstoneExpiryTimes.clear();
+            }
+            else if (pos > 0)
             {
                 tombstoneKeys.removeIf(k -> k == null);
                 tombstoneExpiryTimes.removeIf(t -> t == null);
@@ -272,6 +275,7 @@ public class PartitionCache
         @Override
         public Entry next()
         {
+            // For efficiency reasons we don't guard for position < entries.size()
             return entries.get(position++);
         }
     }

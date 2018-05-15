@@ -26,6 +26,7 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
+import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public class DefaultMessageCache implements MessageCache
 {
@@ -34,6 +35,8 @@ public class DefaultMessageCache implements MessageCache
     private static final int LRU_SCAN_SIZE = 10;
 
     private final MessageFW.Builder messageRW = new MessageFW.Builder();
+    private final OctetsFW keyRO = new OctetsFW();
+    private final OctetsFW valueRO = new OctetsFW();
 
     private final MemoryManager memoryManager;
     private final UnsafeBuffer buffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
@@ -177,11 +180,10 @@ public class DefaultMessageCache implements MessageCache
         }
         else
         {
-            for (index = 0;  index < addresses.size() && addresses.getLong(index) != NO_ADDRESS; index++)
+            for (index = 0; addresses.getLong(index) != NO_ADDRESS; index++)
             {
 
             }
-            assert addresses.getLong(index) == NO_ADDRESS;
         }
         return index;
     }
@@ -214,7 +216,7 @@ public class DefaultMessageCache implements MessageCache
             MessageFW.FIELD_OFFSET_KEY +
             (key == null ? 0 : key.capacity()) +
             Integer.BYTES +
-            (headers == null ? 0 : headers.sizeof()) +
+            headers.sizeof() +
             Integer.BYTES +
             (value == null ? 0 : value.capacity());
 
@@ -229,12 +231,14 @@ public class DefaultMessageCache implements MessageCache
         {
             buffer.wrap(memoryManager.resolve(address), size);
             buffer.putInt(0, messageSize);
+            OctetsFW keyFW = key == null ? null : keyRO.wrap(key, 0, key.capacity());
+            OctetsFW valueFW = value == null ? null : valueRO.wrap(value,  0, value.capacity());
             messageRW.wrap(buffer, Integer.BYTES, size)
                      .timestamp(timestamp)
                      .traceId(traceId)
-                     .key(key, 0, key.capacity())
+                     .key(keyFW)
                      .headers(headers.buffer(), headers.offset(), headers.sizeof())
-                     .value(value, 0, value.capacity())
+                     .value(valueFW)
                      .build();
             addresses.set(index,  address);
             accessTimes.setLong(index, time++);

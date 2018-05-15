@@ -15,12 +15,15 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.reaktivity.nukleus.kafka.internal.test.TestUtil.asBuffer;
+import static org.reaktivity.nukleus.kafka.internal.test.TestUtil.asOctets;
 
 import java.util.Iterator;
+import java.util.NoSuchElementException;
 
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
@@ -30,6 +33,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionCache.Entry;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
+import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 
 public final class PartitionCacheTest
 {
@@ -41,6 +45,7 @@ public final class PartitionCacheTest
     private DirectBuffer headersBuffer = new UnsafeBuffer(new byte[0]);
     private HeadersFW headers = new HeadersFW().wrap(headersBuffer, 0, 0);
     private DirectBuffer value = asBuffer("value");
+    private final MessageFW messageRO = new MessageFW();
 
     @Rule
     public JUnitRuleMockery context = new JUnitRuleMockery()
@@ -80,6 +85,39 @@ public final class PartitionCacheTest
     }
 
     @Test
+    public void shouldAddTombstonesForExistingMessagesAndReportUntilExpired() throws Exception
+    {
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                will(returnValue(0));
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
+                will(returnValue(1));
+            }
+        });
+        cache.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value);
+        cache.add(0L, 2L, 124, 457, asBuffer("key2"), headers, value);
+        cache.add(0L, 3L, 125, 458, asBuffer("key1"), headers, null);
+        Iterator<PartitionCache.Entry> iterator = cache.entries(0L);
+        Entry entry = iterator.next();
+        assertEquals(1L, entry.offset());
+        entry = iterator.next();
+        assertEquals(2L, entry.offset());
+        assertEquals(PartitionCache.TOMBSTONE_MESSAGE, entry.message());
+        Thread.sleep(TOMBSTONE_LIFETIME_MILLIS);
+        cache.add(2L, 4L, 126, 459, asBuffer("key2"), headers, null);
+        iterator = cache.entries(0L);
+        entry = iterator.next();
+        assertEquals(3L, entry.offset());
+        assertEquals(PartitionCache.TOMBSTONE_MESSAGE, entry.message());
+        assertFalse(iterator.hasNext());
+        Thread.sleep(TOMBSTONE_LIFETIME_MILLIS);
+        iterator = cache.entries(0L);
+        assertFalse(iterator.hasNext());
+    }
+
+    @Test
     public void shouldNotAddMessagesWithOffsetsOutOfOrder()
     {
         context.checking(new Expectations()
@@ -108,6 +146,65 @@ public final class PartitionCacheTest
     }
 
     @Test
+    public void shouldGetEntriesForExistingKeys()
+    {
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                will(returnValue(0));
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
+                will(returnValue(1));
+            }
+        });
+        cache.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value);
+        cache.add(0L, 2L, 124, 457, asBuffer("key2"), headers, value);
+        Entry entry = cache.getEntry(0L, asOctets("key1"));
+        assertEquals(0L, entry.offset());
+        assertEquals(0, entry.message());
+        entry = cache.getEntry(0L, asOctets("key2"));
+        assertEquals(1L, entry.offset());
+        assertEquals(1, entry.message());
+    }
+
+    @Test
+    public void shouldHighestVisitedOffsetForNonExistingKey()
+    {
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                will(returnValue(0));
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
+                will(returnValue(1));
+            }
+        });
+        cache.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value);
+        cache.add(0L, 2L, 124, 457, asBuffer("key2"), headers, value);
+        Entry entry = cache.getEntry(1L, asOctets("unknownKey"));
+        assertEquals(2L, entry.offset());
+        assertEquals(MessageCache.NO_MESSAGE, entry.message());
+    }
+
+    @Test
+    public void shouldGetPartitionStartOffsetForNonExistingKeyWhenCacheIsEmpty()
+    {
+        cache.setPartitionStartOffset(100L);
+        Entry entry = cache.getEntry(10L, asOctets("key1"));
+        assertEquals(100L, entry.offset());
+        assertEquals(MessageCache.NO_MESSAGE, entry.message());
+    }
+
+    @Test
+    public void shouldGetRequestedOffsetForNonExistingKeyWhenCacheIsEmptyAndRequestedGTPartitionStart()
+    {
+        cache.setPartitionStartOffset(100L);
+        Entry entry = cache.getEntry(111L, asOctets("key1"));
+        assertEquals(111L, entry.offset());
+        assertEquals(MessageCache.NO_MESSAGE, entry.message());
+    }
+
+    @Test
     public void shouldIterate()
     {
         context.checking(new Expectations()
@@ -130,6 +227,24 @@ public final class PartitionCacheTest
         assertEquals(1L, entry.offset());
         assertEquals(1, entry.message());
         assertFalse(iterator.hasNext());
+    }
+
+    @Test(expected=IndexOutOfBoundsException.class)
+    public void shouldThrowExceptionFromIteratorWhenNoMoreElements()
+    {
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                will(returnValue(0));
+            }
+        });
+        cache.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value);
+        Iterator<PartitionCache.Entry> iterator = cache.entries(0L);
+        assertTrue(iterator.hasNext());
+        assertNotNull(iterator.next());
+        assertFalse(iterator.hasNext());
+        iterator.next();
     }
 
     @Test
@@ -171,6 +286,18 @@ public final class PartitionCacheTest
         assertFalse(iterator.hasNext());
     }
 
+    @Test(expected=NoSuchElementException.class)
+    public void shouldThrowExceptionFromNoMessageIteratorNextWhenNoMoreElements()
+    {
+        Iterator<PartitionCache.Entry> iterator = cache.entries(102L);
+        assertTrue(iterator.hasNext());
+        Entry entry = iterator.next();
+        assertEquals(102L, entry.offset());
+        assertEquals(MessageCache.NO_MESSAGE, entry.message());
+        assertFalse(iterator.hasNext());
+        iterator.next();
+    }
+
     @Test
     public void shouldReturnIteratorWithRequestedOffsetAndNoMessageWhenRequestOffsetExceedsHighestOffsetSeenSoFar()
     {
@@ -193,13 +320,64 @@ public final class PartitionCacheTest
     @Test
     public void shouldCacheHistoricalMessageWhenItHasBeenEvicted()
     {
-         throw new RuntimeException("Test not yet implemented");
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                will(returnValue(0));
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
+                will(returnValue(1));
+                oneOf(messageCache).put(125, 458, asBuffer("key3"), headers, value);
+                will(returnValue(2));
+                oneOf(messageCache).get(with(1), with(any(MessageFW.class)));
+                will(returnValue(null));
+                oneOf(messageCache).replace(1, 124, 457, asBuffer("key2"), headers, value);
+                will(returnValue(1));
+            }
+        });
+        cache.setPartitionStartOffset(100L);
+        cache.add(100L, 101L, 123, 456, asBuffer("key1"), headers, value);
+        cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value);
+        cache.add(100L, 103L, 125, 458, asBuffer("key3"), headers, value);
+        cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value);
     }
 
     @Test
     public void shouldNotCacheHistoricalMessageWhenItHasNotBeenEvicted()
     {
-         throw new RuntimeException("Test not yet implemented");
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                will(returnValue(0));
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
+                will(returnValue(1));
+                oneOf(messageCache).put(125, 458, asBuffer("key3"), headers, value);
+                will(returnValue(2));
+                oneOf(messageCache).get(with(1), with(any(MessageFW.class)));
+                will(returnValue(messageRO));
+            }
+        });
+        cache.setPartitionStartOffset(100L);
+        cache.add(100L, 101L, 123, 456, asBuffer("key1"), headers, value);
+        cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value);
+        cache.add(100L, 103L, 125, 458, asBuffer("key3"), headers, value);
+        cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value);
+    }
+
+    @Test
+    public void shouldNotCacheMessageWhenRequestOffsetExceedsHighestOffsetSeenSoFar()
+    {
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                will(returnValue(0));
+            }
+        });
+        cache.setPartitionStartOffset(100L);
+        cache.add(100L, 110L, 123, 456, asBuffer("key1"), headers, value);
+        cache.add(111L, 110L, 124, 457, asBuffer("key1"), headers, value);
     }
 
     @Test
@@ -233,6 +411,27 @@ public final class PartitionCacheTest
         assertFalse(iterator.hasNext());
     }
 
+    @Test(expected = AssertionError.class)
+    public void shouldRejectPartitionStartOffsetReduction()
+    {
+        cache.setPartitionStartOffset(100L);
+        cache.setPartitionStartOffset(99L);
+    }
+
+    @Test
+    public void shouldUpdatePartitionStartOffsetToSameValue()
+    {
+        cache.setPartitionStartOffset(100L);
+        cache.setPartitionStartOffset(100L);
+    }
+
+    @Test
+    public void shouldUpdatePartitionStartOffsetToHigherValue()
+    {
+        cache.setPartitionStartOffset(100L);
+        cache.setPartitionStartOffset(200L);
+    }
+
     @Test
     public void shouldReportEntryAsString()
     {
@@ -249,12 +448,6 @@ public final class PartitionCacheTest
         String result = entry.toString();
         assertTrue(result.contains("99"));
         assertTrue(result.contains("77"));
-    }
-
-    private static DirectBuffer asBuffer(String value)
-    {
-        byte[] bytes = value.getBytes(UTF_8);
-        return new UnsafeBuffer(bytes);
     }
 
 }
