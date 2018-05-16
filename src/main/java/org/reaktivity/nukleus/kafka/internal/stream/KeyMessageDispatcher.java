@@ -39,7 +39,7 @@ public class KeyMessageDispatcher implements MessageDispatcher
     }
 
     @Override
-    public int dispatch(
+    public byte dispatch(
                  int partition,
                  long requestOffset,
                  long messageOffset,

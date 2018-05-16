@@ -19,6 +19,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.reaktivity.nukleus.kafka.internal.stream.MessageDispatcher.FLAGS_DELIVERED;
 
 import java.util.function.Function;
 
@@ -93,17 +94,17 @@ public final class KeyMessageDispatcherTest
             {
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key1")),
                         with(header), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
                 oneOf(child2).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key1")),
                         with(header), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
                 oneOf(child3).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key2")),
                         with(header), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
             }
         });
-        assertEquals(2, dispatcher.dispatch(1, 10L, 12L, asBuffer("key1"), header, timestamp, traceId, null));
-        assertEquals(1, dispatcher.dispatch(1, 10L, 12L, asBuffer("key2"), header, timestamp, traceId, null));
+        assertEquals(FLAGS_DELIVERED, dispatcher.dispatch(1, 10L, 12L, asBuffer("key1"), header, timestamp, traceId, null));
+        assertEquals(FLAGS_DELIVERED, dispatcher.dispatch(1, 10L, 12L, asBuffer("key2"), header, timestamp, traceId, null));
     }
 
     @Test

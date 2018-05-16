@@ -21,6 +21,8 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.reaktivity.nukleus.kafka.internal.stream.MessageDispatcher.FLAGS_DELIVERED;
+import static org.reaktivity.nukleus.kafka.internal.stream.MessageDispatcher.FLAGS_MATCHED;
 
 import java.util.function.Function;
 
@@ -121,13 +123,14 @@ public final class CompactedHeaderValueMessageDispatcherTest
                 will(returnValue(asBuffer("value2")));
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
                 oneOf(child2).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
             }
         });
-        assertEquals(2, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, null));
+        assertEquals(FLAGS_DELIVERED,
+                dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, null));
     }
 
     @Test
@@ -163,10 +166,10 @@ public final class CompactedHeaderValueMessageDispatcherTest
                 will(returnValue(null));
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_MATCHED));
             }
         });
-        assertEquals(1, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, null));
+        assertEquals(FLAGS_MATCHED, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, null));
     }
 
     @Test
@@ -195,14 +198,16 @@ public final class CompactedHeaderValueMessageDispatcherTest
                 will(returnValue(null));
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with(bufferMatching("message")));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
                 oneOf(child1).dispatch(with(1), with(10L), with(13L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
             }
         });
-        assertEquals(1, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, asBuffer("message")));
-        assertEquals(1, dispatcher.dispatch(1, 10L, 13L, asBuffer("key"), supplyHeader, timestamp, traceId, asBuffer("message")));
+        assertEquals(FLAGS_DELIVERED,
+                dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, asBuffer("message")));
+        assertEquals(FLAGS_DELIVERED,
+                dispatcher.dispatch(1, 10L, 13L, asBuffer("key"), supplyHeader, timestamp, traceId, asBuffer("message")));
         assertEquals(0, dispatcher.dispatchersByKeySize());
     }
 
@@ -238,18 +243,18 @@ public final class CompactedHeaderValueMessageDispatcherTest
                 will(returnValue(asBuffer("value2")));
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with(bufferMatching("message1")));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
                 oneOf(child1).dispatch(with(1), with(10L), with(13L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
                 oneOf(child2).dispatch(with(1), with(10L), with(13L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with(bufferMatching("message2")));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
             }
         });
-        assertEquals(1, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId,
+        assertEquals(FLAGS_DELIVERED, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId,
                 asBuffer("message1")));
-        assertEquals(2, dispatcher.dispatch(1, 10L, 13L, asBuffer("key"), supplyHeader, timestamp, traceId,
+        assertEquals(FLAGS_DELIVERED, dispatcher.dispatch(1, 10L, 13L, asBuffer("key"), supplyHeader, timestamp, traceId,
                 asBuffer("message2")));
     }
 
@@ -285,20 +290,20 @@ public final class CompactedHeaderValueMessageDispatcherTest
                 will(returnValue(asBuffer("value2")));
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with(bufferMatching("message1")));
-                will(returnValue(1));
+                will(returnValue(FLAGS_MATCHED));
                 oneOf(child1).dispatch(with(1), with(10L), with(13L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_MATCHED));
                 oneOf(child2).dispatch(with(1), with(10L), with(13L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with(bufferMatching("message2")));
-                will(returnValue(1));
+                will(returnValue(FLAGS_MATCHED));
             }
         });
         dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId,
                 asBuffer("message1"));
         dispatcher.dispatch(1, 10L, 13L, asBuffer("key"), supplyHeader, timestamp, traceId,
                 asBuffer("message2"));
-        assertEquals(1, dispatcher.dispatchersByKeySize());
+        assertEquals(FLAGS_MATCHED, dispatcher.dispatchersByKeySize());
         dispatcher.remove(asOctets("value2"), headers2, 1, child2);
         assertEquals(0, dispatcher.dispatchersByKeySize());
     }
@@ -306,7 +311,6 @@ public final class CompactedHeaderValueMessageDispatcherTest
     @Test
     public void shouldRemoveValueToKeyMappingWhenHeaderUpdatedToValueWithNoDispatcher()
     {
-
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         ListFW<KafkaHeaderFW> headers1 =
                 headersRW.wrap(headers1Buffer, 0, headers1Buffer.capacity())
@@ -329,16 +333,16 @@ public final class CompactedHeaderValueMessageDispatcherTest
                 will(returnValue(asBuffer("value2")));
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with(bufferMatching("message1")));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
                 oneOf(child1).dispatch(with(1), with(10L), with(13L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_MATCHED));
             }
         });
-        assertEquals(1, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId,
-                asBuffer("message1")));
-        assertEquals(1, dispatcher.dispatch(1, 10L, 13L, asBuffer("key"), supplyHeader, timestamp, traceId,
-                asBuffer("message2")));
+        assertEquals(FLAGS_DELIVERED | FLAGS_MATCHED,
+                dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, asBuffer("message1")));
+        assertEquals(FLAGS_MATCHED,
+                dispatcher.dispatch(1, 10L, 13L, asBuffer("key"), supplyHeader, timestamp, traceId, asBuffer("message2")));
         assertEquals(0, dispatcher.dispatchersByKeySize());
     }
 

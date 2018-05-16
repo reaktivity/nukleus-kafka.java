@@ -42,7 +42,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
 
     @Override
     public
-    int dispatch(
+    byte dispatch(
              int partition,
              long requestOffset,
              long messageOffset,
@@ -52,7 +52,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
              long traceId,
              DirectBuffer value)
     {
-        int result = 0;
+        byte result = 0;
         DirectBuffer header = supplyHeader.apply(headerName);
         if (header != null)
         {
@@ -60,8 +60,8 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             MessageDispatcher dispatcher = dispatchersByHeaderValue.get(buffer);
             if (dispatcher != null)
             {
-                result =  dispatcher.dispatch(partition, requestOffset, messageOffset,
-                                              key, supplyHeader, timestamp, traceId, value);
+                result = dispatcher.dispatch(partition, requestOffset, messageOffset,
+                                             key, supplyHeader, timestamp, traceId, value);
             }
         }
         return result;
@@ -97,11 +97,6 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             dispatchers.add(headersDispatcher);
         }
         headersDispatcher.add(headers, index, dispatcher);
-    }
-
-    protected boolean topicIsCompacted()
-    {
-        return false;
     }
 
     public boolean remove(

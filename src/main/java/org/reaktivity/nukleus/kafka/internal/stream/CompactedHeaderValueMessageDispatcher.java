@@ -34,18 +34,17 @@ public class CompactedHeaderValueMessageDispatcher extends HeaderValueMessageDis
     }
 
     @Override
-    public
-    int dispatch(
-             int partition,
-             long requestOffset,
-             long messageOffset,
-             DirectBuffer key,
-             Function<DirectBuffer, DirectBuffer> supplyHeader,
-             long timestamp,
-             long traceId,
-             DirectBuffer value)
+    public byte dispatch(
+         int partition,
+         long requestOffset,
+         long messageOffset,
+         DirectBuffer key,
+         Function<DirectBuffer, DirectBuffer> supplyHeader,
+         long timestamp,
+         long traceId,
+         DirectBuffer value)
     {
-        int result = 0;
+        byte result = 0;
         DirectBuffer headerValue = supplyHeader.apply(headerName);
         MessageDispatcher previousDispatcher = dispatchersByKey.get(key);
         HeadersMessageDispatcher dispatcher = null;
@@ -56,14 +55,15 @@ public class CompactedHeaderValueMessageDispatcher extends HeaderValueMessageDis
             if (dispatcher != null)
             {
                 saveDispatcher(key, dispatcher);
-                result =  dispatcher.dispatch(partition, requestOffset, messageOffset,
+                result = MessageDispatcher.FLAGS_MATCHED;
+                result |= dispatcher.dispatch(partition, requestOffset, messageOffset,
                                               key, supplyHeader, timestamp, traceId, value);
             }
         }
         if (previousDispatcher != null && previousDispatcher != dispatcher)
         {
             // Send tombstone message
-            result += previousDispatcher.dispatch(partition, requestOffset, messageOffset,
+            result |= previousDispatcher.dispatch(partition, requestOffset, messageOffset,
                     key, supplyHeader, timestamp, traceId, null);
         }
         if (previousDispatcher != null && dispatcher == null)
@@ -72,12 +72,6 @@ public class CompactedHeaderValueMessageDispatcher extends HeaderValueMessageDis
             dispatchersByKey.remove(buffer);
         }
         return result;
-    }
-
-    @Override
-    protected boolean topicIsCompacted()
-    {
-        return true;
     }
 
     @Override
@@ -117,11 +111,11 @@ public class CompactedHeaderValueMessageDispatcher extends HeaderValueMessageDis
             buffer.wrap(key);
             if (dispatchersByKey.containsKey(buffer))
             {
+                // allocation of key copy not needed
                 dispatchersByKey.put(buffer, dispatcher);
             }
             else
             {
-                // TODO: avoid allocation
                 dispatchersByKey.put(makeCopy(key), dispatcher);
             }
         }

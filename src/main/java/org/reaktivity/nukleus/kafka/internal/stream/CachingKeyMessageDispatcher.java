@@ -36,7 +36,7 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
     }
 
     @Override
-    public int dispatch(
+    public byte dispatch(
          int partition,
          long requestOffset,
          long messageOffset,
@@ -73,10 +73,10 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
             highestOffset = messageOffset;
         }
 
-        int dispatched = super.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
+        byte result = super.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
 
         // detect historical message stream
-        if (dispatched > 0 && messageOffset < highestOffset)
+        if (MessageDispatcher.delivered(result) && messageOffset < highestOffset)
         {
             buffer.wrap(key, 0, key.capacity());
             long[] offset = offsetsByKey.get(buffer);
@@ -87,7 +87,7 @@ public class CachingKeyMessageDispatcher extends KeyMessageDispatcher
                 flush(partition, requestOffset, highestOffset, key);
             }
         }
-        return dispatched;
+        return result;
     }
 
     @Override

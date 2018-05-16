@@ -31,7 +31,7 @@ import org.jmock.Expectations;
 import org.jmock.integration.junit4.JUnitRuleMockery;
 import org.junit.Rule;
 import org.junit.Test;
-import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
+import org.reaktivity.nukleus.kafka.internal.cache.IPartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 
@@ -55,7 +55,7 @@ public final class PartitionIndexTest
         }
     };
 
-    private PartitionIndex cache = new PartitionIndex(5, TOMBSTONE_LIFETIME_MILLIS, messageCache);
+    private IPartitionIndex cache = new PartitionIndex(5, TOMBSTONE_LIFETIME_MILLIS, messageCache);
 
     @Test
     public void shouldAddMessage()
@@ -78,7 +78,7 @@ public final class PartitionIndexTest
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(1L, entry.offset());
-        assertEquals(PartitionIndex.TOMBSTONE_MESSAGE, entry.message());
+        assertEquals(IPartitionIndex.TOMBSTONE_MESSAGE, entry.message());
         Thread.sleep(TOMBSTONE_LIFETIME_MILLIS);
         iterator = cache.entries(0L);
         assertFalse(iterator.hasNext());
@@ -104,13 +104,13 @@ public final class PartitionIndexTest
         assertEquals(1L, entry.offset());
         entry = iterator.next();
         assertEquals(2L, entry.offset());
-        assertEquals(PartitionIndex.TOMBSTONE_MESSAGE, entry.message());
+        assertEquals(IPartitionIndex.TOMBSTONE_MESSAGE, entry.message());
         Thread.sleep(TOMBSTONE_LIFETIME_MILLIS);
         cache.add(2L, 4L, 126, 459, asBuffer("key2"), headers, null);
         iterator = cache.entries(0L);
         entry = iterator.next();
         assertEquals(3L, entry.offset());
-        assertEquals(PartitionIndex.TOMBSTONE_MESSAGE, entry.message());
+        assertEquals(IPartitionIndex.TOMBSTONE_MESSAGE, entry.message());
         assertFalse(iterator.hasNext());
         Thread.sleep(TOMBSTONE_LIFETIME_MILLIS);
         iterator = cache.entries(0L);

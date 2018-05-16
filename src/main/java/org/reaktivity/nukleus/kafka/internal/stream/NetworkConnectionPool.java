@@ -117,21 +117,21 @@ public final class NetworkConnectionPool
     private static final byte[] ANY_IP_ADDR = new byte[4];
 
     private static final int MAX_PADDING = 5 * 1024;
-    public static final MessageDispatcher NOOP_DISPATCHER = new MessageDispatcher()
-    {
 
+    private static final DecoderMessageDispatcher NOOP_DISPATCHER = new DecoderMessageDispatcher()
+    {
         @Override
-        public int dispatch(
+        public byte dispatch(
             int partition,
             long requestOffset,
             long messageOffset,
             DirectBuffer key,
-            Function<DirectBuffer, DirectBuffer> supplyHeader,
+            HeadersFW headers,
             long timestamp,
             long traceId,
             DirectBuffer value)
         {
-            return 1;
+            return 0;
         }
 
         @Override
@@ -141,7 +141,31 @@ public final class NetworkConnectionPool
             long lastOffset)
         {
         }
+    };
 
+    private static final MessageDispatcher MATCHING_MESSAGE_DISPATCHER = new MessageDispatcher()
+    {
+        @Override
+        public byte dispatch(
+            int partition,
+            long requestOffset,
+            long messageOffset,
+            DirectBuffer key,
+            java.util.function.Function<DirectBuffer, DirectBuffer> supplyHeader,
+            long timestamp,
+            long traceId,
+            DirectBuffer value)
+        {
+            return MessageDispatcher.FLAGS_MATCHED;
+        };
+
+        @Override
+        public void flush(
+            int partition,
+            long requestOffset,
+            long lastOffset)
+        {
+        };
     };
 
     enum MetadataRequestType
@@ -1111,7 +1135,7 @@ public final class NetworkConnectionPool
             super.doReinitialize();
         }
 
-        private MessageDispatcher getTopicDispatcher(String topicName)
+        private DecoderMessageDispatcher getTopicDispatcher(String topicName)
         {
             NetworkTopic topic = topicsByName.get(topicName);
 
@@ -1571,40 +1595,6 @@ public final class NetworkConnectionPool
         private BitSet needsHistoricalByPartition = new BitSet();
         private final boolean proactive;
 
-        private final class BootstrapMessageDispatcher  implements MessageDispatcher
-        {
-            private final long[] offsets;
-
-            BootstrapMessageDispatcher(int partitions)
-            {
-                offsets = new long[partitions];
-            }
-
-            @Override
-            public int dispatch(
-                int partition,
-                long requestOffset,
-                long messageOffset,
-                DirectBuffer key,
-                java.util.function.Function<DirectBuffer, DirectBuffer> supplyHeader,
-                long timestamp,
-                long traceId,
-                DirectBuffer value)
-            {
-                return 1;
-            };
-
-            @Override
-            public void flush(
-                int partition,
-                long requestOffset,
-                long lastOffset)
-            {
-                progressHandler.handle(partition, offsets[partition], lastOffset);
-                offsets[partition] = lastOffset;
-            };
-        };
-
         @Override
         public String toString()
         {
@@ -1633,9 +1623,12 @@ public final class NetworkConnectionPool
                  {
                      attachToPartition(i, 0L, 1);
                  }
-                 MessageDispatcher bootstrapDispatcher = new BootstrapMessageDispatcher(partitionCount);
+                 MessageDispatcher bootstrapDispatcher = new BootstrapMessageDispatcher(partitionCount, progressHandler);
                  this.dispatcher.add(null, -1, null, bootstrapDispatcher);
             }
+            // TODO: add specific dispatchers matching route header conditions (only add
+            //       MATCHING_MESSAGE_DISPATCHER if there's a route with no conditions)
+            this.dispatcher.add(null, -1, null, MATCHING_MESSAGE_DISPATCHER);
         }
 
         PartitionProgressHandler doAttach(
@@ -2064,6 +2057,44 @@ public final class NetworkConnectionPool
             nodeIdsByPartition = null;
             nextBrokerIndex = 0;
         }
+    }
+
+    private static final class BootstrapMessageDispatcher  implements MessageDispatcher
+    {
+        private final long[] offsets;
+        private final PartitionProgressHandler progressHandler;
+
+        BootstrapMessageDispatcher(
+                int partitions,
+                PartitionProgressHandler progressHandler)
+        {
+            offsets = new long[partitions];
+            this.progressHandler = progressHandler;
+        }
+
+        @Override
+        public byte dispatch(
+            int partition,
+            long requestOffset,
+            long messageOffset,
+            DirectBuffer key,
+            java.util.function.Function<DirectBuffer, DirectBuffer> supplyHeader,
+            long timestamp,
+            long traceId,
+            DirectBuffer value)
+        {
+            return 0;
+        };
+
+        @Override
+        public void flush(
+            int partition,
+            long requestOffset,
+            long lastOffset)
+        {
+            progressHandler.handle(partition, offsets[partition], lastOffset);
+            offsets[partition] = lastOffset;
+        };
     }
 
 }

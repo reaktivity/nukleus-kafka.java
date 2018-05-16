@@ -19,6 +19,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.reaktivity.nukleus.kafka.internal.stream.MessageDispatcher.FLAGS_DELIVERED;
 
 import java.util.function.Function;
 
@@ -92,13 +93,13 @@ public final class TopicMessageDispatcherTest
             {
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with((DirectBuffer) null),
                         with(header), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
                 oneOf(child2).dispatch(with(1), with(10L), with(12L), with((DirectBuffer) null),
                         with(header), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
             }
         });
-        assertEquals(2, dispatcher.dispatch(1, 10L, 12L, null, header, timestamp, traceId, null));
+        assertEquals(FLAGS_DELIVERED, dispatcher.dispatch(1, 10L, 12L, null, header, timestamp, traceId, null));
     }
 
 
@@ -124,17 +125,17 @@ public final class TopicMessageDispatcherTest
             {
                 oneOf(child1).dispatch(with(0), with(10L), with(12L), with(bufferMatching("key1")),
                         with(header), with(timestamp1), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
                 oneOf(child2).dispatch(with(0), with(10L), with(12L), with(bufferMatching("key1")),
                         with(header), with(timestamp1), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
                 oneOf(child3).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key2")),
                         with(header), with(timestamp2), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
             }
         });
-        assertEquals(2, dispatcher.dispatch(0, 10L, 12L, asBuffer("key1"), header, timestamp1, traceId, null));
-        assertEquals(1, dispatcher.dispatch(1, 10L, 12L, asBuffer("key2"), header, timestamp2, traceId, null));
+        assertEquals(FLAGS_DELIVERED, dispatcher.dispatch(0, 10L, 12L, asBuffer("key1"), header, timestamp1, traceId, null));
+        assertEquals(FLAGS_DELIVERED, dispatcher.dispatch(1, 10L, 12L, asBuffer("key2"), header, timestamp2, traceId, null));
     }
 
     @Test
@@ -211,8 +212,8 @@ public final class TopicMessageDispatcherTest
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
         ListFW<KafkaHeaderFW> emptyHeaders = headersRW
-                .wrap(headersBuffer, 0, headersBuffer.capacity())
-                .build();
+            .wrap(headersBuffer, 0, headersBuffer.capacity())
+            .build();
         dispatcher.add(null, -1, emptyHeaders, child1);
         dispatcher.add(null, -1, null, child2);
         assertTrue(dispatcher.remove(null, -1, emptyHeaders, child1));

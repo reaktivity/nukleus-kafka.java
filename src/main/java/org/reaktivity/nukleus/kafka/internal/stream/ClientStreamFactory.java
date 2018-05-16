@@ -483,7 +483,7 @@ public final class ClientStreamFactory implements StreamFactory
         }
 
         @Override
-        public int dispatch(
+        public byte dispatch(
             int partition,
             long requestOffset,
             long messageOffset,
@@ -493,7 +493,7 @@ public final class ClientStreamFactory implements StreamFactory
             long traceId,
             DirectBuffer value)
         {
-            int  messagesDelivered = 0;
+            byte result = MessageDispatcher.FLAGS_MATCHED;
             if (progressStartOffset == UNSET)
             {
                 progressStartOffset = fetchOffsets.get(partition);
@@ -535,10 +535,10 @@ public final class ClientStreamFactory implements StreamFactory
                     pendingMessageTraceId = traceId;
                     pendingMessageValue = wrap(pendingMessageValueBuffer, value);
                     messagePending = true;
-                    messagesDelivered++;
+                    result &= MessageDispatcher.FLAGS_DELIVERED;
                 }
             }
-            return messagesDelivered;
+            return result;
         }
 
         @Override

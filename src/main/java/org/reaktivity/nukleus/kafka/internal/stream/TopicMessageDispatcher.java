@@ -15,20 +15,34 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static org.reaktivity.nukleus.kafka.internal.cache.IPartitionIndex.NO_MESSAGE;
+
+import java.util.Iterator;
+import java.util.NoSuchElementException;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
+import org.reaktivity.nukleus.kafka.internal.cache.IPartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 
-public class TopicMessageDispatcher implements MessageDispatcher
+public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessageDispatcher
 {
     private final KeyMessageDispatcher[] keys;
     private final HeadersMessageDispatcher headers;
     private final BroadcastMessageDispatcher broadcast = new BroadcastMessageDispatcher();
 
+    private final Entry zeroOffsetEntry = new NoMessageEntry(0L);
+    private final NoMessageIterator noMessageIterator = new NoMessageIterator();
+
     public TopicMessageDispatcher(
+        int partitionCount)
+    {
+        this(partitionCount, KeyMessageDispatcher::new, HeaderValueMessageDispatcher::new);
+    }
+
+    protected TopicMessageDispatcher(
         int partitionCount,
         Function<Function<DirectBuffer, HeaderValueMessageDispatcher>, KeyMessageDispatcher> createKeyMessageDispatcher,
         Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
@@ -42,35 +56,50 @@ public class TopicMessageDispatcher implements MessageDispatcher
     }
 
     @Override
-    public int dispatch(
-                 int partition,
-                 long requestOffset,
-                 long messageOffset,
-                 DirectBuffer key,
-                 Function<DirectBuffer, DirectBuffer> supplyHeader,
-                 long timestamp,
-                 long traceId,
-                 DirectBuffer value)
+    public byte dispatch(
+        int partition,
+        long requestOffset,
+        long messageOffset,
+        DirectBuffer key,
+        HeadersFW headers,
+        long timestamp,
+        long traceId,
+        DirectBuffer value)
     {
-        int result = 0;
+        return dispatch(partition, requestOffset, messageOffset, key, headers::supplyHeader, timestamp,
+               traceId, value);
+    }
+
+    @Override
+    public byte dispatch(
+        int partition,
+        long requestOffset,
+        long messageOffset,
+        DirectBuffer key,
+        Function<DirectBuffer, DirectBuffer> supplyHeader,
+        long timestamp,
+        long traceId,
+        DirectBuffer value)
+    {
+        byte result = 0;
         if (keys[partition].shouldDispatch(key, messageOffset))
         {
-            result += broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
+            result |= broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
             if (key != null)
             {
-                result += keys[partition].dispatch(partition, requestOffset, messageOffset,
+                result |= keys[partition].dispatch(partition, requestOffset, messageOffset,
                                                    key, supplyHeader, timestamp, traceId, value);
             }
-            result += headers.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
+            result |= headers.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
         }
         return result;
     }
 
     @Override
     public void flush(
-            int partition,
-            long requestOffset,
-            long lastOffset)
+        int partition,
+        long requestOffset,
+        long lastOffset)
     {
         broadcast.flush(partition, requestOffset, lastOffset);
         keys[partition].flush(partition, requestOffset, lastOffset);
@@ -90,10 +119,11 @@ public class TopicMessageDispatcher implements MessageDispatcher
         return keys[partition].lowestOffset(partition);
     }
 
-    public void add(OctetsFW fetchKey,
-                    int fetchKeyPartition,
-                    ListFW<KafkaHeaderFW> headers,
-                    MessageDispatcher dispatcher)
+    public void add(
+        OctetsFW fetchKey,
+        int fetchKeyPartition,
+        ListFW<KafkaHeaderFW> headers,
+        MessageDispatcher dispatcher)
     {
          if (fetchKey != null)
          {
@@ -139,6 +169,75 @@ public class TopicMessageDispatcher implements MessageDispatcher
             empty = empty && keys.isEmpty();
         }
         return empty && headers.isEmpty() && broadcast.isEmpty();
+    }
+
+    public Entry getEntry(
+        int partition,
+        OctetsFW key)
+    {
+        return zeroOffsetEntry;
+    }
+
+    public Iterator<Entry> entries(
+        int partition,
+        long requestOffset)
+    {
+        return noMessageIterator.offset(requestOffset);
+    }
+
+    public static final class NoMessageEntry implements Entry
+    {
+        private long offset;
+
+        NoMessageEntry(long offset)
+        {
+            this.offset = offset;
+        }
+
+        @Override
+        public long offset()
+        {
+            return offset;
+        }
+
+        @Override
+        public int message()
+        {
+            return NO_MESSAGE;
+        }
+    }
+
+    public final class NoMessageIterator implements Iterator<Entry>
+    {
+        private final NoMessageEntry entry = new NoMessageEntry(0L);
+        private boolean hasNext;
+
+        NoMessageIterator offset(long offset)
+        {
+            entry.offset = offset;
+            hasNext = false;
+            return this;
+        }
+
+        @Override
+        public boolean hasNext()
+        {
+            return hasNext;
+        }
+
+        @Override
+        public Entry next()
+        {
+            if (hasNext)
+            {
+                hasNext = false;
+                return entry;
+            }
+            else
+            {
+                 throw new NoSuchElementException();
+            }
+        }
     }
 
 }

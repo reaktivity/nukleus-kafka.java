@@ -21,6 +21,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.reaktivity.nukleus.kafka.internal.stream.MessageDispatcher.FLAGS_DELIVERED;
 
 import java.util.function.Function;
 
@@ -121,13 +122,13 @@ public final class HeaderValueMessageDispatcherTest
                 will(returnValue(asBuffer("value2")));
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
                 oneOf(child2).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
             }
         });
-        assertEquals(2, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, null));
+        assertEquals(FLAGS_DELIVERED, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, null));
     }
 
     @Test
@@ -163,10 +164,10 @@ public final class HeaderValueMessageDispatcherTest
                 will(returnValue(null));
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
             }
         });
-        assertEquals(1, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, null));
+        assertEquals(FLAGS_DELIVERED, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, null));
     }
 
     @Test
