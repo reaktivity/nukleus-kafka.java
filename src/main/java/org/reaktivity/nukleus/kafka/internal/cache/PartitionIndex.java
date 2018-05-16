@@ -55,7 +55,6 @@ public class PartitionIndex
     private final Entry candidate = new Entry(0L, NO_MESSAGE, NO_POSITION);
 
     private int compactFrom = Integer.MAX_VALUE;
-    private long validFromOffset = 0L;
     private long validToOffset = 0L;
 
     public PartitionIndex(
@@ -165,13 +164,6 @@ public class PartitionIndex
             result = noMessagesIterator.reset(offset).next();
         }
         return result;
-    }
-
-    public void setPartitionStartOffset(
-        long firstOffset)
-    {
-        assert firstOffset >= validFromOffset;
-        validFromOffset = validToOffset = firstOffset;
     }
 
     private void compact()

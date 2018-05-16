@@ -129,9 +129,8 @@ public final class PartitionIndexTest
                 will(returnValue(1));
             }
         });
-        cache.setPartitionStartOffset(100L);
         cache.add(101L, 111L, 123, 456, asBuffer("key1"), headers, value);
-        cache.add(100L, 101L, 124, 457, asBuffer("key2"), headers, value);
+        cache.add(0L, 101L, 124, 457, asBuffer("key2"), headers, value);
         cache.add(102L, 111L, 125, 458, asBuffer("key3"), headers, value);
         cache.add(101L, 102L, 126, 459, asBuffer("key4"), headers, value);
         Iterator<PartitionIndex.Entry> iterator = cache.entries(100L);
@@ -183,24 +182,6 @@ public final class PartitionIndexTest
         cache.add(0L, 2L, 124, 457, asBuffer("key2"), headers, value);
         Entry entry = cache.getEntry(1L, asOctets("unknownKey"));
         assertEquals(2L, entry.offset());
-        assertEquals(MessageCache.NO_MESSAGE, entry.message());
-    }
-
-    @Test
-    public void shouldGetPartitionStartOffsetForNonExistingKeyWhenCacheIsEmpty()
-    {
-        cache.setPartitionStartOffset(100L);
-        Entry entry = cache.getEntry(10L, asOctets("key1"));
-        assertEquals(100L, entry.offset());
-        assertEquals(MessageCache.NO_MESSAGE, entry.message());
-    }
-
-    @Test
-    public void shouldGetRequestedOffsetForNonExistingKeyWhenCacheIsEmptyAndRequestedGTPartitionStart()
-    {
-        cache.setPartitionStartOffset(100L);
-        Entry entry = cache.getEntry(111L, asOctets("key1"));
-        assertEquals(111L, entry.offset());
         assertEquals(MessageCache.NO_MESSAGE, entry.message());
     }
 
@@ -335,8 +316,7 @@ public final class PartitionIndexTest
                 will(returnValue(1));
             }
         });
-        cache.setPartitionStartOffset(100L);
-        cache.add(100L, 101L, 123, 456, asBuffer("key1"), headers, value);
+        cache.add(0L, 101L, 123, 456, asBuffer("key1"), headers, value);
         cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value);
         cache.add(100L, 103L, 125, 458, asBuffer("key3"), headers, value);
         cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value);
@@ -358,8 +338,7 @@ public final class PartitionIndexTest
                 will(returnValue(messageRO));
             }
         });
-        cache.setPartitionStartOffset(100L);
-        cache.add(100L, 101L, 123, 456, asBuffer("key1"), headers, value);
+        cache.add(0L, 101L, 123, 456, asBuffer("key1"), headers, value);
         cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value);
         cache.add(100L, 103L, 125, 458, asBuffer("key3"), headers, value);
         cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value);
@@ -375,8 +354,7 @@ public final class PartitionIndexTest
                 will(returnValue(0));
             }
         });
-        cache.setPartitionStartOffset(100L);
-        cache.add(100L, 110L, 123, 456, asBuffer("key1"), headers, value);
+        cache.add(0L, 110L, 123, 456, asBuffer("key1"), headers, value);
         cache.add(111L, 110L, 124, 457, asBuffer("key1"), headers, value);
     }
 
@@ -409,27 +387,6 @@ public final class PartitionIndexTest
         assertEquals(3L, entry.offset());
         assertEquals(0, entry.message());
         assertFalse(iterator.hasNext());
-    }
-
-    @Test(expected = AssertionError.class)
-    public void shouldRejectPartitionStartOffsetReduction()
-    {
-        cache.setPartitionStartOffset(100L);
-        cache.setPartitionStartOffset(99L);
-    }
-
-    @Test
-    public void shouldUpdatePartitionStartOffsetToSameValue()
-    {
-        cache.setPartitionStartOffset(100L);
-        cache.setPartitionStartOffset(100L);
-    }
-
-    @Test
-    public void shouldUpdatePartitionStartOffsetToHigherValue()
-    {
-        cache.setPartitionStartOffset(100L);
-        cache.setPartitionStartOffset(200L);
     }
 
     @Test
