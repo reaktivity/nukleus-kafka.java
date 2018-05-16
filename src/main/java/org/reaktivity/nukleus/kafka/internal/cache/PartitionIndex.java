@@ -32,7 +32,7 @@ import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
-public class PartitionCache
+public class PartitionIndex
 {
     public static final int TOMBSTONE_MESSAGE = -2;
 
@@ -58,7 +58,7 @@ public class PartitionCache
     private long validFromOffset = 0L;
     private long validToOffset = 0L;
 
-    public PartitionCache(
+    public PartitionIndex(
         int initialCapacity,
         int tombstoneLifetimeMillis,
         MessageCache messageCache)
