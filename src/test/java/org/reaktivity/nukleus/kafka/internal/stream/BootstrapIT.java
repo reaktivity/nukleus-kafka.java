@@ -163,6 +163,7 @@ public class BootstrapIT
     public void shouldBootstrapTopicAndUseCachedKeyOffsetThenLive() throws Exception
     {
         k3po.start();
+        k3po.awaitBarrier("ROUTED_CLIENT");
         k3po.awaitBarrier("SECOND_LIVE_FETCH_REQUEST_RECEIVED");
         k3po.notifyBarrier("CONNECT_CLIENT");
         k3po.awaitBarrier("HISTORICAL_FETCH_REQUEST_RECEIVED");
