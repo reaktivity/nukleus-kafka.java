@@ -41,18 +41,17 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
     }
 
     @Override
-    public
-    byte dispatch(
-             int partition,
-             long requestOffset,
-             long messageOffset,
-             DirectBuffer key,
-             Function<DirectBuffer, DirectBuffer> supplyHeader,
-             long timestamp,
-             long traceId,
-             DirectBuffer value)
+    public int dispatch(
+        int partition,
+        long requestOffset,
+        long messageOffset,
+        DirectBuffer key,
+        Function<DirectBuffer, DirectBuffer> supplyHeader,
+        long timestamp,
+        long traceId,
+        DirectBuffer value)
     {
-        byte result = 0;
+        int result = 0;
         DirectBuffer header = supplyHeader.apply(headerName);
         if (header != null)
         {

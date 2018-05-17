@@ -34,7 +34,7 @@ public class CompactedHeaderValueMessageDispatcher extends HeaderValueMessageDis
     }
 
     @Override
-    public byte dispatch(
+    public int dispatch(
          int partition,
          long requestOffset,
          long messageOffset,
@@ -44,7 +44,7 @@ public class CompactedHeaderValueMessageDispatcher extends HeaderValueMessageDis
          long traceId,
          DirectBuffer value)
     {
-        byte result = 0;
+        int result = 0;
         DirectBuffer headerValue = supplyHeader.apply(headerName);
         MessageDispatcher previousDispatcher = dispatchersByKey.get(key);
         HeadersMessageDispatcher dispatcher = null;

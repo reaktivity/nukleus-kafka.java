@@ -20,7 +20,7 @@ import org.agrona.DirectBuffer;
 public interface DecoderMessageDispatcher
 {
 
-    byte dispatch(
+    int dispatch(
         int partition,
         long requestOffset,
         long messageOffset,

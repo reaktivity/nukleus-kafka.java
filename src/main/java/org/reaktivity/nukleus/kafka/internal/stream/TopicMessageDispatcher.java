@@ -48,7 +48,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
     }
 
     @Override
-    public byte dispatch(
+    public int dispatch(
         int partition,
         long requestOffset,
         long messageOffset,
@@ -58,7 +58,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         long traceId,
         DirectBuffer value)
     {
-        byte result = dispatch(partition, requestOffset, messageOffset, key, headers.headerSupplier(), timestamp,
+        int result = dispatch(partition, requestOffset, messageOffset, key, headers.headerSupplier(), timestamp,
                 traceId, value);
         long messageStartOffset = messageOffset - 1;
         if (MessageDispatcher.matched(result))
@@ -69,7 +69,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
     }
 
     @Override
-    public byte dispatch(
+    public int dispatch(
         int partition,
         long requestOffset,
         long messageOffset,
@@ -79,7 +79,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         long traceId,
         DirectBuffer value)
     {
-        byte result = 0;
+        int result = 0;
         long messageStartOffset = messageOffset - 1;
         if (shouldDispatch(partition, requestOffset, messageStartOffset, key))
         {

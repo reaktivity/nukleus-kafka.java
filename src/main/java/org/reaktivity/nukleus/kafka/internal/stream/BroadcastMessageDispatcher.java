@@ -26,7 +26,7 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
     private final List<MessageDispatcher> dispatchers = new ArrayList<MessageDispatcher>();
 
     @Override
-    public byte dispatch(
+    public int dispatch(
                  int partition,
                  long requestOffset,
                  long messageOffset,
@@ -36,7 +36,7 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
                  long traceId,
                  DirectBuffer value)
     {
-        byte result = 0;
+        int result = 0;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);

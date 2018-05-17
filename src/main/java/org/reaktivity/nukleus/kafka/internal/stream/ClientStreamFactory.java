@@ -485,7 +485,7 @@ public final class ClientStreamFactory implements StreamFactory
         }
 
         @Override
-        public byte dispatch(
+        public int dispatch(
             int partition,
             long requestOffset,
             long messageOffset,
@@ -495,7 +495,7 @@ public final class ClientStreamFactory implements StreamFactory
             long traceId,
             DirectBuffer value)
         {
-            byte result = MessageDispatcher.FLAGS_MATCHED;
+            int result = MessageDispatcher.FLAGS_MATCHED;
             if (progressStartOffset == UNSET)
             {
                 progressStartOffset = fetchOffsets.get(partition);

@@ -21,26 +21,26 @@ import org.agrona.DirectBuffer;
 
 public interface MessageDispatcher
 {
-    byte FLAGS_MATCHED = 0x01;
-    byte FLAGS_DELIVERED = 0x02 | FLAGS_MATCHED;
-    byte FLAGS_BLOCKED = 0x04 | FLAGS_MATCHED;
+    int FLAGS_MATCHED = 0x01;
+    int FLAGS_DELIVERED = 0x02 | FLAGS_MATCHED;
+    int FLAGS_BLOCKED = 0x04 | FLAGS_MATCHED;
 
-    static boolean matched(byte result)
+    static boolean matched(int result)
     {
         return (result & FLAGS_MATCHED) > 0;
     }
 
-    static boolean delivered(byte result)
+    static boolean delivered(int result)
     {
         return (result & FLAGS_DELIVERED) > 0;
     }
 
-    static boolean blocked(byte result)
+    static boolean blocked(int result)
     {
         return (result & FLAGS_BLOCKED) > 0;
     }
 
-    byte dispatch(
+    int dispatch(
         int partition,
         long requestOffset,
         long messageOffset,

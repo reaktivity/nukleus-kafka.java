@@ -127,7 +127,7 @@ public final class NetworkConnectionPool
     private static final DecoderMessageDispatcher NOOP_DISPATCHER = new DecoderMessageDispatcher()
     {
         @Override
-        public byte dispatch(
+        public int dispatch(
             int partition,
             long requestOffset,
             long messageOffset,
@@ -152,7 +152,7 @@ public final class NetworkConnectionPool
     private static final MessageDispatcher MATCHING_MESSAGE_DISPATCHER = new MessageDispatcher()
     {
         @Override
-        public byte dispatch(
+        public int dispatch(
             int partition,
             long requestOffset,
             long messageOffset,
@@ -2096,7 +2096,7 @@ public final class NetworkConnectionPool
         }
 
         @Override
-        public byte dispatch(
+        public int dispatch(
             int partition,
             long requestOffset,
             long messageOffset,

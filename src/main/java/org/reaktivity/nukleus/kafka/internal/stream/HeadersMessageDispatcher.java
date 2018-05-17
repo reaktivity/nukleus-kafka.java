@@ -42,7 +42,7 @@ public class HeadersMessageDispatcher implements MessageDispatcher
     }
 
     @Override
-    public byte dispatch(
+    public int dispatch(
                  int partition,
                  long requestOffset,
                  long messageOffset,
@@ -52,7 +52,7 @@ public class HeadersMessageDispatcher implements MessageDispatcher
                  long traceId,
                  DirectBuffer value)
     {
-        byte result = 0;
+        int result = 0;
         result |=  broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
         for (int i = 0; i < dispatchers.size(); i++)
         {
