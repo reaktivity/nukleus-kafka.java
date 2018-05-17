@@ -34,6 +34,8 @@ import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
+import org.reaktivity.nukleus.kafka.internal.cache.DefaultMessageCache;
+import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
 import org.reaktivity.nukleus.kafka.internal.function.IntBooleanConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
@@ -100,7 +102,7 @@ public final class ClientStreamFactory implements StreamFactory
     final LongSupplier supplyTrace;
     final LongSupplier supplyCorrelationId;
     final BufferPool bufferPool;
-    final MemoryManager memoryManager;
+    final MessageCache messageCache;
     private final MutableDirectBuffer writeBuffer;
 
     final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
@@ -130,7 +132,7 @@ public final class ClientStreamFactory implements StreamFactory
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
         this.bufferPool = requireNonNull(bufferPool);
-        this.memoryManager = requireNonNull(memoryManager);
+        this.messageCache = new DefaultMessageCache(requireNonNull(memoryManager));
         this.supplyStreamId = requireNonNull(supplyStreamId);
         this.supplyTrace = requireNonNull(supplyTrace);
         this.supplyCorrelationId = supplyCorrelationId;
@@ -139,7 +141,7 @@ public final class ClientStreamFactory implements StreamFactory
         groupBudget = new Long2LongHashMap(-1);
         groupMembers = new Long2LongHashMap(-1);
         connectPoolFactoryConsumer.accept((networkName, ref) ->
-            new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes, bufferPool, memoryManager));
+            new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes, bufferPool, messageCache));
     }
 
     @Override
@@ -195,7 +197,7 @@ public final class ClientStreamFactory implements StreamFactory
 
                 NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef,
                         ref -> new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes,
-                                bufferPool, memoryManager));
+                                bufferPool, messageCache));
 
                 newStream = new ClientAcceptStream(applicationThrottle, applicationId, connectionPool)::handleStream;
             }

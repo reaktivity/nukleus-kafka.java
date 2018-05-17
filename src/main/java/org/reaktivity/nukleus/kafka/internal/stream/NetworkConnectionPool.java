@@ -53,10 +53,13 @@ import org.agrona.collections.Long2LongHashMap.LongIterator;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
+import org.reaktivity.nukleus.kafka.internal.cache.CompactedPartitionIndex;
+import org.reaktivity.nukleus.kafka.internal.cache.DefaultPartitionIndex;
+import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
+import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.function.IntBooleanConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.IntLongConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
-import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
@@ -118,6 +121,9 @@ public final class NetworkConnectionPool
 
     private static final int MAX_PADDING = 5 * 1024;
 
+    private static final int KAFKA_SERVER_DEFAULT_DELETE_RETENTION_MS = 86400000;
+    private static final PartitionIndex DEFAULT_PARTITION_INDEX = new DefaultPartitionIndex();
+
     private static final DecoderMessageDispatcher NOOP_DISPATCHER = new DecoderMessageDispatcher()
     {
         @Override
@@ -167,7 +173,6 @@ public final class NetworkConnectionPool
         {
         };
     };
-
     enum MetadataRequestType
     {
         METADATA, DESCRIBE_CONFIGS
@@ -216,7 +221,7 @@ public final class NetworkConnectionPool
     private final int fetchMaxBytes;
     private final int fetchPartitionMaxBytes;
     private final BufferPool bufferPool;
-    private final MemoryManager memoryManager;
+    private final MessageCache messageCache;
     private AbstractFetchConnection[] connections = new LiveFetchConnection[0];
     private HistoricalFetchConnection[] historicalConnections = new HistoricalFetchConnection[0];
     private MetadataConnection metadataConnection;
@@ -235,7 +240,7 @@ public final class NetworkConnectionPool
         int fetchMaxBytes,
         int fetchPartitionMaxBytes,
         BufferPool bufferPool,
-        MemoryManager memoryManager)
+        MessageCache messageCache)
     {
         this.clientStreamFactory = clientStreamFactory;
         this.networkName = networkName;
@@ -243,7 +248,7 @@ public final class NetworkConnectionPool
         this.fetchMaxBytes = fetchMaxBytes;
         this.fetchPartitionMaxBytes = fetchPartitionMaxBytes;
         this.bufferPool = bufferPool;
-        this.memoryManager = memoryManager;
+        this.messageCache = messageCache;
         this.encodeBuffer = new UnsafeBuffer(new byte[clientStreamFactory.bufferPool.slotCapacity()]);
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
@@ -1613,8 +1618,26 @@ public final class NetworkConnectionPool
             this.partitions = new TreeSet<>();
             this.candidate = new NetworkTopicPartition();
             this.progressHandler = this::handleProgress;
-            this.dispatcher = new TopicMessageDispatcher(partitionCount,
-                    compacted ? CachingKeyMessageDispatcher::new : KeyMessageDispatcher::new,
+            PartitionIndex[] partitionIndexes = new PartitionIndex[partitionCount];
+            if (compacted)
+            {
+                for (int i = 0; i < partitionCount; i++)
+                {
+                    // TODO: read topic config "delete.retention.ms" and use that value if set
+                    partitionIndexes[i] = new CompactedPartitionIndex(1000, KAFKA_SERVER_DEFAULT_DELETE_RETENTION_MS,
+                            messageCache);
+                }
+            }
+            else
+            {
+                for (int i = 0; i < partitionCount; i++)
+                {
+                    partitionIndexes[i] = DEFAULT_PARTITION_INDEX;
+                }
+            }
+
+            this.dispatcher = new TopicMessageDispatcher(
+                    partitionIndexes,
                     compacted ? CompactedHeaderValueMessageDispatcher::new : HeaderValueMessageDispatcher::new);
             this.proactive = proactive;
             if (proactive)
@@ -1648,7 +1671,7 @@ public final class NetworkConnectionPool
                 {
                     final int partitionId = (int) keys.nextValue();
                     long fetchOffset = fetchOffsets.get(partitionId);
-                    long cachedOffset = this.dispatcher.lowestOffset(partitionId);
+                    long cachedOffset = this.dispatcher.entries(partitionId, fetchOffset).next().offset();
                     if (cachedOffset > fetchOffset)
                     {
                         fetchOffsets.put(partitionId, cachedOffset);
@@ -1663,7 +1686,7 @@ public final class NetworkConnectionPool
                 long fetchOffset = fetchOffsets.get(fetchKeyPartition);
                 if (compacted)
                 {
-                    long cachedOffset = this.dispatcher.latestOffset(fetchKeyPartition, fetchKey);
+                    long cachedOffset = this.dispatcher.getEntry(fetchKeyPartition, fetchOffset, fetchKey).offset();
                     if (cachedOffset > fetchOffset)
                     {
                         fetchOffsets.put(fetchKeyPartition, cachedOffset);

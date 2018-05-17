@@ -158,6 +158,18 @@ public final class DefaultMessageCacheTest
     }
 
     @Test
+    public void shouldReturnNullFromGetWithNoMessageHandle()
+    {
+        assertNull(cache.get(NO_MESSAGE, messageRO));
+    }
+
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void shouldRejectInvalidMessageHandle()
+    {
+        cache.get(123, messageRO);
+    }
+
+    @Test
     public void shouldReleaseMessageAndReuseHandle()
     {
         int size = expected.sizeof() + Integer.BYTES;
@@ -233,6 +245,23 @@ public final class DefaultMessageCacheTest
         message = cache.get(handle2, messageRO);
         assertEquals(124, message.timestamp());
         assertEquals(457, message.traceId());
+    }
+
+    @Test
+    public void shouldReplaceNoMessage()
+    {
+        int size = expected.sizeof();
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(memoryManager).acquire(size + Integer.BYTES);
+                will(returnValue(0L));
+                oneOf(memoryManager).resolve(0L);
+                will(returnValue(memoryBuffer.addressOffset()));
+            }
+        });
+        int handle = cache.replace(NO_MESSAGE, 123, 456, key, headers, value);
+        assertNotEquals(MessageCache.NO_MESSAGE, handle);
     }
 
     @Test

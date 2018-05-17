@@ -32,7 +32,7 @@ import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
-public class PartitionIndex implements IPartitionIndex
+public class CompactedPartitionIndex implements PartitionIndex
 {
     private static final int NO_MESSAGE = MessageCache.NO_MESSAGE;
     private static final int NO_POSITION = -1;
@@ -55,7 +55,7 @@ public class PartitionIndex implements IPartitionIndex
     private int compactFrom = Integer.MAX_VALUE;
     private long validToOffset = 0L;
 
-    public PartitionIndex(
+    public CompactedPartitionIndex(
         int initialCapacity,
         int tombstoneLifetimeMillis,
         MessageCache messageCache)
@@ -69,67 +69,53 @@ public class PartitionIndex implements IPartitionIndex
     @Override
     public void add(
         long requestOffset,
-        long nextFetchOffset,
+        long messageStartOffset,
         long timestamp,
         long traceId,
         DirectBuffer key,
         HeadersFW headers,
         DirectBuffer value)
     {
-        long messageOffset = nextFetchOffset - 1;
-        EntryImpl entry = null;
+        buffer.wrap(key, 0, key.capacity());
+        EntryImpl entry = offsetsByKey.get(buffer);
 
         // Only cache if there are no gaps in observed offsets and we have not yet observed this offset
-        if (requestOffset <= validToOffset && messageOffset >= validToOffset)
+        if (requestOffset <= validToOffset && messageStartOffset >= validToOffset)
         {
-            validToOffset = Math.max(validToOffset,  nextFetchOffset);
-            buffer.wrap(key, 0, key.capacity());
-            entry = offsetsByKey.get(buffer);
+            validToOffset = Math.max(validToOffset,  messageStartOffset + 1);
             if (entry == null)
             {
                 UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[key.capacity()]);
                 keyCopy.putBytes(0,  key, 0, key.capacity());
-                entry = new EntryImpl(messageOffset, NO_MESSAGE, entries.size());
+                entry = new EntryImpl(messageStartOffset, NO_MESSAGE, entries.size());
                 offsetsByKey.put(keyCopy, entry);
-                entries.add(entry);
-                if (value == null)
-                {
-                    entry.message = TOMBSTONE_MESSAGE;
-                    tombstoneKeys.add(key);
-                    tombstoneExpiryTimes.add(System.currentTimeMillis() + tombstoneLifetimeMillis);
-                }
-                else
-                {
-                    entry.message = messageCache.put(timestamp, traceId, key, headers, value);
-                }
             }
             else
             {
                 compactFrom = Math.min(compactFrom, entry.position);
                 entry.position = entries.size();
-                entry.offset = messageOffset;
-                entries.add(entry);
-                if (value == null)
-                {
-                    entry.message = TOMBSTONE_MESSAGE;
-                    tombstoneKeys.add(key);
-                    tombstoneExpiryTimes.add(System.currentTimeMillis() + tombstoneLifetimeMillis);
-                }
-                else
-                {
-                    entry.message = messageCache.replace(entry.message, timestamp, traceId, key, headers, value);
-                }
+                entry.offset = messageStartOffset;
+            }
+            entries.add(entry);
+            cacheMessage(entry, timestamp, traceId, key, headers, value);
+        }
+        else if (requestOffset > validToOffset)
+        {
+            // Out of order add, we can still cache the offset and message for the key
+            // as long as it does not affect existing entries
+            if (entry == null)
+            {
+                UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[key.capacity()]);
+                keyCopy.putBytes(0,  key, 0, key.capacity());
+                entry = new EntryImpl(messageStartOffset, NO_MESSAGE, entries.size());
+                offsetsByKey.put(keyCopy, entry);
+                cacheMessage(entry, timestamp, traceId, key, headers, value);
             }
         }
-        else if (requestOffset <= validToOffset)
+        else if (entry.message != TOMBSTONE_MESSAGE && messageCache.get(entry.message, messageRO) == null)
         {
-            // cache the message if it was previously evicted due to lack of space
-            buffer.wrap(key, 0, key.capacity());
-            entry = offsetsByKey.get(buffer);
-            if (messageCache.get(entry.message, messageRO) == null)
-            {
-                entry.message = messageCache.replace(entry.message, timestamp, traceId, key, headers, value);
-            }
+            // historical message which was previously evicted due to lack of space, re-cache it
+            entry.message = messageCache.replace(entry.message, timestamp, traceId, key, headers, value);
         }
     }
 
@@ -153,6 +139,17 @@ public class PartitionIndex implements IPartitionIndex
     }
 
     @Override
+    public void extendOffset(
+        long requestOffset,
+        long lastOffset)
+    {
+        if (requestOffset < validToOffset)
+        {
+            validToOffset = Math.max(lastOffset,  validToOffset);
+        }
+    }
+
+    @Override
     public Entry getEntry(
         long requestOffset,
         OctetsFW key)
@@ -165,6 +162,36 @@ public class PartitionIndex implements IPartitionIndex
             result = noMessagesIterator.reset(offset).next();
         }
         return result;
+    }
+
+    @Override
+    public long highestOffset()
+    {
+        return validToOffset;
+    }
+
+    private void cacheMessage(
+        EntryImpl entry,
+        long timestamp,
+        long traceId,
+        DirectBuffer key,
+        HeadersFW headers,
+        DirectBuffer value)
+    {
+        if (value == null)
+        {
+            entry.message = TOMBSTONE_MESSAGE;
+            tombstoneKeys.add(key);
+            tombstoneExpiryTimes.add(System.currentTimeMillis() + tombstoneLifetimeMillis);
+        }
+        else if (entry.message == NO_MESSAGE)
+        {
+            entry.message = messageCache.put(timestamp, traceId, key, headers, value);
+        }
+        else
+        {
+            entry.message = messageCache.replace(entry.message, timestamp, traceId, key, headers, value);
+        }
     }
 
     private void compact()

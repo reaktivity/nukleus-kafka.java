@@ -31,11 +31,11 @@ import org.jmock.Expectations;
 import org.jmock.integration.junit4.JUnitRuleMockery;
 import org.junit.Rule;
 import org.junit.Test;
-import org.reaktivity.nukleus.kafka.internal.cache.IPartitionIndex.Entry;
+import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 
-public final class PartitionIndexTest
+public final class CompactedPartitionIndexTest
 {
     private static final int TOMBSTONE_LIFETIME_MILLIS = 1;
 
@@ -55,7 +55,7 @@ public final class PartitionIndexTest
         }
     };
 
-    private IPartitionIndex cache = new PartitionIndex(5, TOMBSTONE_LIFETIME_MILLIS, messageCache);
+    private PartitionIndex cache = new CompactedPartitionIndex(5, TOMBSTONE_LIFETIME_MILLIS, messageCache);
 
     @Test
     public void shouldAddMessage()
@@ -73,12 +73,12 @@ public final class PartitionIndexTest
     @Test
     public void shouldAddTombstoneMessageAndReportUntilTombstoneExpires() throws Exception
     {
-        cache.add(0L, 2L, 123, 456, key, headers, null);
-        Iterator<PartitionIndex.Entry> iterator = cache.entries(0L);
+        cache.add(0L, 1L, 123, 456, key, headers, null);
+        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(1L, entry.offset());
-        assertEquals(IPartitionIndex.TOMBSTONE_MESSAGE, entry.message());
+        assertEquals(PartitionIndex.TOMBSTONE_MESSAGE, entry.message());
         Thread.sleep(TOMBSTONE_LIFETIME_MILLIS);
         iterator = cache.entries(0L);
         assertFalse(iterator.hasNext());
@@ -96,21 +96,21 @@ public final class PartitionIndexTest
                 will(returnValue(1));
             }
         });
-        cache.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value);
-        cache.add(0L, 2L, 124, 457, asBuffer("key2"), headers, value);
-        cache.add(0L, 3L, 125, 458, asBuffer("key1"), headers, null);
-        Iterator<PartitionIndex.Entry> iterator = cache.entries(0L);
+        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value);
+        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value);
+        cache.add(0L, 2L, 125, 458, asBuffer("key1"), headers, null);
+        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
         Entry entry = iterator.next();
         assertEquals(1L, entry.offset());
         entry = iterator.next();
         assertEquals(2L, entry.offset());
-        assertEquals(IPartitionIndex.TOMBSTONE_MESSAGE, entry.message());
+        assertEquals(PartitionIndex.TOMBSTONE_MESSAGE, entry.message());
         Thread.sleep(TOMBSTONE_LIFETIME_MILLIS);
-        cache.add(2L, 4L, 126, 459, asBuffer("key2"), headers, null);
+        cache.add(2L, 3L, 126, 459, asBuffer("key2"), headers, null);
         iterator = cache.entries(0L);
         entry = iterator.next();
         assertEquals(3L, entry.offset());
-        assertEquals(IPartitionIndex.TOMBSTONE_MESSAGE, entry.message());
+        assertEquals(PartitionIndex.TOMBSTONE_MESSAGE, entry.message());
         assertFalse(iterator.hasNext());
         Thread.sleep(TOMBSTONE_LIFETIME_MILLIS);
         iterator = cache.entries(0L);
@@ -118,29 +118,33 @@ public final class PartitionIndexTest
     }
 
     @Test
-    public void shouldNotAddMessagesWithOffsetsOutOfOrder()
+    public void shouldNotAddToEntriesIteratorMessagesWithOffsetsOutOfOrder()
     {
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
                 will(returnValue(0));
-                oneOf(messageCache).put(126, 459, asBuffer("key4"), headers, value);
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
                 will(returnValue(1));
+                oneOf(messageCache).put(125, 458, asBuffer("key3"), headers, value);
+                will(returnValue(2));
+                oneOf(messageCache).put(126, 459, asBuffer("key4"), headers, value);
+                will(returnValue(3));
             }
         });
-        cache.add(101L, 111L, 123, 456, asBuffer("key1"), headers, value);
-        cache.add(0L, 101L, 124, 457, asBuffer("key2"), headers, value);
-        cache.add(102L, 111L, 125, 458, asBuffer("key3"), headers, value);
-        cache.add(101L, 102L, 126, 459, asBuffer("key4"), headers, value);
-        Iterator<PartitionIndex.Entry> iterator = cache.entries(100L);
+        cache.add(101L, 110L, 123, 456, asBuffer("key1"), headers, value);
+        cache.add(0L, 100L, 124, 457, asBuffer("key2"), headers, value);
+        cache.add(102L, 110L, 125, 458, asBuffer("key3"), headers, value);
+        cache.add(101L, 101L, 126, 459, asBuffer("key4"), headers, value);
+        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(100L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(100L, entry.offset());
-        assertEquals(0, entry.message());
+        assertEquals(1, entry.message());
         entry = iterator.next();
         assertEquals(101L, entry.offset());
-        assertEquals(1, entry.message());
+        assertEquals(3, entry.message());
         assertFalse(iterator.hasNext());
     }
 
@@ -156,8 +160,8 @@ public final class PartitionIndexTest
                 will(returnValue(1));
             }
         });
-        cache.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value);
-        cache.add(0L, 2L, 124, 457, asBuffer("key2"), headers, value);
+        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value);
+        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value);
         Entry entry = cache.getEntry(0L, asOctets("key1"));
         assertEquals(0L, entry.offset());
         assertEquals(0, entry.message());
@@ -181,7 +185,7 @@ public final class PartitionIndexTest
         cache.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value);
         cache.add(0L, 2L, 124, 457, asBuffer("key2"), headers, value);
         Entry entry = cache.getEntry(1L, asOctets("unknownKey"));
-        assertEquals(2L, entry.offset());
+        assertEquals(3L, entry.offset());
         assertEquals(MessageCache.NO_MESSAGE, entry.message());
     }
 
@@ -197,9 +201,9 @@ public final class PartitionIndexTest
                 will(returnValue(1));
             }
         });
-        cache.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value);
-        cache.add(0L, 2L, 124, 457, asBuffer("key2"), headers, value);
-        Iterator<PartitionIndex.Entry> iterator = cache.entries(0L);
+        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value);
+        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value);
+        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(0L, entry.offset());
@@ -221,7 +225,7 @@ public final class PartitionIndexTest
             }
         });
         cache.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value);
-        Iterator<PartitionIndex.Entry> iterator = cache.entries(0L);
+        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
         assertTrue(iterator.hasNext());
         assertNotNull(iterator.next());
         assertFalse(iterator.hasNext());
@@ -244,11 +248,11 @@ public final class PartitionIndexTest
                 will(returnValue(1));
             }
         });
-        cache.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value);
-        cache.add(0L, 2L, 124, 457, asBuffer("key2"), headers, value);
-        cache.add(0L, 3L, 125, 458, asBuffer("key3"), headers, value);
-        cache.add(0L, 11L, 126, 459, asBuffer("key2"), headers, value);
-        Iterator<PartitionIndex.Entry> iterator = cache.entries(5L);
+        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value);
+        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value);
+        cache.add(0L, 2L, 125, 458, asBuffer("key3"), headers, value);
+        cache.add(0L, 10L, 126, 459, asBuffer("key2"), headers, value);
+        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(5L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(10L, entry.offset());
@@ -259,7 +263,7 @@ public final class PartitionIndexTest
     @Test
     public void shouldReturnIteratorWithRequestedOffsetAndNoMessageWhenCacheIsEmpty()
     {
-        Iterator<PartitionIndex.Entry> iterator = cache.entries(100L);
+        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(100L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(100L, entry.offset());
@@ -270,7 +274,7 @@ public final class PartitionIndexTest
     @Test(expected=NoSuchElementException.class)
     public void shouldThrowExceptionFromNoMessageIteratorNextWhenNoMoreElements()
     {
-        Iterator<PartitionIndex.Entry> iterator = cache.entries(102L);
+        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(102L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(102L, entry.offset());
@@ -290,7 +294,7 @@ public final class PartitionIndexTest
             }
         });
         cache.add(0L, 101L, 123, 456, asBuffer("key1"), headers, value);
-        Iterator<PartitionIndex.Entry> iterator = cache.entries(102L);
+        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(102L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(102L, entry.offset());
@@ -345,7 +349,7 @@ public final class PartitionIndexTest
     }
 
     @Test
-    public void shouldNotCacheMessageWhenRequestOffsetExceedsHighestOffsetSeenSoFar()
+    public void shouldNotUpdateEntryForExistingKeyWhenAddHasRequestOffsetExceedsHighestOffsetSeenSoFar()
     {
         context.checking(new Expectations()
         {
@@ -355,7 +359,23 @@ public final class PartitionIndexTest
             }
         });
         cache.add(0L, 110L, 123, 456, asBuffer("key1"), headers, value);
-        cache.add(111L, 110L, 124, 457, asBuffer("key1"), headers, value);
+        cache.add(112L, 113L, 124, 457, asBuffer("key1"), headers, value);
+    }
+
+    @Test
+    public void shouldAddEntryForKeyButNotIncreaseHighwaterMarkWhenRequestOffsetExceedsHighestOffsetSeenSoFar()
+    {
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                will(returnValue(0));
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
+                will(returnValue(1));
+            }
+        });
+        cache.add(0L, 110L, 123, 456, asBuffer("key1"), headers, value);
+        cache.add(112L, 113L, 124, 457, asBuffer("key2"), headers, value);
     }
 
     @Test
@@ -374,11 +394,11 @@ public final class PartitionIndexTest
                 will(returnValue(0));
             }
         });
-        cache.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value);
-        cache.add(0L, 2L, 124, 457, asBuffer("key2"), headers, value);
-        cache.add(0L, 3L, 125, 458, asBuffer("key2"), headers, value);
-        cache.add(0L, 4L, 126, 459, asBuffer("key1"), headers, value);
-        Iterator<PartitionIndex.Entry> iterator = cache.entries(0L);
+        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value);
+        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value);
+        cache.add(0L, 2L, 125, 458, asBuffer("key2"), headers, value);
+        cache.add(0L, 3L, 126, 459, asBuffer("key1"), headers, value);
+        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(2L, entry.offset());
@@ -400,10 +420,10 @@ public final class PartitionIndexTest
             }
         });
         cache.add(0L, 100L, 123, 456, asBuffer("key1"), headers, value);
-        Iterator<PartitionIndex.Entry> iterator = cache.entries(0L);
+        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
         Entry entry = iterator.next();
         String result = entry.toString();
-        assertTrue(result.contains("99"));
+        assertTrue(result.contains("100"));
         assertTrue(result.contains("77"));
     }
 

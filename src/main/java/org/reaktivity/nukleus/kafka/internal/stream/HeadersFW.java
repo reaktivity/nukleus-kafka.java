@@ -17,6 +17,8 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 
+import java.util.function.Function;
+
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
@@ -32,6 +34,8 @@ public final class HeadersFW
     private final UnsafeBuffer header = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     private final UnsafeBuffer value1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     private final UnsafeBuffer value2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+
+    private final Function<DirectBuffer, DirectBuffer> supplyHeader = this::supplyHeader;
 
     public DirectBuffer buffer()
     {
@@ -58,7 +62,12 @@ public final class HeadersFW
         return this;
     }
 
-    public DirectBuffer supplyHeader(DirectBuffer headerName)
+    public Function<DirectBuffer, DirectBuffer> headerSupplier()
+    {
+        return supplyHeader;
+    }
+
+    private DirectBuffer supplyHeader(DirectBuffer headerName)
     {
         DirectBuffer result = null;
         if (limit > offset)

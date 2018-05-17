@@ -51,7 +51,7 @@ public class DefaultMessageCache implements MessageCache
     private long time = 0;
     private int entries = 0;
 
-    DefaultMessageCache(MemoryManager memoryManager)
+    public DefaultMessageCache(MemoryManager memoryManager)
     {
         this.memoryManager = memoryManager;
         lruHandles = new int[LRU_SCAN_SIZE];
@@ -65,16 +65,19 @@ public class DefaultMessageCache implements MessageCache
         MessageFW message)
     {
         MessageFW result = null;
-        long address = addresses.getLong(messageHandle);
-        if (address >= 0L)
+        if (messageHandle != NO_MESSAGE)
         {
-            long memoryAddress = memoryManager.resolve(address);
-            buffer.wrap(memoryAddress, Integer.BYTES);
-            int size = buffer.getInt(0) + Integer.BYTES;
-            buffer.wrap(memoryAddress, size);
-            accessTimes.setLong(messageHandle,  time++);
-            clearLruEntries();
-            result =  message.wrap(buffer, Integer.BYTES, size);
+            long address = addresses.getLong(messageHandle);
+            if (address >= 0L)
+            {
+                long memoryAddress = memoryManager.resolve(address);
+                buffer.wrap(memoryAddress, Integer.BYTES);
+                int size = buffer.getInt(0) + Integer.BYTES;
+                buffer.wrap(memoryAddress, size);
+                accessTimes.setLong(messageHandle,  time++);
+                clearLruEntries();
+                result =  message.wrap(buffer, Integer.BYTES, size);
+            }
         }
         return result;
     }
@@ -111,8 +114,17 @@ public class DefaultMessageCache implements MessageCache
         HeadersFW headers,
         DirectBuffer value)
     {
-        release(messageHandle);
-        return set(messageHandle, timestamp, traceId, key, headers, value);
+        int result;
+        if (messageHandle == NO_MESSAGE)
+        {
+            result = put(timestamp, traceId, key, headers, value);
+        }
+        else
+        {
+            release(messageHandle);
+            result = set(messageHandle, timestamp, traceId, key, headers, value);
+        }
+        return result;
     }
 
     private void clearLruEntries()
@@ -199,6 +211,7 @@ public class DefaultMessageCache implements MessageCache
             buffer.wrap(memoryAddress, Integer.BYTES);
             bytesReleased = buffer.getInt(0) + Integer.BYTES;
             memoryManager.release(address, bytesReleased);
+            addresses.setLong(messageHandle, NO_ADDRESS);
         }
         return bytesReleased;
     }
