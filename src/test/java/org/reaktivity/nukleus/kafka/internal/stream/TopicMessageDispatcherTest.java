@@ -160,8 +160,10 @@ public final class TopicMessageDispatcherTest
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
+        MessageDispatcher routeMatcher = context.mock(MessageDispatcher.class, "routeMatcher");
         dispatcher.add(asOctets("key1"), 1, null, child1);
         dispatcher.add(asOctets("key1"), 1, null, child2);
+        dispatcher.add(null, 1, null, routeMatcher);
 
         HeadersFW headers = emptyHeaders();
 
@@ -173,11 +175,15 @@ public final class TopicMessageDispatcherTest
                 oneOf(partitionIndex2).getEntry(with(10L), with(asOctets("key2")));
                 oneOf(partitionIndex2).highestOffset();
                 will(returnValue(0L));
+                oneOf(routeMatcher).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key2")),
+                        with(headers.headerSupplier()), with(timestamp), with(0L), with((DirectBuffer) null));
+                will(returnValue(MessageDispatcher.FLAGS_MATCHED));
                 oneOf(partitionIndex2).add(with(10L), with(11L), with(timestamp), with(0L),
                         with(bufferMatching("key2")), with(headers), with((DirectBuffer) null));
             }
         });
-        assertEquals(0, dispatcher.dispatch(1, 10L, 12L, asBuffer("key2"), headers, timestamp, 0L, null));
+        assertEquals(MessageDispatcher.FLAGS_MATCHED,
+                dispatcher.dispatch(1, 10L, 12L, asBuffer("key2"), headers, timestamp, 0L, null));
     }
 
     @Test
@@ -192,6 +198,7 @@ public final class TopicMessageDispatcherTest
             {
                 oneOf(child1).flush(1, 10L, 12L);
                 oneOf(child2).flush(1, 10L, 12L);
+                oneOf(partitionIndex2).extendOffset(10L, 12L);
             }
         });
         dispatcher.flush(1, 10L, 12L);

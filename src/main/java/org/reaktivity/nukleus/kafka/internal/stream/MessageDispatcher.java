@@ -27,17 +27,17 @@ public interface MessageDispatcher
 
     static boolean matched(int result)
     {
-        return (result & FLAGS_MATCHED) > 0;
+        return (result & FLAGS_MATCHED) != 0;
     }
 
     static boolean delivered(int result)
     {
-        return (result & FLAGS_DELIVERED) > 0;
+        return (result & FLAGS_DELIVERED) != 0;
     }
 
     static boolean blocked(int result)
     {
-        return (result & FLAGS_BLOCKED) > 0;
+        return (result & FLAGS_BLOCKED) != 0;
     }
 
     int dispatch(
