@@ -34,8 +34,8 @@ import org.jmock.integration.junit4.JUnitRuleMockery;
 import org.junit.Rule;
 import org.junit.Test;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 
 public final class TopicMessageDispatcherTest
 {

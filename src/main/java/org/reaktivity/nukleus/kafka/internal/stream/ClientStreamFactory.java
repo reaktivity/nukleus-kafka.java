@@ -54,7 +54,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.DataFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;

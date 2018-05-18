@@ -98,7 +98,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.AbortFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.DataFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.TcpBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;

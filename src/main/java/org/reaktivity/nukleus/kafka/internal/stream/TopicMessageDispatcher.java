@@ -21,9 +21,9 @@ import java.util.function.Function;
 import org.agrona.DirectBuffer;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 
 public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessageDispatcher
 {

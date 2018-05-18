@@ -23,9 +23,9 @@ import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 
 public class HeadersMessageDispatcher implements MessageDispatcher
 {
