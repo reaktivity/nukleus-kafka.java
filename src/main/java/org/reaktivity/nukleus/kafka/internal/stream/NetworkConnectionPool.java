@@ -24,6 +24,7 @@ import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.LEADER_NO
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.OFFSET_OUT_OF_RANGE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.UNKNOWN_TOPIC_OR_PARTITION;
+import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -42,6 +43,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
+import java.util.function.IntToLongFunction;
 
 import org.agrona.BitUtil;
 import org.agrona.DirectBuffer;
@@ -57,11 +59,13 @@ import org.reaktivity.nukleus.kafka.internal.cache.CompactedPartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.DefaultPartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex;
+import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.function.IntBooleanConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.IntLongConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
+import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.RequestHeaderFW;
@@ -182,6 +186,7 @@ public final class NetworkConnectionPool
     final FetchRequestFW.Builder fetchRequestRW = new FetchRequestFW.Builder();
     final TopicRequestFW.Builder topicRequestRW = new TopicRequestFW.Builder();
     final PartitionRequestFW.Builder partitionRequestRW = new PartitionRequestFW.Builder();
+    final PartitionRequestFW partitionRequestRO = new PartitionRequestFW();
 
     final MetadataRequestFW.Builder metadataRequestRW = new MetadataRequestFW.Builder();
     final DescribeConfigsRequestFW.Builder describeConfigsRequestRW = new DescribeConfigsRequestFW.Builder();
@@ -221,7 +226,13 @@ public final class NetworkConnectionPool
     private final int fetchMaxBytes;
     private final int fetchPartitionMaxBytes;
     private final BufferPool bufferPool;
+
     private final MessageCache messageCache;
+    private final UnsafeBuffer keyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    private final UnsafeBuffer valueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    private final MessageFW messageRO = new MessageFW();
+    private final HeadersFW headersRO = new HeadersFW();
+
     private AbstractFetchConnection[] connections = new LiveFetchConnection[0];
     private HistoricalFetchConnection[] historicalConnections = new HistoricalFetchConnection[0];
     private MetadataConnection metadataConnection;
@@ -898,10 +909,9 @@ public final class NetworkConnectionPool
                 long[] requestedOffsets = requestedFetchOffsetsByTopic.computeIfAbsent(
                         topicName,
                         k  ->  new long[topicMetadataByName.get(topicName).partitionCount()]);
-                int partitionCount = addTopicToRequest(topicName, (p, o) ->
-                {
-                    requestedOffsets[p] = o;
-                });
+                int partitionCount = addTopicToRequest(topicName,
+                        (p, o) -> requestedOffsets[p] = o,
+                        (p) -> requestedOffsets[p]);
 
                 if (partitionCount > 0)
                 {
@@ -1047,7 +1057,8 @@ public final class NetworkConnectionPool
 
         abstract int addTopicToRequest(
             String topicName,
-            IntLongConsumer partitionsOffsets);
+            IntLongConsumer setRequestedOffset,
+            IntToLongFunction getRequestedOffset);
 
         @Override
         void handleData(
@@ -1188,7 +1199,8 @@ public final class NetworkConnectionPool
         @Override
         int addTopicToRequest(
             String topicName,
-            IntLongConsumer partitionOffsets)
+            IntLongConsumer setRequestedOffset,
+            IntToLongFunction getRequestedOffset)
         {
             final NetworkTopic topic = topicsByName.get(topicName);
             final int maxPartitionBytes = topic.maximumWritableBytes(true);
@@ -1219,7 +1231,7 @@ public final class NetworkConnectionPool
                             .maxBytes(maxPartitionBytes)
                             .build();
 
-                        partitionOffsets.accept(candidate.id,  candidate.offset);
+                        setRequestedOffset.accept(candidate.id,  candidate.offset);
                         encodeLimit = partitionRequest.limit();
                         partitionCount++;
                     }
@@ -1241,9 +1253,11 @@ public final class NetworkConnectionPool
         @Override
         int addTopicToRequest(
             String topicName,
-            IntLongConsumer partitionOffsets)
+            IntLongConsumer setRequestedOffset,
+            IntToLongFunction getRequestedOffset)
         {
             int partitionCount = 0;
+            int originalEncodeLimit = encodeLimit;
 
             NetworkTopic topic = topicsByName.get(topicName);
             if (topic.needsHistorical())
@@ -1270,13 +1284,21 @@ public final class NetworkConnectionPool
                                 .maxBytes(maxPartitionBytes)
                                 .build();
 
-                            partitionOffsets.accept(partition.id,  partition.offset);
+                            setRequestedOffset.accept(partition.id,  partition.offset);
                             encodeLimit = partitionRequest.limit();
                             partitionId = partition.id;
                             partitionCount++;
                         }
                     }
+                    partitionCount = topic.satisfyPartitionRequestsFromCache(
+                            partitionCount,
+                            getRequestedOffset,
+                            NetworkConnectionPool.this.encodeBuffer,
+                            originalEncodeLimit,
+                            encodeLimit,
+                            (l) -> encodeLimit = l);
                 }
+
             }
 
             return partitionCount;
@@ -1606,7 +1628,7 @@ public final class NetworkConnectionPool
             return String.format("topicName=%s, partitions=%s", topicName, partitions);
         }
 
-        NetworkTopic(
+        private NetworkTopic(
             String topicName,
             int partitionCount,
             boolean compacted,
@@ -1793,6 +1815,93 @@ public final class NetworkConnectionPool
             return writableBytes;
         }
 
+        int satisfyPartitionRequestsFromCache(
+            final int partitionCount,
+            IntToLongFunction getRequestedOffset,
+            MutableDirectBuffer encodeBuffer,
+            int encodeOffset,
+            final int encodeLimit,
+            IntConsumer setNewLimit)
+        {
+            int newPartitionCount = partitionCount;
+            int newEncodeLimit = encodeLimit;
+            for (int i=0; i < partitionCount; i++)
+            {
+                PartitionRequestFW request = partitionRequestRO.wrap(encodeBuffer, encodeOffset, encodeLimit);
+                assert request.limit() <= encodeLimit;
+                int partitionId = request.partitionId();
+                final long fetchOffset = request.fetchOffset();
+                long logStartOffset = request.logStartOffset();
+                int maxBytes = request.maxBytes();
+                long newOffset = fetchOffset;
+                Iterator<Entry> entries = dispatcher.entries(partitionId, fetchOffset);
+                boolean requestSatisifed = true;
+                boolean flushNeeded = false;
+                long requestOffset = getRequestedOffset.applyAsLong(partitionId);
+                while(entries.hasNext())
+                {
+                    Entry entry = entries.next();
+                    newOffset = entry.offset();
+                    MessageFW message = messageCache.get(entry.message(), messageRO);
+                    if (message == null)
+                    {
+                        requestSatisifed = false;
+                        break;
+                    }
+                    else
+                    {
+                        newOffset++; // we always dispatch at next required fetch offset
+                        DirectBuffer key = wrap(keyBuffer, message.key());
+                        DirectBuffer value = wrap(valueBuffer,  message.value());
+                        HeadersFW headers = headersRO.wrap(message.headers().buffer(),  message.headers().offset(),
+                                message.headers().sizeof());
+                        int dispatched = dispatcher.dispatch(partitionId, requestOffset, newOffset, key, headers,
+                                message.timestamp(), message.traceId(), value);
+                        flushNeeded = true;
+                        if (MessageDispatcher.blocked(dispatched) &&
+                                !MessageDispatcher.delivered(dispatched))
+                        {
+                            // TODO: this may be too conservative, other dispatchers which did not match this message
+                            //       might still have available window to deliver later messages
+                            requestSatisifed = true;
+                            break;
+                        }
+                    }
+                }
+                if (flushNeeded)
+                {
+                    dispatcher.flush(partitionId, requestOffset, newOffset);
+                }
+                if (requestSatisifed)
+                {
+                    // Remove the partition request by shifting up the subsequent ones
+                    encodeBuffer.putBytes(encodeOffset,  encodeBuffer, request.limit(), encodeLimit);
+                    newEncodeLimit -= request.sizeof();
+                    newPartitionCount--;
+                }
+                else
+                {
+                    // Update the partition request if needed and move on to next
+                    if (newOffset > fetchOffset)
+                    {
+                        request = partitionRequestRW.wrap(encodeBuffer, encodeOffset, newEncodeLimit)
+                            .partitionId(partitionId)
+                            .fetchOffset(newOffset)
+                            .logStartOffset(logStartOffset)
+                            .maxBytes(maxBytes)
+                            .build();
+                    }
+                    encodeOffset = request.limit();
+                }
+            }
+            assert encodeLimit <= encodeLimit;
+            if (newEncodeLimit < encodeLimit)
+            {
+                setNewLimit.accept(newEncodeLimit);
+            }
+            return newPartitionCount;
+        }
+
         private void handleProgress(
             int partitionId,
             long firstOffset,
@@ -1853,6 +1962,17 @@ public final class NetworkConnectionPool
         boolean needsHistorical(int partition)
         {
             return needsHistoricalByPartition.get(partition);
+        }
+
+        DirectBuffer wrap(MutableDirectBuffer wrapper, Flyweight wrapped)
+        {
+            DirectBuffer result = null;
+            if (wrapped != null)
+            {
+                wrapper.wrap(wrapped.buffer(), wrapped.offset(), wrapped.sizeof());
+                result = wrapper;
+            }
+            return result;
         }
     }
 

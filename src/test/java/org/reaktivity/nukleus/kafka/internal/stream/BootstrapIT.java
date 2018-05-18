@@ -48,6 +48,7 @@ public class BootstrapIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
         .configure(KafkaConfiguration.FETCH_PARTITION_MAX_BYTES_PROPERTY, "123000")
+        .configure(KafkaConfiguration.MESSAGE_CACHE_CAPACITY_PROPERTY, "0")
         .clean();
 
     @Rule

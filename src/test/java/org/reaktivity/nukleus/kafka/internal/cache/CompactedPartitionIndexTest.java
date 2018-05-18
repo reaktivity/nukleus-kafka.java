@@ -37,7 +37,7 @@ import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 
 public final class CompactedPartitionIndexTest
 {
-    private static final int TOMBSTONE_LIFETIME_MILLIS = 1;
+    private static final int TOMBSTONE_LIFETIME_MILLIS = 5;
 
     private MessageCache messageCache;
 
@@ -73,12 +73,19 @@ public final class CompactedPartitionIndexTest
     @Test
     public void shouldAddTombstoneMessageAndReportUntilTombstoneExpires() throws Exception
     {
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(messageCache).put(123, 456, key, headers, null);
+                will(returnValue(0));
+                oneOf(messageCache).release(0);
+            }
+        });
         cache.add(0L, 1L, 123, 456, key, headers, null);
         Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(1L, entry.offset());
-        assertEquals(PartitionIndex.TOMBSTONE_MESSAGE, entry.message());
         Thread.sleep(TOMBSTONE_LIFETIME_MILLIS);
         iterator = cache.entries(0L);
         assertFalse(iterator.hasNext());
@@ -94,6 +101,12 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(0));
                 oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
                 will(returnValue(1));
+                oneOf(messageCache).replace(0, 125, 458, asBuffer("key1"), headers, null);
+                will(returnValue(0));
+                oneOf(messageCache).release(0);
+                oneOf(messageCache).replace(1, 126, 459, asBuffer("key2"), headers, null);
+                will(returnValue(1));
+                oneOf(messageCache).release(1);
             }
         });
         cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value);
@@ -104,13 +117,11 @@ public final class CompactedPartitionIndexTest
         assertEquals(1L, entry.offset());
         entry = iterator.next();
         assertEquals(2L, entry.offset());
-        assertEquals(PartitionIndex.TOMBSTONE_MESSAGE, entry.message());
         Thread.sleep(TOMBSTONE_LIFETIME_MILLIS);
         cache.add(2L, 3L, 126, 459, asBuffer("key2"), headers, null);
         iterator = cache.entries(0L);
         entry = iterator.next();
         assertEquals(3L, entry.offset());
-        assertEquals(PartitionIndex.TOMBSTONE_MESSAGE, entry.message());
         assertFalse(iterator.hasNext());
         Thread.sleep(TOMBSTONE_LIFETIME_MILLIS);
         iterator = cache.entries(0L);

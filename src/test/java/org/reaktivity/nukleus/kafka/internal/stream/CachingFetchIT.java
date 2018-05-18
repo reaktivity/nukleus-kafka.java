@@ -199,11 +199,12 @@ public class CachingFetchIT
         k3po.finish();
     }
 
+    // No historical fetch with message cache active
     @Test
     @Specification({
         "${route}/client/controller",
         "${client}/compacted.historical.uses.cached.key.then.latest.offset/client",
-        "${server}/compacted.historical.uses.cached.key.then.latest.offset/server"})
+        "${server}/compacted.historical.uses.cached.key.then.latest.offset.no.historical/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveCompactedMessagesWithUncachedKeyUsingLatestOffset() throws Exception
     {
@@ -214,11 +215,12 @@ public class CachingFetchIT
         k3po.finish();
     }
 
+    // No historical fetch with message cache active
     @Test
     @Specification({
         "${route}/client/controller",
         "${client}/compacted.historical.uses.cached.key.then.live/client",
-        "${server}/compacted.historical.uses.cached.key.then.live/server"})
+        "${server}/compacted.historical.uses.cached.key.then.live.no.historical/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveCompactedMessageUsingCachedKeyOffsetThenCatchUpToLiveStream() throws Exception
     {
@@ -230,28 +232,30 @@ public class CachingFetchIT
         k3po.finish();
     }
 
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.historical.uses.cached.key.then.live.after.null.message/client",
-        "${server}/compacted.historical.uses.cached.key.then.live.after.null.message/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCompactedMessagesFromLiveStreamAfterCachedKeyRemovedByNullMessage() throws Exception
-    {
-        k3po.finish();
-    }
+//    // Test is not relevant with message cache active
+//    @Test
+//    @Specification({
+//        "${route}/client/controller",
+//        "${client}/compacted.historical.uses.cached.key.then.live.after.null.message/client",
+//        "${server}/compacted.historical.uses.cached.key.then.live.after.null.message.no.historical/server"})
+//    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+//    public void shouldReceiveCompactedMessagesFromLiveStreamAfterCachedKeyRemovedByNullMessage() throws Exception
+//    {
+//        k3po.finish();
+//    }
 
-    @Test
-    @Specification(
-    {"${route}/client/controller",
-            "${client}/compacted.historical.uses.cached.key.then.live.after.offset.too.early.and.null.message/client",
-            "${server}/compacted.historical.uses.cached.key.then.live.after.offset.too.early.and.null.message/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCompactedMessagesFromLiveStreamAfterOffsetTooEarlyAndCachedKeyRemovedByNullMessage()
-            throws Exception
-    {
-        k3po.finish();
-    }
+//  // Test is not relevant with message cache active
+//    @Test
+//    @Specification(
+//    {"${route}/client/controller",
+//            "${client}/compacted.historical.uses.cached.key.then.live.after.offset.too.early.and.null.message/client",
+//            "${server}/compacted.historical.uses.cached.key.then.live.after.offset.too.early.and.null.message/server"})
+//    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+//    public void shouldReceiveCompactedMessagesFromLiveStreamAfterOffsetTooEarlyAndCachedKeyRemovedByNullMessage()
+//            throws Exception
+//    {
+//        k3po.finish();
+//    }
 
     @Test
     @Specification({
@@ -356,10 +360,11 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/compacted.messages.historical/client",
-        "${server}/compacted.messages.historical/server"})
+        "${client}/compacted.messages.from.cache/client",
+        "${server}/compacted.messages/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCompactedHistoricalMessages() throws Exception
+    // Behavior is different with message cache: better compaction
+    public void shouldReceiveCompactedHistoricalMessagesFromCache() throws Exception
     {
         k3po.finish();
     }
@@ -1104,7 +1109,6 @@ public class CachingFetchIT
         }
         catch (InterruptedException e)
         {
-            // TODO Auto-generated catch block
             e.printStackTrace();
         }
     }

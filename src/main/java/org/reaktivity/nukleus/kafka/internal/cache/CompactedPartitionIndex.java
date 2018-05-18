@@ -112,7 +112,7 @@ public class CompactedPartitionIndex implements PartitionIndex
                 cacheMessage(entry, timestamp, traceId, key, headers, value);
             }
         }
-        else if (entry.message != TOMBSTONE_MESSAGE && messageCache.get(entry.message, messageRO) == null)
+        else if (messageCache.get(entry.message, messageRO) == null)
         {
             // historical message which was previously evicted due to lack of space, re-cache it
             entry.message = messageCache.replace(entry.message, timestamp, traceId, key, headers, value);
@@ -180,11 +180,10 @@ public class CompactedPartitionIndex implements PartitionIndex
     {
         if (value == null)
         {
-            entry.message = TOMBSTONE_MESSAGE;
             tombstoneKeys.add(key);
             tombstoneExpiryTimes.add(System.currentTimeMillis() + tombstoneLifetimeMillis);
         }
-        else if (entry.message == NO_MESSAGE)
+        if (entry.message == NO_MESSAGE)
         {
             entry.message = messageCache.put(timestamp, traceId, key, headers, value);
         }
@@ -239,6 +238,7 @@ public class CompactedPartitionIndex implements PartitionIndex
                     DirectBuffer key = tombstoneKeys.set(pos,  null);
                     buffer.wrap(key, 0, key.capacity());
                     EntryImpl entry = offsetsByKey.remove(buffer);
+                    messageCache.release(entry.message);
                     compactFrom = Math.min(entry.position, compactFrom);
                     entry.position = NO_POSITION;
                 }

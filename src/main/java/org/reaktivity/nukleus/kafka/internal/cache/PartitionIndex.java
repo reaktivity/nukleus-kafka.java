@@ -24,7 +24,6 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 public interface PartitionIndex
 {
     int NO_MESSAGE = -1;
-    int TOMBSTONE_MESSAGE = -2;
 
     public interface Entry
     {
