@@ -65,11 +65,15 @@ public final class ClientStreamFactory implements StreamFactory
 {
     static final long UNSET = -1;
 
+    private static final ListFW<KafkaHeaderFW> EMPTY_KAFKA_HEADERS =
+        new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+        .wrap(new UnsafeBuffer(new byte[4]), 0, 4)
+        .build();
+
     private final UnsafeBuffer workBuffer1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     private final UnsafeBuffer workBuffer2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
     private final RouteFW routeRO = new RouteFW();
-
     final BeginFW beginRO = new BeginFW();
     final DataFW dataRO = new DataFW();
     final EndFW endRO = new EndFW();
@@ -192,7 +196,7 @@ public final class ClientStreamFactory implements StreamFactory
                 final String networkName = route.target().asString();
                 final long networkRef = route.targetRef();
                 final OctetsFW routeExtension = route.extension();
-                ListFW<KafkaHeaderFW> routeHeaders = null;
+                ListFW<KafkaHeaderFW> routeHeaders = EMPTY_KAFKA_HEADERS;
                 if (routeExtension.sizeof() > 0)
                 {
                     final KafkaRouteExFW routeEx = routeExtension.get(routeExRO::wrap);

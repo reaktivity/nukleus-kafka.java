@@ -29,6 +29,7 @@ import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_A
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -50,6 +51,7 @@ import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.ArrayUtil;
 import org.agrona.collections.Int2ObjectHashMap;
+import org.agrona.collections.IntArrayList;
 import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2LongHashMap.LongIterator;
 import org.agrona.concurrent.UnsafeBuffer;
@@ -1673,11 +1675,11 @@ public final class NetworkConnectionPool
                      attachToPartition(i, 0L, 1);
                  }
                  MessageDispatcher bootstrapDispatcher = new ProgressUpdatingMessageDispatcher(partitionCount, progressHandler);
-                 this.dispatcher.add(null, -1, null, bootstrapDispatcher);
+                 this.dispatcher.add(null, -1, Collections.emptyIterator(), bootstrapDispatcher);
             }
             // TODO: add specific dispatchers matching route header conditions (only add
             //       MATCHING_MESSAGE_DISPATCHER if there's a route with no conditions)
-            this.dispatcher.add(null, -1, null, MATCHING_MESSAGE_DISPATCHER);
+            this.dispatcher.add(null, -1, Collections.emptyIterator(), MATCHING_MESSAGE_DISPATCHER);
         }
 
         PartitionProgressHandler doAttach(
@@ -2250,15 +2252,23 @@ public final class NetworkConnectionPool
 
     private static final class KafkaHeadersIterator implements Iterator<KafkaHeaderFW>
     {
+        private final KafkaHeaderFW headerRO = new KafkaHeaderFW();
+        private ListFW<KafkaHeaderFW> headers1;
+        private ListFW<KafkaHeaderFW> headers2;
+        private IntArrayList offsets1 = new IntArrayList();
+        private IntArrayList offsets2 = new IntArrayList();
         private int position;
-        private ArrayList<KafkaHeaderFW> headers = new ArrayList<>();
 
         private Iterator<KafkaHeaderFW> reset(
                 ListFW<KafkaHeaderFW> headers1,
                 ListFW<KafkaHeaderFW> headers2)
         {
-            headers1.forEach(h -> headers.add(h));
-            headers2.forEach(h -> headers.add(h));
+            offsets1.clear();
+            offsets2.clear();
+            headers1.forEach(h -> offsets1.addInt(h.offset()));
+            headers2.forEach(h -> offsets2.addInt(h.offset()));
+            this.headers1 = headers1;
+            this.headers2 = headers2;
             position = 0;
             return this;
         }
@@ -2266,13 +2276,17 @@ public final class NetworkConnectionPool
         @Override
         public boolean hasNext()
         {
-            return position < headers.size();
+            return position < offsets1.size() + offsets2.size();
         }
 
         @Override
         public KafkaHeaderFW next()
         {
-            return headers.get(position);
+            int currentPosition = position;
+            position++;
+            return currentPosition < offsets1.size() ?
+                headerRO.wrap(headers1.buffer(), offsets1.getInt(currentPosition), headers1.limit()) :
+                headerRO.wrap(headers2.buffer(), offsets2.getInt(currentPosition - offsets1.size()), headers2.limit());
         }
     }
 
