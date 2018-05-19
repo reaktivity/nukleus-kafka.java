@@ -64,6 +64,7 @@ import org.reaktivity.nukleus.kafka.internal.function.IntBooleanConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.IntLongConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
@@ -98,7 +99,6 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.AbortFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.DataFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
-import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.TcpBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
@@ -232,6 +232,7 @@ public final class NetworkConnectionPool
     private final UnsafeBuffer valueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     private final MessageFW messageRO = new MessageFW();
     private final HeadersFW headersRO = new HeadersFW();
+    private final KafkaHeadersIterator headersIterator = new KafkaHeadersIterator();
 
     private AbstractFetchConnection[] connections = new LiveFetchConnection[0];
     private HistoricalFetchConnection[] historicalConnections = new HistoricalFetchConnection[0];
@@ -275,6 +276,7 @@ public final class NetworkConnectionPool
         Long2LongHashMap fetchOffsets,
         int partitionHash,
         OctetsFW fetchKey,
+        ListFW<KafkaHeaderFW> routeHeaders,
         ListFW<KafkaHeaderFW> headers,
         MessageDispatcher dispatcher,
         IntSupplier supplyWindow,
@@ -283,8 +285,8 @@ public final class NetworkConnectionPool
         IntConsumer onMetadataError)
     {
         final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
-        metadata.doAttach(m -> doAttach(topicName, fetchOffsets, partitionHash, fetchKey,  headers, dispatcher, supplyWindow,
-                    progressHandlerConsumer, finishAttachConsumer, onMetadataError, m));
+        metadata.doAttach(m -> doAttach(topicName, fetchOffsets, partitionHash, fetchKey, routeHeaders, headers,
+                dispatcher, supplyWindow, progressHandlerConsumer, finishAttachConsumer, onMetadataError, m));
 
         if (metadataConnection == null)
         {
@@ -299,6 +301,7 @@ public final class NetworkConnectionPool
         Long2LongHashMap fetchOffsets,
         int partitionHash,
         OctetsFW fetchKey,
+        ListFW<KafkaHeaderFW> routeHeaders,
         ListFW<KafkaHeaderFW> headers,
         MessageDispatcher dispatcher,
         IntSupplier supplyWindow,
@@ -347,9 +350,10 @@ public final class NetworkConnectionPool
                     name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, false));
             finishAttachConsumer.accept(attachDetailsConsumer ->
             {
-                progressHandlerConsumer.accept(topic.doAttach(fetchOffsets, fetchKey, headers, dispatcher, supplyWindow));
+                progressHandlerConsumer.accept(
+                        topic.doAttach(fetchOffsets, fetchKey, routeHeaders, headers, dispatcher, supplyWindow));
                 final int newAttachId = nextAttachId++;
-                detachersById.put(newAttachId, f -> topic.doDetach(f, fetchKey, headers, dispatcher, supplyWindow));
+                detachersById.put(newAttachId, f -> topic.doDetach(f, fetchKey, routeHeaders, headers, dispatcher, supplyWindow));
                 doConnections(topicMetadata);
                 attachDetailsConsumer.accept(newAttachId, topicMetadata.compacted);
             });
@@ -1668,7 +1672,7 @@ public final class NetworkConnectionPool
                  {
                      attachToPartition(i, 0L, 1);
                  }
-                 MessageDispatcher bootstrapDispatcher = new BootstrapMessageDispatcher(partitionCount, progressHandler);
+                 MessageDispatcher bootstrapDispatcher = new ProgressUpdatingMessageDispatcher(partitionCount, progressHandler);
                  this.dispatcher.add(null, -1, null, bootstrapDispatcher);
             }
             // TODO: add specific dispatchers matching route header conditions (only add
@@ -1679,6 +1683,7 @@ public final class NetworkConnectionPool
         PartitionProgressHandler doAttach(
             Long2LongHashMap fetchOffsets,
             OctetsFW fetchKey,
+            ListFW<KafkaHeaderFW> routeHeaders,
             ListFW<KafkaHeaderFW> headers,
             MessageDispatcher dispatcher,
             IntSupplier supplyWindow)
@@ -1718,7 +1723,8 @@ public final class NetworkConnectionPool
                 attachToPartition(fetchKeyPartition, fetchOffset, 1);
             }
 
-            this.dispatcher.add(fetchKey, fetchKeyPartition, headers, dispatcher);
+            headersIterator.reset(routeHeaders, headers);
+            this.dispatcher.add(fetchKey, fetchKeyPartition, headersIterator, dispatcher);
             return progressHandler;
         }
 
@@ -1755,13 +1761,15 @@ public final class NetworkConnectionPool
         void doDetach(
             Long2LongHashMap fetchOffsets,
             OctetsFW fetchKey,
+            ListFW<KafkaHeaderFW> routeHeaders,
             ListFW<KafkaHeaderFW> headers,
             MessageDispatcher dispatcher,
             IntSupplier supplyWindow)
         {
             windowSuppliers.remove(supplyWindow);
             int fetchKeyPartition = (int) (fetchKey == null ? -1 : fetchOffsets.keySet().iterator().next());
-            this.dispatcher.remove(fetchKey, fetchKeyPartition, headers, dispatcher);
+            headersIterator.reset(routeHeaders, headers);
+            this.dispatcher.remove(fetchKey, fetchKeyPartition, headersIterator, dispatcher);
             final LongIterator partitionIds = fetchOffsets.keySet().iterator();
             while (partitionIds.hasNext())
             {
@@ -2202,12 +2210,12 @@ public final class NetworkConnectionPool
         }
     }
 
-    private static final class BootstrapMessageDispatcher  implements MessageDispatcher
+    private static final class ProgressUpdatingMessageDispatcher  implements MessageDispatcher
     {
         private final long[] offsets;
         private final PartitionProgressHandler progressHandler;
 
-        BootstrapMessageDispatcher(
+        ProgressUpdatingMessageDispatcher(
                 int partitions,
                 PartitionProgressHandler progressHandler)
         {
@@ -2238,6 +2246,34 @@ public final class NetworkConnectionPool
             progressHandler.handle(partition, offsets[partition], lastOffset);
             offsets[partition] = lastOffset;
         };
+    }
+
+    private static final class KafkaHeadersIterator implements Iterator<KafkaHeaderFW>
+    {
+        private int position;
+        private ArrayList<KafkaHeaderFW> headers = new ArrayList<>();
+
+        private Iterator<KafkaHeaderFW> reset(
+                ListFW<KafkaHeaderFW> headers1,
+                ListFW<KafkaHeaderFW> headers2)
+        {
+            headers1.forEach(h -> headers.add(h));
+            headers2.forEach(h -> headers.add(h));
+            position = 0;
+            return this;
+        }
+
+        @Override
+        public boolean hasNext()
+        {
+            return position < headers.size();
+        }
+
+        @Override
+        public KafkaHeaderFW next()
+        {
+            return headers.get(position);
+        }
     }
 
 }

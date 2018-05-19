@@ -21,10 +21,11 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.reaktivity.nukleus.kafka.internal.stream.MessageDispatcher.FLAGS_DELIVERED;
 
+import java.util.Collections;
+import java.util.Iterator;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
-import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
@@ -34,16 +35,12 @@ import org.jmock.integration.junit4.JUnitRuleMockery;
 import org.junit.Rule;
 import org.junit.Test;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public final class KeyMessageDispatcherTest
 {
     private KeyMessageDispatcher dispatcher = new KeyMessageDispatcher(HeaderValueMessageDispatcher::new);
-
-    private final ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW> headersRW =
-            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW());
-       private final MutableDirectBuffer headersBuffer = new UnsafeBuffer(new byte[1000]);
+    private Iterator<KafkaHeaderFW> emptyHeaders = Collections.emptyIterator();
 
     @Rule
     public JUnitRuleMockery context = new JUnitRuleMockery();
@@ -51,17 +48,8 @@ public final class KeyMessageDispatcherTest
     @Test
     public void shouldAddDispatcherWithEmptHeaders()
     {
-        ListFW<KafkaHeaderFW> headers = headersRW.wrap(headersBuffer, 0, headersBuffer.capacity())
-                                                 .build();
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
-        dispatcher.add(asOctets("key1"), headers, child1);
-    }
-
-    @Test
-    public void shouldAddDispatcherWithNullHeaders()
-    {
-        MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
-        dispatcher.add(asOctets("key1"), null, child1);
+        dispatcher.add(asOctets("key1"), emptyHeaders, child1);
     }
 
     @Test
@@ -69,8 +57,8 @@ public final class KeyMessageDispatcherTest
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
-        dispatcher.add(asOctets("key1"), null, child1);
-        dispatcher.add(asOctets("key1"), null, child2);
+        dispatcher.add(asOctets("key1"), emptyHeaders, child1);
+        dispatcher.add(asOctets("key1"), emptyHeaders, child2);
     }
 
     @Test
@@ -79,9 +67,9 @@ public final class KeyMessageDispatcherTest
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
         MessageDispatcher child3 = context.mock(MessageDispatcher.class, "child3");
-        dispatcher.add(asOctets("key1"), null, child1);
-        dispatcher.add(asOctets("key1"), null, child2);
-        dispatcher.add(asOctets("key2"), null, child3);
+        dispatcher.add(asOctets("key1"), emptyHeaders, child1);
+        dispatcher.add(asOctets("key1"), emptyHeaders, child2);
+        dispatcher.add(asOctets("key2"), emptyHeaders, child3);
 
         @SuppressWarnings("unchecked")
         Function<DirectBuffer, DirectBuffer> header = context.mock(Function.class, "header");
@@ -112,8 +100,8 @@ public final class KeyMessageDispatcherTest
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
-        dispatcher.add(asOctets("key1"), null, child1);
-        dispatcher.add(asOctets("key1"), null, child2);
+        dispatcher.add(asOctets("key1"), emptyHeaders, child1);
+        dispatcher.add(asOctets("key1"), emptyHeaders, child2);
 
         @SuppressWarnings("unchecked")
         Function<DirectBuffer, DirectBuffer> header = context.mock(Function.class, "header");
@@ -133,8 +121,8 @@ public final class KeyMessageDispatcherTest
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
-        dispatcher.add(asOctets("key1"), null, child1);
-        dispatcher.add(asOctets("key1"), null, child2);
+        dispatcher.add(asOctets("key1"), emptyHeaders, child1);
+        dispatcher.add(asOctets("key1"), emptyHeaders, child2);
         context.checking(new Expectations()
         {
             {
@@ -162,10 +150,10 @@ public final class KeyMessageDispatcherTest
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
-        dispatcher.add(asOctets("key1"), null, child1);
-        dispatcher.add(asOctets("key1"), null, child2);
-        assertTrue(dispatcher.remove(asOctets("key1"), null, child1));
-        assertTrue(dispatcher.remove(asOctets("key1"), null, child2));
+        dispatcher.add(asOctets("key1"), emptyHeaders, child1);
+        dispatcher.add(asOctets("key1"), emptyHeaders, child2);
+        assertTrue(dispatcher.remove(asOctets("key1"), emptyHeaders, child1));
+        assertTrue(dispatcher.remove(asOctets("key1"), emptyHeaders, child2));
         assertTrue(dispatcher.isEmpty());
     }
 
@@ -177,8 +165,8 @@ public final class KeyMessageDispatcherTest
 
         assertFalse(dispatcher.remove(asOctets("key1"), null, child1));
 
-        dispatcher.add(asOctets("key1"), null, child1);
-        assertFalse(dispatcher.remove(asOctets("key1"), null, child2));
+        dispatcher.add(asOctets("key1"), emptyHeaders, child1);
+        assertFalse(dispatcher.remove(asOctets("key1"), emptyHeaders, child2));
     }
 
     private DirectBuffer asBuffer(String value)

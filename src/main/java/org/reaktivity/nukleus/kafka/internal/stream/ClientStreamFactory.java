@@ -191,6 +191,13 @@ public final class ClientStreamFactory implements StreamFactory
                 final long applicationId = begin.streamId();
                 final String networkName = route.target().asString();
                 final long networkRef = route.targetRef();
+                final OctetsFW routeExtension = route.extension();
+                ListFW<KafkaHeaderFW> routeHeaders = null;
+                if (routeExtension.sizeof() > 0)
+                {
+                    final KafkaRouteExFW routeEx = routeExtension.get(routeExRO::wrap);
+                    routeHeaders = routeEx.headers();
+                }
 
                 Long2ObjectHashMap<NetworkConnectionPool> connectionPoolsByRef =
                     connectionPools.computeIfAbsent(networkName, this::newConnectionPoolsByRef);
@@ -199,7 +206,8 @@ public final class ClientStreamFactory implements StreamFactory
                         ref -> new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes,
                                 bufferPool, messageCache));
 
-                newStream = new ClientAcceptStream(applicationThrottle, applicationId, connectionPool)::handleStream;
+                newStream = new ClientAcceptStream(applicationThrottle, applicationId, connectionPool,
+                        routeHeaders)::handleStream;
             }
         }
 
@@ -436,6 +444,8 @@ public final class ClientStreamFactory implements StreamFactory
         private final MessageConsumer applicationThrottle;
         private final long applicationId;
         private final NetworkConnectionPool networkPool;
+        private final ListFW<KafkaHeaderFW> routeHeaders;
+
         private final Long2LongHashMap fetchOffsets;
 
         private boolean subscribedByKey;
@@ -474,13 +484,15 @@ public final class ClientStreamFactory implements StreamFactory
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
             long applicationId,
-            NetworkConnectionPool networkPool)
+            NetworkConnectionPool networkPool,
+            ListFW<KafkaHeaderFW> routeHeaders)
         {
             this.applicationThrottle = applicationThrottle;
             this.applicationId = applicationId;
             this.networkPool = networkPool;
             this.fetchOffsets = new Long2LongHashMap(-1L);
             this.streamState = this::beforeBegin;
+            this.routeHeaders = routeHeaders;
             budget = new StreamBudget();
         }
 
@@ -689,7 +701,7 @@ public final class ClientStreamFactory implements StreamFactory
                         hashCode = hashCodesCount == 1 ? beginEx.fetchKeyHash().nextInt()
                                 : BufferUtil.defaultHashCode(fetchKey.buffer(), fetchKey.offset(), fetchKey.limit());
                     }
-                    networkPool.doAttach(topicName, this.fetchOffsets, hashCode, fetchKey, headers,
+                    networkPool.doAttach(topicName, this.fetchOffsets, hashCode, fetchKey, routeHeaders, headers,
                             this, this::writeableBytes, h -> progressHandler = h, this::onAttachPrepared, this::onMetadataError);
                     this.streamState = this::afterBegin;
                 }

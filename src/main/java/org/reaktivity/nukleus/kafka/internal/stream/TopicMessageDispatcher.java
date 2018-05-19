@@ -22,7 +22,6 @@ import org.agrona.DirectBuffer;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessageDispatcher
@@ -122,16 +121,16 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
     public void add(
         OctetsFW fetchKey,
         int fetchKeyPartition,
-        ListFW<KafkaHeaderFW> headers,
+        Iterator<KafkaHeaderFW> headers,
         MessageDispatcher dispatcher)
     {
          if (fetchKey != null)
          {
              keys[fetchKeyPartition].add(fetchKey, headers, dispatcher);
          }
-         else if (headers != null && !headers.isEmpty())
+         else if (headers.hasNext())
          {
-             this.headers.add(headers, 0, dispatcher);
+             this.headers.add(headers, dispatcher);
          }
          else
          {
@@ -142,7 +141,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
     public boolean remove(
         OctetsFW fetchKey,
         int fetchKeyPartition,
-        ListFW<KafkaHeaderFW> headers,
+        Iterator<KafkaHeaderFW> headers,
         MessageDispatcher dispatcher)
       {
            boolean result = false;
@@ -150,9 +149,9 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
            {
                result = keys[fetchKeyPartition].remove(fetchKey, headers, dispatcher);
            }
-           else if (headers != null && !headers.isEmpty())
+           else if (headers.hasNext())
            {
-               result = this.headers.remove(headers, 0, dispatcher);
+               result = this.headers.remove(headers, dispatcher);
            }
            else
            {

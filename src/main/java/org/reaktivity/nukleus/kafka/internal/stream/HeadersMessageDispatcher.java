@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -24,7 +25,6 @@ import java.util.function.Function;
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 
 public class HeadersMessageDispatcher implements MessageDispatcher
@@ -77,12 +77,10 @@ public class HeadersMessageDispatcher implements MessageDispatcher
     }
 
     public HeadersMessageDispatcher add(
-                ListFW<KafkaHeaderFW> headers,
-                int index,
+                Iterator<KafkaHeaderFW> headers,
                 MessageDispatcher dispatcher)
     {
-        final int[] counter = new int[]{0};
-        final KafkaHeaderFW header = headers == null ? null : headers.matchFirst(h -> (index == counter[0]++));
+        final KafkaHeaderFW header = headers.hasNext() ? headers.next() : null;
         if (header == null)
         {
             broadcast.add(dispatcher);
@@ -103,7 +101,7 @@ public class HeadersMessageDispatcher implements MessageDispatcher
                 dispatchersByHeaderKey.put(headerKeyCopy, valueDispatcher);
                 dispatchers.add(valueDispatcher);
             }
-            valueDispatcher.add(header.value(), headers, index + 1, dispatcher);
+            valueDispatcher.add(header.value(), headers, dispatcher);
         }
         return this;
     }
@@ -115,13 +113,11 @@ public class HeadersMessageDispatcher implements MessageDispatcher
      }
 
     public boolean remove(
-            ListFW<KafkaHeaderFW> headers,
-            int index,
+            Iterator<KafkaHeaderFW> headers,
             MessageDispatcher dispatcher)
     {
         boolean result = false;
-        final int[] counter = new int[]{0};
-        final KafkaHeaderFW header = headers == null ? null : headers.matchFirst(h -> (index == counter[0]++));
+        final KafkaHeaderFW header = headers.hasNext() ? headers.next() : null;
         if (header == null)
         {
             result = broadcast.remove(dispatcher);
@@ -135,7 +131,7 @@ public class HeadersMessageDispatcher implements MessageDispatcher
             HeaderValueMessageDispatcher valueDispatcher = dispatchersByHeaderKey.get(buffer);
             if (valueDispatcher != null)
             {
-                result = valueDispatcher.remove(header.value(), headers, index + 1, dispatcher);
+                result = valueDispatcher.remove(header.value(), headers, dispatcher);
                 if (valueDispatcher.isEmpty())
                 {
                     dispatchersByHeaderKey.remove(buffer);
