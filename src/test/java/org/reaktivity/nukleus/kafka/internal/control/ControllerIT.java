@@ -20,6 +20,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.rules.RuleChain.outerRule;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 
@@ -124,11 +126,13 @@ public class ControllerIT
     {
         long targetRef = new Random().nextLong();
         String topicName = "test";
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("header1", "match1");
 
         k3po.start();
 
         reaktor.controller(KafkaController.class)
-               .routeClient("source", 0L, "target", targetRef, topicName, "header1=match1")
+               .routeClient("source", 0L, "target", targetRef, topicName, headers)
                .get();
 
         k3po.finish();
@@ -142,11 +146,14 @@ public class ControllerIT
     {
         long targetRef = new Random().nextLong();
         String topicName = "test";
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("header1", "match1");
+        headers.put("header2", "match2");
 
         k3po.start();
 
         reaktor.controller(KafkaController.class)
-               .routeClient("source", 0L, "target", targetRef, topicName, "header1=match1", "header2=match2")
+               .routeClient("source", 0L, "target", targetRef, topicName, headers)
                .get();
 
         k3po.finish();
@@ -237,17 +244,19 @@ public class ControllerIT
     {
         long targetRef = new Random().nextLong();
         String topicName = "test";
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("header1", "match1");
 
         k3po.start();
 
         long sourceRef = reaktor.controller(KafkaController.class)
-              .routeClient("source", 0L, "target", targetRef, topicName, "header1=match1")
+              .routeClient("source", 0L, "target", targetRef, topicName, headers)
               .get();
 
         k3po.notifyBarrier("ROUTED_CLIENT");
 
         reaktor.controller(KafkaController.class)
-               .unrouteClient("source", sourceRef, "target", targetRef, topicName, "header1=match1")
+               .unrouteClient("source", sourceRef, "target", targetRef, topicName, headers)
                .get();
 
         k3po.finish();
@@ -262,17 +271,20 @@ public class ControllerIT
     {
         long targetRef = new Random().nextLong();
         String topicName = "test";
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("header1", "match1");
+        headers.put("header2", "match2");
 
         k3po.start();
 
         long sourceRef = reaktor.controller(KafkaController.class)
-              .routeClient("source", 0L, "target", targetRef, topicName, "header1=match1", "header2=match2")
+              .routeClient("source", 0L, "target", targetRef, topicName, headers)
               .get();
 
         k3po.notifyBarrier("ROUTED_CLIENT");
 
         reaktor.controller(KafkaController.class)
-               .unrouteClient("source", sourceRef, "target", targetRef, topicName, "header1=match1", "header2=match2")
+               .unrouteClient("source", sourceRef, "target", targetRef, topicName, headers)
                .get();
 
         k3po.finish();

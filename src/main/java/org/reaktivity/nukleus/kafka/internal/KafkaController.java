@@ -19,19 +19,19 @@ import static java.nio.ByteBuffer.allocateDirect;
 import static java.nio.ByteOrder.nativeOrder;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
+import java.util.Collections;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.ToIntFunction;
 
-import org.agrona.DirectBuffer;
 import org.agrona.concurrent.AtomicBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.Controller;
 import org.reaktivity.nukleus.ControllerSpi;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessagePredicate;
-import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.FreezeFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
@@ -104,7 +104,17 @@ public final class KafkaController implements Controller
         long targetRef,
         String topicName)
     {
-        return route(Role.SERVER, source, sourceRef, target, targetRef, topicName);
+        return route(Role.SERVER, source, sourceRef, target, targetRef, topicName, Collections.emptyMap());
+    }
+
+    public CompletableFuture<Long> routeClient(
+        String source,
+        long sourceRef,
+        String target,
+        long targetRef,
+        String topicName)
+    {
+        return route(Role.CLIENT, source, sourceRef, target, targetRef, topicName, Collections.emptyMap());
     }
 
     public CompletableFuture<Long> routeClient(
@@ -113,9 +123,9 @@ public final class KafkaController implements Controller
         String target,
         long targetRef,
         String topicName,
-        String... headerCondition)
+        Map<String, String> headerConditions)
     {
-        return route(Role.CLIENT, source, sourceRef, target, targetRef, topicName, headerCondition);
+        return route(Role.CLIENT, source, sourceRef, target, targetRef, topicName, headerConditions);
     }
 
     public CompletableFuture<Void> unrouteServer(
@@ -125,7 +135,7 @@ public final class KafkaController implements Controller
         long targetRef,
         String topicName)
     {
-        return unroute(Role.SERVER, source, sourceRef, target, targetRef, topicName);
+        return unroute(Role.SERVER, source, sourceRef, target, targetRef, topicName, Collections.emptyMap());
     }
 
     public CompletableFuture<Void> unrouteClient(
@@ -134,9 +144,20 @@ public final class KafkaController implements Controller
         String target,
         long targetRef,
         String topicName,
-        String... headerCondition)
+        Map<String, String> headerConditions)
     {
-        return unroute(Role.CLIENT, source, sourceRef, target, targetRef, topicName, headerCondition);
+        return unroute(Role.CLIENT, source, sourceRef, target, targetRef, topicName, headerConditions);
+    }
+
+
+    public CompletableFuture<Void> unrouteClient(
+        String source,
+        long sourceRef,
+        String target,
+        long targetRef,
+        String topicName)
+    {
+        return unroute(Role.CLIENT, source, sourceRef, target, targetRef, topicName, Collections.emptyMap());
     }
 
     public CompletableFuture<Void> freeze()
@@ -150,33 +171,14 @@ public final class KafkaController implements Controller
         return controllerSpi.doFreeze(freeze.typeId(), freeze.buffer(), freeze.offset(), freeze.sizeof());
     }
 
-    private static OctetsFW asOctets(String value)
-    {
-        byte[] bytes = value.getBytes(UTF_8);
-        DirectBuffer buffer = new UnsafeBuffer(bytes);
-        return new OctetsFW().wrap(buffer, 0, buffer.capacity());
-    }
-
     public long count(String name)
     {
         return controllerSpi.doCount(name);
     }
 
-    private void buildKafkaHeader(
-        KafkaHeaderFW.Builder hb,
-        String headerCondition)
-    {
-        String[] elements = headerCondition.split("=");
-        if (elements.length != 2)
-        {
-            throw new IllegalArgumentException(headerCondition);
-        }
-        hb.key(elements[0]).value(asOctets(elements[1]));
-    }
-
     private Consumer<OctetsFW.Builder> extension(
         final String topicName,
-        final String... headerConditions)
+        Map<String, String> headerConditions)
     {
         if (topicName != null)
         {
@@ -185,10 +187,10 @@ public final class KafkaController implements Controller
                          .topicName(topicName)
                          .headers(lhb ->
                          {
-                             for (String headerCondition : headerConditions)
+                             headerConditions.forEach((k, v) ->
                              {
-                                 lhb.item(hb -> buildKafkaHeader(hb, headerCondition));
-                             }
+                                 lhb.item(hb -> hb.key(k).value(ob -> ob.put(v.getBytes(UTF_8))));
+                             });
                          })
                          .build()
                          .sizeof());
@@ -207,7 +209,7 @@ public final class KafkaController implements Controller
         String target,
         long targetRef,
         String topicName,
-        String... headerConditions)
+        Map<String, String> headerConditions)
     {
         long correlationId = controllerSpi.nextCorrelationId();
 
@@ -231,7 +233,7 @@ public final class KafkaController implements Controller
         String target,
         long targetRef,
         String topicName,
-        String... headerConditions)
+        Map<String, String> headerConditions)
     {
         long correlationId = controllerSpi.nextCorrelationId();
 
