@@ -100,6 +100,15 @@ public class ControlIT
 
     @Test
     @Specification({
+        "${control}/route.ext.multiple.headers/client/controller"
+    })
+    public void shouldRouteClientWithMultipleRoutesDifferingOnlyInHeaderValue() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
         "${control}/route.ext.multiple.networks/client/controller"
     })
     public void shouldRouteClientWithMultipleRoutesDifferentNetworks() throws Exception
@@ -142,6 +151,16 @@ public class ControlIT
         "${control}/unroute.ext.headers/client/controller"
     })
     public void shouldUnrouteClientWithHeaderConditions() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${control}/route.ext.multiple.headers/client/controller",
+        "${control}/unroute.ext.multiple.headers/client/controller"
+    })
+    public void shouldUnrouteClientWithMultipleRoutesDifferingOnlyInHeaders() throws Exception
     {
         k3po.finish();
     }

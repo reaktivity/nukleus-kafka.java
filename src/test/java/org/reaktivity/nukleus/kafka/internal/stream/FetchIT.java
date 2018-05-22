@@ -106,6 +106,15 @@ public class FetchIT
 
     @Test
     @Specification({
+        "${control}/route.ext.multiple.headers/client/controller",
+        "${client}/invalid.no.route.matching.headers/client"})
+    public void shouldRejectWhenBeginHeadersDoNotMatchHeadersOnRoutes() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
         "${route}/client/controller",
         "${client}/topic.name.not.equals.route.ext/client"})
     @ScriptProperty("routedTopicName \"not_test\"")

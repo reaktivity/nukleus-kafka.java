@@ -20,7 +20,6 @@ import static java.nio.ByteBuffer.allocateDirect;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Collections.emptyIterator;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
-import static org.reaktivity.nukleus.kafka.internal.stream.ClientStreamFactory.EMPTY_KAFKA_HEADERS;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.INVALID_TOPIC_EXCEPTION;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.LEADER_NOT_AVAILABLE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
@@ -280,7 +279,6 @@ public final class NetworkConnectionPool
         Long2LongHashMap fetchOffsets,
         int partitionHash,
         OctetsFW fetchKey,
-        ListFW<KafkaHeaderFW> routeHeaders,
         ListFW<KafkaHeaderFW> headers,
         MessageDispatcher dispatcher,
         IntSupplier supplyWindow,
@@ -289,7 +287,7 @@ public final class NetworkConnectionPool
         IntConsumer onMetadataError)
     {
         final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
-        metadata.doAttach(m -> doAttach(topicName, fetchOffsets, partitionHash, fetchKey, routeHeaders, headers,
+        metadata.doAttach(m -> doAttach(topicName, fetchOffsets, partitionHash, fetchKey, headers,
                 dispatcher, supplyWindow, progressHandlerConsumer, finishAttachConsumer, onMetadataError, m));
 
         if (metadataConnection == null)
@@ -305,7 +303,6 @@ public final class NetworkConnectionPool
         Long2LongHashMap fetchOffsets,
         int partitionHash,
         OctetsFW fetchKey,
-        ListFW<KafkaHeaderFW> routeHeaders,
         ListFW<KafkaHeaderFW> headers,
         MessageDispatcher dispatcher,
         IntSupplier supplyWindow,
@@ -355,9 +352,9 @@ public final class NetworkConnectionPool
             finishAttachConsumer.accept(attachDetailsConsumer ->
             {
                 progressHandlerConsumer.accept(
-                        topic.doAttach(fetchOffsets, fetchKey, routeHeaders, headers, dispatcher, supplyWindow));
+                        topic.doAttach(fetchOffsets, fetchKey, headers, dispatcher, supplyWindow));
                 final int newAttachId = nextAttachId++;
-                detachersById.put(newAttachId, f -> topic.doDetach(f, fetchKey, routeHeaders, headers, dispatcher, supplyWindow));
+                detachersById.put(newAttachId, f -> topic.doDetach(f, fetchKey, headers, dispatcher, supplyWindow));
                 doConnections(topicMetadata);
                 attachDetailsConsumer.accept(newAttachId, topicMetadata.compacted);
             });
@@ -1697,7 +1694,6 @@ public final class NetworkConnectionPool
         PartitionProgressHandler doAttach(
             Long2LongHashMap fetchOffsets,
             OctetsFW fetchKey,
-            ListFW<KafkaHeaderFW> routeHeaders,
             ListFW<KafkaHeaderFW> headers,
             MessageDispatcher dispatcher,
             IntSupplier supplyWindow)
@@ -1737,7 +1733,7 @@ public final class NetworkConnectionPool
                 attachToPartition(fetchKeyPartition, fetchOffset, 1);
             }
 
-            headersIterator.wrap(routeHeaders, headers);
+            headersIterator.wrap(headers);
             this.dispatcher.add(fetchKey, fetchKeyPartition, headersIterator, dispatcher);
             return progressHandler;
         }
@@ -1775,14 +1771,13 @@ public final class NetworkConnectionPool
         void doDetach(
             Long2LongHashMap fetchOffsets,
             OctetsFW fetchKey,
-            ListFW<KafkaHeaderFW> routeHeaders,
             ListFW<KafkaHeaderFW> headers,
             MessageDispatcher dispatcher,
             IntSupplier supplyWindow)
         {
             windowSuppliers.remove(supplyWindow);
             int fetchKeyPartition = (int) (fetchKey == null ? -1 : fetchOffsets.keySet().iterator().next());
-            headersIterator.wrap(routeHeaders, headers);
+            headersIterator.wrap(headers);
             this.dispatcher.remove(fetchKey, fetchKeyPartition, headersIterator, dispatcher);
             final LongIterator partitionIds = fetchOffsets.keySet().iterator();
             while (partitionIds.hasNext())
@@ -2268,36 +2263,25 @@ public final class NetworkConnectionPool
     private static final class KafkaHeadersIterator implements Iterator<KafkaHeaderFW>
     {
         private final KafkaHeaderFW headerRO = new KafkaHeaderFW();
-        private ListFW<KafkaHeaderFW> headers1;
-        private ListFW<KafkaHeaderFW> headers2;
-        private IntArrayList offsets1 = new IntArrayList();
-        private IntArrayList offsets2 = new IntArrayList();
+        private final IntArrayList offsets = new IntArrayList();
+
+        private ListFW<KafkaHeaderFW> headers;
         private int position;
 
         private Iterator<KafkaHeaderFW> wrap(
-                ListFW<KafkaHeaderFW> headers1,
-                ListFW<KafkaHeaderFW> headers2)
+                ListFW<KafkaHeaderFW> headers)
         {
-            offsets1.clear();
-            offsets2.clear();
-            headers1.forEach(h -> offsets1.addInt(h.offset()));
-            headers2.forEach(h -> offsets2.addInt(h.offset()));
-            this.headers1 = headers1;
-            this.headers2 = headers2;
+            this.headers = headers;
+            offsets.clear();
+            headers.forEach(h -> offsets.addInt(h.offset()));
             position = 0;
             return this;
-        }
-
-        public Iterator<KafkaHeaderFW> wrap(
-            ListFW<KafkaHeaderFW> routeHeaders)
-        {
-            return wrap(routeHeaders, EMPTY_KAFKA_HEADERS);
         }
 
         @Override
         public boolean hasNext()
         {
-            return position < offsets1.size() + offsets2.size();
+            return position < offsets.size();
         }
 
         @Override
@@ -2305,9 +2289,7 @@ public final class NetworkConnectionPool
         {
             int currentPosition = position;
             position++;
-            return currentPosition < offsets1.size() ?
-                headerRO.wrap(headers1.buffer(), offsets1.getInt(currentPosition), headers1.limit()) :
-                headerRO.wrap(headers2.buffer(), offsets2.getInt(currentPosition - offsets1.size()), headers2.limit());
+            return headerRO.wrap(headers.buffer(), offsets.getInt(currentPosition), headers.limit());
         }
     }
 

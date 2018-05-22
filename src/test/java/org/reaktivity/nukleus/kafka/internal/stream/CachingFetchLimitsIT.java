@@ -60,7 +60,7 @@ public class CachingFetchLimitsIT
         "${client}/compacted.messages.header.multiple.clients/client",
         "${server}/compacted.messages.header/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCachedCompactedMessagesFilteredByHeaderOnRoute() throws Exception
+    public void shouldReceiveCompactedMessagesCachedByRouteHeader() throws Exception
     {
         k3po.finish();
     }
