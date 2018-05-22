@@ -91,6 +91,8 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
     private List<RouteFW> routesToBootstrap = new ArrayList<>();
     private BiFunction<String, Long, NetworkConnectionPool> createNetworkConnectionPool;
 
+    private KafkaConfiguration kafkaConfig;
+
     @Override
     public String name()
     {
@@ -102,17 +104,14 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
         Configuration config,
         NukleusBuilder builder)
     {
-        KafkaConfiguration kafkaConfig = new KafkaConfiguration(config);
+        kafkaConfig = new KafkaConfiguration(config);
 
         Consumer<BiFunction<String, Long, NetworkConnectionPool>> connectionPoolFactoryConsumer =
             DEFAULT_CONNECT_POOL_FACTORY_CONSUMER;
         MessagePredicate routeHandler = DEFAULT_ROUTE_HANDLER;
 
-        if (kafkaConfig.topicBootstrapEnabled())
-        {
-            routeHandler = this::handleRouteForBootstrap;
-            connectionPoolFactoryConsumer = f -> createNetworkConnectionPool = f;
-        }
+        routeHandler = this::handleRouteForBootstrap;
+        connectionPoolFactoryConsumer = f -> createNetworkConnectionPool = f;
 
         ClientStreamFactoryBuilder streamFactoryBuilder = new ClientStreamFactoryBuilder(kafkaConfig,
                 (s) -> createMemoryManager(config, kafkaConfig, s), connectionPools, connectionPoolFactoryConsumer);
@@ -168,9 +167,13 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                 final OctetsFW extension = route.extension();
                 if (extension.sizeof() > 0)
                 {
-                    MutableDirectBuffer routeBuffer = new UnsafeBuffer(new byte[length]);
-                    buffer.getBytes(index,  routeBuffer, 0, length);
-                    routesToBootstrap.add(new RouteFW().wrap(routeBuffer, 0, length));
+                    final KafkaRouteExFW routeEx = extension.get(routeExRO::wrap);
+                    if (kafkaConfig.topicBootstrapEnabled() || !routeEx.headers().isEmpty())
+                    {
+                        MutableDirectBuffer routeBuffer = new UnsafeBuffer(new byte[length]);
+                        buffer.getBytes(index,  routeBuffer, 0, length);
+                        routesToBootstrap.add(new RouteFW().wrap(routeBuffer, 0, length));
+                    }
                 }
             }
             break;
@@ -211,7 +214,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                 NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef, ref ->
                     createNetworkConnectionPool.apply(networkName, networkRef));
 
-                connectionPool.doBootstrap(topicName, errorCode ->
+                connectionPool.doBootstrap(topicName, routeEx.headers(), errorCode ->
                 {
                     switch(errorCode)
                     {
@@ -226,6 +229,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                             errorCode, topicName));
                     }
                 });
+
             }
         }
     }

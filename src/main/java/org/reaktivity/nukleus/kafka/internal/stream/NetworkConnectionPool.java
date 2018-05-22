@@ -18,7 +18,9 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.lang.String.format;
 import static java.nio.ByteBuffer.allocateDirect;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.util.Collections.emptyIterator;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
+import static org.reaktivity.nukleus.kafka.internal.stream.ClientStreamFactory.EMPTY_KAFKA_HEADERS;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.INVALID_TOPIC_EXCEPTION;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.LEADER_NOT_AVAILABLE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
@@ -368,10 +370,11 @@ public final class NetworkConnectionPool
 
     public void doBootstrap(
         String topicName,
+        ListFW<KafkaHeaderFW> routeHeaders,
         IntConsumer onMetadataError)
     {
         final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
-        metadata.doAttach(m -> doBootstrap(topicName, onMetadataError, m));
+        metadata.doAttach(m -> doBootstrap(topicName, routeHeaders, onMetadataError, m));
 
         if (metadataConnection == null)
         {
@@ -382,6 +385,7 @@ public final class NetworkConnectionPool
 
     private void doBootstrap(
         String topicName,
+        ListFW<KafkaHeaderFW> routeHeaders,
         IntConsumer onMetadataError,
         TopicMetadata topicMetadata)
     {
@@ -398,10 +402,12 @@ public final class NetworkConnectionPool
             // recoverable
             break;
         case NONE:
+            // TODO: add interest (match) dispatchers for route headers
             if (topicMetadata.compacted)
             {
-                topicsByName.computeIfAbsent(topicName,
+                NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
                         name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, true));
+                topic.applyRouteHeaders(routeHeaders);
                 doConnections(topicMetadata);
                 doFlush();
             }
@@ -1677,9 +1683,15 @@ public final class NetworkConnectionPool
                  MessageDispatcher bootstrapDispatcher = new ProgressUpdatingMessageDispatcher(partitionCount, progressHandler);
                  this.dispatcher.add(null, -1, Collections.emptyIterator(), bootstrapDispatcher);
             }
-            // TODO: add specific dispatchers matching route header conditions (only add
-            //       MATCHING_MESSAGE_DISPATCHER if there's a route with no conditions)
-            this.dispatcher.add(null, -1, Collections.emptyIterator(), MATCHING_MESSAGE_DISPATCHER);
+            this.dispatcher.add(null, -1, emptyIterator(), MATCHING_MESSAGE_DISPATCHER);
+        }
+
+        private void applyRouteHeaders(
+            ListFW<KafkaHeaderFW> routeHeaders)
+        {
+            // Add dispatchers to ensure matching messages only get cached. First remove the "match all" one.
+            this.dispatcher.remove(null, -1, Collections.emptyIterator(), MATCHING_MESSAGE_DISPATCHER);
+            this.dispatcher.add(null, -1, headersIterator.wrap(routeHeaders), MATCHING_MESSAGE_DISPATCHER);
         }
 
         PartitionProgressHandler doAttach(
@@ -1725,7 +1737,7 @@ public final class NetworkConnectionPool
                 attachToPartition(fetchKeyPartition, fetchOffset, 1);
             }
 
-            headersIterator.reset(routeHeaders, headers);
+            headersIterator.wrap(routeHeaders, headers);
             this.dispatcher.add(fetchKey, fetchKeyPartition, headersIterator, dispatcher);
             return progressHandler;
         }
@@ -1770,7 +1782,7 @@ public final class NetworkConnectionPool
         {
             windowSuppliers.remove(supplyWindow);
             int fetchKeyPartition = (int) (fetchKey == null ? -1 : fetchOffsets.keySet().iterator().next());
-            headersIterator.reset(routeHeaders, headers);
+            headersIterator.wrap(routeHeaders, headers);
             this.dispatcher.remove(fetchKey, fetchKeyPartition, headersIterator, dispatcher);
             final LongIterator partitionIds = fetchOffsets.keySet().iterator();
             while (partitionIds.hasNext())
@@ -1864,9 +1876,12 @@ public final class NetworkConnectionPool
                         DirectBuffer key = wrap(keyBuffer, message.key());
                         DirectBuffer value = wrap(valueBuffer,  message.value());
                         HeadersFW headers = headersRO.wrap(message.headers().buffer(),  message.headers().offset(),
-                                message.headers().sizeof());
-                        int dispatched = dispatcher.dispatch(partitionId, requestOffset, newOffset, key, headers,
+                                message.headers().limit());
+
+                        // call the dispatch variant which does not attempt to re-cache the message
+                        int dispatched = dispatcher.dispatch(partitionId, requestOffset, newOffset, key, headers.headerSupplier(),
                                 message.timestamp(), message.traceId(), value);
+
                         flushNeeded = true;
                         if (MessageDispatcher.blocked(dispatched) &&
                                 !MessageDispatcher.delivered(dispatched))
@@ -2259,7 +2274,7 @@ public final class NetworkConnectionPool
         private IntArrayList offsets2 = new IntArrayList();
         private int position;
 
-        private Iterator<KafkaHeaderFW> reset(
+        private Iterator<KafkaHeaderFW> wrap(
                 ListFW<KafkaHeaderFW> headers1,
                 ListFW<KafkaHeaderFW> headers2)
         {
@@ -2271,6 +2286,12 @@ public final class NetworkConnectionPool
             this.headers2 = headers2;
             position = 0;
             return this;
+        }
+
+        public Iterator<KafkaHeaderFW> wrap(
+            ListFW<KafkaHeaderFW> routeHeaders)
+        {
+            return wrap(routeHeaders, EMPTY_KAFKA_HEADERS);
         }
 
         @Override

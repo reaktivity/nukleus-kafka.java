@@ -88,15 +88,15 @@ public class HeadersMessageDispatcher implements MessageDispatcher
         else
         {
             String16FW headerKey = header.key();
-            int valueOffset = headerKey.offset() + Short.BYTES;
-            int valueLength = headerKey.limit() - valueOffset;
-            buffer.wrap(headerKey.buffer(), valueOffset, valueLength);
+            int keyOffset = headerKey.offset() + Short.BYTES;
+            int keyLength = headerKey.limit() - keyOffset;
+            buffer.wrap(headerKey.buffer(), keyOffset, keyLength);
             HeaderValueMessageDispatcher valueDispatcher = dispatchersByHeaderKey.get(buffer);
             if (valueDispatcher == null)
             {
                 int bytesLength = headerKey.sizeof() - Short.BYTES;
                 UnsafeBuffer headerKeyCopy = new UnsafeBuffer(new byte[bytesLength]);
-                headerKeyCopy.putBytes(0, headerKey.buffer(), valueOffset, valueLength);
+                headerKeyCopy.putBytes(0, headerKey.buffer(), keyOffset, keyLength);
                 valueDispatcher = createHeaderValueMessageDispatcher.apply(headerKeyCopy);
                 dispatchersByHeaderKey.put(headerKeyCopy, valueDispatcher);
                 dispatchers.add(valueDispatcher);

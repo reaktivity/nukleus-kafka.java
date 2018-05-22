@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
+import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.wrap;
 
 import java.util.Map;
 import java.util.function.BiFunction;
@@ -65,7 +66,7 @@ public final class ClientStreamFactory implements StreamFactory
 {
     static final long UNSET = -1;
 
-    private static final ListFW<KafkaHeaderFW> EMPTY_KAFKA_HEADERS =
+    static final ListFW<KafkaHeaderFW> EMPTY_KAFKA_HEADERS =
         new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
         .wrap(new UnsafeBuffer(new byte[4]), 0, 4)
         .build();
@@ -817,17 +818,6 @@ public final class ClientStreamFactory implements StreamFactory
             networkAttachId = UNATTACHED;
             budget.leaveGroup();
             doReset(applicationThrottle, applicationId);
-        }
-
-        private DirectBuffer wrap(DirectBuffer wrapper, DirectBuffer wrapped)
-        {
-            DirectBuffer result = null;
-            if (wrapped != null)
-            {
-                wrapper.wrap(wrapped, 0, wrapped.capacity());
-                result = wrapper;
-            }
-            return result;
         }
 
         private int writeableBytes()

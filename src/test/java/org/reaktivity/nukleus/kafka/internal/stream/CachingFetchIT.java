@@ -35,7 +35,6 @@ public class CachingFetchIT
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
             .addScriptRoot("routeAnyTopic", "org/reaktivity/specification/nukleus/kafka/control/route")
-            .addScriptRoot("routeHeader", "org/reaktivity/specification/nukleus/kafka/control/route.ext.header")
             .addScriptRoot("control", "org/reaktivity/specification/nukleus/kafka/control")
             .addScriptRoot("server", "org/reaktivity/specification/kafka/fetch.v5")
             .addScriptRoot("metadata", "org/reaktivity/specification/kafka/metadata.v5")
@@ -349,10 +348,32 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/compacted.messages.header.multiple.matches/client",
-        "${server}/compacted.messages.header.multiple.matches/server"})
+        "${client}/compacted.messages.header/client",
+        "${server}/compacted.messages.header/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCompactedMessagesFilteredByHeader() throws Exception
+    public void shouldReceiveCompactedMessagesFilteredByHeaderOnBegin() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${control}/route.ext.header/client/controller",
+        "${client}/compacted.messages.multiple.clients/client",
+        "${server}/compacted.messages.header/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveCompactedMessagesFilteredByHeaderOnRouteWithMultipleClients() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${contol}/route.ext.header/client/controller",
+        "${client}/compacted.messages.headers.one.on.route.multiple.matches/client",
+        "${server}/compacted.messages.headers.multiple.matches/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveCompactedMessagesFilteredByHeadersOneOnRoute() throws Exception
     {
         k3po.finish();
     }
@@ -360,10 +381,10 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/compacted.messages.from.cache/client",
+        "${client}/compacted.messages.one.per.key/client",
         "${server}/compacted.messages/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    // Behavior is different with message cache: better compaction
+    // Behavior is different with message cache: better compaction, guaranteed only one message per key
     public void shouldReceiveCompactedHistoricalMessagesFromCache() throws Exception
     {
         k3po.finish();

@@ -22,6 +22,8 @@ import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 
 public final class BufferUtil
 {
+    public static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
+
     private static final int STRING16_SIZE_LENGTH = BitUtil.SIZE_OF_SHORT;
 
     /*
@@ -139,6 +141,15 @@ public final class BufferUtil
         return result;
     }
 
-    public static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
+    public static DirectBuffer wrap(DirectBuffer wrapper, DirectBuffer wrapped)
+    {
+        DirectBuffer result = null;
+        if (wrapped != null)
+        {
+            wrapper.wrap(wrapped, 0, wrapped.capacity());
+            result = wrapper;
+        }
+        return result;
+    }
 
 }
