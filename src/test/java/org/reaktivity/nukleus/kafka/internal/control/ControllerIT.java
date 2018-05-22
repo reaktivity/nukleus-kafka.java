@@ -328,7 +328,7 @@ public class ControllerIT
         Map<String, String> headers1 = new LinkedHashMap<>();
         Map<String, String> headers2 = new LinkedHashMap<>();
         headers1.put("header1", "match1");
-        headers2.put("header2", "match2");
+        headers2.put("header1", "match2");
 
         k3po.start();
 
@@ -336,9 +336,9 @@ public class ControllerIT
                .routeClient("source", 0L, "target", targetRef, topicName, headers1)
                .get();
 
-        assertEquals(applicationRouteRef, reaktor.controller(KafkaController.class)
+        reaktor.controller(KafkaController.class)
                 .routeClient("source", applicationRouteRef, "target", targetRef, topicName, headers2)
-                .get());
+                .get();
 
         k3po.notifyBarrier("ROUTED_CLIENT");
 
@@ -382,6 +382,47 @@ public class ControllerIT
 
         reaktor.controller(KafkaController.class)
                .unrouteClient("source", applicationRouteRef2, "target2",  targetRef2, topicName)
+               .get();
+
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${control}/route.ext.multiple.topics/client/nukleus",
+        "${control}/unroute.ext.multiple.topics/client/nukleus"
+    })
+    public void shouldUnrouteClientWithMultipleRoutesDifferentTopics() throws Exception
+    {
+        long targetRef = new Random().nextLong();
+
+        k3po.start();
+
+        Long applicationRouteRef = reaktor.controller(KafkaController.class)
+               .routeClient("source", 0L, "target", targetRef, "test1")
+               .get();
+
+        CompletableFuture<Long> result2 = reaktor.controller(KafkaController.class)
+               .routeClient("source", applicationRouteRef, "target", targetRef, "test2");
+
+        CompletableFuture<Long> result3 = reaktor.controller(KafkaController.class)
+               .routeClient("source", applicationRouteRef, "target", targetRef, "test3");
+
+        assertEquals(applicationRouteRef, result2.get());
+        assertEquals(applicationRouteRef, result3.get());
+
+        k3po.notifyBarrier("ROUTED_CLIENT");
+
+        reaktor.controller(KafkaController.class)
+               .unrouteClient("source", applicationRouteRef, "target",  targetRef, "test1")
+               .get();
+
+        reaktor.controller(KafkaController.class)
+               .unrouteClient("source", applicationRouteRef, "target",  targetRef, "test2")
+               .get();
+
+        reaktor.controller(KafkaController.class)
+               .unrouteClient("source", applicationRouteRef, "target",  targetRef, "test3")
                .get();
 
         k3po.finish();

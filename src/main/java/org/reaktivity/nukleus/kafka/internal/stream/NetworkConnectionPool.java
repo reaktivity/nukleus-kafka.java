@@ -41,6 +41,7 @@ import java.util.NavigableSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.IntConsumer;
@@ -243,6 +244,7 @@ public final class NetworkConnectionPool
 
     private final Map<String, TopicMetadata> topicMetadataByName;
     private final Map<String, NetworkTopic> topicsByName;
+    private final Map<String, List<ListFW<KafkaHeaderFW>>> routeHeadersByTopic;
     private final Int2ObjectHashMap<Consumer<Long2LongHashMap>> detachersById;
     private final int maximumMessageSize;
 
@@ -267,6 +269,7 @@ public final class NetworkConnectionPool
         this.encodeBuffer = new UnsafeBuffer(new byte[clientStreamFactory.bufferPool.slotCapacity()]);
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
+        this.routeHeadersByTopic = new HashMap<>();
         this.detachersById = new Int2ObjectHashMap<>();
 
         // TODO: remove this and use multiple data frames to deliver large messages
@@ -365,35 +368,43 @@ public final class NetworkConnectionPool
         }
     }
 
-    public void doBootstrap(
+    public void addRoute(
         String topicName,
-        ListFW<KafkaHeaderFW> routeHeaders,
-        IntConsumer onMetadataError)
+        ListFW<KafkaHeaderFW> routeHeaders)
     {
-        final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
-        metadata.doAttach(m -> doBootstrap(topicName, routeHeaders, onMetadataError, m));
+        routeHeadersByTopic.computeIfAbsent(topicName, t -> new ArrayList<ListFW<KafkaHeaderFW>>())
+            .add(routeHeaders);
+    }
 
-        if (metadataConnection == null)
+    public void doBootstrap(
+        BiConsumer<Short, String> onMetadataError)
+    {
+        for (String topicName : routeHeadersByTopic.keySet())
         {
-            metadataConnection = new MetadataConnection();
+            final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
+            metadata.doAttach(m -> doBootstrap(topicName, onMetadataError, m));
+
+            if (metadataConnection == null)
+            {
+                metadataConnection = new MetadataConnection();
+            }
+            metadataConnection.doRequestIfNeeded();
         }
-        metadataConnection.doRequestIfNeeded();
     }
 
     private void doBootstrap(
         String topicName,
-        ListFW<KafkaHeaderFW> routeHeaders,
-        IntConsumer onMetadataError,
+        BiConsumer<Short, String> onMetadataError,
         TopicMetadata topicMetadata)
     {
         short errorCode = topicMetadata.errorCode();
         switch(errorCode)
         {
         case UNKNOWN_TOPIC_OR_PARTITION:
-            onMetadataError.accept(errorCode);
+            onMetadataError.accept(errorCode, topicName);
             break;
         case INVALID_TOPIC_EXCEPTION:
-            onMetadataError.accept(errorCode);
+            onMetadataError.accept(errorCode, topicName);
             break;
         case LEADER_NOT_AVAILABLE:
             // recoverable
@@ -402,9 +413,8 @@ public final class NetworkConnectionPool
             // TODO: add interest (match) dispatchers for route headers
             if (topicMetadata.compacted)
             {
-                NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
+                topicsByName.computeIfAbsent(topicName,
                         name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, true));
-                topic.applyRouteHeaders(routeHeaders);
                 doConnections(topicMetadata);
                 doFlush();
             }
@@ -1671,6 +1681,19 @@ public final class NetworkConnectionPool
                     partitionIndexes,
                     compacted ? CompactedHeaderValueMessageDispatcher::new : HeaderValueMessageDispatcher::new);
             this.proactive = proactive;
+
+            // Cache only messages matching route header conditions
+            List<ListFW<KafkaHeaderFW>> routeHeadersList = routeHeadersByTopic.get(topicName);
+            if (routeHeadersList != null)
+            {
+                routeHeadersList.forEach(routeHeaders ->
+                    this.dispatcher.add(null, -1, headersIterator.wrap(routeHeaders), MATCHING_MESSAGE_DISPATCHER));
+            }
+            else
+            {
+                this.dispatcher.add(null, -1, emptyIterator(), MATCHING_MESSAGE_DISPATCHER);
+            }
+
             if (proactive)
             {
                  for (int i=0; i < partitionCount; i++)
@@ -1680,15 +1703,6 @@ public final class NetworkConnectionPool
                  MessageDispatcher bootstrapDispatcher = new ProgressUpdatingMessageDispatcher(partitionCount, progressHandler);
                  this.dispatcher.add(null, -1, Collections.emptyIterator(), bootstrapDispatcher);
             }
-            this.dispatcher.add(null, -1, emptyIterator(), MATCHING_MESSAGE_DISPATCHER);
-        }
-
-        private void applyRouteHeaders(
-            ListFW<KafkaHeaderFW> routeHeaders)
-        {
-            // Add dispatchers to ensure matching messages only get cached. First remove the "match all" one.
-            this.dispatcher.remove(null, -1, Collections.emptyIterator(), MATCHING_MESSAGE_DISPATCHER);
-            this.dispatcher.add(null, -1, headersIterator.wrap(routeHeaders), MATCHING_MESSAGE_DISPATCHER);
         }
 
         PartitionProgressHandler doAttach(

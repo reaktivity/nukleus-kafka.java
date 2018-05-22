@@ -88,7 +88,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
     private final RouteFW routeRO = new RouteFW();
     private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
 
-    private List<RouteFW> routesToBootstrap = new ArrayList<>();
+    private List<RouteFW> routesToProcess = new ArrayList<>();
     private BiFunction<String, Long, NetworkConnectionPool> createNetworkConnectionPool;
 
     private KafkaConfiguration kafkaConfig;
@@ -110,7 +110,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
             DEFAULT_CONNECT_POOL_FACTORY_CONSUMER;
         MessagePredicate routeHandler = DEFAULT_ROUTE_HANDLER;
 
-        routeHandler = this::handleRouteForBootstrap;
+        routeHandler = this::handleRoute;
         connectionPoolFactoryConsumer = f -> createNetworkConnectionPool = f;
 
         ClientStreamFactoryBuilder streamFactoryBuilder = new ClientStreamFactoryBuilder(kafkaConfig,
@@ -152,7 +152,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
         return result;
     }
 
-    public boolean handleRouteForBootstrap(
+    public boolean handleRoute(
         int msgTypeId,
         DirectBuffer buffer,
         int index,
@@ -172,7 +172,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                     {
                         MutableDirectBuffer routeBuffer = new UnsafeBuffer(new byte[length]);
                         buffer.getBytes(index,  routeBuffer, 0, length);
-                        routesToBootstrap.add(new RouteFW().wrap(routeBuffer, 0, length));
+                        routesToProcess.add(new RouteFW().wrap(routeBuffer, 0, length));
                     }
                 }
             }
@@ -186,15 +186,15 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
     @Override
     public int process()
     {
-        if (!routesToBootstrap.isEmpty() && createNetworkConnectionPool != null)
+        if (!routesToProcess.isEmpty() && createNetworkConnectionPool != null)
         {
-            startTopicBootstrap(routesToBootstrap);
-            routesToBootstrap.clear();
+            processRoutes(routesToProcess);
+            routesToProcess.clear();
         }
         return 0;
     }
 
-    public void startTopicBootstrap(
+    public void processRoutes(
         List<RouteFW> routes)
     {
         for (RouteFW route : routes)
@@ -214,7 +214,13 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                 NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef, ref ->
                     createNetworkConnectionPool.apply(networkName, networkRef));
 
-                connectionPool.doBootstrap(topicName, routeEx.headers(), errorCode ->
+                connectionPool.addRoute(topicName, routeEx.headers());
+            }
+        }
+        if (kafkaConfig.topicBootstrapEnabled())
+        {
+            connectionPools.forEach((networkName, poolsByRef) ->
+                poolsByRef.forEach((ref, pool) -> pool.doBootstrap((errorCode, topicName) ->
                 {
                     switch(errorCode)
                     {
@@ -228,9 +234,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                             "Received error code %d from Kafka while attempting to bootstrap topic \"%s\"",
                             errorCode, topicName));
                     }
-                });
-
-            }
+                })));
         }
     }
 }
