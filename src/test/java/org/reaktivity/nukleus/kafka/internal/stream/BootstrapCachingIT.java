@@ -29,7 +29,7 @@ import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
-public class CachingFetchLimitsIT
+public class BootstrapCachingIT
 {
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
@@ -47,8 +47,8 @@ public class CachingFetchLimitsIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
-        .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false")
-        .configure(KafkaConfiguration.MESSAGE_CACHE_CAPACITY_PROPERTY, Integer.toString(1024 * 2))
+        .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "true")
+        .configure(KafkaConfiguration.MESSAGE_CACHE_CAPACITY_PROPERTY, Integer.toString(1024 * 1024))
         .clean();
 
     @Rule
@@ -56,25 +56,19 @@ public class CachingFetchLimitsIT
 
     @Test
     @Specification({
-        "${control}/route.ext.header/client/controller",
-        "${client}/compacted.messages.header.multiple.clients/client",
-        "${server}/compacted.messages.header/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCompactedMessagesCachedByRouteHeader() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
         "${control}/route.ext.multiple.headers/client/controller",
         "${client}/compacted.messages.header.multiple.routes/client",
         "${server}/compacted.messages.header.multiple.values/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCachedCompactedMessagesFilteredByHeaderOnMultipleRoutes() throws Exception
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "firstMessageOffset 12"
+    })
+    public void shouldCacheMessagesMatchingHeadersOnMultipleRoutesDuringBootstrap() throws Exception
     {
         k3po.start();
         k3po.awaitBarrier("ROUTED_CLIENT");
+        k3po.awaitBarrier("FETCH_REQUEST_RECEIVED");
+        Thread.sleep(500); // ensure bootstrap is complete before client attaches
         k3po.notifyBarrier("CONNECT_CLIENT_ONE");
         k3po.finish();
     }

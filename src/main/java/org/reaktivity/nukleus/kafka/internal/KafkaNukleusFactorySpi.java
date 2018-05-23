@@ -43,6 +43,8 @@ import org.reaktivity.nukleus.kafka.internal.memory.MemoryLayout;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.stream.ClientStreamFactoryBuilder;
 import org.reaktivity.nukleus.kafka.internal.stream.NetworkConnectionPool;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
@@ -214,7 +216,11 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                 NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef, ref ->
                     createNetworkConnectionPool.apply(networkName, networkRef));
 
-                connectionPool.addRoute(topicName, routeEx.headers());
+                final ListFW<KafkaHeaderFW> headers = routeEx.headers();
+                ListFW<KafkaHeaderFW> headersCopy = new ListFW<KafkaHeaderFW>(new KafkaHeaderFW());
+                headersCopy.wrap(headers.buffer(), headers.offset(), headers.limit());
+
+                connectionPool.addRoute(topicName, headersCopy);
             }
         }
         if (kafkaConfig.topicBootstrapEnabled())
