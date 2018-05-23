@@ -352,11 +352,22 @@ public class FetchIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${control}/route.ext.header/client/controller",
         "${client}/compacted.messages.header/client",
         "${server}/compacted.messages.header/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCompactedMessagesFilteredByHeaderOnBegin() throws Exception
+    public void shouldMatchRouteAndReceiveCompactedMessagesFilteredByHeaderOnBegin() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${control}/route.ext.header/client/controller",
+        "${client}/compacted.messages.headers/client",
+        "${server}/compacted.messages.headers/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldMatchRouteAndReceiveCompactedMessagesFilteredByHeadersOnBegin() throws Exception
     {
         k3po.finish();
     }

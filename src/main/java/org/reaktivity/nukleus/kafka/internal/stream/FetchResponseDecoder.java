@@ -54,12 +54,13 @@ import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
  */
 public class FetchResponseDecoder implements ResponseDecoder
 {
-    final ResponseHeaderFW responseRO = new ResponseHeaderFW();
-    final FetchResponseFW fetchResponseRO = new FetchResponseFW();
-    final TopicResponseFW topicResponseRO = new TopicResponseFW();
-    final PartitionResponseFW partitionResponseRO = new PartitionResponseFW();
-    final TransactionResponseFW transactionResponseRO = new TransactionResponseFW();
-    final RecordSetFW recordSetRO = new RecordSetFW();
+    private final ResponseHeaderFW responseRO = new ResponseHeaderFW();
+    private final FetchResponseFW fetchResponseRO = new FetchResponseFW();
+    private final TopicResponseFW topicResponseRO = new TopicResponseFW();
+    private final PartitionResponseFW partitionResponseRO = new PartitionResponseFW();
+    private final TransactionResponseFW transactionResponseRO = new TransactionResponseFW();
+    private final RecordSetFW recordSetRO = new RecordSetFW();
+
     private final Varint32FW varint32RO = new Varint32FW();
 
     private final RecordBatchFW recordBatchRO = new RecordBatchFW();
@@ -67,8 +68,8 @@ public class FetchResponseDecoder implements ResponseDecoder
     private final HeaderFW headerRO = new HeaderFW();
 
     private final HeadersFW headers = new HeadersFW();
-    private final UnsafeBuffer keyBuffer = new UnsafeBuffer(BufferUtil.EMPTY_BYTE_ARRAY);
-    private final UnsafeBuffer valueBuffer = new UnsafeBuffer(BufferUtil.EMPTY_BYTE_ARRAY);
+    private final DirectBuffer keyBuffer = new UnsafeBuffer(BufferUtil.EMPTY_BYTE_ARRAY);
+    private final DirectBuffer valueBuffer = new UnsafeBuffer(BufferUtil.EMPTY_BYTE_ARRAY);
 
     private final Function<String, DecoderMessageDispatcher> getDispatcher;
     private final StringIntToLongFunction getRequestedOffsetForPartition;

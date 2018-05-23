@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.util;
 
 import org.agrona.BitUtil;
 import org.agrona.DirectBuffer;
+import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 
@@ -96,8 +97,8 @@ public final class BufferUtil
     }
 
     public static boolean matches(
-        final OctetsFW o1,
-        final OctetsFW o2)
+        final Flyweight o1,
+        final Flyweight o2)
     {
         boolean result = o2 != null && o1 != null && o2.sizeof() == o1.sizeof();
         if (result)

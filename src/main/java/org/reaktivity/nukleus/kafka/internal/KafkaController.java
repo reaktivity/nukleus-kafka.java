@@ -123,9 +123,9 @@ public final class KafkaController implements Controller
         String target,
         long targetRef,
         String topicName,
-        Map<String, String> headerConditions)
+        Map<String, String> headers)
     {
-        return route(Role.CLIENT, source, sourceRef, target, targetRef, topicName, headerConditions);
+        return route(Role.CLIENT, source, sourceRef, target, targetRef, topicName, headers);
     }
 
     public CompletableFuture<Void> unrouteServer(
@@ -144,9 +144,9 @@ public final class KafkaController implements Controller
         String target,
         long targetRef,
         String topicName,
-        Map<String, String> headerConditions)
+        Map<String, String> headers)
     {
-        return unroute(Role.CLIENT, source, sourceRef, target, targetRef, topicName, headerConditions);
+        return unroute(Role.CLIENT, source, sourceRef, target, targetRef, topicName, headers);
     }
 
 
@@ -178,7 +178,7 @@ public final class KafkaController implements Controller
 
     private Consumer<OctetsFW.Builder> extension(
         final String topicName,
-        Map<String, String> headerConditions)
+        Map<String, String> headers)
     {
         if (topicName != null)
         {
@@ -187,7 +187,7 @@ public final class KafkaController implements Controller
                          .topicName(topicName)
                          .headers(lhb ->
                          {
-                             headerConditions.forEach((k, v) ->
+                             headers.forEach((k, v) ->
                              {
                                  lhb.item(hb -> hb.key(k).value(ob -> ob.put(v.getBytes(UTF_8))));
                              });
@@ -209,7 +209,7 @@ public final class KafkaController implements Controller
         String target,
         long targetRef,
         String topicName,
-        Map<String, String> headerConditions)
+        Map<String, String> headers)
     {
         long correlationId = controllerSpi.nextCorrelationId();
 
@@ -220,7 +220,7 @@ public final class KafkaController implements Controller
                                  .sourceRef(sourceRef)
                                  .target(target)
                                  .targetRef(targetRef)
-                                 .extension(extension(topicName, headerConditions))
+                                 .extension(extension(topicName, headers))
                                  .build();
 
         return controllerSpi.doRoute(routeRO.typeId(), routeRO.buffer(), routeRO.offset(), routeRO.sizeof());
@@ -233,7 +233,7 @@ public final class KafkaController implements Controller
         String target,
         long targetRef,
         String topicName,
-        Map<String, String> headerConditions)
+        Map<String, String> headers)
     {
         long correlationId = controllerSpi.nextCorrelationId();
 
@@ -244,7 +244,7 @@ public final class KafkaController implements Controller
                                  .sourceRef(sourceRef)
                                  .target(target)
                                  .targetRef(targetRef)
-                                 .extension(extension(topicName, headerConditions))
+                                 .extension(extension(topicName, headers))
                                  .build();
 
         return controllerSpi.doUnroute(unrouteRO.typeId(), unrouteRO.buffer(), unrouteRO.offset(), unrouteRO.sizeof());

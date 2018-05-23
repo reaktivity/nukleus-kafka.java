@@ -259,8 +259,8 @@ public final class ClientStreamFactory implements StreamFactory
                 {
                     headersMatch = candidate ->
                             !routeEx.headers().anyMatch(r -> !candidate.anyMatch(
-                                    h -> h.key().asString().equals(r.key().asString())
-                                    && BufferUtil.matches(r.value(),  h.value())));
+                                    h -> BufferUtil.matches(r.key(),  h.key()) &&
+                                    BufferUtil.matches(r.value(),  h.value())));
                 }
             }
             return route.sourceRef() == sourceRef && topicMatch.test(topicName) && headersMatch.test(headers);

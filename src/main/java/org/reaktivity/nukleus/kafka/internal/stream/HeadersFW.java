@@ -31,9 +31,9 @@ public final class HeadersFW
     private DirectBuffer buffer;
 
     private final HeaderFW headerRO = new HeaderFW();
-    private final UnsafeBuffer header = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-    private final UnsafeBuffer value1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-    private final UnsafeBuffer value2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    private final DirectBuffer header = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    private final DirectBuffer value1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    private final DirectBuffer value2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
     private final Function<DirectBuffer, DirectBuffer> supplyHeader = this::supplyHeader;
 
