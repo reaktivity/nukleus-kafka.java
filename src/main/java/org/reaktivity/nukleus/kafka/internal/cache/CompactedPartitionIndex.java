@@ -24,6 +24,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 
 import org.agrona.DirectBuffer;
 import org.agrona.collections.LongArrayList;
@@ -61,7 +62,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         MessageCache messageCache)
     {
         this.offsetsByKey = new HashMap<>(initialCapacity);
-        entries = new ArrayList<EntryImpl>(initialCapacity);
+        this.entries = new ArrayList<EntryImpl>(initialCapacity);
         this.messageCache = messageCache;
         this.tombstoneLifetimeMillis = tombstoneLifetimeMillis;
     }
@@ -255,8 +256,8 @@ public class CompactedPartitionIndex implements PartitionIndex
             }
             else if (pos > 0)
             {
-                tombstoneKeys.removeIf(k -> k == null);
-                tombstoneExpiryTimes.removeIf(t -> t == null);
+                tombstoneKeys.removeIf(Objects::isNull);
+                tombstoneExpiryTimes.removeIf(Objects::isNull);
             }
         }
     }
@@ -341,8 +342,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         private  EntryImpl(
             long offset,
             int  message,
-            int  position
-            )
+            int  position)
         {
             this.offset = offset;
             this.message = message;

@@ -24,7 +24,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
 
@@ -36,7 +35,6 @@ import org.reaktivity.nukleus.Configuration;
 import org.reaktivity.nukleus.Nukleus;
 import org.reaktivity.nukleus.NukleusBuilder;
 import org.reaktivity.nukleus.NukleusFactorySpi;
-import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.memory.CountingMemoryManager;
 import org.reaktivity.nukleus.kafka.internal.memory.DefaultMemoryManager;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryLayout;
@@ -51,12 +49,8 @@ import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
 
 public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
 {
-    private static final MessagePredicate DEFAULT_ROUTE_HANDLER = (m, b, i, l) ->
-    {
-        return true;
-    };
-    private static final Consumer<BiFunction<String, Long, NetworkConnectionPool>>
-        DEFAULT_CONNECT_POOL_FACTORY_CONSUMER = f -> {};
+    private static final String KAFKA_MESSAGE_CACHE_BUFFER_ACQUIRES = "kafka.message.cache.buffer.acquires";
+    private static final String KAFKA_MESSAGE_CACHE_BUFFER_RELEASES = "kafka.message.cache.buffer.releases";
 
     private static final MemoryManager OUT_OF_SPACE_MEMORY_MANAGER = new MemoryManager()
     {
@@ -91,7 +85,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
     private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
 
     private List<RouteFW> routesToProcess = new ArrayList<>();
-    private BiFunction<String, Long, NetworkConnectionPool> createNetworkConnectionPool;
+    private BiFunction<String, Long, NetworkConnectionPool> connectionPoolFactory;
 
     private KafkaConfiguration kafkaConfig;
 
@@ -108,25 +102,17 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
     {
         kafkaConfig = new KafkaConfiguration(config);
 
-        Consumer<BiFunction<String, Long, NetworkConnectionPool>> connectionPoolFactoryConsumer =
-            DEFAULT_CONNECT_POOL_FACTORY_CONSUMER;
-        MessagePredicate routeHandler = DEFAULT_ROUTE_HANDLER;
-
-        routeHandler = this::handleRoute;
-        connectionPoolFactoryConsumer = f -> createNetworkConnectionPool = f;
-
         ClientStreamFactoryBuilder streamFactoryBuilder = new ClientStreamFactoryBuilder(kafkaConfig,
-                (s) -> createMemoryManager(config, kafkaConfig, s), connectionPools, connectionPoolFactoryConsumer);
+                s -> createMemoryManager(kafkaConfig, s), connectionPools, this::setConnectionPoolFactory);
 
         return builder.streamFactory(CLIENT, streamFactoryBuilder)
-                      .routeHandler(CLIENT, routeHandler)
+                      .routeHandler(CLIENT, this::handleRoute)
                       .inject(this)
                       .build();
     }
 
     private MemoryManager createMemoryManager(
-        Configuration config,
-        KafkaConfiguration kafkaConfig,
+        KafkaConfiguration config,
         Function<String, LongSupplier> supplyCounter)
     {
         MemoryManager result;
@@ -141,15 +127,15 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
             final MemoryLayout memoryLayout = new MemoryLayout.Builder()
                     // TODO: non-deprecated way of getting nukleus's home directory; change name of memory0?
                     .path(config.directory().resolve("kafka").resolve("memory0"))
-                    .minimumBlockSize(kafkaConfig.messageCacheBlockCapacity())
+                    .minimumBlockSize(config.messageCacheBlockCapacity())
                     .maximumBlockSize(capacity)
                     .create(true)
                     .build();
             MemoryManager memoryManager = new DefaultMemoryManager(memoryLayout);
             result = new CountingMemoryManager(
                 memoryManager,
-                supplyCounter.apply("kafka.message.cache.buffer.acquires"),
-                supplyCounter.apply("kafka.message.cache.buffer.releases"));
+                supplyCounter.apply(KAFKA_MESSAGE_CACHE_BUFFER_ACQUIRES),
+                supplyCounter.apply(KAFKA_MESSAGE_CACHE_BUFFER_RELEASES));
         }
         return result;
     }
@@ -188,7 +174,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
     @Override
     public int process()
     {
-        if (!routesToProcess.isEmpty() && createNetworkConnectionPool != null)
+        if (!routesToProcess.isEmpty() && connectionPoolFactory != null)
         {
             processRoutes(routesToProcess);
             routesToProcess.clear();
@@ -214,7 +200,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                     connectionPools.computeIfAbsent(networkName, name -> new Long2ObjectHashMap<>());
 
                 NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef, ref ->
-                    createNetworkConnectionPool.apply(networkName, networkRef));
+                    connectionPoolFactory.apply(networkName, networkRef));
 
                 final ListFW<KafkaHeaderFW> headers = routeEx.headers();
                 ListFW<KafkaHeaderFW> headersCopy = new ListFW<KafkaHeaderFW>(new KafkaHeaderFW());
@@ -226,21 +212,31 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
         if (kafkaConfig.topicBootstrapEnabled())
         {
             connectionPools.forEach((networkName, poolsByRef) ->
-                poolsByRef.forEach((ref, pool) -> pool.doBootstrap((errorCode, topicName) ->
-                {
-                    switch(errorCode)
-                    {
-                    case UNKNOWN_TOPIC_OR_PARTITION:
-                        System.out.println(format(
-                            "WARNING: bootstrap failed for topic \"%s\" with error \"unknown topic\"",
-                            topicName));
-                        break;
-                    default:
-                        throw new IllegalStateException(format(
-                            "Received error code %d from Kafka while attempting to bootstrap topic \"%s\"",
-                            errorCode, topicName));
-                    }
-                })));
+                poolsByRef.forEach((ref, pool) -> pool.doBootstrap(this::doBootstrapTopic)));
         }
+    }
+
+    private void doBootstrapTopic(
+        Short errorCode,
+        String topicName)
+    {
+        switch(errorCode)
+        {
+        case UNKNOWN_TOPIC_OR_PARTITION:
+            System.out.println(format(
+                "WARNING: bootstrap failed for topic \"%s\" with error \"unknown topic\"",
+                topicName));
+            break;
+        default:
+            throw new IllegalStateException(format(
+                "Received error code %d from Kafka while attempting to bootstrap topic \"%s\"",
+                errorCode, topicName));
+        }
+    }
+
+    private void setConnectionPoolFactory(
+        BiFunction<String, Long, NetworkConnectionPool> connectionPoolFactory)
+    {
+        this.connectionPoolFactory = connectionPoolFactory;
     }
 }

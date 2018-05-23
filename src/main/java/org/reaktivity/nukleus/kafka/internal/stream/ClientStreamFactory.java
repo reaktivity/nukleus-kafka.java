@@ -130,7 +130,7 @@ public final class ClientStreamFactory implements StreamFactory
         LongSupplier supplyCorrelationId,
         Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations,
         Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools,
-        Consumer<BiFunction<String, Long, NetworkConnectionPool>> connectPoolFactoryConsumer)
+        Consumer<BiFunction<String, Long, NetworkConnectionPool>> setConnectionPoolFactory)
     {
         this.fetchMaxBytes = config.fetchMaxBytes();
         this.fetchPartitionMaxBytes = config.fetchPartitionMaxBytes();
@@ -145,7 +145,7 @@ public final class ClientStreamFactory implements StreamFactory
         this.connectionPools = connectionPools;
         groupBudget = new Long2LongHashMap(-1);
         groupMembers = new Long2LongHashMap(-1);
-        connectPoolFactoryConsumer.accept((networkName, ref) ->
+        setConnectionPoolFactory.accept((networkName, ref) ->
             new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes, bufferPool, messageCache));
     }
 
