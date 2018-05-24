@@ -59,10 +59,7 @@ public class BootstrapCachingIT
         "${control}/route.ext.multiple.headers/client/controller",
         "${client}/compacted.messages.header.multiple.routes/client",
         "${server}/compacted.messages.header.multiple.values/server"})
-    @ScriptProperty({
-        "networkAccept \"nukleus://target/streams/kafka\"",
-        "firstMessageOffset 12"
-    })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldCacheMessagesMatchingHeadersOnMultipleRoutesDuringBootstrap() throws Exception
     {
         k3po.start();

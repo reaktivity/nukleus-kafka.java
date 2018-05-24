@@ -1902,12 +1902,9 @@ public final class NetworkConnectionPool
                         }
                     }
                 }
-                if (flushNeeded)
-                {
-                    dispatcher.flush(partitionId, requestOffset, newOffset);
-                }
                 if (requestSatisifed)
                 {
+                    newOffset = dispatcher.nextOffset(partitionId);
                     // Remove the partition request by shifting up the subsequent ones
                     encodeBuffer.putBytes(encodeOffset,  encodeBuffer, request.limit(), encodeLimit);
                     newEncodeLimit -= request.sizeof();
@@ -1926,6 +1923,10 @@ public final class NetworkConnectionPool
                             .build();
                     }
                     encodeOffset = request.limit();
+                }
+                if (flushNeeded)
+                {
+                    dispatcher.flush(partitionId, requestOffset, newOffset);
                 }
             }
             assert encodeLimit <= encodeLimit;
@@ -2269,8 +2270,11 @@ public final class NetworkConnectionPool
             long requestOffset,
             long lastOffset)
         {
-            progressHandler.handle(partition, offsets[partition], lastOffset);
-            offsets[partition] = lastOffset;
+            if  (lastOffset > offsets[partition])
+            {
+                progressHandler.handle(partition, offsets[partition], lastOffset);
+                offsets[partition] = lastOffset;
+            }
         };
     }
 

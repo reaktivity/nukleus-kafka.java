@@ -89,7 +89,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
                 result |= keyDispatcher.dispatch(partition, requestOffset, messageOffset,
                                                    key, supplyHeader, timestamp, traceId, value);
                 // detect historical message stream
-                long highestOffset = indexes[partition].highestOffset();
+                long highestOffset = indexes[partition].nextOffset();
                 if (MessageDispatcher.delivered(result) && messageOffset < highestOffset)
                 {
                     Entry entry = getEntry(partition, requestOffset, asOctets(key));
@@ -115,7 +115,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         broadcast.flush(partition, requestOffset, lastOffset);
         keys[partition].flush(partition, requestOffset, lastOffset);
         headers.flush(partition, requestOffset, lastOffset);
-        indexes[partition].extendOffset(requestOffset, lastOffset);
+        indexes[partition].extendNextOffset(requestOffset, lastOffset);
     }
 
     public void add(
@@ -183,6 +183,12 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         long requestOffset)
     {
         return indexes[partition].entries(requestOffset);
+    }
+
+    public long nextOffset(
+        int partition)
+    {
+        return indexes[partition].nextOffset();
     }
 
     private boolean shouldDispatch(

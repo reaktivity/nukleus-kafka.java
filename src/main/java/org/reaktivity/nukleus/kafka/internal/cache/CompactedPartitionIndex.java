@@ -140,7 +140,7 @@ public class CompactedPartitionIndex implements PartitionIndex
     }
 
     @Override
-    public void extendOffset(
+    public void extendNextOffset(
         long requestOffset,
         long lastOffset)
     {
@@ -166,7 +166,7 @@ public class CompactedPartitionIndex implements PartitionIndex
     }
 
     @Override
-    public long highestOffset()
+    public long nextOffset()
     {
         return validToOffset;
     }

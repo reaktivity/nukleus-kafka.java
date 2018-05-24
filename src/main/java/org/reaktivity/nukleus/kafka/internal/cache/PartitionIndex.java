@@ -48,9 +48,9 @@ public interface PartitionIndex
         long requestOffset,
         OctetsFW key);
 
-    long highestOffset();
+    long nextOffset();
 
-    void extendOffset(
+    void extendNextOffset(
         long requestOffset,
         long lastOffset);
 

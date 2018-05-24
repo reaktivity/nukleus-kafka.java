@@ -48,7 +48,7 @@ public class DefaultPartitionIndex implements PartitionIndex
     }
 
     @Override
-    public void extendOffset(
+    public void extendNextOffset(
         long requestOffset,
         long lastOffset)
     {
@@ -63,7 +63,7 @@ public class DefaultPartitionIndex implements PartitionIndex
     }
 
     @Override
-    public long highestOffset()
+    public long nextOffset()
     {
         return 0L;
     }

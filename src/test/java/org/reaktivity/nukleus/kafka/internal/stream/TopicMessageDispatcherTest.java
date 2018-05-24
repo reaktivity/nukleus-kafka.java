@@ -139,7 +139,7 @@ public final class TopicMessageDispatcherTest
                 oneOf(child2).dispatch(with(0), with(10L), with(12L), with(bufferMatching("key1")),
                         with(headers.headerSupplier()), with(timestamp1), with(traceId), with((DirectBuffer) null));
                 oneOf(partitionIndex1).getEntry(with(10L), with(asOctets("key1")));
-                oneOf(partitionIndex1).highestOffset();
+                oneOf(partitionIndex1).nextOffset();
                 will(returnValue(0L));
                 oneOf(partitionIndex1).add(with(10L), with(11L), with(timestamp1), with(traceId),
                         with(bufferMatching("key1")), with(headers), with((DirectBuffer) null));
@@ -148,7 +148,7 @@ public final class TopicMessageDispatcherTest
                         with(headers.headerSupplier()), with(timestamp2), with(traceId), with((DirectBuffer) null));
                 will(returnValue(FLAGS_DELIVERED));
                 oneOf(partitionIndex2).getEntry(with(10L), with(asOctets("key2")));
-                oneOf(partitionIndex2).highestOffset();
+                oneOf(partitionIndex2).nextOffset();
                 will(returnValue(0L));
                 oneOf(partitionIndex2).add(with(10L), with(12L), with(timestamp1), with(traceId),
                         with(bufferMatching("key2")), with(headers), with((DirectBuffer) null));
@@ -178,7 +178,7 @@ public final class TopicMessageDispatcherTest
         {
             {
                 oneOf(partitionIndex2).getEntry(with(10L), with(asOctets("key2")));
-                oneOf(partitionIndex2).highestOffset();
+                oneOf(partitionIndex2).nextOffset();
                 will(returnValue(0L));
                 oneOf(routeMatcher).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key2")),
                         with(headers.headerSupplier()), with(timestamp), with(0L), with((DirectBuffer) null));
@@ -203,7 +203,7 @@ public final class TopicMessageDispatcherTest
             {
                 oneOf(child1).flush(1, 10L, 12L);
                 oneOf(child2).flush(1, 10L, 12L);
-                oneOf(partitionIndex2).extendOffset(10L, 12L);
+                oneOf(partitionIndex2).extendNextOffset(10L, 12L);
             }
         });
         dispatcher.flush(1, 10L, 12L);
