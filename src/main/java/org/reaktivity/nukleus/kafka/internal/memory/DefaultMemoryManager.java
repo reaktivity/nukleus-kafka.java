@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.memory;
 
 import static java.lang.Integer.highestOneBit;
 import static java.lang.Integer.numberOfTrailingZeros;
+import static org.agrona.BitUtil.findNextPositivePowerOfTwo;
 import static org.reaktivity.nukleus.kafka.internal.memory.BTreeFW.EMPTY;
 import static org.reaktivity.nukleus.kafka.internal.memory.BTreeFW.FULL;
 import static org.reaktivity.nukleus.kafka.internal.memory.BTreeFW.SPLIT;
@@ -103,8 +104,8 @@ public class DefaultMemoryManager implements MemoryManager
             return -1;
         }
 
-        int allocationSize = Math.max(capacity >> blockSizeShift, 1) << blockSizeShift;
-        int allocationOrder = numberOfTrailingZeros(allocationSize >> blockSizeShift);
+        final int allocationSize = Math.max(findNextPositivePowerOfTwo(capacity), 1 << blockSizeShift);
+        final int allocationOrder = numberOfTrailingZeros(allocationSize >> blockSizeShift);
 
         final BTreeFW node = btreeRO.walk(0);
         while (node.order() != allocationOrder || node.flag(SPLIT) || node.flag(FULL))
@@ -163,11 +164,11 @@ public class DefaultMemoryManager implements MemoryManager
         return ((nodeIndex + 1) & ~highestOneBit(nodeIndex + 1)) << blockSizeShift << nodeOrder;
     }
 
-    public void release0(
+    private void release0(
         long offset,
         int capacity)
     {
-        final int allocationSize = Math.max(capacity >> blockSizeShift, 1) << blockSizeShift;
+        final int allocationSize = Math.max(findNextPositivePowerOfTwo(capacity), 1 << blockSizeShift);
         final int nodeOrder = numberOfTrailingZeros(allocationSize >> blockSizeShift);
         final int nodeIndex = (((int) (offset >> nodeOrder >> blockSizeShift)) | (1 << (maximumOrder - nodeOrder))) - 1;
 
