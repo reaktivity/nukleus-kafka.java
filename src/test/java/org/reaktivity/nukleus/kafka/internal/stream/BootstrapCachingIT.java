@@ -65,7 +65,7 @@ public class BootstrapCachingIT
         k3po.start();
         k3po.awaitBarrier("ROUTED_CLIENT");
         k3po.awaitBarrier("FETCH_REQUEST_RECEIVED");
-        Thread.sleep(500); // ensure bootstrap is complete before client attaches
+        Thread.sleep(1000); // ensure bootstrap is complete before client attaches
         k3po.notifyBarrier("CONNECT_CLIENT_ONE");
         k3po.finish();
     }
