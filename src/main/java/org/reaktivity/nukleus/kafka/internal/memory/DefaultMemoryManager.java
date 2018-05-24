@@ -27,7 +27,6 @@ import java.util.Random;
 
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.AtomicBuffer;
-import org.agrona.hints.ThreadHints;
 
 // NOTE, order 0 is largest in terms of size
 public class DefaultMemoryManager implements MemoryManager
@@ -67,36 +66,6 @@ public class DefaultMemoryManager implements MemoryManager
 
     @Override
     public long acquire(
-        int capacity)
-    {
-        lock();
-        try
-        {
-            return acquire0(capacity);
-        }
-        finally
-        {
-            unlock();
-        }
-    }
-
-    @Override
-    public void release(
-        long address,
-        int capacity)
-    {
-        lock();
-        try
-        {
-            release0(address, capacity);
-        }
-        finally
-        {
-            unlock();
-        }
-    }
-
-    private long acquire0(
         int capacity)
     {
         if (capacity > this.maximumBlockSize)
@@ -164,7 +133,8 @@ public class DefaultMemoryManager implements MemoryManager
         return ((nodeIndex + 1) & ~highestOneBit(nodeIndex + 1)) << blockSizeShift << nodeOrder;
     }
 
-    private void release0(
+    @Override
+    public void release(
         long offset,
         int capacity)
     {
@@ -195,18 +165,5 @@ public class DefaultMemoryManager implements MemoryManager
     public boolean released()
     {
         return btreeRO.walk(0).flags() == EMPTY;
-    }
-
-    private void lock()
-    {
-        while(!metadataBuffer.compareAndSetLong(MemoryLayout.LOCK_OFFSET, 0L, this.id))
-        {
-            ThreadHints.onSpinWait();
-        }
-    }
-
-    private void unlock()
-    {
-        metadataBuffer.putLongOrdered(MemoryLayout.LOCK_OFFSET, 0L);
     }
 }
