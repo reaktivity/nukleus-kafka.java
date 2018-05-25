@@ -21,7 +21,13 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.reaktivity.nukleus.kafka.internal.stream.MessageDispatcher.FLAGS_DELIVERED;
+import static org.reaktivity.nukleus.kafka.internal.stream.MessageDispatcher.FLAGS_MATCHED;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
@@ -34,17 +40,15 @@ import org.jmock.Expectations;
 import org.jmock.integration.junit4.JUnitRuleMockery;
 import org.junit.Rule;
 import org.junit.Test;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 
 public final class CompactedHeaderValueMessageDispatcherTest
 {
-    private final ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW> headersRW =
-         new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW());
-    private final MutableDirectBuffer headers1Buffer = new UnsafeBuffer(new byte[1000]);
-    private final MutableDirectBuffer headers2Buffer = new UnsafeBuffer(new byte[1000]);
-    private final MutableDirectBuffer headers3Buffer = new UnsafeBuffer(new byte[1000]);
+    private final KafkaHeaderFW.Builder headerRW = new KafkaHeaderFW.Builder();
+    private final MutableDirectBuffer headersBuffer = new UnsafeBuffer(new byte[1000]);
+
+    private Iterator<KafkaHeaderFW> emptyHeaders = Collections.emptyIterator();
 
     private CompactedHeaderValueMessageDispatcher dispatcher = new CompactedHeaderValueMessageDispatcher(asBuffer("header1"));
 
@@ -56,17 +60,12 @@ public final class CompactedHeaderValueMessageDispatcherTest
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
-        ListFW<KafkaHeaderFW> headers1 =
-                headersRW.wrap(headers1Buffer, 0, headers1Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value1")))
-                .build();
-        dispatcher.add(asOctets("header1"), headers1, 1, child1);
-        ListFW<KafkaHeaderFW> headers2 =
-                headersRW.wrap(headers2Buffer, 0, headers2Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value1")))
-                .item(b -> b.key("header2").value(asOctets("value2")))
-                .build();
-        dispatcher.add(asOctets("header1"), headers2, 1, child2);
+        dispatcher.add(asOctets("value1"), emptyHeaders, child1);
+        Iterator<KafkaHeaderFW> headers = Arrays.asList(
+            headerRW.wrap(headersBuffer, 0, headersBuffer.capacity())
+                    .key("header2").value(asOctets("value2"))
+                    .build()).iterator();
+        dispatcher.add(asOctets("value1"), headers, child2);
     }
 
     @Test
@@ -74,17 +73,12 @@ public final class CompactedHeaderValueMessageDispatcherTest
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
-        ListFW<KafkaHeaderFW> headers1 =
-                headersRW.wrap(headers1Buffer, 0, headers1Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value1")))
-                .build();
-        dispatcher.add(asOctets("value1"), headers1, 1, child1);
-        ListFW<KafkaHeaderFW> headers2 =
-                headersRW.wrap(headers2Buffer, 0, headers2Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value1")))
-                .item(b -> b.key("header2").value(asOctets("value2")))
-                .build();
-        dispatcher.add(asOctets("value1"), headers2, 1, child2);
+        dispatcher.add(asOctets("value1"), emptyHeaders, child1);
+        Iterator<KafkaHeaderFW> headers = Arrays.asList(
+            headerRW.wrap(headersBuffer, 0, headersBuffer.capacity())
+                    .key("header2").value(asOctets("value2"))
+                    .build()).iterator();
+        dispatcher.add(asOctets("value1"), headers, child2);
         assertNotNull(dispatcher.get(asOctets("value1")));
         assertNull(dispatcher.get(asOctets("value2")));
     }
@@ -94,17 +88,12 @@ public final class CompactedHeaderValueMessageDispatcherTest
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
-        ListFW<KafkaHeaderFW> headers1 =
-                headersRW.wrap(headers1Buffer, 0, headers1Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value1")))
-                .build();
-        dispatcher.add(asOctets("value1"), headers1, 1, child1);
-        ListFW<KafkaHeaderFW> headers2 =
-                headersRW.wrap(headers2Buffer, 0, headers2Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value1")))
-                .item(b -> b.key("header2").value(asOctets("value2")))
-                .build();
-        dispatcher.add(asOctets("value1"), headers2, 1, child2);
+        dispatcher.add(asOctets("value1"), emptyHeaders, child1);
+        Iterator<KafkaHeaderFW> headers = Arrays.asList(
+            headerRW.wrap(headersBuffer, 0, headersBuffer.capacity())
+                    .key("header2").value(asOctets("value2"))
+                    .build()).iterator();
+        dispatcher.add(asOctets("value1"), headers, child2);
 
         @SuppressWarnings("unchecked")
         Function<DirectBuffer, DirectBuffer> supplyHeader = context.mock(Function.class, "header");
@@ -121,13 +110,14 @@ public final class CompactedHeaderValueMessageDispatcherTest
                 will(returnValue(asBuffer("value2")));
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
                 oneOf(child2).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
             }
         });
-        assertEquals(2, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, null));
+        assertEquals(FLAGS_DELIVERED,
+                dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, null));
     }
 
     @Test
@@ -136,17 +126,12 @@ public final class CompactedHeaderValueMessageDispatcherTest
 
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
-        ListFW<KafkaHeaderFW> headers1 =
-                headersRW.wrap(headers1Buffer, 0, headers1Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value1")))
-                .build();
-        dispatcher.add(asOctets("value1"), headers1, 1, child1);
-        ListFW<KafkaHeaderFW> headers2 =
-                headersRW.wrap(headers2Buffer, 0, headers2Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value1")))
-                .item(b -> b.key("header2").value(asOctets("value2")))
-                .build();
-        dispatcher.add(asOctets("value1"), headers2, 1, child2);
+        dispatcher.add(asOctets("value1"), emptyHeaders, child1);
+        Iterator<KafkaHeaderFW> headers = Arrays.asList(
+            headerRW.wrap(headersBuffer, 0, headersBuffer.capacity())
+                    .key("header2").value(asOctets("value2"))
+                    .build()).iterator();
+        dispatcher.add(asOctets("value1"), headers, child2);
 
         @SuppressWarnings("unchecked")
         Function<DirectBuffer, DirectBuffer> supplyHeader = context.mock(Function.class, "header");
@@ -163,10 +148,10 @@ public final class CompactedHeaderValueMessageDispatcherTest
                 will(returnValue(null));
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_MATCHED));
             }
         });
-        assertEquals(1, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, null));
+        assertEquals(FLAGS_MATCHED, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, null));
     }
 
     @Test
@@ -174,11 +159,7 @@ public final class CompactedHeaderValueMessageDispatcherTest
     {
 
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
-        ListFW<KafkaHeaderFW> headers1 =
-                headersRW.wrap(headers1Buffer, 0, headers1Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value1")))
-                .build();
-        dispatcher.add(asOctets("value1"), headers1, 1, child1);
+        dispatcher.add(asOctets("value1"), emptyHeaders, child1);
 
         @SuppressWarnings("unchecked")
         Function<DirectBuffer, DirectBuffer> supplyHeader = context.mock(Function.class, "header");
@@ -195,14 +176,16 @@ public final class CompactedHeaderValueMessageDispatcherTest
                 will(returnValue(null));
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with(bufferMatching("message")));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
                 oneOf(child1).dispatch(with(1), with(10L), with(13L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
             }
         });
-        assertEquals(1, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, asBuffer("message")));
-        assertEquals(1, dispatcher.dispatch(1, 10L, 13L, asBuffer("key"), supplyHeader, timestamp, traceId, asBuffer("message")));
+        assertEquals(FLAGS_DELIVERED,
+                dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, asBuffer("message")));
+        assertEquals(FLAGS_DELIVERED,
+                dispatcher.dispatch(1, 10L, 13L, asBuffer("key"), supplyHeader, timestamp, traceId, asBuffer("message")));
         assertEquals(0, dispatcher.dispatchersByKeySize());
     }
 
@@ -212,16 +195,8 @@ public final class CompactedHeaderValueMessageDispatcherTest
 
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
-        ListFW<KafkaHeaderFW> headers1 =
-                headersRW.wrap(headers1Buffer, 0, headers1Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value1")))
-                .build();
-        dispatcher.add(asOctets("value1"), headers1, 1, child1);
-        ListFW<KafkaHeaderFW> headers2 =
-                headersRW.wrap(headers1Buffer, 0, headers1Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value2")))
-                .build();
-        dispatcher.add(asOctets("value2"), headers2, 1, child2);
+        dispatcher.add(asOctets("value1"), emptyHeaders, child1);
+        dispatcher.add(asOctets("value2"), emptyHeaders, child2);
 
         @SuppressWarnings("unchecked")
         Function<DirectBuffer, DirectBuffer> supplyHeader = context.mock(Function.class, "header");
@@ -238,18 +213,18 @@ public final class CompactedHeaderValueMessageDispatcherTest
                 will(returnValue(asBuffer("value2")));
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with(bufferMatching("message1")));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
                 oneOf(child1).dispatch(with(1), with(10L), with(13L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
                 oneOf(child2).dispatch(with(1), with(10L), with(13L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with(bufferMatching("message2")));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
             }
         });
-        assertEquals(1, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId,
+        assertEquals(FLAGS_DELIVERED, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId,
                 asBuffer("message1")));
-        assertEquals(2, dispatcher.dispatch(1, 10L, 13L, asBuffer("key"), supplyHeader, timestamp, traceId,
+        assertEquals(FLAGS_DELIVERED, dispatcher.dispatch(1, 10L, 13L, asBuffer("key"), supplyHeader, timestamp, traceId,
                 asBuffer("message2")));
     }
 
@@ -259,16 +234,8 @@ public final class CompactedHeaderValueMessageDispatcherTest
 
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
-        ListFW<KafkaHeaderFW> headers1 =
-                headersRW.wrap(headers1Buffer, 0, headers1Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value1")))
-                .build();
-        dispatcher.add(asOctets("value1"), headers1, 1, child1);
-        ListFW<KafkaHeaderFW> headers2 =
-                headersRW.wrap(headers1Buffer, 0, headers1Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value2")))
-                .build();
-        dispatcher.add(asOctets("value2"), headers2, 1, child2);
+        dispatcher.add(asOctets("value1"), emptyHeaders, child1);
+        dispatcher.add(asOctets("value2"), emptyHeaders, child2);
 
         @SuppressWarnings("unchecked")
         Function<DirectBuffer, DirectBuffer> supplyHeader = context.mock(Function.class, "header");
@@ -285,34 +252,29 @@ public final class CompactedHeaderValueMessageDispatcherTest
                 will(returnValue(asBuffer("value2")));
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with(bufferMatching("message1")));
-                will(returnValue(1));
+                will(returnValue(FLAGS_MATCHED));
                 oneOf(child1).dispatch(with(1), with(10L), with(13L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_MATCHED));
                 oneOf(child2).dispatch(with(1), with(10L), with(13L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with(bufferMatching("message2")));
-                will(returnValue(1));
+                will(returnValue(FLAGS_MATCHED));
             }
         });
         dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId,
                 asBuffer("message1"));
         dispatcher.dispatch(1, 10L, 13L, asBuffer("key"), supplyHeader, timestamp, traceId,
                 asBuffer("message2"));
-        assertEquals(1, dispatcher.dispatchersByKeySize());
-        dispatcher.remove(asOctets("value2"), headers2, 1, child2);
+        assertEquals(FLAGS_MATCHED, dispatcher.dispatchersByKeySize());
+        dispatcher.remove(asOctets("value2"), emptyHeaders, child2);
         assertEquals(0, dispatcher.dispatchersByKeySize());
     }
 
     @Test
     public void shouldRemoveValueToKeyMappingWhenHeaderUpdatedToValueWithNoDispatcher()
     {
-
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
-        ListFW<KafkaHeaderFW> headers1 =
-                headersRW.wrap(headers1Buffer, 0, headers1Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value1")))
-                .build();
-        dispatcher.add(asOctets("value1"), headers1, 1, child1);
+        dispatcher.add(asOctets("value1"), emptyHeaders, child1);
 
         @SuppressWarnings("unchecked")
         Function<DirectBuffer, DirectBuffer> supplyHeader = context.mock(Function.class, "header");
@@ -329,16 +291,16 @@ public final class CompactedHeaderValueMessageDispatcherTest
                 will(returnValue(asBuffer("value2")));
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with(bufferMatching("message1")));
-                will(returnValue(1));
+                will(returnValue(FLAGS_DELIVERED));
                 oneOf(child1).dispatch(with(1), with(10L), with(13L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
-                will(returnValue(1));
+                will(returnValue(FLAGS_MATCHED));
             }
         });
-        assertEquals(1, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId,
-                asBuffer("message1")));
-        assertEquals(1, dispatcher.dispatch(1, 10L, 13L, asBuffer("key"), supplyHeader, timestamp, traceId,
-                asBuffer("message2")));
+        assertEquals(FLAGS_DELIVERED | FLAGS_MATCHED,
+                dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId, asBuffer("message1")));
+        assertEquals(FLAGS_MATCHED,
+                dispatcher.dispatch(1, 10L, 13L, asBuffer("key"), supplyHeader, timestamp, traceId, asBuffer("message2")));
         assertEquals(0, dispatcher.dispatchersByKeySize());
     }
 
@@ -348,17 +310,12 @@ public final class CompactedHeaderValueMessageDispatcherTest
 
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
-        ListFW<KafkaHeaderFW> headers1 =
-                headersRW.wrap(headers1Buffer, 0, headers1Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value1")))
-                .build();
-        dispatcher.add(asOctets("value1"), headers1, 1, child1);
-        ListFW<KafkaHeaderFW> headers2 =
-                headersRW.wrap(headers2Buffer, 0, headers2Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value1")))
-                .item(b -> b.key("header2").value(asOctets("value2")))
-                .build();
-        dispatcher.add(asOctets("value1"), headers2, 1, child2);
+        dispatcher.add(asOctets("value1"), emptyHeaders, child1);
+        Iterator<KafkaHeaderFW> headers = Arrays.asList(
+            headerRW.wrap(headersBuffer, 0, headersBuffer.capacity())
+                    .key("header2").value(asOctets("value2"))
+                    .build()).iterator();
+        dispatcher.add(asOctets("value1"), headers, child2);
 
         @SuppressWarnings("unchecked")
         Function<DirectBuffer, DirectBuffer> supplyHeader = context.mock(Function.class, "header");
@@ -379,17 +336,13 @@ public final class CompactedHeaderValueMessageDispatcherTest
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
-        ListFW<KafkaHeaderFW> headers1 =
-                headersRW.wrap(headers1Buffer, 0, headers1Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value1")))
-                .build();
-        dispatcher.add(asOctets("header1"), headers1, 1, child1);
-        ListFW<KafkaHeaderFW> headers2 =
-                headersRW.wrap(headers2Buffer, 0, headers2Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value1")))
-                .item(b -> b.key("header2").value(asOctets("value2")))
-                .build();
-        dispatcher.add(asOctets("header1"), headers2, 1, child2);
+        dispatcher.add(asOctets("value1"), emptyHeaders, child1);
+        Iterator<KafkaHeaderFW> headers = Arrays.asList(
+            headerRW.wrap(headersBuffer, 0, headersBuffer.capacity())
+                    .key("header2").value(asOctets("value2"))
+                    .build()).iterator();
+        dispatcher.add(asOctets("value1"), headers, child2);
+
         context.checking(new Expectations()
         {
             {
@@ -397,6 +350,7 @@ public final class CompactedHeaderValueMessageDispatcherTest
                 oneOf(child2).flush(1, 10L, 12L);
             }
         });
+
         dispatcher.flush(1, 10L, 12L);
     }
 
@@ -405,27 +359,17 @@ public final class CompactedHeaderValueMessageDispatcherTest
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
-        int limit = headersRW.wrap(headers1Buffer, 0, headers1Buffer.capacity())
-                             .item(b -> b.key("header1").value(asOctets("value1")))
-                             .build()
-                             .limit();
-        ListFW<KafkaHeaderFW> headers1 = new ListFW<>(new KafkaHeaderFW())
-                .wrap(headers1Buffer,  0, limit);
-        limit = headersRW.wrap(headers2Buffer, 0, headers2Buffer.capacity())
-                         .item(b -> b.key("header1").value(asOctets("value1")))
-                         .item(b -> b.key("header2").value(asOctets("value2")))
-                         .build()
-                         .limit();
-        ListFW<KafkaHeaderFW> headers2 = new ListFW<>(new KafkaHeaderFW())
-                .wrap(headers2Buffer,  0, limit);
+        dispatcher.add(asOctets("value1"), emptyHeaders, child1);
+        List<KafkaHeaderFW> headers = Arrays.asList(
+            headerRW.wrap(headersBuffer, 0, headersBuffer.capacity())
+                    .key("header2").value(asOctets("value2"))
+                    .build());
+        dispatcher.add(asOctets("value1"), headers.iterator(), child2);
 
-        dispatcher.add(asOctets("value1"), headers1, 1, child1);
-        dispatcher.add(asOctets("value1"), headers2, 1, child2);
-
-        assertTrue(dispatcher.remove(asOctets("value1"), headers2, 1, child2));
+        assertTrue(dispatcher.remove(asOctets("value1"), headers.iterator(), child2));
         assertFalse(dispatcher.isEmpty());
 
-        assertTrue(dispatcher.remove(asOctets("value1"), headers1, 1, child1));
+        assertTrue(dispatcher.remove(asOctets("value1"), emptyHeaders, child1));
         assertTrue(dispatcher.isEmpty());
     }
 
@@ -433,12 +377,11 @@ public final class CompactedHeaderValueMessageDispatcherTest
     public void shouldNotRemoveDispatcherWhenNotPresent()
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
-        ListFW<KafkaHeaderFW> headers2 =
-                headersRW.wrap(headers2Buffer, 0, headers2Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value1")))
-                .item(b -> b.key("header2").value(asOctets("value2")))
-                .build();
-        dispatcher.remove(asOctets("header1"), headers2, 1, child1);
+        Iterator<KafkaHeaderFW> headers = Arrays.asList(
+            headerRW.wrap(headersBuffer, 0, headersBuffer.capacity())
+                    .key("header2").value(asOctets("value2"))
+                    .build()).iterator();
+        dispatcher.remove(asOctets("header1"), headers, child1);
     }
 
     @Test
@@ -447,22 +390,13 @@ public final class CompactedHeaderValueMessageDispatcherTest
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
         MessageDispatcher child3 = context.mock(MessageDispatcher.class, "child3");
-        ListFW<KafkaHeaderFW> headers1 =
-                headersRW.wrap(headers1Buffer, 0, headers1Buffer.capacity())
-                .item(b -> b.key("header1").value(asOctets("value1")))
-                .build();
-        dispatcher.add(asOctets("value1"), headers1, 1, child1);
-        ListFW<KafkaHeaderFW> headers2 =
-                headersRW.wrap(headers2Buffer, 0, headers2Buffer.capacity())
-                .item(b -> b.key("value1").value(asOctets("value1")))
-                .item(b -> b.key("header2").value(asOctets("value2")))
-                .build();
-        dispatcher.add(asOctets("value1"), headers2, 1, child2);
-        ListFW<KafkaHeaderFW> headers3 =
-                headersRW.wrap(headers3Buffer, 0, headers3Buffer.capacity())
-                .item(b -> b.key("header2").value(asOctets("value2")))
-                .build();
-        dispatcher.add(asOctets("value2"), headers3, 1, child3);
+        dispatcher.add(asOctets("value1"), emptyHeaders, child1);
+        Iterator<KafkaHeaderFW> headers = Arrays.asList(
+            headerRW.wrap(headersBuffer, 0, headersBuffer.capacity())
+                    .key("header2").value(asOctets("value2"))
+                    .build()).iterator();
+        dispatcher.add(asOctets("value1"), headers, child2);
+        dispatcher.add(asOctets("value1"), headers, child3);
         String result = dispatcher.toString();
         assertTrue(result.contains(child1.toString()));
         assertTrue(result.contains(child2.toString()));

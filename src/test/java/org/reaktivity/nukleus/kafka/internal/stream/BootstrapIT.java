@@ -48,6 +48,7 @@ public class BootstrapIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
         .configure(KafkaConfiguration.FETCH_PARTITION_MAX_BYTES_PROPERTY, "123000")
+        .configure(KafkaConfiguration.MESSAGE_CACHE_CAPACITY_PROPERTY, "0")
         .clean();
 
     @Rule
@@ -163,6 +164,7 @@ public class BootstrapIT
     public void shouldBootstrapTopicAndUseCachedKeyOffsetThenLive() throws Exception
     {
         k3po.start();
+        k3po.awaitBarrier("ROUTED_CLIENT");
         k3po.awaitBarrier("SECOND_LIVE_FETCH_REQUEST_RECEIVED");
         k3po.notifyBarrier("CONNECT_CLIENT");
         k3po.awaitBarrier("HISTORICAL_FETCH_REQUEST_RECEIVED");

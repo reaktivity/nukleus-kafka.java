@@ -15,92 +15,122 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import java.util.Iterator;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
+import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex;
+import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 
-public class TopicMessageDispatcher implements MessageDispatcher
+public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessageDispatcher
 {
     private final KeyMessageDispatcher[] keys;
     private final HeadersMessageDispatcher headers;
     private final BroadcastMessageDispatcher broadcast = new BroadcastMessageDispatcher();
+    private final PartitionIndex[] indexes;
 
-    public TopicMessageDispatcher(
-        int partitionCount,
-        Function<Function<DirectBuffer, HeaderValueMessageDispatcher>, KeyMessageDispatcher> createKeyMessageDispatcher,
+    private final OctetsFW octetsRO = new OctetsFW();
+
+    protected TopicMessageDispatcher(
+        PartitionIndex[] indexes,
         Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
     {
-        keys = new KeyMessageDispatcher[partitionCount];
-        for (int partition = 0; partition < partitionCount; partition++)
+        this.indexes = indexes;
+        keys = new KeyMessageDispatcher[indexes.length];
+        for (int partition = 0; partition < indexes.length; partition++)
         {
-            keys[partition] = createKeyMessageDispatcher.apply(createHeaderValueMessageDispatcher);
+            keys[partition] = new KeyMessageDispatcher(createHeaderValueMessageDispatcher);
         }
         headers = new HeadersMessageDispatcher(createHeaderValueMessageDispatcher);
     }
 
     @Override
     public int dispatch(
-                 int partition,
-                 long requestOffset,
-                 long messageOffset,
-                 DirectBuffer key,
-                 Function<DirectBuffer, DirectBuffer> supplyHeader,
-                 long timestamp,
-                 long traceId, DirectBuffer value)
+        int partition,
+        long requestOffset,
+        long messageOffset,
+        DirectBuffer key,
+        HeadersFW headers,
+        long timestamp,
+        long traceId,
+        DirectBuffer value)
+    {
+        int result = dispatch(partition, requestOffset, messageOffset, key, headers.headerSupplier(), timestamp,
+                traceId, value);
+        long messageStartOffset = messageOffset - 1;
+        if (MessageDispatcher.matched(result))
+        {
+            indexes[partition].add(requestOffset, messageStartOffset, timestamp, traceId, key, headers, value);
+        }
+        return result;
+    }
+
+    @Override
+    public int dispatch(
+        int partition,
+        long requestOffset,
+        long messageOffset,
+        DirectBuffer key,
+        Function<DirectBuffer, DirectBuffer> supplyHeader,
+        long timestamp,
+        long traceId,
+        DirectBuffer value)
     {
         int result = 0;
-        if (keys[partition].shouldDispatch(key, messageOffset))
+        long messageStartOffset = messageOffset - 1;
+        if (shouldDispatch(partition, requestOffset, messageStartOffset, key))
         {
-            result += broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
+            result |= broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
             if (key != null)
             {
-                result += keys[partition].dispatch(partition, requestOffset, messageOffset,
+                KeyMessageDispatcher keyDispatcher = keys[partition];
+                result |= keyDispatcher.dispatch(partition, requestOffset, messageOffset,
                                                    key, supplyHeader, timestamp, traceId, value);
+                // detect historical message stream
+                long highestOffset = indexes[partition].nextOffset();
+                if (MessageDispatcher.delivered(result) && messageOffset < highestOffset)
+                {
+                    Entry entry = getEntry(partition, requestOffset, asOctets(key));
+
+                    // fast-forward to live stream after observing most recent cached offset for message key
+                    if (entry != null  && entry.offset() == messageStartOffset)
+                    {
+                        keyDispatcher.flush(partition, requestOffset, highestOffset, key);
+                    }
+                }
             }
-            result += headers.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
+            result |= headers.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
         }
         return result;
     }
 
     @Override
     public void flush(
-            int partition,
-            long requestOffset,
-            long lastOffset)
+        int partition,
+        long requestOffset,
+        long lastOffset)
     {
         broadcast.flush(partition, requestOffset, lastOffset);
         keys[partition].flush(partition, requestOffset, lastOffset);
         headers.flush(partition, requestOffset, lastOffset);
+        indexes[partition].extendNextOffset(requestOffset, lastOffset);
     }
 
-    public long lastOffset(
-        int partition,
-        OctetsFW key)
-    {
-        return keys[partition].lastOffset(partition, key);
-    }
-
-    public long lowestOffset(
-        int partition)
-    {
-        return keys[partition].lowestOffset(partition);
-    }
-
-    public void add(OctetsFW fetchKey,
-                    int fetchKeyPartition,
-                    ListFW<KafkaHeaderFW> headers,
-                    MessageDispatcher dispatcher)
+    public void add(
+        OctetsFW fetchKey,
+        int fetchKeyPartition,
+        Iterator<KafkaHeaderFW> headers,
+        MessageDispatcher dispatcher)
     {
          if (fetchKey != null)
          {
              keys[fetchKeyPartition].add(fetchKey, headers, dispatcher);
          }
-         else if (headers != null && !headers.isEmpty())
+         else if (headers.hasNext())
          {
-             this.headers.add(headers, 0, dispatcher);
+             this.headers.add(headers, dispatcher);
          }
          else
          {
@@ -111,7 +141,7 @@ public class TopicMessageDispatcher implements MessageDispatcher
     public boolean remove(
         OctetsFW fetchKey,
         int fetchKeyPartition,
-        ListFW<KafkaHeaderFW> headers,
+        Iterator<KafkaHeaderFW> headers,
         MessageDispatcher dispatcher)
       {
            boolean result = false;
@@ -119,9 +149,9 @@ public class TopicMessageDispatcher implements MessageDispatcher
            {
                result = keys[fetchKeyPartition].remove(fetchKey, headers, dispatcher);
            }
-           else if (headers != null && !headers.isEmpty())
+           else if (headers.hasNext())
            {
-               result = this.headers.remove(headers, 0, dispatcher);
+               result = this.headers.remove(headers, dispatcher);
            }
            else
            {
@@ -138,6 +168,49 @@ public class TopicMessageDispatcher implements MessageDispatcher
             empty = empty && keys.isEmpty();
         }
         return empty && headers.isEmpty() && broadcast.isEmpty();
+    }
+
+    public Entry getEntry(
+        int partition,
+        long requestOffset,
+        OctetsFW key)
+    {
+        return indexes[partition].getEntry(requestOffset, key);
+    }
+
+    public Iterator<Entry> entries(
+        int partition,
+        long requestOffset)
+    {
+        return indexes[partition].entries(requestOffset);
+    }
+
+    public long nextOffset(
+        int partition)
+    {
+        return indexes[partition].nextOffset();
+    }
+
+    private boolean shouldDispatch(
+        int partition,
+        long requestOffset,
+        long messageStartOffset,
+        DirectBuffer key)
+    {
+        boolean result = true;
+        if (key != null)
+        {
+            Entry entry = getEntry(partition, requestOffset, asOctets(key));
+            long expectedOffsetForKey = entry.offset();
+            result = messageStartOffset >= expectedOffsetForKey;
+        }
+        return result;
+    }
+
+    private OctetsFW asOctets(
+        DirectBuffer key)
+    {
+        return octetsRO.wrap(key, 0, key.capacity());
     }
 
 }

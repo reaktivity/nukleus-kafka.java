@@ -15,37 +15,17 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
-import java.util.function.Function;
-
 import org.agrona.DirectBuffer;
 
-public interface MessageDispatcher
+public interface DecoderMessageDispatcher
 {
-    int FLAGS_MATCHED = 0x01;
-    int FLAGS_DELIVERED = 0x02 | FLAGS_MATCHED;
-    int FLAGS_BLOCKED = 0x04 | FLAGS_MATCHED;
-
-    static boolean matched(int result)
-    {
-        return (result & FLAGS_MATCHED) != 0;
-    }
-
-    static boolean delivered(int result)
-    {
-        return (result & FLAGS_DELIVERED) != 0;
-    }
-
-    static boolean blocked(int result)
-    {
-        return (result & FLAGS_BLOCKED) != 0;
-    }
 
     int dispatch(
         int partition,
         long requestOffset,
         long messageOffset,
         DirectBuffer key,
-        Function<DirectBuffer, DirectBuffer> supplyHeader,
+        HeadersFW headers,
         long timestamp,
         long traceId,
         DirectBuffer value);

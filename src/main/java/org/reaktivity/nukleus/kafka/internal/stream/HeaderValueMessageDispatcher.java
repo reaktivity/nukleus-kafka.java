@@ -17,15 +17,15 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 
 public class HeaderValueMessageDispatcher implements MessageDispatcher
 {
@@ -41,16 +41,15 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
     }
 
     @Override
-    public
-    int dispatch(
-             int partition,
-             long requestOffset,
-             long messageOffset,
-             DirectBuffer key,
-             Function<DirectBuffer, DirectBuffer> supplyHeader,
-             long timestamp,
-             long traceId,
-             DirectBuffer value)
+    public int dispatch(
+        int partition,
+        long requestOffset,
+        long messageOffset,
+        DirectBuffer key,
+        Function<DirectBuffer, DirectBuffer> supplyHeader,
+        long timestamp,
+        long traceId,
+        DirectBuffer value)
     {
         int result = 0;
         DirectBuffer header = supplyHeader.apply(headerName);
@@ -60,8 +59,8 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             MessageDispatcher dispatcher = dispatchersByHeaderValue.get(buffer);
             if (dispatcher != null)
             {
-                result =  dispatcher.dispatch(partition, requestOffset, messageOffset,
-                                              key, supplyHeader, timestamp, traceId, value);
+                result = dispatcher.dispatch(partition, requestOffset, messageOffset,
+                                             key, supplyHeader, timestamp, traceId, value);
             }
         }
         return result;
@@ -82,8 +81,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
 
     public void add(
             OctetsFW headerValue,
-            ListFW<KafkaHeaderFW> headers,
-            int index,
+            Iterator<KafkaHeaderFW> headers,
             MessageDispatcher dispatcher)
     {
         buffer.wrap(headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
@@ -96,18 +94,12 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             dispatchersByHeaderValue.put(keyCopy, headersDispatcher);
             dispatchers.add(headersDispatcher);
         }
-        headersDispatcher.add(headers, index, dispatcher);
-    }
-
-    protected boolean topicIsCompacted()
-    {
-        return false;
+        headersDispatcher.add(headers, dispatcher);
     }
 
     public boolean remove(
             OctetsFW headerValue,
-            ListFW<KafkaHeaderFW> headers,
-            int index,
+            Iterator<KafkaHeaderFW> headers,
             MessageDispatcher dispatcher)
     {
         boolean result = false;
@@ -115,7 +107,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
         HeadersMessageDispatcher headersDispatcher = dispatchersByHeaderValue.get(buffer);
         if (headersDispatcher != null)
         {
-            result = headersDispatcher.remove(headers, index, dispatcher);
+            result = headersDispatcher.remove(headers, dispatcher);
             if (headersDispatcher.isEmpty())
             {
                 dispatchersByHeaderValue.remove(buffer);
