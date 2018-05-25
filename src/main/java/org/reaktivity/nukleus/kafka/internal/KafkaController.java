@@ -17,7 +17,10 @@ package org.reaktivity.nukleus.kafka.internal;
 
 import static java.nio.ByteBuffer.allocateDirect;
 import static java.nio.ByteOrder.nativeOrder;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
+import java.util.Collections;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -101,7 +104,7 @@ public final class KafkaController implements Controller
         long targetRef,
         String topicName)
     {
-        return route(Role.SERVER, source, sourceRef, target, targetRef, topicName);
+        return route(Role.SERVER, source, sourceRef, target, targetRef, topicName, Collections.emptyMap());
     }
 
     public CompletableFuture<Long> routeClient(
@@ -111,7 +114,18 @@ public final class KafkaController implements Controller
         long targetRef,
         String topicName)
     {
-        return route(Role.CLIENT, source, sourceRef, target, targetRef, topicName);
+        return route(Role.CLIENT, source, sourceRef, target, targetRef, topicName, Collections.emptyMap());
+    }
+
+    public CompletableFuture<Long> routeClient(
+        String source,
+        long sourceRef,
+        String target,
+        long targetRef,
+        String topicName,
+        Map<String, String> headers)
+    {
+        return route(Role.CLIENT, source, sourceRef, target, targetRef, topicName, headers);
     }
 
     public CompletableFuture<Void> unrouteServer(
@@ -121,8 +135,20 @@ public final class KafkaController implements Controller
         long targetRef,
         String topicName)
     {
-        return unroute(Role.SERVER, source, sourceRef, target, targetRef, topicName);
+        return unroute(Role.SERVER, source, sourceRef, target, targetRef, topicName, Collections.emptyMap());
     }
+
+    public CompletableFuture<Void> unrouteClient(
+        String source,
+        long sourceRef,
+        String target,
+        long targetRef,
+        String topicName,
+        Map<String, String> headers)
+    {
+        return unroute(Role.CLIENT, source, sourceRef, target, targetRef, topicName, headers);
+    }
+
 
     public CompletableFuture<Void> unrouteClient(
         String source,
@@ -131,7 +157,7 @@ public final class KafkaController implements Controller
         long targetRef,
         String topicName)
     {
-        return unroute(Role.CLIENT, source, sourceRef, target, targetRef, topicName);
+        return unroute(Role.CLIENT, source, sourceRef, target, targetRef, topicName, Collections.emptyMap());
     }
 
     public CompletableFuture<Void> freeze()
@@ -151,13 +177,21 @@ public final class KafkaController implements Controller
     }
 
     private Consumer<OctetsFW.Builder> extension(
-        String topicName)
+        final String topicName,
+        Map<String, String> headers)
     {
         if (topicName != null)
         {
             return e -> e.set((buffer, offset, limit) ->
                 routeExRW.wrap(buffer, offset, limit)
                          .topicName(topicName)
+                         .headers(lhb ->
+                         {
+                             headers.forEach((k, v) ->
+                             {
+                                 lhb.item(hb -> hb.key(k).value(ob -> ob.put(v.getBytes(UTF_8))));
+                             });
+                         })
                          .build()
                          .sizeof());
         }
@@ -174,7 +208,8 @@ public final class KafkaController implements Controller
         long sourceRef,
         String target,
         long targetRef,
-        String topicName)
+        String topicName,
+        Map<String, String> headers)
     {
         long correlationId = controllerSpi.nextCorrelationId();
 
@@ -185,7 +220,7 @@ public final class KafkaController implements Controller
                                  .sourceRef(sourceRef)
                                  .target(target)
                                  .targetRef(targetRef)
-                                 .extension(extension(topicName))
+                                 .extension(extension(topicName, headers))
                                  .build();
 
         return controllerSpi.doRoute(routeRO.typeId(), routeRO.buffer(), routeRO.offset(), routeRO.sizeof());
@@ -197,7 +232,8 @@ public final class KafkaController implements Controller
         long sourceRef,
         String target,
         long targetRef,
-        String topicName)
+        String topicName,
+        Map<String, String> headers)
     {
         long correlationId = controllerSpi.nextCorrelationId();
 
@@ -208,7 +244,7 @@ public final class KafkaController implements Controller
                                  .sourceRef(sourceRef)
                                  .target(target)
                                  .targetRef(targetRef)
-                                 .extension(extension(topicName))
+                                 .extension(extension(topicName, headers))
                                  .build();
 
         return controllerSpi.doUnroute(unrouteRO.typeId(), unrouteRO.buffer(), unrouteRO.offset(), unrouteRO.sizeof());

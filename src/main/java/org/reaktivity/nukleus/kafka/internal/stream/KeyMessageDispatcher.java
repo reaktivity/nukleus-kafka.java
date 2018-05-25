@@ -16,14 +16,14 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
 
 public class KeyMessageDispatcher implements MessageDispatcher
 {
@@ -40,14 +40,14 @@ public class KeyMessageDispatcher implements MessageDispatcher
 
     @Override
     public int dispatch(
-                 int partition,
-                 long requestOffset,
-                 long messageOffset,
-                 DirectBuffer key,
-                 Function<DirectBuffer, DirectBuffer> supplyHeader,
-                 long timestamp,
-                 long traceId,
-                 DirectBuffer value)
+        int partition,
+        long requestOffset,
+        long messageOffset,
+        DirectBuffer key,
+        Function<DirectBuffer, DirectBuffer> supplyHeader,
+        long timestamp,
+        long traceId,
+        DirectBuffer value)
     {
         buffer.wrap(key, 0, key.capacity());
         MessageDispatcher result = dispatchersByKey.get(buffer);
@@ -57,9 +57,9 @@ public class KeyMessageDispatcher implements MessageDispatcher
 
     @Override
     public void flush(
-            int partition,
-            long requestOffset,
-            long lastOffset)
+        int partition,
+        long requestOffset,
+        long lastOffset)
     {
         for (MessageDispatcher dispatcher: dispatchersByKey.values())
         {
@@ -67,7 +67,7 @@ public class KeyMessageDispatcher implements MessageDispatcher
         }
     }
 
-    public long lastOffset(
+    public long latestOffset(
         int partition,
         OctetsFW key)
     {
@@ -87,7 +87,7 @@ public class KeyMessageDispatcher implements MessageDispatcher
         return true;
     }
 
-    public void add(OctetsFW key, ListFW<KafkaHeaderFW> headers, MessageDispatcher dispatcher)
+    public void add(OctetsFW key, Iterator<KafkaHeaderFW> headers, MessageDispatcher dispatcher)
     {
         buffer.wrap(key.buffer(), key.offset(), key.sizeof());
         HeadersMessageDispatcher existing = dispatchersByKey.get(buffer);
@@ -98,7 +98,7 @@ public class KeyMessageDispatcher implements MessageDispatcher
             existing = new HeadersMessageDispatcher(createHeaderValueMessageDispatcher);
             dispatchersByKey.put(keyCopy, existing);
         }
-        existing.add(headers, 0, dispatcher);
+        existing.add(headers, dispatcher);
     }
 
     protected void flush(
@@ -115,14 +115,14 @@ public class KeyMessageDispatcher implements MessageDispatcher
         }
     }
 
-    public boolean remove(OctetsFW key, ListFW<KafkaHeaderFW> headers, MessageDispatcher dispatcher)
+    public boolean remove(OctetsFW key, Iterator<KafkaHeaderFW> headers, MessageDispatcher dispatcher)
     {
         boolean result = false;
         buffer.wrap(key.buffer(), key.offset(), key.sizeof());
         HeadersMessageDispatcher headersDispatcher = dispatchersByKey.get(buffer);
         if (headersDispatcher != null)
         {
-            result = headersDispatcher.remove(headers, 0, dispatcher);
+            result = headersDispatcher.remove(headers, dispatcher);
             if (headersDispatcher.isEmpty())
             {
                 dispatchersByKey.remove(buffer);

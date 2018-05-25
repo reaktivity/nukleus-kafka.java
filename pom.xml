@@ -56,7 +56,7 @@
     <nukleus.plugin.version>0.30</nukleus.plugin.version>
     <nukleus.version>0.21</nukleus.version>
 
-    <nukleus.kafka.spec.version>0.59</nukleus.kafka.spec.version>
+    <nukleus.kafka.spec.version>0.60</nukleus.kafka.spec.version>
     <reaktor.version>0.57</reaktor.version>
     <kafka.clients.version>1.0.0</kafka.clients.version>
   </properties>
@@ -150,7 +150,7 @@
         <artifactId>nukleus-maven-plugin</artifactId>
         <version>${nukleus.plugin.version}</version>
         <configuration>
-          <scopeNames>core kafka protocol tcp</scopeNames>
+          <scopeNames>core kafka protocol cache tcp</scopeNames>
           <packageName>org.reaktivity.nukleus.kafka.internal.types</packageName>
         </configuration>
         <executions>

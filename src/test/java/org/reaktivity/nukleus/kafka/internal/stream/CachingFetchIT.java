@@ -30,7 +30,7 @@ import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
-public class FetchIT
+public class CachingFetchIT
 {
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
@@ -49,7 +49,7 @@ public class FetchIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
         .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false")
-        .configure(KafkaConfiguration.MESSAGE_CACHE_CAPACITY_PROPERTY, "0")
+        .configure(KafkaConfiguration.MESSAGE_CACHE_CAPACITY_PROPERTY, Integer.toString(1024 * 1024))
         .clean();
 
     @Rule
@@ -100,15 +100,6 @@ public class FetchIT
         "${route}/client/controller",
         "${client}/invalid.more.than.one.fetch.key.hash/client"})
     public void shouldRejectInvalidBeginExWithMoreThanOneFetchKeyHash() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.multiple.headers/client/controller",
-        "${client}/invalid.no.route.matching.headers/client"})
-    public void shouldRejectWhenBeginHeadersDoNotMatchHeadersOnRoutes() throws Exception
     {
         k3po.finish();
     }
@@ -207,11 +198,12 @@ public class FetchIT
         k3po.finish();
     }
 
+    // No historical fetch with message cache active
     @Test
     @Specification({
         "${route}/client/controller",
         "${client}/compacted.historical.uses.cached.key.then.latest.offset/client",
-        "${server}/compacted.historical.uses.cached.key.then.latest.offset/server"})
+        "${server}/compacted.historical.uses.cached.key.then.latest.offset.no.historical/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveCompactedMessagesWithUncachedKeyUsingLatestOffset() throws Exception
     {
@@ -222,11 +214,12 @@ public class FetchIT
         k3po.finish();
     }
 
+    // No historical fetch with message cache active
     @Test
     @Specification({
         "${route}/client/controller",
         "${client}/compacted.historical.uses.cached.key.then.live/client",
-        "${server}/compacted.historical.uses.cached.key.then.live/server"})
+        "${server}/compacted.historical.uses.cached.key.then.live.no.historical/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveCompactedMessageUsingCachedKeyOffsetThenCatchUpToLiveStream() throws Exception
     {
@@ -238,28 +231,30 @@ public class FetchIT
         k3po.finish();
     }
 
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.historical.uses.cached.key.then.live.after.null.message/client",
-        "${server}/compacted.historical.uses.cached.key.then.live.after.null.message/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCompactedMessagesFromLiveStreamAfterCachedKeyRemovedByNullMessage() throws Exception
-    {
-        k3po.finish();
-    }
+//    // Test is not relevant with message cache active
+//    @Test
+//    @Specification({
+//        "${route}/client/controller",
+//        "${client}/compacted.historical.uses.cached.key.then.live.after.null.message/client",
+//        "${server}/compacted.historical.uses.cached.key.then.live.after.null.message.no.historical/server"})
+//    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+//    public void shouldReceiveCompactedMessagesFromLiveStreamAfterCachedKeyRemovedByNullMessage() throws Exception
+//    {
+//        k3po.finish();
+//    }
 
-    @Test
-    @Specification(
-    {"${route}/client/controller",
-            "${client}/compacted.historical.uses.cached.key.then.live.after.offset.too.early.and.null.message/client",
-            "${server}/compacted.historical.uses.cached.key.then.live.after.offset.too.early.and.null.message/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCompactedMessagesFromLiveStreamAfterOffsetTooEarlyAndCachedKeyRemovedByNullMessage()
-            throws Exception
-    {
-        k3po.finish();
-    }
+//  // Test is not relevant with message cache active
+//    @Test
+//    @Specification(
+//    {"${route}/client/controller",
+//            "${client}/compacted.historical.uses.cached.key.then.live.after.offset.too.early.and.null.message/client",
+//            "${server}/compacted.historical.uses.cached.key.then.live.after.offset.too.early.and.null.message/server"})
+//    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+//    public void shouldReceiveCompactedMessagesFromLiveStreamAfterOffsetTooEarlyAndCachedKeyRemovedByNullMessage()
+//            throws Exception
+//    {
+//        k3po.finish();
+//    }
 
     @Test
     @Specification({
@@ -352,33 +347,11 @@ public class FetchIT
 
     @Test
     @Specification({
-        "${control}/route.ext.header/client/controller",
+        "${route}/client/controller",
         "${client}/compacted.messages.header/client",
         "${server}/compacted.messages.header/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldMatchRouteAndReceiveCompactedMessagesFilteredByHeaderOnBegin() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.header/client/controller",
-        "${client}/compacted.messages.headers/client",
-        "${server}/compacted.messages.headers/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldMatchRouteAndReceiveCompactedMessagesFilteredByHeadersOnBegin() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.header/client/controller",
-        "${client}/compacted.messages.header/client",
-        "${server}/compacted.messages.header/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCompactedMessagesFilteredByHeaderOnRoute() throws Exception
+    public void shouldReceiveCompactedMessagesFilteredByHeaderOnBegin() throws Exception
     {
         k3po.finish();
     }
@@ -386,10 +359,11 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/compacted.messages.historical/client",
-        "${server}/compacted.messages.historical/server"})
+        "${client}/compacted.messages.one.per.key/client",
+        "${server}/compacted.messages/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCompactedHistoricalMessages() throws Exception
+    // Behavior is different with message cache: better compaction, guaranteed only one message per key
+    public void shouldReceiveCompactedHistoricalMessagesFromCache() throws Exception
     {
         k3po.finish();
     }
@@ -1134,7 +1108,6 @@ public class FetchIT
         }
         catch (InterruptedException e)
         {
-            // TODO Auto-generated catch block
             e.printStackTrace();
         }
     }

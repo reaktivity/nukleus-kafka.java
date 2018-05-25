@@ -20,6 +20,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.rules.RuleChain.outerRule;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 
@@ -118,6 +120,73 @@ public class ControllerIT
 
     @Test
     @Specification({
+        "${control}/route.ext.header/client/nukleus"
+    })
+    public void shouldRouteClientWithTopicAndHeaderCondition() throws Exception
+    {
+        long targetRef = new Random().nextLong();
+        String topicName = "test";
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("header1", "match1");
+
+        k3po.start();
+
+        reaktor.controller(KafkaController.class)
+               .routeClient("source", 0L, "target", targetRef, topicName, headers)
+               .get();
+
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${control}/route.ext.headers/client/nukleus"
+    })
+    public void shouldRouteClientWithTopicAndHeaderConditions() throws Exception
+    {
+        long targetRef = new Random().nextLong();
+        String topicName = "test";
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("header1", "match1");
+        headers.put("header2", "match2");
+
+        k3po.start();
+
+        reaktor.controller(KafkaController.class)
+               .routeClient("source", 0L, "target", targetRef, topicName, headers)
+               .get();
+
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${control}/route.ext.multiple.headers/client/nukleus"
+    }) // TODO: token recognition error
+    public void shouldRouteClientWithMultipleRoutesDifferingOnlyInHeaders() throws Exception
+    {
+        long targetRef = new Random().nextLong();
+        String topicName = "test";
+        Map<String, String> headers1 = new LinkedHashMap<>();
+        Map<String, String> headers2 = new LinkedHashMap<>();
+        headers1.put("header1", "match1");
+        headers2.put("header1", "match2");
+
+        k3po.start();
+
+        Long applicationRouteRef = reaktor.controller(KafkaController.class)
+               .routeClient("source", 0L, "target", targetRef, topicName, headers1)
+               .get();
+
+        assertEquals(applicationRouteRef, reaktor.controller(KafkaController.class)
+                .routeClient("source", applicationRouteRef, "target", targetRef, topicName, headers2)
+                .get());
+
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
         "${control}/route.ext.multiple.networks/client/nukleus"
     })
     public void shouldRouteClientWithMultipleRoutesDifferentNetworks() throws Exception
@@ -194,6 +263,98 @@ public class ControllerIT
 
     @Test
     @Specification({
+        "${control}/route.ext.header/client/nukleus",
+        "${control}/unroute.ext.header/client/nukleus"
+    })
+    public void shouldUnrouteClientWithHeader() throws Exception
+    {
+        long targetRef = new Random().nextLong();
+        String topicName = "test";
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("header1", "match1");
+
+        k3po.start();
+
+        long sourceRef = reaktor.controller(KafkaController.class)
+              .routeClient("source", 0L, "target", targetRef, topicName, headers)
+              .get();
+
+        k3po.notifyBarrier("ROUTED_CLIENT");
+
+        reaktor.controller(KafkaController.class)
+               .unrouteClient("source", sourceRef, "target", targetRef, topicName, headers)
+               .get();
+
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${control}/route.ext.headers/client/nukleus",
+        "${control}/unroute.ext.headers/client/nukleus"
+    })
+    public void shouldUnrouteClientWithHeaders() throws Exception
+    {
+        long targetRef = new Random().nextLong();
+        String topicName = "test";
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("header1", "match1");
+        headers.put("header2", "match2");
+
+        k3po.start();
+
+        long sourceRef = reaktor.controller(KafkaController.class)
+              .routeClient("source", 0L, "target", targetRef, topicName, headers)
+              .get();
+
+        k3po.notifyBarrier("ROUTED_CLIENT");
+
+        reaktor.controller(KafkaController.class)
+               .unrouteClient("source", sourceRef, "target", targetRef, topicName, headers)
+               .get();
+
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${control}/route.ext.multiple.headers/client/nukleus",
+        "${control}/unroute.ext.multiple.headers/client/nukleus"
+    })
+    public void shouldUnrouteClientWithMultipleRoutesDifferingOnlyInHeaders() throws Exception
+    {
+        long targetRef = new Random().nextLong();
+        String topicName = "test";
+        Map<String, String> headers1 = new LinkedHashMap<>();
+        Map<String, String> headers2 = new LinkedHashMap<>();
+        headers1.put("header1", "match1");
+        headers2.put("header1", "match2");
+
+        k3po.start();
+
+        Long applicationRouteRef = reaktor.controller(KafkaController.class)
+               .routeClient("source", 0L, "target", targetRef, topicName, headers1)
+               .get();
+
+        reaktor.controller(KafkaController.class)
+                .routeClient("source", applicationRouteRef, "target", targetRef, topicName, headers2)
+                .get();
+
+        k3po.notifyBarrier("ROUTED_CLIENT");
+
+        reaktor.controller(KafkaController.class)
+                .unrouteClient("source", applicationRouteRef, "target",  targetRef, topicName, headers1)
+                .get();
+
+        reaktor.controller(KafkaController.class)
+                .unrouteClient("source", applicationRouteRef, "target",  targetRef, topicName, headers2)
+                .get();
+
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
         "${control}/route.ext.multiple.networks/client/nukleus",
         "${control}/unroute.ext.multiple.networks/client/nukleus"
     })
@@ -221,6 +382,47 @@ public class ControllerIT
 
         reaktor.controller(KafkaController.class)
                .unrouteClient("source", applicationRouteRef2, "target2",  targetRef2, topicName)
+               .get();
+
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${control}/route.ext.multiple.topics/client/nukleus",
+        "${control}/unroute.ext.multiple.topics/client/nukleus"
+    })
+    public void shouldUnrouteClientWithMultipleRoutesDifferentTopics() throws Exception
+    {
+        long targetRef = new Random().nextLong();
+
+        k3po.start();
+
+        Long applicationRouteRef = reaktor.controller(KafkaController.class)
+               .routeClient("source", 0L, "target", targetRef, "test1")
+               .get();
+
+        CompletableFuture<Long> result2 = reaktor.controller(KafkaController.class)
+               .routeClient("source", applicationRouteRef, "target", targetRef, "test2");
+
+        CompletableFuture<Long> result3 = reaktor.controller(KafkaController.class)
+               .routeClient("source", applicationRouteRef, "target", targetRef, "test3");
+
+        assertEquals(applicationRouteRef, result2.get());
+        assertEquals(applicationRouteRef, result3.get());
+
+        k3po.notifyBarrier("ROUTED_CLIENT");
+
+        reaktor.controller(KafkaController.class)
+               .unrouteClient("source", applicationRouteRef, "target",  targetRef, "test1")
+               .get();
+
+        reaktor.controller(KafkaController.class)
+               .unrouteClient("source", applicationRouteRef, "target",  targetRef, "test2")
+               .get();
+
+        reaktor.controller(KafkaController.class)
+               .unrouteClient("source", applicationRouteRef, "target",  targetRef, "test3")
                .get();
 
         k3po.finish();

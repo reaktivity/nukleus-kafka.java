@@ -13,45 +13,44 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.kafka.internal.stream;
+package org.reaktivity.nukleus.kafka.internal.cache;
 
-import java.util.function.Function;
+import java.util.Iterator;
 
 import org.agrona.DirectBuffer;
+import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
+import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
-public interface MessageDispatcher
+public interface PartitionIndex
 {
-    int FLAGS_MATCHED = 0x01;
-    int FLAGS_DELIVERED = 0x02 | FLAGS_MATCHED;
-    int FLAGS_BLOCKED = 0x04 | FLAGS_MATCHED;
+    int NO_MESSAGE = -1;
 
-    static boolean matched(int result)
+    public interface Entry
     {
-        return (result & FLAGS_MATCHED) != 0;
+        long offset();
+
+        int message();
     }
 
-    static boolean delivered(int result)
-    {
-        return (result & FLAGS_DELIVERED) != 0;
-    }
-
-    static boolean blocked(int result)
-    {
-        return (result & FLAGS_BLOCKED) != 0;
-    }
-
-    int dispatch(
-        int partition,
+    void add(
         long requestOffset,
-        long messageOffset,
-        DirectBuffer key,
-        Function<DirectBuffer, DirectBuffer> supplyHeader,
+        long messageStartOffset,
         long timestamp,
         long traceId,
+        DirectBuffer key,
+        HeadersFW headers,
         DirectBuffer value);
 
-    void flush(
-        int partition,
+    Iterator<Entry> entries(
+        long requestOffset);
+
+    Entry getEntry(
+        long requestOffset,
+        OctetsFW key);
+
+    long nextOffset();
+
+    void extendNextOffset(
         long requestOffset,
         long lastOffset);
 

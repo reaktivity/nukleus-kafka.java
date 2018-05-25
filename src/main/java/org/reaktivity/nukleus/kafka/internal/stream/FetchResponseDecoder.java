@@ -16,7 +16,6 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.Objects.requireNonNull;
-import static org.reaktivity.nukleus.kafka.internal.stream.ClientStreamFactory.EMPTY_BYTE_ARRAY;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
 
 import java.util.function.Function;
@@ -38,6 +37,7 @@ import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordSetFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TopicResponseFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TransactionResponseFW;
+import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
 
 /**
  * Assumptions about the Kafka fetch response format
@@ -54,23 +54,24 @@ import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TransactionRespon
  */
 public class FetchResponseDecoder implements ResponseDecoder
 {
-    final ResponseHeaderFW responseRO = new ResponseHeaderFW();
-    final FetchResponseFW fetchResponseRO = new FetchResponseFW();
-    final TopicResponseFW topicResponseRO = new TopicResponseFW();
-    final PartitionResponseFW partitionResponseRO = new PartitionResponseFW();
-    final TransactionResponseFW transactionResponseRO = new TransactionResponseFW();
-    final RecordSetFW recordSetRO = new RecordSetFW();
+    private final ResponseHeaderFW responseRO = new ResponseHeaderFW();
+    private final FetchResponseFW fetchResponseRO = new FetchResponseFW();
+    private final TopicResponseFW topicResponseRO = new TopicResponseFW();
+    private final PartitionResponseFW partitionResponseRO = new PartitionResponseFW();
+    private final TransactionResponseFW transactionResponseRO = new TransactionResponseFW();
+    private final RecordSetFW recordSetRO = new RecordSetFW();
+
     private final Varint32FW varint32RO = new Varint32FW();
 
     private final RecordBatchFW recordBatchRO = new RecordBatchFW();
     private final RecordFW recordRO = new RecordFW();
     private final HeaderFW headerRO = new HeaderFW();
 
-    private final Headers headers = new Headers();
-    private final UnsafeBuffer keyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-    private final UnsafeBuffer valueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    private final HeadersFW headers = new HeadersFW();
+    private final DirectBuffer keyBuffer = new UnsafeBuffer(BufferUtil.EMPTY_BYTE_ARRAY);
+    private final DirectBuffer valueBuffer = new UnsafeBuffer(BufferUtil.EMPTY_BYTE_ARRAY);
 
-    private final Function<String, MessageDispatcher> getDispatcher;
+    private final Function<String, DecoderMessageDispatcher> getDispatcher;
     private final StringIntToLongFunction getRequestedOffsetForPartition;
     private final StringIntShortConsumer errorHandler;
     private final int maxRecordBatchSize;
@@ -84,7 +85,7 @@ public class FetchResponseDecoder implements ResponseDecoder
 
     private int topicCount;
     private String topicName;
-    private MessageDispatcher topicDispatcher;
+    private DecoderMessageDispatcher messageDispatcher;
     private int partitionCount;
     private int recordSetBytesRemaining;
     private int recordBatchBytesRemaining;
@@ -103,7 +104,7 @@ public class FetchResponseDecoder implements ResponseDecoder
     private final BufferBytesDecoderState bufferBytesDecoderState = new BufferBytesDecoderState();
 
     FetchResponseDecoder(
-        Function<String, MessageDispatcher> getDispatcher,
+        Function<String, DecoderMessageDispatcher> getDispatcher,
         StringIntToLongFunction getRequestedOffsetForPartition,
         StringIntShortConsumer errorHandler,
         MutableDirectBuffer decodingBuffer,
@@ -273,7 +274,7 @@ public class FetchResponseDecoder implements ResponseDecoder
             {
                 topicCount--;
                 topicName = response.name().asString();
-                topicDispatcher = getDispatcher.apply(topicName);
+                messageDispatcher = getDispatcher.apply(topicName);
                 partitionCount = response.partitionCount();
                 decoderState = this::decodePartitionResponse;
                 newOffset = response.limit();
@@ -364,7 +365,7 @@ public class FetchResponseDecoder implements ResponseDecoder
                 if (highWatermark > requestedOffset)
                 {
                     nextFetchAt = requestedOffset + 1;
-                    topicDispatcher.flush(partition, requestedOffset, requestedOffset + 1);
+                    messageDispatcher.flush(partition, requestedOffset, requestedOffset + 1);
                 }
                 decoderState = this::decodePartitionResponse;
             }
@@ -374,7 +375,7 @@ public class FetchResponseDecoder implements ResponseDecoder
                         "[nukleus-kafka] skipping topic: %s partition: %d offset: %d because record set size %d " +
                         "exceeds configured partition.max.bytes %d",
                         topicName, partition, requestedOffset, recordSetBytesRemaining, maxRecordBatchSize);
-                topicDispatcher.flush(partition, requestedOffset, requestedOffset + 1);
+                messageDispatcher.flush(partition, requestedOffset, requestedOffset + 1);
                 skipBytesDecoderState.bytesToSkip = recordSetBytesRemaining;
                 skipBytesDecoderState.nextState = this::decodePartitionResponse;
                 decoderState = skipBytesDecoderState;
@@ -405,7 +406,7 @@ public class FetchResponseDecoder implements ResponseDecoder
             // Truncated record batch at end of record set
             if (nextFetchAt > requestedOffset)
             {
-                topicDispatcher.flush(partition, requestedOffset, nextFetchAt);
+                messageDispatcher.flush(partition, requestedOffset, nextFetchAt);
             }
             skipBytesDecoderState.bytesToSkip = recordSetBytesRemaining;
             skipBytesDecoderState.nextState = this::decodePartitionResponse;
@@ -424,7 +425,7 @@ public class FetchResponseDecoder implements ResponseDecoder
                         "[nukleus-kafka] skipping large message at topic: %s partition: %d offset: %d batch-size: %d\n",
                         topicName, partition, recordBatch.firstOffset(), recordBatch.length());
                     nextFetchAt = recordBatch.firstOffset() + 1;
-                    topicDispatcher.flush(partition, requestedOffset, nextFetchAt);
+                    messageDispatcher.flush(partition, requestedOffset, nextFetchAt);
                     skipBytesDecoderState.bytesToSkip = recordSetBytesRemaining;
                     skipBytesDecoderState.nextState = this::decodePartitionResponse;
                     decoderState = skipBytesDecoderState;
@@ -467,7 +468,7 @@ public class FetchResponseDecoder implements ResponseDecoder
                 // offset of the last record in the batch. So we must use this to make sure we continue to advance.
                 nextFetchAt = firstOffset + lastOffsetDelta + 1;
             }
-            topicDispatcher.flush(partition, requestedOffset, nextFetchAt);
+            messageDispatcher.flush(partition, requestedOffset, nextFetchAt);
             decoderState = this::decodePartitionResponse;
         }
         else if (recordBatchBytesRemaining == 0)
@@ -485,7 +486,7 @@ public class FetchResponseDecoder implements ResponseDecoder
                 {
                     // Truncated record at end of batch, make sure we attempt to re-fetch it
                     nextFetchAt = firstOffset + lastOffsetDelta;
-                    topicDispatcher.flush(partition, requestedOffset, nextFetchAt);
+                    messageDispatcher.flush(partition, requestedOffset, nextFetchAt);
                     skipBytesDecoderState.bytesToSkip = recordSetBytesRemaining;
                     skipBytesDecoderState.nextState = this::decodePartitionResponse;
                     decoderState = skipBytesDecoderState;
@@ -564,8 +565,8 @@ public class FetchResponseDecoder implements ResponseDecoder
                 else
                 {
                     headers.wrap(buffer, headersOffset, headersLimit);
-                    topicDispatcher.dispatch(partition, requestedOffset, nextFetchAt,
-                            key, headers::supplyHeader, timestamp, traceId, value);
+                    messageDispatcher.dispatch(partition, requestedOffset, nextFetchAt,
+                            key, headers, timestamp, traceId, value);
                 }
             }
             newOffset = headersLimit;
@@ -628,55 +629,6 @@ public class FetchResponseDecoder implements ResponseDecoder
                 decoderState = nextState;
             }
             return newOffset;
-        }
-    }
-
-
-    private static final class Headers
-    {
-        private int offset;
-        private int limit;
-        private DirectBuffer buffer;
-
-        private final HeaderFW headerRO = new HeaderFW();
-        private final UnsafeBuffer header = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-        private final UnsafeBuffer value1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-        private final UnsafeBuffer value2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-
-        void wrap(DirectBuffer buffer,
-                  int offset,
-                  int limit)
-        {
-            this.buffer = buffer;
-            this.offset = offset;
-            this.limit = limit;
-        }
-
-        DirectBuffer supplyHeader(DirectBuffer headerName)
-        {
-            DirectBuffer result = null;
-            if (limit > offset)
-            {
-                for (int offset = this.offset; offset < limit; offset = headerRO.limit())
-                {
-                    headerRO.wrap(buffer, offset, limit);
-                    if (matches(headerRO.key(), headerName))
-                    {
-                        OctetsFW value = headerRO.value();
-                        header.wrap(value.buffer(), value.offset(), value.sizeof());
-                        result = header;
-                        break;
-                    }
-                }
-            }
-            return result;
-        }
-
-        private boolean matches(OctetsFW octets, DirectBuffer buffer)
-        {
-            value1.wrap(octets.buffer(), octets.offset(), octets.sizeof());
-            value2.wrap(buffer);
-            return value1.equals(value2);
         }
     }
 }

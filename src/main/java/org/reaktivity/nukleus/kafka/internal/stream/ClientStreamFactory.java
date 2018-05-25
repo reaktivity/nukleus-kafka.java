@@ -16,6 +16,8 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.Objects.requireNonNull;
+import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
+import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.wrap;
 
 import java.util.Map;
 import java.util.function.BiFunction;
@@ -33,8 +35,11 @@ import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
+import org.reaktivity.nukleus.kafka.internal.cache.DefaultMessageCache;
+import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
 import org.reaktivity.nukleus.kafka.internal.function.IntBooleanConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
+import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
@@ -50,7 +55,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.DataFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
@@ -61,13 +66,15 @@ public final class ClientStreamFactory implements StreamFactory
 {
     static final long UNSET = -1;
 
-    static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
+    static final ListFW<KafkaHeaderFW> EMPTY_KAFKA_HEADERS =
+        new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+        .wrap(new UnsafeBuffer(new byte[4]), 0, 4)
+        .build();
 
     private final UnsafeBuffer workBuffer1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     private final UnsafeBuffer workBuffer2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
     private final RouteFW routeRO = new RouteFW();
-
     final BeginFW beginRO = new BeginFW();
     final DataFW dataRO = new DataFW();
     final EndFW endRO = new EndFW();
@@ -100,6 +107,7 @@ public final class ClientStreamFactory implements StreamFactory
     final LongSupplier supplyTrace;
     final LongSupplier supplyCorrelationId;
     final BufferPool bufferPool;
+    final MessageCache messageCache;
     private final MutableDirectBuffer writeBuffer;
 
     final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
@@ -116,18 +124,20 @@ public final class ClientStreamFactory implements StreamFactory
         RouteManager router,
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
+        MemoryManager memoryManager,
         LongSupplier supplyStreamId,
         LongSupplier supplyTrace,
         LongSupplier supplyCorrelationId,
         Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations,
         Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools,
-        Consumer<BiFunction<String, Long, NetworkConnectionPool>> connectPoolFactoryConsumer)
+        Consumer<BiFunction<String, Long, NetworkConnectionPool>> setConnectionPoolFactory)
     {
         this.fetchMaxBytes = config.fetchMaxBytes();
         this.fetchPartitionMaxBytes = config.fetchPartitionMaxBytes();
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
         this.bufferPool = requireNonNull(bufferPool);
+        this.messageCache = new DefaultMessageCache(requireNonNull(memoryManager));
         this.supplyStreamId = requireNonNull(supplyStreamId);
         this.supplyTrace = requireNonNull(supplyTrace);
         this.supplyCorrelationId = supplyCorrelationId;
@@ -135,8 +145,8 @@ public final class ClientStreamFactory implements StreamFactory
         this.connectionPools = connectionPools;
         groupBudget = new Long2LongHashMap(-1);
         groupMembers = new Long2LongHashMap(-1);
-        connectPoolFactoryConsumer.accept((networkName, ref) ->
-            new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes, bufferPool));
+        setConnectionPoolFactory.accept((networkName, ref) ->
+            new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes, bufferPool, messageCache));
     }
 
     @Override
@@ -179,8 +189,9 @@ public final class ClientStreamFactory implements StreamFactory
         {
             final KafkaBeginExFW beginEx = extension.get(beginExRO::wrap);
             String topicName = beginEx.topicName().asString();
+            ListFW<KafkaHeaderFW> headers = beginEx.headers();
 
-            final RouteFW route = resolveRoute(authorization, acceptRef, topicName);
+            final RouteFW route = resolveRoute(authorization, acceptRef, topicName, headers);
             if (route != null)
             {
                 final long applicationId = begin.streamId();
@@ -190,8 +201,9 @@ public final class ClientStreamFactory implements StreamFactory
                 Long2ObjectHashMap<NetworkConnectionPool> connectionPoolsByRef =
                     connectionPools.computeIfAbsent(networkName, this::newConnectionPoolsByRef);
 
-                NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef, ref ->
-                    new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes, bufferPool));
+                NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef,
+                        ref -> new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes,
+                                bufferPool, messageCache));
 
                 newStream = new ClientAcceptStream(applicationThrottle, applicationId, connectionPool)::handleStream;
             }
@@ -230,19 +242,28 @@ public final class ClientStreamFactory implements StreamFactory
     private RouteFW resolveRoute(
         long authorization,
         long sourceRef,
-        String topicName)
+        final String topicName,
+        final ListFW<KafkaHeaderFW> headers)
     {
         final MessagePredicate filter = (t, b, o, l) ->
         {
             final RouteFW route = routeRO.wrap(b, o, l);
             final OctetsFW extension = route.extension();
             Predicate<String> topicMatch = s -> true;
+            Predicate<ListFW<KafkaHeaderFW>> headersMatch = h -> true;
             if (extension.sizeof() > 0)
             {
                 final KafkaRouteExFW routeEx = extension.get(routeExRO::wrap);
                 topicMatch = routeEx.topicName().asString()::equals;
+                if (routeEx.headers().sizeof() > 0)
+                {
+                    headersMatch = candidate ->
+                            !routeEx.headers().anyMatch(r -> !candidate.anyMatch(
+                                    h -> BufferUtil.matches(r.key(),  h.key()) &&
+                                    BufferUtil.matches(r.value(),  h.value())));
+                }
             }
-            return route.sourceRef() == sourceRef && topicMatch.test(topicName);
+            return route.sourceRef() == sourceRef && topicMatch.test(topicName) && headersMatch.test(headers);
         };
 
         return router.resolve(authorization, filter, this::wrapRoute);
@@ -430,6 +451,7 @@ public final class ClientStreamFactory implements StreamFactory
         private final MessageConsumer applicationThrottle;
         private final long applicationId;
         private final NetworkConnectionPool networkPool;
+
         private final Long2LongHashMap fetchOffsets;
 
         private boolean subscribedByKey;
@@ -489,7 +511,7 @@ public final class ClientStreamFactory implements StreamFactory
             long traceId,
             DirectBuffer value)
         {
-            int  messagesDelivered = 0;
+            int result = MessageDispatcher.FLAGS_MATCHED;
             if (progressStartOffset == UNSET)
             {
                 progressStartOffset = fetchOffsets.get(partition);
@@ -531,10 +553,10 @@ public final class ClientStreamFactory implements StreamFactory
                     pendingMessageTraceId = traceId;
                     pendingMessageValue = wrap(pendingMessageValueBuffer, value);
                     messagePending = true;
-                    messagesDelivered++;
+                    result &= MessageDispatcher.FLAGS_DELIVERED;
                 }
             }
-            return messagesDelivered;
+            return result;
         }
 
         @Override
@@ -795,17 +817,6 @@ public final class ClientStreamFactory implements StreamFactory
             networkAttachId = UNATTACHED;
             budget.leaveGroup();
             doReset(applicationThrottle, applicationId);
-        }
-
-        private DirectBuffer wrap(DirectBuffer wrapper, DirectBuffer wrapped)
-        {
-            DirectBuffer result = null;
-            if (wrapped != null)
-            {
-                wrapper.wrap(wrapped, 0, wrapped.capacity());
-                result = wrapper;
-            }
-            return result;
         }
 
         private int writeableBytes()
