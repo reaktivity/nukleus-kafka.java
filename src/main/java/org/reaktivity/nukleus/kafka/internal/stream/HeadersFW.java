@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 
+import java.util.Iterator;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
@@ -26,20 +27,27 @@ import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.HeaderFW;
 
 public final class HeadersFW
 {
+    private final HeaderFW headerRO = new HeaderFW();
+
+    private final HeaderValueIterator iterator = new HeaderValueIterator();
+
+    private final DirectBuffer value1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    private final DirectBuffer value2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+
+    private final Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader = this::supplyHeader;
+
     private int offset;
     private int limit;
     private DirectBuffer buffer;
 
-    private final HeaderFW headerRO = new HeaderFW();
-    private final DirectBuffer header = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-    private final DirectBuffer value1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-    private final DirectBuffer value2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-
-    private final Function<DirectBuffer, DirectBuffer> supplyHeader = this::supplyHeader;
-
     public DirectBuffer buffer()
     {
         return buffer;
+    }
+
+    public int limit()
+    {
+        return limit;
     }
 
     public int offset()
@@ -62,35 +70,93 @@ public final class HeadersFW
         return this;
     }
 
-    public Function<DirectBuffer, DirectBuffer> headerSupplier()
+    public Function<DirectBuffer, Iterator<DirectBuffer>> headerSupplier()
     {
         return supplyHeader;
     }
 
-    private DirectBuffer supplyHeader(DirectBuffer headerName)
+    @Override
+    public String toString()
     {
-        DirectBuffer result = null;
-        if (limit > offset)
+        StringBuffer result = new StringBuffer();
+        for (int offset = offset(); offset < limit; offset = headerRO.limit())
         {
-            for (int offset = this.offset; offset < limit; offset = headerRO.limit())
+            result.append(offset == offset() ? "" : ",");
+            headerRO.wrap(buffer, offset, limit);
+            result.append(headerRO.key().get((b, o, l) ->
             {
-                headerRO.wrap(buffer, offset, limit);
-                if (matches(headerRO.key(), headerName))
+                return b.getStringWithoutLengthUtf8(o,  l - o);
+            }));
+            result.append('=');
+            result.append(headerRO.value().get((b, o, l) ->
+            {
+                return b.getStringWithoutLengthUtf8(o,  l - o);
+            }));
+        }
+        return result.toString();
+    }
+
+    private Iterator<DirectBuffer> supplyHeader(DirectBuffer headerKey)
+    {
+        return iterator.reset(headerKey);
+    }
+
+    private final class HeaderValueIterator implements Iterator<DirectBuffer>
+    {
+        private final DirectBuffer headerValue = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+
+        private DirectBuffer headerKey;
+        private int position;
+        private DirectBuffer nextResult;
+
+        @Override
+        public boolean hasNext()
+        {
+            return position < limit();
+        }
+
+        @Override
+        public DirectBuffer next()
+        {
+            headerRO.wrap(buffer, position, limit());
+            OctetsFW value = headerRO.value();
+            headerValue.wrap(value.buffer(), value.offset(), value.sizeof());
+            position = headerRO.limit();
+            advance();
+            return headerValue;
+        }
+
+        private void advance()
+        {
+            nextResult = null;
+            while (position < limit())
+            {
+                headerRO.wrap(buffer, position, limit());
+                if (matches(headerRO.key(), headerKey))
                 {
-                    OctetsFW value = headerRO.value();
-                    header.wrap(value.buffer(), value.offset(), value.sizeof());
-                    result = header;
                     break;
+                }
+                else
+                {
+                    position = headerRO.limit();
                 }
             }
         }
-        return result;
-    }
 
-    private boolean matches(OctetsFW octets, DirectBuffer buffer)
-    {
-        value1.wrap(octets.buffer(), octets.offset(), octets.sizeof());
-        value2.wrap(buffer);
-        return value1.equals(value2);
+        private Iterator<DirectBuffer> reset(
+                DirectBuffer headerKey)
+        {
+            this.headerKey = headerKey;
+            position = offset();
+            advance();
+            return this;
+        }
+
+        private boolean matches(OctetsFW octets, DirectBuffer buffer)
+        {
+            value1.wrap(octets.buffer(), octets.offset(), octets.sizeof());
+            value2.wrap(buffer);
+            return value1.equals(value2);
+        }
     }
 }

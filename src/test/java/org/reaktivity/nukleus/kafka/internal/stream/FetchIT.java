@@ -755,6 +755,17 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/header.zero.offset.repeated/client",
+        "${server}/header.zero.offset.repeated/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageMatchingAnyOccurrenceOfARepeatedHeader() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/headers.and.fetch.key.zero.offset.message/client",
         "${server}/headers.and.fetch.key.zero.offset.first.matches/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
