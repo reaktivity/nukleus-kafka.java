@@ -165,6 +165,36 @@ public class DefaultMemoryManagerTest
     }
 
     @Test
+    @ConfigureMemoryLayout(capacity = MB_128, smallestBlockSize = KB)
+    public void shouldNotAcquireAddressZeroWhenNotReleased()
+    {
+        final MemoryManager memoryManager = memoryManagerRule.memoryManager();
+        memoryManagerRule.assertReleased();
+
+        long address0 = memoryManager.acquire(6498);
+        assertEquals(0, address0);
+        long address1 = memoryManager.acquire(13743);
+        assertEquals(16384, address1);
+
+        long address = 0;
+        while (address != -1L)
+        {
+            address = memoryManager.acquire(140);
+        }
+
+        memoryManager.release(address0, 6498);
+
+        address = memoryManager.acquire(17000);
+        assertEquals(-1L, address);
+
+        address = memoryManager.acquire(8192);
+        assertEquals(0L, address);
+
+        address = memoryManager.acquire(140);
+        assertEquals(-1L, address);
+    }
+
+    @Test
     @ConfigureMemoryLayout(capacity = KB, smallestBlockSize = BYTES_64)
     public void shouldAllocateAndReleaseMixedSizeBlocks()
     {
@@ -211,10 +241,17 @@ public class DefaultMemoryManagerTest
         assertEquals(-1, acquire128Address.getAsLong());
         assertEquals(-1, acquire64Address.getAsLong());
 
+        // Freeing 64 byte nodes not under same parent does not allow 128 allocation
         memoryManager.release(acquired64Blocks.remove(3), BYTES_64);
+        memoryManager.release(acquired64Blocks.remove(3), BYTES_64);
+        assertEquals(-1, acquire128Address.getAsLong());
+
+        // Freeing 64 node whose sibbling is now free does allow 128 allocation
         memoryManager.release(acquired64Blocks.remove(3), BYTES_64);
         assertNotEquals(-1, acquire128Address.getAsLong());
+
         assertEquals(-1, acquire128Address.getAsLong());
+        assertNotEquals(-1, acquire64Address.getAsLong());
         assertEquals(-1, acquire64Address.getAsLong());
     }
 }

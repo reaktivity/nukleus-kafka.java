@@ -101,10 +101,11 @@ public class DefaultMemoryManager implements MemoryManager
             }
         }
 
-        if (node.flag(FULL))
+        if (node.flag(FULL) || node.flag(SPLIT))
         {
             return -1;
         }
+        assert node.order() == allocationOrder;
 
         node.set(FULL);
 
