@@ -107,7 +107,6 @@ public final class HeadersFW
 
         private DirectBuffer headerKey;
         private int position;
-        private DirectBuffer nextResult;
 
         @Override
         public boolean hasNext()
@@ -128,7 +127,6 @@ public final class HeadersFW
 
         private void advance()
         {
-            nextResult = null;
             while (position < limit())
             {
                 headerRO.wrap(buffer, position, limit());

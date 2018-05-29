@@ -44,7 +44,7 @@ public class KeyMessageDispatcher implements MessageDispatcher
         long requestOffset,
         long messageOffset,
         DirectBuffer key,
-        Function<DirectBuffer, DirectBuffer> supplyHeader,
+        Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
         long timestamp,
         long traceId,
         DirectBuffer value)

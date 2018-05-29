@@ -19,6 +19,7 @@ import static java.nio.ByteBuffer.allocateDirect;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.reaktivity.nukleus.kafka.internal.test.TestUtil.asOctets;
 
 import java.util.Iterator;
 
@@ -27,28 +28,34 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.Test;
 import org.reaktivity.nukleus.kafka.internal.test.TestUtil;
-import org.reaktivity.nukleus.kafka.internal.types.Varint32FW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.HeaderFW;
 
 public final class HeadersFWTest
 {
-    private Varint32FW.Builder varint32RW = new Varint32FW.Builder();
-    private final int offset = 13;
+    private HeaderFW.Builder headerRW = new HeaderFW.Builder();
+    private final int offset = 11;
     int position = offset;
     private final MutableDirectBuffer buffer = new UnsafeBuffer(allocateDirect(1000))
     {
         {
-            position = varint32RW.wrap(this, position, this.capacity()).set(7).build().limit();
-            putStringWithoutLengthUtf8(position, "header1"); position += 7;
-            position = varint32RW.wrap(this, position, this.capacity()).set(6).build().limit();
-            putStringWithoutLengthUtf8(position, "value1"); position += 6;
-            position = varint32RW.wrap(this, position, this.capacity()).set(7).build().limit();
-            putStringWithoutLengthUtf8(position, "header2"); position += 7;
-            position = varint32RW.wrap(this, position, this.capacity()).set(6).build().limit();
-            putStringWithoutLengthUtf8(position, "value1"); position += 6;
-            position = varint32RW.wrap(this, position, this.capacity()).set(7).build().limit();
-            putStringWithoutLengthUtf8(position, "header1"); position += 7;
-            position = varint32RW.wrap(this, position, this.capacity()).set(6).build().limit();
-            putStringWithoutLengthUtf8(position, "value2"); position += 6;
+            position = headerRW.wrap(this, position, this.capacity())
+                    .keyLen("header1".length())
+                    .key(asOctets("header1"))
+                    .valueLen("value1".length())
+                    .value(asOctets("value1"))
+                    .build().limit();
+            position = headerRW.wrap(this, position, this.capacity())
+                    .keyLen("header2".length())
+                    .key(asOctets("header2"))
+                    .valueLen("value1".length())
+                    .value(asOctets("value1"))
+                    .build().limit();
+            position = headerRW.wrap(this, position, this.capacity())
+                    .keyLen("header1".length())
+                    .key(asOctets("header1"))
+                    .valueLen("value2".length())
+                    .value(asOctets("value2"))
+                    .build().limit();
         }
     };
     private final HeadersFW headersRO = new HeadersFW();
@@ -56,16 +63,17 @@ public final class HeadersFWTest
     @Test
     public void shouldIteratOverSingleValuedHeader()
     {
-        headersRO.wrap(buffer,  offset, offset + position);
+        headersRO.wrap(buffer,  offset, position);
         Iterator<DirectBuffer> header = headersRO.headerSupplier().apply(TestUtil.asBuffer("header2"));
         assertTrue(header.hasNext());
         assertMatches("value1", header.next());
+        assertFalse(header.hasNext());
     }
 
     @Test
     public void shouldIteratOverMultiValuedHeader()
     {
-        headersRO.wrap(buffer,  offset, offset + position);
+        headersRO.wrap(buffer,  offset, position);
         Iterator<DirectBuffer> header = headersRO.headerSupplier().apply(TestUtil.asBuffer("header1"));
         assertTrue(header.hasNext());
         assertMatches("value1", header.next());
