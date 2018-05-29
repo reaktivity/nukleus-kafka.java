@@ -83,15 +83,17 @@ public final class HeadersFW
         {
             result.append(offset == offset() ? "" : ",");
             headerRO.wrap(buffer, offset, limit);
-            result.append(headerRO.key().get((b, o, l) ->
+            String key = headerRO.key().get((b, o, l) ->
             {
                 return b.getStringWithoutLengthUtf8(o,  l - o);
-            }));
+            });
+            result.append(key);
             result.append('=');
-            result.append(headerRO.value().get((b, o, l) ->
+            String value = headerRO.value().get((b, o, l) ->
             {
                 return b.getStringWithoutLengthUtf8(o,  l - o);
-            }));
+            });
+            result.append(value);
         }
         return result.toString();
     }

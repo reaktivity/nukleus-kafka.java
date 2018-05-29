@@ -222,7 +222,7 @@ public final class CompactedHeaderValueMessageDispatcherTest
     }
 
     @Test
-    public void shouldDispatchTombstoneWhenHeaderUpdated()
+    public void shouldDispatchTombstoneWhenHeaderIsUpdated()
     {
 
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
@@ -261,7 +261,7 @@ public final class CompactedHeaderValueMessageDispatcherTest
     }
 
     @Test
-    public void shouldDispatchTombstoneWhenMultivaluedHeaderUpdated()
+    public void shouldDispatchTombstoneWhenMultivaluedHeaderIsUpdated()
     {
 
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
@@ -280,15 +280,22 @@ public final class CompactedHeaderValueMessageDispatcherTest
             {
                 oneOf(supplyHeader).apply(with(bufferMatching("header1")));
                 will(returnValue(asList(asBuffer("value1"), asBuffer("value2")).iterator()));
-                oneOf(supplyHeader).apply(with(bufferMatching("header1")));
-                will(returnValue(asList(asBuffer("value2")).iterator()));
                 oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with(bufferMatching("message1")));
                 will(returnValue(FLAGS_DELIVERED));
                 oneOf(child2).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with(bufferMatching("message1")));
                 will(returnValue(FLAGS_DELIVERED));
-
+            }
+        });
+        assertEquals(FLAGS_DELIVERED, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId,
+                asBuffer("message1")));
+        context.assertIsSatisfied();
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(supplyHeader).apply(with(bufferMatching("header1")));
+                will(returnValue(asList(asBuffer("value2")).iterator()));
                 oneOf(child1).dispatch(with(1), with(10L), with(13L), with(bufferMatching("key")),
                         with(supplyHeader), with(timestamp), with(traceId), with((DirectBuffer) null));
                 will(returnValue(FLAGS_DELIVERED));
@@ -297,8 +304,54 @@ public final class CompactedHeaderValueMessageDispatcherTest
                 will(returnValue(FLAGS_DELIVERED));
             }
         });
+        assertEquals(FLAGS_DELIVERED, dispatcher.dispatch(1, 10L, 13L, asBuffer("key"), supplyHeader, timestamp, traceId,
+                asBuffer("message2")));
+    }
+
+    @Test
+    public void shouldNotDispatchTombstoneWhenMultivaluedHeaderIsUpdatedToSameValuesInDifferentOrder()
+    {
+
+        MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
+        MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
+        dispatcher.add(asOctets("value1"), emptyHeaders, child1);
+        dispatcher.add(asOctets("value2"), emptyHeaders, child2);
+
+        @SuppressWarnings("unchecked")
+        Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader = context.mock(Function.class, "header");
+
+        final long timestamp = System.currentTimeMillis() - 123;
+        final long traceId = 0L;
+
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(supplyHeader).apply(with(bufferMatching("header1")));
+                will(returnValue(asList(asBuffer("value1"), asBuffer("value2")).iterator()));
+                oneOf(child1).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
+                        with(supplyHeader), with(timestamp), with(traceId), with(bufferMatching("message1")));
+                will(returnValue(FLAGS_DELIVERED));
+                oneOf(child2).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key")),
+                        with(supplyHeader), with(timestamp), with(traceId), with(bufferMatching("message1")));
+                will(returnValue(FLAGS_DELIVERED));
+            }
+        });
         assertEquals(FLAGS_DELIVERED, dispatcher.dispatch(1, 10L, 12L, asBuffer("key"), supplyHeader, timestamp, traceId,
                 asBuffer("message1")));
+        context.assertIsSatisfied();
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(supplyHeader).apply(with(bufferMatching("header1")));
+                will(returnValue(asList(asBuffer("value2"), asBuffer("value1")).iterator()));
+                oneOf(child1).dispatch(with(1), with(10L), with(13L), with(bufferMatching("key")),
+                        with(supplyHeader), with(timestamp), with(traceId), with(bufferMatching("message2")));
+                will(returnValue(FLAGS_DELIVERED));
+                oneOf(child2).dispatch(with(1), with(10L), with(13L), with(bufferMatching("key")),
+                        with(supplyHeader), with(timestamp), with(traceId), with(bufferMatching("message2")));
+                will(returnValue(FLAGS_DELIVERED));
+            }
+        });
         assertEquals(FLAGS_DELIVERED, dispatcher.dispatch(1, 10L, 13L, asBuffer("key"), supplyHeader, timestamp, traceId,
                 asBuffer("message2")));
     }

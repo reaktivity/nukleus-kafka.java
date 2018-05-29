@@ -51,7 +51,6 @@ public class CompactedHeaderValueMessageDispatcher extends HeaderValueMessageDis
     {
         int result = 0;
         // TODO: there can be multiple dispatchers for a key when there are multiple header values!
-        MessageDispatcher[] previousDispatchers = dispatchersByKey.get(key);
         HeadersMessageDispatcher dispatcher = null;
         Iterator<DirectBuffer> headerValues = supplyHeader.apply(headerName);
         dispatchers.clear();
@@ -60,9 +59,9 @@ public class CompactedHeaderValueMessageDispatcher extends HeaderValueMessageDis
             DirectBuffer headerValue = headerValues.next();
             buffer.wrap(headerValue);
             dispatcher = dispatchersByHeaderValue.get(buffer);
-            dispatchers.add(dispatcher);
             if (dispatcher != null)
             {
+                dispatchers.add(dispatcher);
                 result = MessageDispatcher.FLAGS_MATCHED;
                 result |= dispatcher.dispatch(partition, requestOffset, messageOffset,
                                               key, supplyHeader, timestamp, traceId, value);
@@ -120,37 +119,37 @@ public class CompactedHeaderValueMessageDispatcher extends HeaderValueMessageDis
         int result,
         List<MessageDispatcher> newDispatchers)
     {
-        if (key != null)
+        buffer.wrap(key);
+        MessageDispatcher[] previousDispatchers = dispatchersByKey.get(buffer);
+        if (previousDispatchers == null)
         {
-            buffer.wrap(key);
-            MessageDispatcher[] previousDispatchers = dispatchersByKey.get(buffer);
-            if (previousDispatchers == null)
+            if (!newDispatchers.isEmpty())
             {
-                if (!newDispatchers.isEmpty())
+                dispatchersByKey.put(makeCopy(buffer),
+                        newDispatchers.toArray(new HeadersMessageDispatcher[newDispatchers.size()]));
+            }
+        }
+        else
+        {
+            boolean updated = false;
+            for (MessageDispatcher dispatcher : previousDispatchers)
+            {
+                if (!newDispatchers.contains(dispatcher))
                 {
-                    dispatchersByKey.put(buffer, newDispatchers.toArray(new HeadersMessageDispatcher[newDispatchers.size()]));
+                    updated = true;
+                    // Send tombstone message
+                    result |= dispatcher.dispatch(partition, requestOffset, messageOffset,
+                                key, supplyHeader, timestamp, traceId, null);
                 }
             }
-            else
+            if (newDispatchers.isEmpty())
             {
-                for (MessageDispatcher dispatcher : previousDispatchers)
-                {
-                    if (!newDispatchers.contains(dispatcher))
-                    {
-                        // Send tombstone message
-                        result |= dispatchers.get(0).dispatch(partition, requestOffset, messageOffset,
-                                    key, supplyHeader, timestamp, traceId, null);
-                    }
-                }
-            }
-            if (previousDispatchers != null && dispatchers.size() != previousDispatchers.length)
-            {
-
-            }
-            if (previousDispatchers != null && dispatchers.isEmpty())
-            {
-                buffer.wrap(key);
                 dispatchersByKey.remove(buffer);
+            }
+            else if (updated || newDispatchers.size() != previousDispatchers.length)
+
+            {
+                dispatchersByKey.put(buffer, newDispatchers.toArray(new MessageDispatcher[newDispatchers.size()]));
             }
         }
         return result;
