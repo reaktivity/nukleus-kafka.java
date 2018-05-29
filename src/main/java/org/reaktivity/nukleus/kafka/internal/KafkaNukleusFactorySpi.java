@@ -49,8 +49,8 @@ import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
 
 public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
 {
-    private static final String MESSAGE_CACHE_BUFFER_ACQUIRES = "message.cache.buffer.acquires";
-    private static final String MESSAGE_CACHE_BUFFER_RELEASES = "message.cache.buffer.releases";
+    public static final String MESSAGE_CACHE_BUFFER_ACQUIRES = "message.cache.buffer.acquires";
+    public static final String MESSAGE_CACHE_BUFFER_RELEASES = "message.cache.buffer.releases";
 
     private static final MemoryManager OUT_OF_SPACE_MEMORY_MANAGER = new MemoryManager()
     {
