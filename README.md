@@ -8,17 +8,17 @@
 Fetching messages is supported as follows:
 
 ```
-client nukleus -> Begin with extension data -> nukleus-kafka -> (other nuklei) -> network -> Kafka (cluster)
-               <- Data frames with ext data <-               <-                <-
+client nukleus -> BEGIN with extension data -> nukleus-kafka -> (other nuklei) -> network -> Kafka (cluster)
+               <- DATA frames with ext data <-               <-                <-
 ```
 ### Route (incoming from controller)
 
 The extension data contains the following fields, all optional:
 
-- `topic name`: if specified, only subscriptions to this topic will be allowed (i.e. Begin extension data must specify this topic)
-- `headers` (key=value pairs): if specified, only subscriptions including all of these header conditions will be allowed (Begin extension must include all these header value pairs, and may include others). In addition, for a compacted topic, only messages matching these conditions will be cached (because only those messages will ever be delivered to users). Limiting the number of messages cached in order to make caching more efficient is a major motivation for specifying headers on a route.
+- `topic name`: if specified, only subscriptions to this topic will be allowed (i.e. BEGIN extension data must specify this topic)
+- `headers` (key=value pairs): if specified, only subscriptions including all of these header conditions will be allowed (BEGIN extension must include all these header value pairs, and may include others). In addition, for a compacted topic, only messages matching these conditions will be cached (because only those messages will ever be delivered to users). Limiting the number of messages cached in order to make caching more efficient is a major motivation for specifying headers on a route.
 
-### Begin (incoming from client)
+### BEGIN (incoming from client)
 
 The extension data contains the following fields:
 
@@ -27,9 +27,9 @@ The extension data contains the following fields:
 - `fetch key` (optional): if specified then only messages whose message key matches this value will be sent back to the client.
 - `headers` (optional): if specified, each header (key and value) represents a condition which messages must match in order to be sent back to the client. All conditions must be met. For example, {{"header1", "value1"}, {"header2", "value2"}} means only messages containing headers "header1" and "header2" with values "value1" and "value2" respectively will be sent back to the client.
 
-### Data (reply stream from nukleus-kafka)
+### DATA (reply stream from nukleus-kafka)
 
-Each data frame represents the value of one Kafka message (a.k.a. record). The extension data gives the high watermark offsets which could be used subsequently to fetch all messages following this message (if the client disconnect and reconnects later).
+Each DATA frame represents the value of one Kafka message (a.k.a. record). The extension data gives the high watermark offsets which could be used subsequently to fetch all messages following this message (if the client disconnect and reconnects later).
 
 ### Compacted Topics
 
