@@ -193,6 +193,17 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/compacted.header.repeated.tombstone/client",
+        "${server}/compacted.header.repeated.tombstone/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageAndTombstoneWithMultivaluedHeaderUpdated() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/compacted.historical.uses.cached.key.after.unsubscribe/client",
         "${server}/compacted.historical.uses.cached.key.after.unsubscribe/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
