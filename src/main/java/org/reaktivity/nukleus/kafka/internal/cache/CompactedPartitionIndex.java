@@ -75,7 +75,8 @@ public class CompactedPartitionIndex implements PartitionIndex
         long traceId,
         DirectBuffer key,
         HeadersFW headers,
-        DirectBuffer value)
+        DirectBuffer value,
+        boolean cacheNewMessages)
     {
         buffer.wrap(key, 0, key.capacity());
         EntryImpl entry = offsetsByKey.get(buffer);
@@ -98,7 +99,10 @@ public class CompactedPartitionIndex implements PartitionIndex
                 entry.offset = messageStartOffset;
             }
             entries.add(entry);
-            cacheMessage(entry, timestamp, traceId, key, headers, value);
+            if (cacheNewMessages)
+            {
+                cacheMessage(entry, timestamp, traceId, key, headers, value);
+            }
         }
         else if (requestOffset > validToOffset)
         {
@@ -110,12 +114,15 @@ public class CompactedPartitionIndex implements PartitionIndex
                 keyCopy.putBytes(0,  key, 0, key.capacity());
                 entry = new EntryImpl(messageStartOffset, NO_MESSAGE, entries.size());
                 offsetsByKey.put(keyCopy, entry);
-                cacheMessage(entry, timestamp, traceId, key, headers, value);
+                if (cacheNewMessages)
+                {
+                    cacheMessage(entry, timestamp, traceId, key, headers, value);
+                }
             }
         }
-        else if (messageCache.get(entry.message, messageRO) == null)
+        else if (entry.offset == messageStartOffset && messageCache.get(entry.message, messageRO) == null)
         {
-            // historical message which was previously evicted due to lack of space, re-cache it
+            // We already saw this offset. Either we didn't cache the message or it was evicted due to lack of space.
             entry.message = messageCache.replace(entry.message, timestamp, traceId, key, headers, value);
         }
     }

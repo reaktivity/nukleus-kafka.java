@@ -118,6 +118,7 @@ public final class ClientStreamFactory implements StreamFactory
     private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools;
     private final int fetchMaxBytes;
     private final int fetchPartitionMaxBytes;
+    private final boolean forceProactiveMessageCache;
 
     public ClientStreamFactory(
         KafkaConfiguration config,
@@ -134,6 +135,7 @@ public final class ClientStreamFactory implements StreamFactory
     {
         this.fetchMaxBytes = config.fetchMaxBytes();
         this.fetchPartitionMaxBytes = config.fetchPartitionMaxBytes();
+        this.forceProactiveMessageCache = config.messageCacheBootstrapAll();
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
         this.bufferPool = requireNonNull(bufferPool);
@@ -146,7 +148,8 @@ public final class ClientStreamFactory implements StreamFactory
         groupBudget = new Long2LongHashMap(-1);
         groupMembers = new Long2LongHashMap(-1);
         setConnectionPoolFactory.accept((networkName, ref) ->
-            new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes, bufferPool, messageCache));
+            new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes, bufferPool,
+                    messageCache, forceProactiveMessageCache));
     }
 
     @Override
@@ -203,7 +206,7 @@ public final class ClientStreamFactory implements StreamFactory
 
                 NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef,
                         ref -> new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes,
-                                bufferPool, messageCache));
+                                bufferPool, messageCache, forceProactiveMessageCache));
 
                 newStream = new ClientAcceptStream(applicationThrottle, applicationId, connectionPool)::handleStream;
             }

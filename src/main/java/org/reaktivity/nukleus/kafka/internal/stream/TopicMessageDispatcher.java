@@ -33,6 +33,8 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
 
     private final OctetsFW octetsRO = new OctetsFW();
 
+    private boolean cacheNewMessages;
+
     protected TopicMessageDispatcher(
         PartitionIndex[] indexes,
         Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
@@ -51,6 +53,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         int partition,
         long requestOffset,
         long messageOffset,
+        long highWatermark,
         DirectBuffer key,
         HeadersFW headers,
         long timestamp,
@@ -60,9 +63,14 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         int result = dispatch(partition, requestOffset, messageOffset, key, headers.headerSupplier(), timestamp,
                 traceId, value);
         long messageStartOffset = messageOffset - 1;
+        if (messageOffset == highWatermark)
+        {
+            // Caught up to live stream, enable proactive message caching
+            cacheNewMessages = true;
+        }
         if (MessageDispatcher.matched(result))
         {
-            indexes[partition].add(requestOffset, messageStartOffset, timestamp, traceId, key, headers, value);
+            indexes[partition].add(requestOffset, messageStartOffset, timestamp, traceId, key, headers, value, cacheNewMessages);
         }
         return result;
     }
@@ -189,6 +197,11 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         int partition)
     {
         return indexes[partition].nextOffset();
+    }
+
+    public void enableProactiveMessageCaching()
+    {
+        cacheNewMessages = true;
     }
 
     private boolean shouldDispatch(

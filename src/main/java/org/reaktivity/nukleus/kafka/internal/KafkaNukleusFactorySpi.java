@@ -155,13 +155,9 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                 final OctetsFW extension = route.extension();
                 if (extension.sizeof() > 0)
                 {
-                    final KafkaRouteExFW routeEx = extension.get(routeExRO::wrap);
-                    if (kafkaConfig.topicBootstrapEnabled() || !routeEx.headers().isEmpty())
-                    {
-                        MutableDirectBuffer routeBuffer = new UnsafeBuffer(new byte[length]);
-                        buffer.getBytes(index,  routeBuffer, 0, length);
-                        routesToProcess.add(new RouteFW().wrap(routeBuffer, 0, length));
-                    }
+                    MutableDirectBuffer routeBuffer = new UnsafeBuffer(new byte[length]);
+                    buffer.getBytes(index,  routeBuffer, 0, length);
+                    routesToProcess.add(new RouteFW().wrap(routeBuffer, 0, length));
                 }
             }
             break;
@@ -205,16 +201,13 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                 final ListFW<KafkaHeaderFW> headers = routeEx.headers();
                 ListFW<KafkaHeaderFW> headersCopy = new ListFW<KafkaHeaderFW>(new KafkaHeaderFW());
                 headersCopy.wrap(headers.buffer(), headers.offset(), headers.limit());
-
-                if (kafkaConfig.topicBootstrapEnabled())
-                {
-                    connectionPool.addRoute(topicName, headersCopy, this::doBootstrapTopic);
-                }
+                connectionPool.addRoute(topicName, headersCopy, kafkaConfig.topicBootstrapEnabled(),
+                        this::onKafkaError);
             }
         }
     }
 
-    private void doBootstrapTopic(
+    private void onKafkaError(
         Short errorCode,
         String topicName)
     {
