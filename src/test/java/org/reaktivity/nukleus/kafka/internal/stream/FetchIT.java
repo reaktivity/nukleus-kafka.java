@@ -193,6 +193,17 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/compacted.header.repeated.tombstone/client",
+        "${server}/compacted.header.repeated.tombstone/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageAndTombstoneWithMultivaluedHeaderUpdated() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/compacted.historical.uses.cached.key.after.unsubscribe/client",
         "${server}/compacted.historical.uses.cached.key.after.unsubscribe/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -748,6 +759,17 @@ public class FetchIT
         "${server}/header.zero.offset.multiple.matches/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveMultipleMessagesMatchingHeader() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/header.zero.offset.repeated/client",
+        "${server}/header.zero.offset.repeated/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageMatchingAnyOccurrenceOfARepeatedHeader() throws Exception
     {
         k3po.finish();
     }

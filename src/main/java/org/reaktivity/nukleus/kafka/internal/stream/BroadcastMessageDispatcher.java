@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.function.Function;
 
@@ -31,7 +32,7 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
                  long requestOffset,
                  long messageOffset,
                  DirectBuffer key,
-                 Function<DirectBuffer, DirectBuffer> supplyHeader,
+                 Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
                  long timestamp,
                  long traceId,
                  DirectBuffer value)
