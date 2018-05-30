@@ -49,7 +49,7 @@ import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
 
 public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
 {
-    private static final String MESSAGE_CACHE_BUFFER_ACQUIRES = "message.cache.buffer.acquires";
+    public static final String MESSAGE_CACHE_BUFFER_ACQUIRES = "message.cache.buffer.acquires";
     private static final String MESSAGE_CACHE_BUFFER_RELEASES = "message.cache.buffer.releases";
 
     private static final MemoryManager OUT_OF_SPACE_MEMORY_MANAGER = new MemoryManager()
@@ -206,13 +206,11 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                 ListFW<KafkaHeaderFW> headersCopy = new ListFW<KafkaHeaderFW>(new KafkaHeaderFW());
                 headersCopy.wrap(headers.buffer(), headers.offset(), headers.limit());
 
-                connectionPool.addRoute(topicName, headersCopy);
+                if (kafkaConfig.topicBootstrapEnabled())
+                {
+                    connectionPool.addRoute(topicName, headersCopy, this::doBootstrapTopic);
+                }
             }
-        }
-        if (kafkaConfig.topicBootstrapEnabled())
-        {
-            connectionPools.forEach((networkName, poolsByRef) ->
-                poolsByRef.forEach((ref, pool) -> pool.doBootstrap(this::doBootstrapTopic)));
         }
     }
 

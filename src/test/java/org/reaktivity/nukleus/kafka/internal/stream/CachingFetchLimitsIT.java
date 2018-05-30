@@ -76,6 +76,7 @@ public class CachingFetchLimitsIT
         k3po.start();
         k3po.awaitBarrier("ROUTED_CLIENT");
         k3po.notifyBarrier("CONNECT_CLIENT_ONE");
+        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
 
