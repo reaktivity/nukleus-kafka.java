@@ -23,10 +23,6 @@ public class KafkaConfiguration extends Configuration
 
     public static final String FETCH_MAX_BYTES_PROPERTY = "nukleus.kafka.fetch.max.bytes";
 
-    // "headers": cache messages during bootstrap only for topics with route header conditions
-    // "all": cache messages during bootstrap for all topics
-    public static final String MESSAGE_CACHE_PROACTIVE_PROPERTY = "nukleus.kafka.message.cache.proactive";
-
     // Maximum record batch size, corresponding to Kafka broker and topic configuration
     // property "max.message.bytes"
     public static final String FETCH_PARTITION_MAX_BYTES_PROPERTY = "nukleus.kafka.fetch.partition.max.bytes";
@@ -44,8 +40,6 @@ public class KafkaConfiguration extends Configuration
     public static final int MESSAGE_CACHE_CAPACITY_DEFAULT = 128 * 1024 * 1024;
 
     public static final int MESSAGE_CACHE_BLOCK_CAPACITY_DEFAULT = 1024;
-
-    public static final boolean DEFAULT_MESSAGE_CACHE_PROACTIVE = false;
 
     public KafkaConfiguration(
         Configuration config)
@@ -76,11 +70,6 @@ public class KafkaConfiguration extends Configuration
     public int messageCacheBlockCapacity()
     {
         return getInteger(MESSAGE_CACHE_BLOCK_CAPACITY_PROPERTY, MESSAGE_CACHE_BLOCK_CAPACITY_DEFAULT);
-    }
-
-    public boolean messageCacheProactive()
-    {
-        return getBoolean(MESSAGE_CACHE_PROACTIVE_PROPERTY, DEFAULT_MESSAGE_CACHE_PROACTIVE);
     }
 
 }

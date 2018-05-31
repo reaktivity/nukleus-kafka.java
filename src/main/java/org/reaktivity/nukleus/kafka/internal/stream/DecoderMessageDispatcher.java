@@ -24,7 +24,6 @@ public interface DecoderMessageDispatcher
         int partition,
         long requestOffset,
         long messageOffset,
-        long highWatermark,
         DirectBuffer key,
         HeadersFW headers,
         long timestamp,
