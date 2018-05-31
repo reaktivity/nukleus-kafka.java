@@ -19,6 +19,7 @@ import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.wrap;
 
+import java.util.Iterator;
 import java.util.Map;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -509,7 +510,7 @@ public final class ClientStreamFactory implements StreamFactory
             long requestOffset,
             long messageOffset,
             DirectBuffer key,
-            Function<DirectBuffer, DirectBuffer> supplyHeader,
+            Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
             long timestamp,
             long traceId,
             DirectBuffer value)

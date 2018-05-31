@@ -81,7 +81,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         long requestOffset,
         long messageOffset,
         DirectBuffer key,
-        Function<DirectBuffer, DirectBuffer> supplyHeader,
+        Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
         long timestamp,
         long traceId,
         DirectBuffer value)

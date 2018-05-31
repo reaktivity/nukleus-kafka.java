@@ -166,7 +166,7 @@ public final class NetworkConnectionPool
             long requestOffset,
             long messageOffset,
             DirectBuffer key,
-            java.util.function.Function<DirectBuffer, DirectBuffer> supplyHeader,
+            java.util.function.Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
             long timestamp,
             long traceId,
             DirectBuffer value)
@@ -2278,7 +2278,7 @@ public final class NetworkConnectionPool
             long requestOffset,
             long messageOffset,
             DirectBuffer key,
-            java.util.function.Function<DirectBuffer, DirectBuffer> supplyHeader,
+            java.util.function.Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
             long timestamp,
             long traceId,
             DirectBuffer value)

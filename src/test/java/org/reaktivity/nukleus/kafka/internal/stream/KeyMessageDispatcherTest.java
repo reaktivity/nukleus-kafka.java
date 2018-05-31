@@ -72,7 +72,7 @@ public final class KeyMessageDispatcherTest
         dispatcher.add(asOctets("key2"), emptyHeaders, child3);
 
         @SuppressWarnings("unchecked")
-        Function<DirectBuffer, DirectBuffer> header = context.mock(Function.class, "header");
+        Function<DirectBuffer, Iterator<DirectBuffer>> header = context.mock(Function.class, "header");
 
         final long timestamp = System.currentTimeMillis() - 123;
         final long traceId = 0L;
@@ -104,7 +104,7 @@ public final class KeyMessageDispatcherTest
         dispatcher.add(asOctets("key1"), emptyHeaders, child2);
 
         @SuppressWarnings("unchecked")
-        Function<DirectBuffer, DirectBuffer> header = context.mock(Function.class, "header");
+        Function<DirectBuffer, Iterator<DirectBuffer>> header = context.mock(Function.class, "header");
 
         final long timestamp = System.currentTimeMillis() - 123;
 
