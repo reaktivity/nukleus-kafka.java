@@ -27,6 +27,7 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 
 import org.agrona.DirectBuffer;
+import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.LongArrayList;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
@@ -188,7 +189,9 @@ public class CompactedPartitionIndex implements PartitionIndex
     {
         if (value == null)
         {
-            tombstoneKeys.add(key);
+            MutableDirectBuffer keyCopy = new UnsafeBuffer(new byte[key.capacity()]);
+            keyCopy.putBytes(0,  key, 0, key.capacity());
+            tombstoneKeys.add(keyCopy);
             tombstoneExpiryTimes.add(System.currentTimeMillis() + tombstoneLifetimeMillis);
         }
         if (entry.message == NO_MESSAGE)
@@ -242,8 +245,9 @@ public class CompactedPartitionIndex implements PartitionIndex
             {
                 if (now >= tombstoneExpiryTimes.getLong(pos))
                 {
-                    tombstoneExpiryTimes.setLong(pos, NO_EXPIRY_TIME);
-                    DirectBuffer key = tombstoneKeys.set(pos,  null);
+                    tombstoneExpiryTimes.set(pos, null);
+                    DirectBuffer key = tombstoneKeys.set(pos, null);
+
                     buffer.wrap(key, 0, key.capacity());
                     EntryImpl entry = offsetsByKey.remove(buffer);
                     messageCache.release(entry.message);
@@ -256,6 +260,7 @@ public class CompactedPartitionIndex implements PartitionIndex
                     break;
                 }
             }
+
             if (pos == tombstoneKeys.size())
             {
                 tombstoneKeys.clear();
@@ -266,6 +271,8 @@ public class CompactedPartitionIndex implements PartitionIndex
                 tombstoneKeys.removeIf(Objects::isNull);
                 tombstoneExpiryTimes.removeIf(Objects::isNull);
             }
+
+            assert tombstoneKeys.size() == tombstoneExpiryTimes.size();
         }
     }
 
