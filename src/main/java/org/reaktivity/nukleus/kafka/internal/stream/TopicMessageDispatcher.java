@@ -63,15 +63,14 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
     {
         int result = dispatch(partition, requestOffset, messageOffset, key, headers.headerSupplier(), timestamp,
                 traceId, value);
-        long messageStartOffset = messageOffset - 1;
-        if (messageOffset == highWatermark)
+        if (messageOffset + 1 == highWatermark)
         {
             // Caught up to live stream, enable proactive message caching
             cacheNewMessages[partition] = true;
         }
         if (MessageDispatcher.matched(result))
         {
-            indexes[partition].add(requestOffset, messageStartOffset, timestamp, traceId, key, headers, value,
+            indexes[partition].add(requestOffset, messageOffset, timestamp, traceId, key, headers, value,
                     cacheNewMessages[partition]);
         }
         return result;
@@ -89,8 +88,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         DirectBuffer value)
     {
         int result = 0;
-        long messageStartOffset = messageOffset - 1;
-        if (shouldDispatch(partition, requestOffset, messageStartOffset, key))
+        if (shouldDispatch(partition, requestOffset, messageOffset, key))
         {
             result |= broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
             if (key != null)
@@ -105,7 +103,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
                     Entry entry = getEntry(partition, requestOffset, asOctets(key));
 
                     // fast-forward to live stream after observing most recent cached offset for message key
-                    if (entry != null  && entry.offset() == messageStartOffset)
+                    if (entry != null  && entry.offset() == messageOffset)
                     {
                         keyDispatcher.flush(partition, requestOffset, highestOffset, key);
                     }
