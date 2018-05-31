@@ -78,7 +78,7 @@ public class KafkaConfiguration extends Configuration
         return getInteger(MESSAGE_CACHE_BLOCK_CAPACITY_PROPERTY, MESSAGE_CACHE_BLOCK_CAPACITY_DEFAULT);
     }
 
-    public boolean messageCacheBootstrapAll()
+    public boolean messageCacheProactive()
     {
         return getBoolean(MESSAGE_CACHE_PROACTIVE_PROPERTY, DEFAULT_MESSAGE_CACHE_PROACTIVE);
     }

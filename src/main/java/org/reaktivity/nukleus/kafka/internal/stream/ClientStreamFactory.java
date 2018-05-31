@@ -136,7 +136,7 @@ public final class ClientStreamFactory implements StreamFactory
     {
         this.fetchMaxBytes = config.fetchMaxBytes();
         this.fetchPartitionMaxBytes = config.fetchPartitionMaxBytes();
-        this.forceProactiveMessageCache = config.messageCacheBootstrapAll();
+        this.forceProactiveMessageCache = config.messageCacheProactive();
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
         this.bufferPool = requireNonNull(bufferPool);
