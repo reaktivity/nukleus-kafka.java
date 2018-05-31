@@ -49,7 +49,7 @@ import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
 
 public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
 {
-    private static final String MESSAGE_CACHE_BUFFER_ACQUIRES = "message.cache.buffer.acquires";
+    public static final String MESSAGE_CACHE_BUFFER_ACQUIRES = "message.cache.buffer.acquires";
     private static final String MESSAGE_CACHE_BUFFER_RELEASES = "message.cache.buffer.releases";
 
     private static final MemoryManager OUT_OF_SPACE_MEMORY_MANAGER = new MemoryManager()
@@ -155,13 +155,9 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                 final OctetsFW extension = route.extension();
                 if (extension.sizeof() > 0)
                 {
-                    final KafkaRouteExFW routeEx = extension.get(routeExRO::wrap);
-                    if (kafkaConfig.topicBootstrapEnabled() || !routeEx.headers().isEmpty())
-                    {
-                        MutableDirectBuffer routeBuffer = new UnsafeBuffer(new byte[length]);
-                        buffer.getBytes(index,  routeBuffer, 0, length);
-                        routesToProcess.add(new RouteFW().wrap(routeBuffer, 0, length));
-                    }
+                    MutableDirectBuffer routeBuffer = new UnsafeBuffer(new byte[length]);
+                    buffer.getBytes(index,  routeBuffer, 0, length);
+                    routesToProcess.add(new RouteFW().wrap(routeBuffer, 0, length));
                 }
             }
             break;
@@ -205,18 +201,13 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                 final ListFW<KafkaHeaderFW> headers = routeEx.headers();
                 ListFW<KafkaHeaderFW> headersCopy = new ListFW<KafkaHeaderFW>(new KafkaHeaderFW());
                 headersCopy.wrap(headers.buffer(), headers.offset(), headers.limit());
-
-                connectionPool.addRoute(topicName, headersCopy);
+                connectionPool.addRoute(topicName, headersCopy, kafkaConfig.topicBootstrapEnabled(),
+                        this::onKafkaError);
             }
-        }
-        if (kafkaConfig.topicBootstrapEnabled())
-        {
-            connectionPools.forEach((networkName, poolsByRef) ->
-                poolsByRef.forEach((ref, pool) -> pool.doBootstrap(this::doBootstrapTopic)));
         }
     }
 
-    private void doBootstrapTopic(
+    private void onKafkaError(
         Short errorCode,
         String topicName)
     {

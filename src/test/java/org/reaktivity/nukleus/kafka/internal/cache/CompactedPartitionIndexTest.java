@@ -58,7 +58,7 @@ public final class CompactedPartitionIndexTest
     private PartitionIndex cache = new CompactedPartitionIndex(5, TOMBSTONE_LIFETIME_MILLIS, messageCache);
 
     @Test
-    public void shouldAddMessage()
+    public void shouldAddAndCacheNewMessage()
     {
         context.checking(new Expectations()
         {
@@ -67,7 +67,13 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(0));
             }
         });
-        cache.add(0L, 1L, 123, 456, key, headers, value);
+        cache.add(0L, 1L, 123, 456, key, headers, value, true);
+    }
+
+    @Test
+    public void shouldAddAndNotCacheNewMessage()
+    {
+        cache.add(0L, 1L, 123, 456, key, headers, value, false);
     }
 
     @Test
@@ -81,7 +87,7 @@ public final class CompactedPartitionIndexTest
                 oneOf(messageCache).release(0);
             }
         });
-        cache.add(0L, 1L, 123, 456, key, headers, null);
+        cache.add(0L, 1L, 123, 456, key, headers, null, true);
         Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
@@ -109,16 +115,16 @@ public final class CompactedPartitionIndexTest
                 oneOf(messageCache).release(1);
             }
         });
-        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value);
-        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value);
-        cache.add(0L, 2L, 125, 458, asBuffer("key1"), headers, null);
+        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
+        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
+        cache.add(0L, 2L, 125, 458, asBuffer("key1"), headers, null, true);
         Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
         Entry entry = iterator.next();
         assertEquals(1L, entry.offset());
         entry = iterator.next();
         assertEquals(2L, entry.offset());
         Thread.sleep(TOMBSTONE_LIFETIME_MILLIS);
-        cache.add(2L, 3L, 126, 459, asBuffer("key2"), headers, null);
+        cache.add(2L, 3L, 126, 459, asBuffer("key2"), headers, null, true);
         iterator = cache.entries(0L);
         entry = iterator.next();
         assertEquals(3L, entry.offset());
@@ -144,10 +150,10 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(3));
             }
         });
-        cache.add(101L, 110L, 123, 456, asBuffer("key1"), headers, value);
-        cache.add(0L, 100L, 124, 457, asBuffer("key2"), headers, value);
-        cache.add(102L, 110L, 125, 458, asBuffer("key3"), headers, value);
-        cache.add(101L, 101L, 126, 459, asBuffer("key4"), headers, value);
+        cache.add(101L, 110L, 123, 456, asBuffer("key1"), headers, value, true);
+        cache.add(0L, 100L, 124, 457, asBuffer("key2"), headers, value, true);
+        cache.add(102L, 110L, 125, 458, asBuffer("key3"), headers, value, true);
+        cache.add(101L, 101L, 126, 459, asBuffer("key4"), headers, value, true);
         Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(100L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
@@ -171,8 +177,8 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(1));
             }
         });
-        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value);
-        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value);
+        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
+        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
         Entry entry = cache.getEntry(0L, asOctets("key1"));
         assertEquals(0L, entry.offset());
         assertEquals(0, entry.message());
@@ -193,8 +199,8 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(1));
             }
         });
-        cache.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value);
-        cache.add(0L, 2L, 124, 457, asBuffer("key2"), headers, value);
+        cache.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value, true);
+        cache.add(0L, 2L, 124, 457, asBuffer("key2"), headers, value, true);
         Entry entry = cache.getEntry(1L, asOctets("unknownKey"));
         assertEquals(3L, entry.offset());
         assertEquals(MessageCache.NO_MESSAGE, entry.message());
@@ -212,8 +218,8 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(1));
             }
         });
-        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value);
-        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value);
+        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
+        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
         Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
@@ -235,7 +241,7 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(0));
             }
         });
-        cache.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value);
+        cache.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value, true);
         Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
         assertTrue(iterator.hasNext());
         assertNotNull(iterator.next());
@@ -259,10 +265,10 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(1));
             }
         });
-        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value);
-        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value);
-        cache.add(0L, 2L, 125, 458, asBuffer("key3"), headers, value);
-        cache.add(0L, 10L, 126, 459, asBuffer("key2"), headers, value);
+        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
+        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
+        cache.add(0L, 2L, 125, 458, asBuffer("key3"), headers, value, true);
+        cache.add(0L, 10L, 126, 459, asBuffer("key2"), headers, value, true);
         Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(5L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
@@ -304,7 +310,7 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(0));
             }
         });
-        cache.add(0L, 101L, 123, 456, asBuffer("key1"), headers, value);
+        cache.add(0L, 101L, 123, 456, asBuffer("key1"), headers, value, true);
         Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(102L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
@@ -331,10 +337,10 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(1));
             }
         });
-        cache.add(0L, 101L, 123, 456, asBuffer("key1"), headers, value);
-        cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value);
-        cache.add(100L, 103L, 125, 458, asBuffer("key3"), headers, value);
-        cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value);
+        cache.add(0L, 101L, 123, 456, asBuffer("key1"), headers, value, true);
+        cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value, true);
+        cache.add(100L, 103L, 125, 458, asBuffer("key3"), headers, value, true);
+        cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value, true);
     }
 
     @Test
@@ -353,10 +359,10 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(messageRO));
             }
         });
-        cache.add(0L, 101L, 123, 456, asBuffer("key1"), headers, value);
-        cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value);
-        cache.add(100L, 103L, 125, 458, asBuffer("key3"), headers, value);
-        cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value);
+        cache.add(0L, 101L, 123, 456, asBuffer("key1"), headers, value, true);
+        cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value, true);
+        cache.add(100L, 103L, 125, 458, asBuffer("key3"), headers, value, true);
+        cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value, true);
     }
 
     @Test
@@ -369,8 +375,8 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(0));
             }
         });
-        cache.add(0L, 110L, 123, 456, asBuffer("key1"), headers, value);
-        cache.add(112L, 113L, 124, 457, asBuffer("key1"), headers, value);
+        cache.add(0L, 110L, 123, 456, asBuffer("key1"), headers, value, true);
+        cache.add(112L, 113L, 124, 457, asBuffer("key1"), headers, value, true);
     }
 
     @Test
@@ -385,8 +391,8 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(1));
             }
         });
-        cache.add(0L, 110L, 123, 456, asBuffer("key1"), headers, value);
-        cache.add(112L, 113L, 124, 457, asBuffer("key2"), headers, value);
+        cache.add(0L, 110L, 123, 456, asBuffer("key1"), headers, value, true);
+        cache.add(112L, 113L, 124, 457, asBuffer("key2"), headers, value, true);
     }
 
     @Test
@@ -405,10 +411,10 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(0));
             }
         });
-        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value);
-        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value);
-        cache.add(0L, 2L, 125, 458, asBuffer("key2"), headers, value);
-        cache.add(0L, 3L, 126, 459, asBuffer("key1"), headers, value);
+        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
+        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
+        cache.add(0L, 2L, 125, 458, asBuffer("key2"), headers, value, true);
+        cache.add(0L, 3L, 126, 459, asBuffer("key1"), headers, value, true);
         Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
@@ -430,7 +436,7 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(77));
             }
         });
-        cache.add(0L, 100L, 123, 456, asBuffer("key1"), headers, value);
+        cache.add(0L, 100L, 123, 456, asBuffer("key1"), headers, value, true);
         Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
         Entry entry = iterator.next();
         String result = entry.toString();

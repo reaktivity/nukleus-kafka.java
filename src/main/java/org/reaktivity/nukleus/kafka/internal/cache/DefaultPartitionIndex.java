@@ -35,7 +35,8 @@ public class DefaultPartitionIndex implements PartitionIndex
         long traceId,
         DirectBuffer key,
         HeadersFW headers,
-        DirectBuffer value)
+        DirectBuffer value,
+        boolean cacheNewMessages)
     {
         // no-op
     }
