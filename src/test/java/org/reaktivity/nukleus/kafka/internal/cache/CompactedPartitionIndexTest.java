@@ -94,7 +94,7 @@ public final class CompactedPartitionIndexTest
         assertEquals(1L, entry.offset());
         Thread.sleep(TOMBSTONE_LIFETIME_MILLIS);
         iterator = cache.entries(0L);
-        assertFalse(iterator.hasNext());
+        assertEquals(2L, iterator.next().offset());
     }
 
     @Test
@@ -131,7 +131,7 @@ public final class CompactedPartitionIndexTest
         assertFalse(iterator.hasNext());
         Thread.sleep(TOMBSTONE_LIFETIME_MILLIS);
         iterator = cache.entries(0L);
-        assertFalse(iterator.hasNext());
+        assertEquals(4L, iterator.next().offset());
     }
 
     @Test
