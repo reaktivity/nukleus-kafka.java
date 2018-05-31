@@ -221,14 +221,13 @@ public class CachingFetchIT
         "${client}/compacted.historical.uses.cached.key.then.live/client",
         "${server}/compacted.historical.uses.cached.key.then.live.no.historical/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    // TODO: Fix failure
     public void shouldReceiveCompactedMessageUsingCachedKeyOffsetThenCatchUpToLiveStream() throws Exception
     {
         k3po.start();
         k3po.awaitBarrier("CLIENT_ONE_RECEIVED_FIRST_MESSAGE");
         k3po.notifyBarrier("CONNECT_CLIENT_TWO");
         k3po.awaitBarrier("CLIENT_TWO_RECEIVED_FIRST_MESSAGE");
-        k3po.notifyBarrier("DELIVER_FINAL_LIVE_RESPONSE");
+        k3po.notifyBarrier("DELIVER_SECOND_LIVE_RESPONSE");
         k3po.finish();
     }
 
@@ -361,10 +360,10 @@ public class CachingFetchIT
     @Specification({
         "${route}/client/controller",
         "${client}/compacted.messages.one.per.key/client",
-        "${server}/compacted.messages.live/server"})
+        "${server}/compacted.messages/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     // Behavior is different with message cache: better compaction, guaranteed only one message per key
-    public void shouldReceiveCompactedHistoricalMessagesFromCacheWhenOriginallyReceivedAsLiveMessages() throws Exception
+    public void shouldReceiveCompactedHistoricalMessagesFromCache() throws Exception
     {
         k3po.finish();
     }

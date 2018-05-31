@@ -39,8 +39,7 @@ public interface PartitionIndex
         long traceId,
         DirectBuffer key,
         HeadersFW headers,
-        DirectBuffer value,
-        boolean cacheNewMessages);
+        DirectBuffer value);
 
     Iterator<Entry> entries(
         long requestOffset);

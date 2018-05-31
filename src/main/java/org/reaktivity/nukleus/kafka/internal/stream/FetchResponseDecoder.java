@@ -565,7 +565,7 @@ public class FetchResponseDecoder implements ResponseDecoder
                 else
                 {
                     headers.wrap(buffer, headersOffset, headersLimit);
-                    messageDispatcher.dispatch(partition, requestedOffset, nextFetchAt, highWatermark,
+                    messageDispatcher.dispatch(partition, requestedOffset, nextFetchAt,
                             key, headers, timestamp, traceId, value);
                 }
             }

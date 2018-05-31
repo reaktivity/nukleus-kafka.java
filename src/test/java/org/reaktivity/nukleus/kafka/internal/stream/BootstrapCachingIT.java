@@ -27,8 +27,6 @@ import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
-import org.reaktivity.nukleus.kafka.internal.KafkaController;
-import org.reaktivity.nukleus.kafka.internal.KafkaNukleusFactorySpi;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
 public class BootstrapCachingIT
@@ -45,7 +43,6 @@ public class BootstrapCachingIT
 
     private final ReaktorRule reaktor = new ReaktorRule()
         .nukleus("kafka"::equals)
-        .controller(name -> name.equals("kafka"))
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
@@ -68,18 +65,7 @@ public class BootstrapCachingIT
         k3po.start();
         k3po.awaitBarrier("ROUTED_CLIENT");
         k3po.awaitBarrier("FETCH_REQUEST_RECEIVED");
-
-        // Wait for both routes to be added to the caching filter
-        Thread.sleep(500);
-
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
-
-        // ensure bootstrap is complete before client attaches
-        while (reaktor.controller(KafkaController.class).count(KafkaNukleusFactorySpi.MESSAGE_CACHE_BUFFER_ACQUIRES) < 2L)
-        {
-            Thread.sleep(100);
-        }
-
+        Thread.sleep(1000); // ensure bootstrap is complete before client attaches
         k3po.notifyBarrier("CONNECT_CLIENT_ONE");
         k3po.finish();
     }

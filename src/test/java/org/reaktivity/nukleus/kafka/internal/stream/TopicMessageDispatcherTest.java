@@ -107,10 +107,10 @@ public final class TopicMessageDispatcherTest
                         with(headers.headerSupplier()), with(timestamp), with(traceId), with((DirectBuffer) null));
                 will(returnValue(FLAGS_DELIVERED));
                 oneOf(partitionIndex2).add(with(10L), with(11L), with(timestamp), with(traceId),
-                        with((DirectBuffer) null), with(headers), with((DirectBuffer) null), with(false));
+                        with((DirectBuffer) null), with(headers), with((DirectBuffer) null));
             }
         });
-        assertEquals(FLAGS_DELIVERED, dispatcher.dispatch(1, 10L, 12L, 999L, null, headers, timestamp, traceId, null));
+        assertEquals(FLAGS_DELIVERED, dispatcher.dispatch(1, 10L, 12L, null, headers, timestamp, traceId, null));
     }
 
 
@@ -142,7 +142,7 @@ public final class TopicMessageDispatcherTest
                 oneOf(partitionIndex1).nextOffset();
                 will(returnValue(0L));
                 oneOf(partitionIndex1).add(with(10L), with(11L), with(timestamp1), with(traceId),
-                        with(bufferMatching("key1")), with(headers), with((DirectBuffer) null), with(false));
+                        with(bufferMatching("key1")), with(headers), with((DirectBuffer) null));
 
                 oneOf(child3).dispatch(with(1), with(10L), with(13L), with(bufferMatching("key2")),
                         with(headers.headerSupplier()), with(timestamp2), with(traceId), with((DirectBuffer) null));
@@ -151,17 +151,17 @@ public final class TopicMessageDispatcherTest
                 oneOf(partitionIndex2).nextOffset();
                 will(returnValue(0L));
                 oneOf(partitionIndex2).add(with(10L), with(12L), with(timestamp1), with(traceId),
-                        with(bufferMatching("key2")), with(headers), with((DirectBuffer) null), with(false));
+                        with(bufferMatching("key2")), with(headers), with((DirectBuffer) null));
             }
         });
         assertEquals(FLAGS_DELIVERED,
-                dispatcher.dispatch(0, 10L, 12L, 999L, asBuffer("key1"), headers, timestamp1, traceId, null));
+                dispatcher.dispatch(0, 10L, 12L, asBuffer("key1"), headers, timestamp1, traceId, null));
         assertEquals(FLAGS_DELIVERED,
-                dispatcher.dispatch(1, 10L, 13L, 999L, asBuffer("key2"), headers, timestamp2, traceId, null));
+                dispatcher.dispatch(1, 10L, 13L, asBuffer("key2"), headers, timestamp2, traceId, null));
     }
 
     @Test
-    public void shouldCacheOffsetButNotDispatchNonMatchingKey()
+    public void shouldCacheButNotDispatchNonMatchingKey()
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
@@ -184,74 +184,11 @@ public final class TopicMessageDispatcherTest
                         with(headers.headerSupplier()), with(timestamp), with(0L), with((DirectBuffer) null));
                 will(returnValue(MessageDispatcher.FLAGS_MATCHED));
                 oneOf(partitionIndex2).add(with(10L), with(11L), with(timestamp), with(0L),
-                        with(bufferMatching("key2")), with(headers), with((DirectBuffer) null), with(false));
+                        with(bufferMatching("key2")), with(headers), with((DirectBuffer) null));
             }
         });
         assertEquals(MessageDispatcher.FLAGS_MATCHED,
-                dispatcher.dispatch(1, 10L, 12L, 999L, asBuffer("key2"), headers, timestamp, 0L, null));
-    }
-
-    @Test
-    public void shouldCacheOffsetAndMessageWhenProactiveMessageCachingEnabled()
-    {
-        MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
-        MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
-        MessageDispatcher routeMatcher = context.mock(MessageDispatcher.class, "routeMatcher");
-        dispatcher.add(asOctets("key1"), 1, emptyHeaders, child1);
-        dispatcher.add(asOctets("key1"), 1, emptyHeaders, child2);
-        dispatcher.add(null, 1, emptyHeaders, routeMatcher);
-
-        HeadersFW headers = emptyHeaders();
-
-        final long timestamp = System.currentTimeMillis() - 123;
-
-        context.checking(new Expectations()
-        {
-            {
-                oneOf(partitionIndex2).getEntry(with(10L), with(asOctets("key2")));
-                oneOf(partitionIndex2).nextOffset();
-                will(returnValue(0L));
-                oneOf(routeMatcher).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key2")),
-                        with(headers.headerSupplier()), with(timestamp), with(0L), with((DirectBuffer) null));
-                will(returnValue(MessageDispatcher.FLAGS_MATCHED));
-                oneOf(partitionIndex2).add(with(10L), with(11L), with(timestamp), with(0L),
-                        with(bufferMatching("key2")), with(headers), with((DirectBuffer) null), with(true));
-            }
-        });
-        dispatcher.enableProactiveMessageCaching();
-        assertEquals(MessageDispatcher.FLAGS_MATCHED,
-                dispatcher.dispatch(1, 10L, 12L, 999L, asBuffer("key2"), headers, timestamp, 0L, null));
-    }
-
-    @Test
-    public void shouldCacheOffsetAndMessageWhenLCaughtUpToLiveStream()
-    {
-        MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
-        MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
-        MessageDispatcher routeMatcher = context.mock(MessageDispatcher.class, "routeMatcher");
-        dispatcher.add(asOctets("key1"), 1, emptyHeaders, child1);
-        dispatcher.add(asOctets("key1"), 1, emptyHeaders, child2);
-        dispatcher.add(null, 1, emptyHeaders, routeMatcher);
-
-        HeadersFW headers = emptyHeaders();
-
-        final long timestamp = System.currentTimeMillis() - 123;
-
-        context.checking(new Expectations()
-        {
-            {
-                oneOf(partitionIndex2).getEntry(with(10L), with(asOctets("key2")));
-                oneOf(partitionIndex2).nextOffset();
-                will(returnValue(0L));
-                oneOf(routeMatcher).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key2")),
-                        with(headers.headerSupplier()), with(timestamp), with(0L), with((DirectBuffer) null));
-                will(returnValue(MessageDispatcher.FLAGS_MATCHED));
-                oneOf(partitionIndex2).add(with(10L), with(11L), with(timestamp), with(0L),
-                        with(bufferMatching("key2")), with(headers), with((DirectBuffer) null), with(true));
-            }
-        });
-        assertEquals(MessageDispatcher.FLAGS_MATCHED,
-                dispatcher.dispatch(1, 10L, 12L, 12L, asBuffer("key2"), headers, timestamp, 0L, null));
+                dispatcher.dispatch(1, 10L, 12L, asBuffer("key2"), headers, timestamp, 0L, null));
     }
 
     @Test

@@ -33,15 +33,12 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
 
     private final OctetsFW octetsRO = new OctetsFW();
 
-    private final boolean[] cacheNewMessages;
-
     protected TopicMessageDispatcher(
         PartitionIndex[] indexes,
         Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
     {
         this.indexes = indexes;
         keys = new KeyMessageDispatcher[indexes.length];
-        cacheNewMessages = new boolean[indexes.length];
         for (int partition = 0; partition < indexes.length; partition++)
         {
             keys[partition] = new KeyMessageDispatcher(createHeaderValueMessageDispatcher);
@@ -54,7 +51,6 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         int partition,
         long requestOffset,
         long messageOffset,
-        long highWatermark,
         DirectBuffer key,
         HeadersFW headers,
         long timestamp,
@@ -64,15 +60,9 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         int result = dispatch(partition, requestOffset, messageOffset, key, headers.headerSupplier(), timestamp,
                 traceId, value);
         long messageStartOffset = messageOffset - 1;
-        if (messageOffset == highWatermark)
-        {
-            // Caught up to live stream, enable proactive message caching
-            cacheNewMessages[partition] = true;
-        }
         if (MessageDispatcher.matched(result))
         {
-            indexes[partition].add(requestOffset, messageStartOffset, timestamp, traceId, key, headers, value,
-                    cacheNewMessages[partition]);
+            indexes[partition].add(requestOffset, messageStartOffset, timestamp, traceId, key, headers, value);
         }
         return result;
     }
@@ -199,14 +189,6 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         int partition)
     {
         return indexes[partition].nextOffset();
-    }
-
-    public void enableProactiveMessageCaching()
-    {
-        for (int i=0; i < cacheNewMessages.length; i++)
-        {
-            cacheNewMessages[i] = true;
-        }
     }
 
     private boolean shouldDispatch(
