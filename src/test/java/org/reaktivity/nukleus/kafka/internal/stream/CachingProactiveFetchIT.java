@@ -29,7 +29,7 @@ import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
-public class CachingFetchLimitsIT
+public class CachingProactiveFetchIT
 {
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
@@ -48,7 +48,8 @@ public class CachingFetchLimitsIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(1024)
         .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false")
-        .configure(KafkaConfiguration.MESSAGE_CACHE_CAPACITY_PROPERTY, Integer.toString(1024 * 2))
+        .configure(KafkaConfiguration.MESSAGE_CACHE_PROACTIVE_PROPERTY, "true")
+        .configure(KafkaConfiguration.MESSAGE_CACHE_CAPACITY_PROPERTY, Integer.toString(1024 * 1024))
         .clean();
 
     @Rule
@@ -56,28 +57,13 @@ public class CachingFetchLimitsIT
 
     @Test
     @Specification({
-        "${control}/route.ext.header/client/controller",
-        "${client}/compacted.messages.header.multiple.clients/client",
-        "${server}/compacted.messages.header/server"})
+        "${route}/client/controller",
+        "${client}/compacted.messages.one.per.key/client",
+        "${server}/compacted.messages/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCompactedMessagesCachedByRouteHeader() throws Exception
+    // Behavior is different with message cache: better compaction, guaranteed only one message per key
+    public void shouldReceiveCompactedHistoricalMessagesFromCacheWhenProactiveMessageCachingIsEnabled() throws Exception
     {
         k3po.finish();
     }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.multiple.headers/client/controller",
-        "${client}/compacted.messages.header.multiple.routes/client",
-        "${server}/compacted.messages.header.multiple.values/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCachedCompactedMessagesFilteredByHeaderOnMultipleRoutes() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CLIENT");
-        k3po.notifyBarrier("CONNECT_CLIENT_ONE");
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
 }

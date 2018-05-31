@@ -22,6 +22,7 @@ import static org.junit.Assert.assertTrue;
 import static org.reaktivity.nukleus.kafka.internal.stream.MessageDispatcher.FLAGS_DELIVERED;
 import static org.reaktivity.nukleus.kafka.internal.stream.MessageDispatcher.FLAGS_MATCHED;
 
+import java.util.Iterator;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
@@ -60,7 +61,7 @@ public final class BroadcastMessageDispatcherTest
         final long timestamp = System.currentTimeMillis() - 123;
         final long traceId = 0L;
         @SuppressWarnings("unchecked")
-        Function<DirectBuffer, DirectBuffer> header = context.mock(Function.class, "header");
+        Function<DirectBuffer, Iterator<DirectBuffer>> header = context.mock(Function.class, "header");
         context.checking(new Expectations()
         {
             {

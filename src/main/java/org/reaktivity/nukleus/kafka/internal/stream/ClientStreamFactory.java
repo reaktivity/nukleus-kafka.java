@@ -19,6 +19,7 @@ import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.wrap;
 
+import java.util.Iterator;
 import java.util.Map;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -118,6 +119,7 @@ public final class ClientStreamFactory implements StreamFactory
     private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools;
     private final int fetchMaxBytes;
     private final int fetchPartitionMaxBytes;
+    private final boolean forceProactiveMessageCache;
 
     public ClientStreamFactory(
         KafkaConfiguration config,
@@ -134,6 +136,7 @@ public final class ClientStreamFactory implements StreamFactory
     {
         this.fetchMaxBytes = config.fetchMaxBytes();
         this.fetchPartitionMaxBytes = config.fetchPartitionMaxBytes();
+        this.forceProactiveMessageCache = config.messageCacheProactive();
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
         this.bufferPool = requireNonNull(bufferPool);
@@ -146,7 +149,8 @@ public final class ClientStreamFactory implements StreamFactory
         groupBudget = new Long2LongHashMap(-1);
         groupMembers = new Long2LongHashMap(-1);
         setConnectionPoolFactory.accept((networkName, ref) ->
-            new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes, bufferPool, messageCache));
+            new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes, bufferPool,
+                    messageCache, forceProactiveMessageCache));
     }
 
     @Override
@@ -203,7 +207,7 @@ public final class ClientStreamFactory implements StreamFactory
 
                 NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef,
                         ref -> new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes,
-                                bufferPool, messageCache));
+                                bufferPool, messageCache, forceProactiveMessageCache));
 
                 newStream = new ClientAcceptStream(applicationThrottle, applicationId, connectionPool)::handleStream;
             }
@@ -506,7 +510,7 @@ public final class ClientStreamFactory implements StreamFactory
             long requestOffset,
             long messageOffset,
             DirectBuffer key,
-            Function<DirectBuffer, DirectBuffer> supplyHeader,
+            Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
             long timestamp,
             long traceId,
             DirectBuffer value)

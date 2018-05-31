@@ -46,15 +46,16 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
         long requestOffset,
         long messageOffset,
         DirectBuffer key,
-        Function<DirectBuffer, DirectBuffer> supplyHeader,
+        Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
         long timestamp,
         long traceId,
         DirectBuffer value)
     {
         int result = 0;
-        DirectBuffer header = supplyHeader.apply(headerName);
-        if (header != null)
+        Iterator<DirectBuffer> values = supplyHeader.apply(headerName);
+        while (values.hasNext())
         {
+            DirectBuffer header = values.next();
             buffer.wrap(header);
             MessageDispatcher dispatcher = dispatchersByHeaderValue.get(buffer);
             if (dispatcher != null)
@@ -119,7 +120,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
     }
 
     protected void onRemoved(
-        HeadersMessageDispatcher headersDispatcher)
+        MessageDispatcher headersDispatcher)
     {
 
     }
