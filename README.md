@@ -37,7 +37,8 @@ Topics which are configured in Kafka with property "cleanup.policy" set to "comp
 
 - A cache of message offsets is maintained in order to enhance performance for subscriptions to a particular message key, and where possible only deliver the latest message for the key.
 - This cache is kept up to date all the time by doing proactive fetches, unless this turned off by setting system property `nukleus.kafka.topic.bootstrap.enabled` to "false".
-- A message cache  with configurable size is used to store the latest message for each key.  This allows most subscriptions to a particular message key or to the whole topic to be satisfied without accessing the Kafka broker, assuming the cache is large enough to fit the latest message for each key, 
+- A message cache with configurable size is used to store the latest message for each key.  This allows most subscriptions to a particular message key or to the whole topic to be satisfied without accessing the Kafka broker, assuming the cache is large enough to fit the latest message for each key, 
+- Messages on compacted topics are cached during bootstrap. This is limited to topics whose routes include header conditions, unless system property `nukleus.kafka.message.cache.proactive` is set to "true" to force caching for all compacted topics.
 
 ### Configuration
 
