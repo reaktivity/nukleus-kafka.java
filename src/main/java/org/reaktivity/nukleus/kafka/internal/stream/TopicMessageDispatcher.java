@@ -33,7 +33,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
 
     private final OctetsFW octetsRO = new OctetsFW();
 
-    private boolean cacheNewMessages;
+    private final boolean[] cacheNewMessages;
 
     protected TopicMessageDispatcher(
         PartitionIndex[] indexes,
@@ -41,6 +41,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
     {
         this.indexes = indexes;
         keys = new KeyMessageDispatcher[indexes.length];
+        cacheNewMessages = new boolean[indexes.length];
         for (int partition = 0; partition < indexes.length; partition++)
         {
             keys[partition] = new KeyMessageDispatcher(createHeaderValueMessageDispatcher);
@@ -66,11 +67,12 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         if (messageOffset == highWatermark)
         {
             // Caught up to live stream, enable proactive message caching
-            cacheNewMessages = true;
+            cacheNewMessages[partition] = true;
         }
         if (MessageDispatcher.matched(result))
         {
-            indexes[partition].add(requestOffset, messageStartOffset, timestamp, traceId, key, headers, value, cacheNewMessages);
+            indexes[partition].add(requestOffset, messageStartOffset, timestamp, traceId, key, headers, value,
+                    cacheNewMessages[partition]);
         }
         return result;
     }
@@ -201,7 +203,10 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
 
     public void enableProactiveMessageCaching()
     {
-        cacheNewMessages = true;
+        for (int i=0; i < cacheNewMessages.length; i++)
+        {
+            cacheNewMessages[i] = true;
+        }
     }
 
     private boolean shouldDispatch(
