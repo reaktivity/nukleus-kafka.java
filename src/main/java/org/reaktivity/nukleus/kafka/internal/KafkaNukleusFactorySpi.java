@@ -79,6 +79,8 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
 
     };
 
+    private MemoryManager memoryManager = null;
+
     private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools = new LinkedHashMap<>();
 
     private final RouteFW routeRO = new RouteFW();
@@ -103,12 +105,23 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
         kafkaConfig = new KafkaConfiguration(config);
 
         ClientStreamFactoryBuilder streamFactoryBuilder = new ClientStreamFactoryBuilder(kafkaConfig,
-                s -> createMemoryManager(kafkaConfig, s), connectionPools, this::setConnectionPoolFactory);
+                s -> getMemoryManager(kafkaConfig, s), connectionPools, this::setConnectionPoolFactory);
 
         return builder.streamFactory(CLIENT, streamFactoryBuilder)
                       .routeHandler(CLIENT, this::handleRoute)
                       .inject(this)
                       .build();
+    }
+
+    private MemoryManager getMemoryManager(
+        KafkaConfiguration config,
+        Function<String, LongSupplier> supplyCounter)
+    {
+        if (memoryManager == null)
+        {
+            memoryManager = createMemoryManager(config, supplyCounter);
+        }
+        return memoryManager;
     }
 
     private MemoryManager createMemoryManager(
