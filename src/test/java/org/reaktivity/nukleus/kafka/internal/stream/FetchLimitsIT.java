@@ -51,7 +51,7 @@ public class FetchLimitsIT
         .clean()
         .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false")
         .configure(ReaktorConfiguration.BUFFER_SLOT_CAPACITY_PROPERTY, 256)
-        .configure(KafkaConfiguration.FETCH_MAX_BYTES_PROPERTY, 256)
+        .configure(KafkaConfiguration.FETCH_MAX_BYTES_PROPERTY, 355)
         .configure(KafkaConfiguration.FETCH_PARTITION_MAX_BYTES_PROPERTY, 355);
 
     @Rule
@@ -68,8 +68,6 @@ public class FetchLimitsIT
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveMessageExceedingBufferSlotCapacity() throws Exception
     {
-        k3po.start();
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
 
@@ -77,15 +75,13 @@ public class FetchLimitsIT
     @Specification({
         "${route}/client/controller",
         "${client}/zero.offset.large.message/client",
-        "${server}/zero.offset.messages.first.exceeds.256.bytes.redelivered/server"})
+        "${server}/zero.offset.messages.first.exceeds.256.bytes.repeated/server"})
     @ScriptProperty({
-            "networkAccept \"nukleus://target/streams/kafka\"",
-            "applicationConnectWindow \"200\""
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "applicationConnectWindow \"200\""
     })
     public void shouldReceiveMessageExceedingInitialWindow() throws Exception
     {
-        k3po.start();
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
 
@@ -93,15 +89,13 @@ public class FetchLimitsIT
     @Specification({
         "${route}/client/controller",
         "${client}/zero.offset.large.message/client",
-        "${server}/zero.offset.first.record.batch.large/server"})
+        "${server}/zero.offset.first.record.batch.large.requires.3.fetches/server"})
     @ScriptProperty({
         "networkAccept \"nukleus://target/streams/kafka\"",
-        "applicationConnectWindow \"50\""
+        "applicationConnectWindow \"100\""
 })
     public void shouldReceiveRecordBatchExceedingMaxPartitionBytes() throws Exception
     {
-        k3po.start();
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
 }

@@ -1894,7 +1894,6 @@ public final class NetworkConnectionPool
                     }
                     else
                     {
-                        newOffset++; // we always dispatch at next required fetch offset
                         DirectBuffer key = wrap(keyBuffer, message.key());
                         DirectBuffer value = wrap(valueBuffer,  message.value());
                         HeadersFW headers = headersRO.wrap(message.headers().buffer(),  message.headers().offset(),

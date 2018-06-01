@@ -670,6 +670,7 @@ public final class ClientStreamFactory implements StreamFactory
                     fragmentedMessageBytesWritten += (pendingMessageValueLimit - pendingMessageValueOffset);
                     fragmentedMessageOffset = pendingMessageOffset;
                     progressEndOffset = pendingMessageOffset;
+                    this.fetchOffsets.put(partition, pendingMessageOffset);
                 }
             }
         }
