@@ -80,6 +80,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
     };
 
     private MemoryManager memoryManager = null;
+    private MemoryLayout memoryLayout;
 
     private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools = new LinkedHashMap<>();
 
@@ -105,7 +106,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
         kafkaConfig = new KafkaConfiguration(config);
 
         ClientStreamFactoryBuilder streamFactoryBuilder = new ClientStreamFactoryBuilder(kafkaConfig,
-                s -> getMemoryManager(kafkaConfig, s), connectionPools, this::setConnectionPoolFactory);
+                this::supplyMemoryManager, connectionPools, this::setConnectionPoolFactory);
 
         return builder.streamFactory(CLIENT, streamFactoryBuilder)
                       .routeHandler(CLIENT, this::handleRoute)
@@ -113,19 +114,17 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                       .build();
     }
 
-    private MemoryManager getMemoryManager(
-        KafkaConfiguration config,
+    private MemoryManager supplyMemoryManager(
         Function<String, LongSupplier> supplyCounter)
     {
         if (memoryManager == null)
         {
-            memoryManager = createMemoryManager(config, supplyCounter);
+            memoryManager = createMemoryManager(supplyCounter);
         }
         return memoryManager;
     }
 
     private MemoryManager createMemoryManager(
-        KafkaConfiguration config,
         Function<String, LongSupplier> supplyCounter)
     {
         MemoryManager result;
@@ -137,13 +136,14 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
         else
         {
             @SuppressWarnings("deprecation")
-            final MemoryLayout memoryLayout = new MemoryLayout.Builder()
+            MemoryLayout memoryLayout = new MemoryLayout.Builder()
                     // TODO: non-deprecated way of getting nukleus's home directory; change name of memory0?
-                    .path(config.directory().resolve("kafka").resolve("memory0"))
-                    .minimumBlockSize(config.messageCacheBlockCapacity())
+                    .path(kafkaConfig.directory().resolve("kafka").resolve("memory0"))
+                    .minimumBlockSize(kafkaConfig.messageCacheBlockCapacity())
                     .maximumBlockSize(capacity)
                     .create(true)
                     .build();
+            this.memoryLayout = memoryLayout;
             MemoryManager memoryManager = new DefaultMemoryManager(memoryLayout);
             result = new CountingMemoryManager(
                 memoryManager,
@@ -178,6 +178,15 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
             break;
         }
         return result;
+    }
+
+    @Override
+    public void close() throws Exception
+    {
+        if (memoryLayout != null)
+        {
+            memoryLayout.close();
+        }
     }
 
     @Override
