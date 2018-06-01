@@ -52,7 +52,7 @@ public class FetchLimitsIT
         .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false")
         .configure(ReaktorConfiguration.BUFFER_SLOT_CAPACITY_PROPERTY, 256)
         .configure(KafkaConfiguration.FETCH_MAX_BYTES_PROPERTY, 256)
-        .configure(KafkaConfiguration.FETCH_PARTITION_MAX_BYTES_PROPERTY, 336);
+        .configure(KafkaConfiguration.FETCH_PARTITION_MAX_BYTES_PROPERTY, 355);
 
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
@@ -77,10 +77,10 @@ public class FetchLimitsIT
     @Specification({
         "${route}/client/controller",
         "${client}/zero.offset.large.message/client",
-        "${server}/zero.offset.messages.first.exceeds.256.bytes/server"})
+        "${server}/zero.offset.messages.first.exceeds.256.bytes.redelivered/server"})
     @ScriptProperty({
             "networkAccept \"nukleus://target/streams/kafka\"",
-            "applicationConnectWindow \"100\""
+            "applicationConnectWindow \"200\""
     })
     public void shouldReceiveMessageExceedingInitialWindow() throws Exception
     {

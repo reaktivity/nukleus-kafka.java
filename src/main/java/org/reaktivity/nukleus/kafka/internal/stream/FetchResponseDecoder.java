@@ -76,7 +76,6 @@ public class FetchResponseDecoder implements ResponseDecoder
     private final StringIntShortConsumer errorHandler;
     private final int maxRecordBatchSize;
     private final MutableDirectBuffer buffer;
-    private final int messageSizeLimit;
 
     private DecoderState decoderState;
     private int responseBytesRemaining;
@@ -107,15 +106,13 @@ public class FetchResponseDecoder implements ResponseDecoder
         Function<String, DecoderMessageDispatcher> getDispatcher,
         StringIntToLongFunction getRequestedOffsetForPartition,
         StringIntShortConsumer errorHandler,
-        MutableDirectBuffer decodingBuffer,
-        int messageSizeLimit)
+        MutableDirectBuffer decodingBuffer)
     {
         this.getDispatcher = getDispatcher;
         this.getRequestedOffsetForPartition = getRequestedOffsetForPartition;
         this.errorHandler = errorHandler;
         this.buffer = requireNonNull(decodingBuffer);
         this.maxRecordBatchSize = buffer.capacity();
-        this.messageSizeLimit = messageSizeLimit;
         this.decoderState = this::decodeResponseHeader;
     }
 
@@ -547,27 +544,14 @@ public class FetchResponseDecoder implements ResponseDecoder
 
                 DirectBuffer value = null;
                 final OctetsFW messageValue = record.value();
-                boolean messageTooLarge = false;
                 if (messageValue != null)
                 {
                     valueBuffer.wrap(messageValue.buffer(), messageValue.offset(), messageValue.sizeof());
                     value = valueBuffer;
-                    messageTooLarge = valueBuffer.capacity() > messageSizeLimit;
                 }
-
-                if (messageTooLarge)
-                {
-                    System.out.format(
-                        "[nukleus-kafka] skipping large message at topic: %s partition: %d offset: %d, " +
-                        "message value length %d bytes exceeds maximum supported message size of %d bytes\n",
-                        topicName, partition, currentFetchAt, messageValue.sizeof(), messageSizeLimit);
-                }
-                else
-                {
-                    headers.wrap(buffer, headersOffset, headersLimit);
-                    messageDispatcher.dispatch(partition, requestedOffset, currentFetchAt, highWatermark,
-                            key, headers, timestamp, traceId, value);
-                }
+                headers.wrap(buffer, headersOffset, headersLimit);
+                messageDispatcher.dispatch(partition, requestedOffset, currentFetchAt, highWatermark,
+                        key, headers, timestamp, traceId, value);
             }
             newOffset = headersLimit;
             decoderState = this::decodeRecordLength;

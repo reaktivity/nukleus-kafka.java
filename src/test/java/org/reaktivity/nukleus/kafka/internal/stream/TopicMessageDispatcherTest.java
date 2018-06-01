@@ -106,7 +106,7 @@ public final class TopicMessageDispatcherTest
                 oneOf(child2).dispatch(with(1), with(10L), with(12L), with((DirectBuffer) null),
                         with(headers.headerSupplier()), with(timestamp), with(traceId), with((DirectBuffer) null));
                 will(returnValue(FLAGS_DELIVERED));
-                oneOf(partitionIndex2).add(with(10L), with(11L), with(timestamp), with(traceId),
+                oneOf(partitionIndex2).add(with(10L), with(12L), with(timestamp), with(traceId),
                         with((DirectBuffer) null), with(headers), with((DirectBuffer) null), with(false));
             }
         });
@@ -141,7 +141,7 @@ public final class TopicMessageDispatcherTest
                 oneOf(partitionIndex1).getEntry(with(10L), with(asOctets("key1")));
                 oneOf(partitionIndex1).nextOffset();
                 will(returnValue(0L));
-                oneOf(partitionIndex1).add(with(10L), with(11L), with(timestamp1), with(traceId),
+                oneOf(partitionIndex1).add(with(10L), with(12L), with(timestamp1), with(traceId),
                         with(bufferMatching("key1")), with(headers), with((DirectBuffer) null), with(false));
 
                 oneOf(child3).dispatch(with(1), with(10L), with(13L), with(bufferMatching("key2")),
@@ -150,7 +150,7 @@ public final class TopicMessageDispatcherTest
                 oneOf(partitionIndex2).getEntry(with(10L), with(asOctets("key2")));
                 oneOf(partitionIndex2).nextOffset();
                 will(returnValue(0L));
-                oneOf(partitionIndex2).add(with(10L), with(12L), with(timestamp1), with(traceId),
+                oneOf(partitionIndex2).add(with(10L), with(13L), with(timestamp1), with(traceId),
                         with(bufferMatching("key2")), with(headers), with((DirectBuffer) null), with(false));
             }
         });
@@ -183,7 +183,7 @@ public final class TopicMessageDispatcherTest
                 oneOf(routeMatcher).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key2")),
                         with(headers.headerSupplier()), with(timestamp), with(0L), with((DirectBuffer) null));
                 will(returnValue(MessageDispatcher.FLAGS_MATCHED));
-                oneOf(partitionIndex2).add(with(10L), with(11L), with(timestamp), with(0L),
+                oneOf(partitionIndex2).add(with(10L), with(12L), with(timestamp), with(0L),
                         with(bufferMatching("key2")), with(headers), with((DirectBuffer) null), with(false));
             }
         });
@@ -214,7 +214,7 @@ public final class TopicMessageDispatcherTest
                 oneOf(routeMatcher).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key2")),
                         with(headers.headerSupplier()), with(timestamp), with(0L), with((DirectBuffer) null));
                 will(returnValue(MessageDispatcher.FLAGS_MATCHED));
-                oneOf(partitionIndex2).add(with(10L), with(11L), with(timestamp), with(0L),
+                oneOf(partitionIndex2).add(with(10L), with(12L), with(timestamp), with(0L),
                         with(bufferMatching("key2")), with(headers), with((DirectBuffer) null), with(true));
             }
         });
@@ -243,7 +243,7 @@ public final class TopicMessageDispatcherTest
                 oneOf(partitionIndex2).getEntry(with(10L), with(asOctets("key2")));
                 oneOf(partitionIndex2).nextOffset();
                 will(returnValue(0L));
-                oneOf(routeMatcher).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key2")),
+                oneOf(routeMatcher).dispatch(with(1), with(10L), with(11L), with(bufferMatching("key2")),
                         with(headers.headerSupplier()), with(timestamp), with(0L), with((DirectBuffer) null));
                 will(returnValue(MessageDispatcher.FLAGS_MATCHED));
                 oneOf(partitionIndex2).add(with(10L), with(11L), with(timestamp), with(0L),
@@ -251,7 +251,7 @@ public final class TopicMessageDispatcherTest
             }
         });
         assertEquals(MessageDispatcher.FLAGS_MATCHED,
-                dispatcher.dispatch(1, 10L, 12L, 12L, asBuffer("key2"), headers, timestamp, 0L, null));
+                dispatcher.dispatch(1, 10L, 11L, 12L, asBuffer("key2"), headers, timestamp, 0L, null));
     }
 
     @Test

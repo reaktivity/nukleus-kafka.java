@@ -127,8 +127,6 @@ public final class NetworkConnectionPool
 
     private static final byte[] ANY_IP_ADDR = new byte[4];
 
-    private static final int MAX_PADDING = 5 * 1024;
-
     private static final int KAFKA_SERVER_DEFAULT_DELETE_RETENTION_MS = 86400000;
     private static final PartitionIndex DEFAULT_PARTITION_INDEX = new DefaultPartitionIndex();
 
@@ -248,7 +246,6 @@ public final class NetworkConnectionPool
     private final Map<String, NetworkTopic> topicsByName;
     private final Map<String, List<ListFW<KafkaHeaderFW>>> routeHeadersByTopic;
     private final Int2ObjectHashMap<Consumer<Long2LongHashMap>> detachersById;
-    private final int maximumMessageSize;
 
     private int nextAttachId;
 
@@ -275,10 +272,6 @@ public final class NetworkConnectionPool
         this.topicMetadataByName = new HashMap<>();
         this.routeHeadersByTopic = new HashMap<>();
         this.detachersById = new Int2ObjectHashMap<>();
-
-        // TODO: remove this and use multiple data frames to deliver large messages
-        this.maximumMessageSize = bufferPool.slotCapacity() > MAX_PADDING ?
-                bufferPool.slotCapacity() - MAX_PADDING : bufferPool.slotCapacity();
     }
 
     void doAttach(
@@ -860,8 +853,7 @@ public final class NetworkConnectionPool
                     this::getTopicDispatcher,
                     this::getRequestedOffset,
                     this::handlePartitionResponseError,
-                    localDecodeBuffer,
-                    maximumMessageSize);
+                    localDecodeBuffer);
         }
 
         @Override
@@ -1863,7 +1855,6 @@ public final class NetworkConnectionPool
                 {
                     writableBytes = Math.max(writableBytes, supplyWindow.getAsInt());
                 }
-                writableBytes = Math.min(writableBytes, maximumMessageSize);
             }
             return writableBytes;
         }
