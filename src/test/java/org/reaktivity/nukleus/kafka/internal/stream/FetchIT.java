@@ -733,6 +733,17 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/header.empty.value.message/client",
+        "${server}/header.first.message.has.empty.header.value/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageMatchingEmptyHeaderValue() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/header.zero.offset.message/client",
         "${server}/header.zero.offset.first.matches/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
