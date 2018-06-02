@@ -152,7 +152,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         long requestOffset,
         long lastOffset)
     {
-        if (requestOffset < validToOffset)
+        if (requestOffset <= validToOffset)
         {
             validToOffset = Math.max(lastOffset,  validToOffset);
         }
