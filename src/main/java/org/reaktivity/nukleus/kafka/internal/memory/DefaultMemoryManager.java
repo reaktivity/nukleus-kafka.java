@@ -23,16 +23,12 @@ import static org.reaktivity.nukleus.kafka.internal.memory.BTreeFW.FULL;
 import static org.reaktivity.nukleus.kafka.internal.memory.BTreeFW.SPLIT;
 import static org.reaktivity.nukleus.kafka.internal.memory.MemoryLayout.BTREE_OFFSET;
 
-import java.util.Random;
-
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.AtomicBuffer;
 
 // NOTE, order 0 is largest in terms of size
 public class DefaultMemoryManager implements MemoryManager
 {
-    private final long id = new Random().nextLong();
-
     private final BTreeFW btreeRO;
 
     private final int blockSizeShift;
