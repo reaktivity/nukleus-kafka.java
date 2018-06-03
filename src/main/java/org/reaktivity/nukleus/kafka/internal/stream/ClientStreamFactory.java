@@ -580,7 +580,7 @@ public final class ClientStreamFactory implements StreamFactory
                 final int payloadLength = value == null ? 0 : value.capacity() - fragmentedMessageBytesWritten;
                 int applicationReplyBudget = budget.applicationReplyBudget();
                 int writeableBytes = applicationReplyBudget - applicationReplyPadding;
-                if (writeableBytes > 0 || payloadLength == 0)
+                if (writeableBytes > 0)
                 {
                     int bytesToWrite = Math.min(payloadLength, writeableBytes);
                     budget.decApplicationReplyBudget(bytesToWrite + applicationReplyPadding);
