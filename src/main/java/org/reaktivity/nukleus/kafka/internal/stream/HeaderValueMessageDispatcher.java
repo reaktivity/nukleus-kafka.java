@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.wrap;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -85,7 +87,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             Iterator<KafkaHeaderFW> headers,
             MessageDispatcher dispatcher)
     {
-        buffer.wrap(headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
+        wrap(buffer, headerValue);
         HeadersMessageDispatcher headersDispatcher = dispatchersByHeaderValue.get(buffer);
         if (headersDispatcher == null)
         {
@@ -104,7 +106,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             MessageDispatcher dispatcher)
     {
         boolean result = false;
-        buffer.wrap(headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
+        wrap(buffer, headerValue);
         HeadersMessageDispatcher headersDispatcher = dispatchersByHeaderValue.get(buffer);
         if (headersDispatcher != null)
         {

@@ -142,7 +142,9 @@ public final class BufferUtil
         return result;
     }
 
-    public static DirectBuffer wrap(DirectBuffer wrapper, DirectBuffer wrapped)
+    public static DirectBuffer wrap(
+        DirectBuffer wrapper,
+        DirectBuffer wrapped)
     {
         DirectBuffer result = null;
         if (wrapped != null)
@@ -151,6 +153,22 @@ public final class BufferUtil
             result = wrapper;
         }
         return result;
+    }
+
+    public static void wrap(
+        DirectBuffer wrapper,
+        OctetsFW wrapped)
+    {
+        assert wrapped != null;
+        if (wrapped.offset() == wrapped.buffer().capacity())
+        {
+            // Agrona bounds check would fail
+            wrapper.wrap(EMPTY_BYTE_ARRAY);
+        }
+        else
+        {
+            wrapper.wrap(wrapped.buffer(), wrapped.offset(), wrapped.sizeof());
+        }
     }
 
 }

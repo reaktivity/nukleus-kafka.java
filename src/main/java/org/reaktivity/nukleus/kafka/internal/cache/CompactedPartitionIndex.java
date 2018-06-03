@@ -292,6 +292,11 @@ public class CompactedPartitionIndex implements PartitionIndex
             if (result < 0)
             {
                 result = -result - 1;
+
+                if (result >= entries.size())
+                {
+                    result = NO_POSITION;
+                }
             }
         }
         return result;
