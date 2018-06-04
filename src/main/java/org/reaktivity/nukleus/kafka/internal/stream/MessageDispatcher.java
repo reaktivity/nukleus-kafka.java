@@ -44,7 +44,7 @@ public interface MessageDispatcher
     int dispatch(
         int partition,
         long requestOffset,
-        long messageOffset,
+        long messageStartOffset,
         DirectBuffer key,
         Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
         long timestamp,
@@ -54,6 +54,6 @@ public interface MessageDispatcher
     void flush(
         int partition,
         long requestOffset,
-        long lastOffset);
+        long nextFetchOffset);
 
 }
