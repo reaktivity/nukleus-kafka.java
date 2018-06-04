@@ -49,10 +49,25 @@ public class CachingFetchLimitsIT
         .counterValuesBufferCapacity(1024)
         .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false")
         .configure(KafkaConfiguration.MESSAGE_CACHE_CAPACITY_PROPERTY, Integer.toString(1024 * 2))
+        .configure(KafkaConfiguration.MESSAGE_CACHE_PROACTIVE_PROPERTY, "true")
         .clean();
 
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/compacted.historical.large.message.subscribed.to.key/client",
+        "${server}/compacted.messages.first.exceeds.256.bytes.repeated/server"})
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "applicationConnectWindow \"200\""
+    })
+    public void shouldReceiveCompactedFragmentedMessageFromCacheWhenSubscribedToKey() throws Exception
+    {
+        k3po.finish();
+    }
 
     @Test
     @Specification({

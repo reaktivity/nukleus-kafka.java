@@ -63,6 +63,31 @@ public class FetchLimitsIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/compacted.large.message.subscribed.to.key/client",
+        "${server}/compacted.messages.first.exceeds.256.bytes/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveLargeCompactedMessageWhenSubscribedToKey() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/compacted.large.message.subscribed.to.key/client",
+        "${server}/compacted.messages.first.exceeds.256.bytes.repeated/server"})
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "applicationConnectWindow \"200\""
+    })
+    public void shouldReceiveCompactedFragmentedMessageWhenSubscribedToKey() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/zero.offset.large.message/client",
         "${server}/zero.offset.messages.first.exceeds.256.bytes/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")

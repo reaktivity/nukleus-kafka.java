@@ -595,10 +595,22 @@ public final class ClientStreamFactory implements StreamFactory
                     pendingMessageOffset = messageStartOffset;
                     messagePending = true;
                     result &= MessageDispatcher.FLAGS_DELIVERED;
+                    if (bytesToWrite < payloadLength)
+                    {
+                        outOfWindow = true;
+                    }
                 }
                 else
                 {
                     outOfWindow = true;
+                }
+                if (outOfWindow)
+                {
+                    result |= MessageDispatcher.FLAGS_BLOCKED;
+                }
+                else
+                {
+                    result |= MessageDispatcher.FLAGS_DELIVERED;
                 }
             }
             return result;
@@ -619,8 +631,7 @@ public final class ClientStreamFactory implements StreamFactory
                 startOffset = fetchOffsets.get(partition);
                 endOffset = nextFetchOffset;
             }
-            else if (requestOffset <= startOffset
-                    && !outOfWindow && fragmentedMessageOffset == UNSET)
+            else if (requestOffset <= startOffset && !outOfWindow)
             {
                 // We didn't skip or do partial write of any messages due to lack of window, advance to highest offset
                 endOffset = nextFetchOffset;
