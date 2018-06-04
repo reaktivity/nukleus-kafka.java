@@ -118,8 +118,23 @@ public class FetchLimitsIT
     @ScriptProperty({
         "networkAccept \"nukleus://target/streams/kafka\"",
         "applicationConnectWindow \"100\""
-})
-    public void shouldReceiveRecordBatchExceedingMaxPartitionBytes() throws Exception
+    })
+    public void shouldReceiveLargeMessageRequiringThreeDataFrames() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset.message/client",
+        "${server}/message.size.exceeds.max.partition.bytes/server"})
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "applicationConnectWindow \"355\"",
+        "messageOffset \"2\""
+    })
+    public void shouldSkipRecordBatchExceedingMaxPartitionBytes() throws Exception
     {
         k3po.finish();
     }

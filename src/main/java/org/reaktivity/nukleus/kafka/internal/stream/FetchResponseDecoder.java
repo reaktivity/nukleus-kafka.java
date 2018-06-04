@@ -370,7 +370,7 @@ public class FetchResponseDecoder implements ResponseDecoder
             {
                 System.out.format(
                         "[nukleus-kafka] skipping topic: %s partition: %d offset: %d because record set size %d " +
-                        "exceeds configured partition.max.bytes %d",
+                        "exceeds configured nukleus.kafka.fetch.partition.max.bytes %d\n",
                         topicName, partition, requestedOffset, recordSetBytesRemaining, maxRecordBatchSize);
                 messageDispatcher.flush(partition, requestedOffset, requestedOffset + 1);
                 skipBytesDecoderState.bytesToSkip = recordSetBytesRemaining;
@@ -416,11 +416,12 @@ public class FetchResponseDecoder implements ResponseDecoder
             if (recordBatchActualSize > recordSetBytesRemaining
                 && recordBatch.lastOffsetDelta() == 0 && recordBatchActualSize > maxRecordBatchSize)
                 // record batch was truncated in response due to max fetch bytes or max partition bytes limit set on request,
-                // contains only one (necessarily incomplete) message, and is too large for our decoding buffer
+                // contains only one (necessarily incomplete) message
             {
                     System.out.format(
-                        "[nukleus-kafka] skipping large message at topic: %s partition: %d offset: %d batch-size: %d\n",
-                        topicName, partition, recordBatch.firstOffset(), recordBatch.length());
+                        "[nukleus-kafka] skipping large message at topic: %s partition: %d offset: %d, " +
+                            "message size %d bytes exceeds configured nukleus.kafka.fetch.partition.max.bytes %d\n",
+                        topicName, partition, recordBatch.firstOffset(), recordBatch.length(), maxRecordBatchSize);
                     nextFetchAt = recordBatch.firstOffset() + 1;
                     messageDispatcher.flush(partition, requestedOffset, nextFetchAt);
                     skipBytesDecoderState.bytesToSkip = recordSetBytesRemaining;
