@@ -594,7 +594,6 @@ public final class ClientStreamFactory implements StreamFactory
                     pendingMessageValueLimit = pendingMessageValueOffset + bytesToWrite;
                     pendingMessageOffset = messageStartOffset;
                     messagePending = true;
-                    result &= MessageDispatcher.FLAGS_DELIVERED;
                     if (bytesToWrite < payloadLength)
                     {
                         outOfWindow = true;

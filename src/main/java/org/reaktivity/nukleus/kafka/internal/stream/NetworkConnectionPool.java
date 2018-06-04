@@ -1904,11 +1904,13 @@ public final class NetworkConnectionPool
                                 message.timestamp(), message.traceId(), value);
 
                         flushNeeded = true;
-                        if (MessageDispatcher.blocked(dispatched) &&
-                                !MessageDispatcher.delivered(dispatched))
-                        {
+                        if (!needsHistorical(partitionId) // caught up to live stream
+                            ||
+                            (MessageDispatcher.blocked(dispatched) &&
+                            !MessageDispatcher.delivered(dispatched)))
                             // TODO: this may be too conservative, other dispatchers which did not match this message
                             //       might still have available window to deliver later messages
+                        {
                             requestSatisifed = true;
                             break;
                         }
