@@ -18,6 +18,8 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.wrap;
+import static org.reaktivity.nukleus.kafka.internal.util.Flags.FIN;
+import static org.reaktivity.nukleus.kafka.internal.util.Flags.INIT;
 
 import java.util.Iterator;
 import java.util.Map;
@@ -60,6 +62,7 @@ import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
+import org.reaktivity.nukleus.kafka.internal.util.Flags;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 
@@ -397,20 +400,47 @@ public final class ClientStreamFactory implements StreamFactory
         final long targetId,
         final long traceId,
         final int padding,
+        final byte flags,
         final DirectBuffer messageKey,
         final long timestamp,
         final DirectBuffer messageValue,
+        final int messageValueLimit,
         final Long2LongHashMap fetchOffsets)
     {
         OctetsFW key = messageKey == null ? null : messageKeyRO.wrap(messageKey, 0, messageKey.capacity());
-        OctetsFW value = messageValue == null ? null : messageValueRO.wrap(messageValue, 0, messageValue.capacity());
+        OctetsFW value = messageValue == null ? null : messageValueRO.wrap(messageValue, 0, messageValueLimit);
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
                 .trace(traceId)
+                .flags(flags)
                 .groupId(0)
                 .padding(padding)
                 .payload(value)
                 .extension(e -> e.set(visitKafkaDataEx(timestamp, fetchOffsets, key)))
+                .build();
+
+        target.accept(data.typeId(), data.buffer(), data.offset(), data.sizeof());
+    }
+
+    private void doKafkaDataContinuation(
+        final MessageConsumer target,
+        final long targetId,
+        final long traceId,
+        final int padding,
+        final byte flags,
+        final DirectBuffer messageValue,
+        final int messageValueOffset,
+        final int messageValueLimit)
+    {
+        OctetsFW value = messageValue == null ? null : messageValueRO.wrap(messageValue, messageValueOffset, messageValueLimit);
+
+        final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                .streamId(targetId)
+                .trace(traceId)
+                .flags(flags)
+                .groupId(0)
+                .padding(padding)
+                .payload(value)
                 .build();
 
         target.accept(data.typeId(), data.buffer(), data.offset(), data.sizeof());
@@ -472,16 +502,22 @@ public final class ClientStreamFactory implements StreamFactory
         private PartitionProgressHandler progressHandler;
 
         private MessageConsumer streamState;
-        private int writeableBytesMinimum;
 
         private final DirectBuffer pendingMessageKeyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
         private final DirectBuffer pendingMessageValueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
-        private boolean messagePending;;
+        private boolean messagePending;
+        private boolean outOfWindow;
         private DirectBuffer pendingMessageKey;
         private long pendingMessageTimestamp;
         private long pendingMessageTraceId;
         private DirectBuffer pendingMessageValue;
+        private int pendingMessageValueOffset;
+        private int pendingMessageValueLimit;
+        private long pendingMessageOffset;
+
+        int fragmentedMessageBytesWritten;
+        long fragmentedMessageOffset = UNSET;
 
         private long progressStartOffset = UNSET;
         private long progressEndOffset;
@@ -508,7 +544,7 @@ public final class ClientStreamFactory implements StreamFactory
         public int dispatch(
             int partition,
             long requestOffset,
-            long messageOffset,
+            long messageStartOffset,
             DirectBuffer key,
             Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
             long timestamp,
@@ -524,39 +560,55 @@ public final class ClientStreamFactory implements StreamFactory
             if (compacted && (subscribedByKey || equals(key, pendingMessageKey)))
             {
                 // This message replaces the last one
-                if (messagePending)
+                if (messagePending && fragmentedMessageBytesWritten == 0)
                 {
                     messagePending = false;
                     final int previousLength = pendingMessageValue == null ? 0 : pendingMessageValue.capacity();
                     budget.incApplicationReplyBudget(previousLength + applicationReplyPadding);
                 }
-                writeableBytesMinimum = 0;
             }
             else
             {
-                flushPreviousMessage(partition, messageOffset - 1);
+                flushPreviousMessage(partition, messageStartOffset);
             }
 
             if (requestOffset <= progressStartOffset // avoid out of order delivery
-                && messageOffset > progressStartOffset)
+                && messageStartOffset >= progressStartOffset // avoid repeated delivery
+                && (fragmentedMessageOffset == UNSET || messageStartOffset == fragmentedMessageOffset)
+                )
             {
-                final int payloadLength = value == null ? 0 : value.capacity();
+                final int payloadLength = value == null ? 0 : value.capacity() - fragmentedMessageBytesWritten;
                 int applicationReplyBudget = budget.applicationReplyBudget();
-                if (applicationReplyBudget == 0 || applicationReplyBudget < payloadLength + applicationReplyPadding)
+                int writeableBytes = applicationReplyBudget - applicationReplyPadding;
+                if (writeableBytes > 0)
                 {
-                    writeableBytesMinimum = payloadLength + applicationReplyPadding;
-                }
-                else
-                {
-                    writeableBytesMinimum = 0;
-                    budget.decApplicationReplyBudget(payloadLength + applicationReplyPadding);
+                    int bytesToWrite = Math.min(payloadLength, writeableBytes);
+                    budget.decApplicationReplyBudget(bytesToWrite + applicationReplyPadding);
                     assert budget.applicationReplyBudget() >= 0;
 
                     pendingMessageKey = wrap(pendingMessageKeyBuffer, key);
                     pendingMessageTimestamp = timestamp;
                     pendingMessageTraceId = traceId;
                     pendingMessageValue = wrap(pendingMessageValueBuffer, value);
+                    pendingMessageValueOffset = fragmentedMessageBytesWritten;
+                    pendingMessageValueLimit = pendingMessageValueOffset + bytesToWrite;
+                    pendingMessageOffset = messageStartOffset;
                     messagePending = true;
+                    if (bytesToWrite < payloadLength)
+                    {
+                        outOfWindow = true;
+                    }
+                }
+                else
+                {
+                    outOfWindow = true;
+                }
+                if (outOfWindow)
+                {
+                    result |= MessageDispatcher.FLAGS_BLOCKED;
+                }
+                else
+                {
                     result |= MessageDispatcher.FLAGS_DELIVERED;
                 }
             }
@@ -564,22 +616,24 @@ public final class ClientStreamFactory implements StreamFactory
         }
 
         @Override
-        public void flush(int partition, long requestOffset, long lastOffset)
+        public void flush(
+            int partition,
+            long requestOffset,
+            long nextFetchOffset)
         {
-            flushPreviousMessage(partition, lastOffset);
+            flushPreviousMessage(partition, nextFetchOffset);
             long startOffset = progressStartOffset;
             long endOffset = progressEndOffset;
             if (startOffset == UNSET)
             {
-                // no messages were dispatched
+                // dispatch was not called
                 startOffset = fetchOffsets.get(partition);
-                endOffset = lastOffset;
+                endOffset = nextFetchOffset;
             }
-            else if (requestOffset <= startOffset
-                    && writeableBytesMinimum == 0)
+            else if (requestOffset <= startOffset && !outOfWindow)
             {
-                // We didn't skip any messages due to lack of window, advance to highest offset
-                endOffset = lastOffset;
+                // We didn't skip or do partial write of any messages due to lack of window, advance to highest offset
+                endOffset = nextFetchOffset;
             }
             if (endOffset > startOffset && requestOffset <= startOffset)
             {
@@ -587,20 +641,47 @@ public final class ClientStreamFactory implements StreamFactory
                 progressHandler.handle(partition, startOffset, endOffset);
             }
             progressStartOffset = UNSET;
+            outOfWindow = false;
         }
 
         private void flushPreviousMessage(
                 int partition,
-                long messageOffset)
+                long nextFetchOffset)
         {
             if (messagePending)
             {
-                this.fetchOffsets.put(partition, messageOffset);
-                doKafkaData(applicationReply, applicationReplyId, pendingMessageTraceId, applicationReplyPadding,
-                            compacted ? pendingMessageKey : null,
-                            pendingMessageTimestamp, pendingMessageValue, fetchOffsets);
+                byte flags = pendingMessageValue == null || pendingMessageValue.capacity() == pendingMessageValueLimit
+                        ? FIN : 0;
+
+                if (pendingMessageValueOffset == 0)
+                {
+                    flags |= INIT;
+                    this.fetchOffsets.put(partition, nextFetchOffset);
+                    doKafkaData(applicationReply, applicationReplyId, pendingMessageTraceId, applicationReplyPadding, flags,
+                                compacted ? pendingMessageKey : null,
+                                pendingMessageTimestamp, pendingMessageValue, pendingMessageValueLimit, fetchOffsets);
+                }
+                else
+                {
+                    doKafkaDataContinuation(applicationReply, applicationReplyId, pendingMessageTraceId,
+                            applicationReplyPadding, flags, pendingMessageValue, pendingMessageValueOffset,
+                            pendingMessageValueLimit);
+                }
+
                 messagePending = false;
-                progressEndOffset = messageOffset;
+                if (Flags.fin(flags))
+                {
+                    fragmentedMessageBytesWritten = 0;
+                    fragmentedMessageOffset = UNSET;
+                    progressEndOffset = nextFetchOffset;
+                }
+                else
+                {
+                    fragmentedMessageBytesWritten += (pendingMessageValueLimit - pendingMessageValueOffset);
+                    fragmentedMessageOffset = pendingMessageOffset;
+                    progressEndOffset = pendingMessageOffset;
+                    this.fetchOffsets.put(partition, pendingMessageOffset);
+                }
             }
         }
 
@@ -825,8 +906,7 @@ public final class ClientStreamFactory implements StreamFactory
 
         private int writeableBytes()
         {
-            final int writeableBytes = budget.applicationReplyBudget() - applicationReplyPadding;
-            return writeableBytes >= writeableBytesMinimum ? writeableBytes : 0;
+            return budget.applicationReplyBudget() - applicationReplyPadding;
         }
 
     }

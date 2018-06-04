@@ -51,8 +51,8 @@ public class FetchLimitsIT
         .clean()
         .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false")
         .configure(ReaktorConfiguration.BUFFER_SLOT_CAPACITY_PROPERTY, 256)
-        .configure(KafkaConfiguration.FETCH_MAX_BYTES_PROPERTY, 256)
-        .configure(KafkaConfiguration.FETCH_PARTITION_MAX_BYTES_PROPERTY, 336);
+        .configure(KafkaConfiguration.FETCH_MAX_BYTES_PROPERTY, 355)
+        .configure(KafkaConfiguration.FETCH_PARTITION_MAX_BYTES_PROPERTY, 355);
 
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
@@ -63,26 +63,36 @@ public class FetchLimitsIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/compacted.large.message.subscribed.to.key/client",
+        "${server}/compacted.messages.first.exceeds.256.bytes/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveLargeCompactedMessageWhenSubscribedToKey() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/compacted.large.message.subscribed.to.key/client",
+        "${server}/compacted.messages.first.exceeds.256.bytes.repeated/server"})
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "applicationConnectWindow \"200\""
+    })
+    public void shouldReceiveCompactedFragmentedMessageWhenSubscribedToKey() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/zero.offset.large.message/client",
         "${server}/zero.offset.messages.first.exceeds.256.bytes/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldSkipMessageExceedingMaximumSupportedMessageSize() throws Exception
+    public void shouldReceiveMessageExceedingBufferSlotCapacity() throws Exception
     {
-        k3po.start();
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/zero.offset.large.response/client",
-        "${server}/zero.offset.large.response/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldHandleLargeFetchResponseProvidedEachRecordBatchLessThanMaxPartitionBytes() throws Exception
-    {
-        k3po.start();
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
 
@@ -90,12 +100,42 @@ public class FetchLimitsIT
     @Specification({
         "${route}/client/controller",
         "${client}/zero.offset.large.message/client",
-        "${server}/zero.offset.first.record.batch.large/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldSkipRecordBatchExceedingMaxRecordBatchSize() throws Exception
+        "${server}/zero.offset.messages.first.exceeds.256.bytes.repeated/server"})
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "applicationConnectWindow \"200\""
+    })
+    public void shouldReceiveMessageExceedingInitialWindow() throws Exception
     {
-        k3po.start();
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset.large.message/client",
+        "${server}/zero.offset.first.record.batch.large.requires.3.fetches/server"})
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "applicationConnectWindow \"100\""
+    })
+    public void shouldReceiveLargeMessageRequiringThreeDataFrames() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset.message/client",
+        "${server}/message.size.exceeds.max.partition.bytes/server"})
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "applicationConnectWindow \"355\"",
+        "messageOffset \"2\""
+    })
+    public void shouldSkipRecordBatchExceedingMaxPartitionBytes() throws Exception
+    {
         k3po.finish();
     }
 }
