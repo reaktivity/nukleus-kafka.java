@@ -940,7 +940,8 @@ public final class ClientStreamFactory implements StreamFactory
         @Override
         public void applicationReplyBudget(int budget)
         {
-            applicationReplyBudget = budget;        }
+            applicationReplyBudget = budget;
+        }
 
         @Override
         public void decApplicationReplyBudget(int data)
