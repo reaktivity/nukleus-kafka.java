@@ -557,7 +557,7 @@ public final class ClientStreamFactory implements StreamFactory
                     pendingMessageTraceId = traceId;
                     pendingMessageValue = wrap(pendingMessageValueBuffer, value);
                     messagePending = true;
-                    result &= MessageDispatcher.FLAGS_DELIVERED;
+                    result |= MessageDispatcher.FLAGS_DELIVERED;
                 }
             }
             return result;
