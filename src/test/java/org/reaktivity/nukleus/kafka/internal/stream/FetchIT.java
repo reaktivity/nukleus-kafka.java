@@ -340,6 +340,21 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/compacted.messages.tombstone.repeated/client",
+        "${server}/compacted.messages.tombstone.repeated/server"})
+    @ScriptProperty({ "networkAccept \"nukleus://target/streams/kafka\"",
+                      "newTimestamp 0L" })
+    public void shouldReceiveCompactedAdjacentRepeatedTombstoneMessages() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_NEXT_FETCH_REQUEST");
+        k3po.notifyBarrier("SUBSCRIBE_CLIENT");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/compacted.message.subscribed.to.key/client",
         "${server}/compacted.messages/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")

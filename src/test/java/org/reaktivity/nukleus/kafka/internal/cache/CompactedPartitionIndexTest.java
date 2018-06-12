@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static java.lang.System.currentTimeMillis;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -79,20 +80,22 @@ public final class CompactedPartitionIndexTest
     @Test
     public void shouldAddTombstoneMessageAndReportUntilTombstoneExpires() throws Exception
     {
+        final long future = currentTimeMillis() + 500L;
+
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(123, 456, key, headers, null);
+                oneOf(messageCache).put(future, 456, key, headers, null);
                 will(returnValue(0));
                 oneOf(messageCache).release(0);
             }
         });
-        cache.add(0L, 1L, 123, 456, key, headers, null, true);
+        cache.add(0L, 1L, future, 456, key, headers, null, true);
         Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(1L, entry.offset());
-        Thread.sleep(TOMBSTONE_LIFETIME_MILLIS);
+        Thread.sleep(future - currentTimeMillis() + TOMBSTONE_LIFETIME_MILLIS);
         iterator = cache.entries(0L);
         assertEquals(2L, iterator.next().offset());
     }
@@ -100,31 +103,33 @@ public final class CompactedPartitionIndexTest
     @Test
     public void shouldAddTombstonesForExistingMessagesAndReportUntilExpired() throws Exception
     {
+        final long future = currentTimeMillis() + 500L;
+
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                oneOf(messageCache).put(future, 456, asBuffer("key1"), headers, value);
                 will(returnValue(0));
-                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
+                oneOf(messageCache).put(future, 457, asBuffer("key2"), headers, value);
                 will(returnValue(1));
-                oneOf(messageCache).replace(0, 125, 458, asBuffer("key1"), headers, null);
+                oneOf(messageCache).replace(0, future, 458, asBuffer("key1"), headers, null);
                 will(returnValue(0));
                 oneOf(messageCache).release(0);
-                oneOf(messageCache).replace(1, 126, 459, asBuffer("key2"), headers, null);
+                oneOf(messageCache).replace(1, future + TOMBSTONE_LIFETIME_MILLIS, 459, asBuffer("key2"), headers, null);
                 will(returnValue(1));
                 oneOf(messageCache).release(1);
             }
         });
-        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
-        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
-        cache.add(0L, 2L, 125, 458, asBuffer("key1"), headers, null, true);
+        cache.add(0L, 0L, future, 456, asBuffer("key1"), headers, value, true);
+        cache.add(0L, 1L, future, 457, asBuffer("key2"), headers, value, true);
+        cache.add(0L, 2L, future, 458, asBuffer("key1"), headers, null, true);
         Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
         Entry entry = iterator.next();
         assertEquals(1L, entry.offset());
         entry = iterator.next();
         assertEquals(2L, entry.offset());
-        Thread.sleep(TOMBSTONE_LIFETIME_MILLIS);
-        cache.add(2L, 3L, 126, 459, asBuffer("key2"), headers, null, true);
+        Thread.sleep(future - currentTimeMillis() + TOMBSTONE_LIFETIME_MILLIS);
+        cache.add(2L, 3L, future + TOMBSTONE_LIFETIME_MILLIS, 459, asBuffer("key2"), headers, null, true);
         iterator = cache.entries(0L);
         entry = iterator.next();
         assertEquals(3L, entry.offset());

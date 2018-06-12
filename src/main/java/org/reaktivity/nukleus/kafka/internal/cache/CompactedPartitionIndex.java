@@ -192,7 +192,7 @@ public class CompactedPartitionIndex implements PartitionIndex
             MutableDirectBuffer keyCopy = new UnsafeBuffer(new byte[key.capacity()]);
             keyCopy.putBytes(0,  key, 0, key.capacity());
             tombstoneKeys.add(keyCopy);
-            tombstoneExpiryTimes.add(System.currentTimeMillis() + tombstoneLifetimeMillis);
+            tombstoneExpiryTimes.add(timestamp + tombstoneLifetimeMillis);
         }
         if (entry.message == NO_MESSAGE)
         {
@@ -250,9 +250,17 @@ public class CompactedPartitionIndex implements PartitionIndex
 
                     buffer.wrap(key, 0, key.capacity());
                     EntryImpl entry = offsetsByKey.remove(buffer);
-                    messageCache.release(entry.message);
-                    compactFrom = Math.min(entry.position, compactFrom);
-                    entry.position = NO_POSITION;
+
+                    if (entry != null)
+                    {
+                        if (entry.message != NO_MESSAGE)
+                        {
+                            messageCache.release(entry.message);
+                        }
+
+                        compactFrom = Math.min(entry.position, compactFrom);
+                        entry.position = NO_POSITION;
+                    }
                 }
                 else
                 {
