@@ -31,7 +31,7 @@ The extension data contains the following fields:
 ### DATA (reply stream from nukleus-kafka)
 
 Each DATA frame represents the value of one Kafka message (a.k.a. record). The value is the message value from Kafka, or, if delta messages are being used, it may be the value of the message property specified in the route extension `deltaProperty` field (see Delta Messages). The extension data contains the following fields:
-- `flags`: 
+- `flags` (default 0x00): if the least significant bit is set the message is a delta message (contains diffs to be applied to the previous message for the message key). Otherwise the message is a complete message.
 - `timestamp`: the timestamp of the message (as set in Kafka)
 - `fetchOffsets`: gives the high watermark offsets which could be used subsequently to fetch all messages following this message (if the client disconnect and reconnects later).
 - `messageKey`: the message key (as set in Kafka)
