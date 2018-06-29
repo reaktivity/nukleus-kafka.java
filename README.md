@@ -38,7 +38,7 @@ Each DATA frame represents the value of one Kafka message (a.k.a. record). The v
 
 ### Compacted Topics
 
-Topics which are configured in Kafka with header "cleanup.policy" set to "compact" are treated specially, in the following ways:
+Topics which are configured in Kafka with property "cleanup.policy" set to "compact" are treated specially, in the following ways:
 
 - A cache of message offsets is maintained in order to enhance performance for subscriptions to a particular message key, and where possible only deliver the latest message for the key.
 - This cache is kept up to date all the time by doing proactive fetches, unless this turned off by setting system property `nukleus.kafka.topic.bootstrap.enabled` to "false".
