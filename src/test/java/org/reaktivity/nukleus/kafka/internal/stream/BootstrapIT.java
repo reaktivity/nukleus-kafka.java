@@ -177,6 +177,24 @@ public class BootstrapIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/compacted.message/client",
+        "${server}/compacted.tombstone.then.message/server"})
+    @ScriptProperty({ "networkAccept \"nukleus://target/streams/kafka\"",
+                      "messageOffset 12L" })
+    public void shouldNotCacheExpiredTombstoneKeyAndOffset() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("ROUTED_CLIENT");
+        k3po.awaitBarrier("RECEIVED_SECOND_FETCH_REQUEST");
+        k3po.notifyBarrier("CONNECT_CLIENT");
+        k3po.awaitBarrier("CLIENT_CONNECTED");
+        k3po.notifyBarrier("DELIVER_SECOND_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${metadata}/one.topic.error.unknown.topic/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldIssueWarningWhenBootstrapUnkownTopic() throws Exception

@@ -347,6 +347,7 @@ public class FetchIT
     public void shouldReceiveCompactedAdjacentRepeatedTombstoneMessages() throws Exception
     {
         k3po.start();
+        k3po.awaitBarrier("ROUTED_CLIENT");
         k3po.awaitBarrier("RECEIVED_NEXT_FETCH_REQUEST");
         k3po.notifyBarrier("SUBSCRIBE_CLIENT");
         k3po.finish();
