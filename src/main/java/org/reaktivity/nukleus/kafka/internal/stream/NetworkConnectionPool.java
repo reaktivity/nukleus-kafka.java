@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static java.lang.Integer.parseInt;
 import static java.lang.String.format;
 import static java.nio.ByteBuffer.allocateDirect;
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -121,6 +122,7 @@ public final class NetworkConnectionPool
 
     private static final byte RESOURCE_TYPE_TOPIC = 2;
     private static final String CLEANUP_POLICY = "cleanup.policy";
+    private static final String DELETE_RETENTION_MS = "delete.retention.ms";
     private static final String COMPACT = "compact";
 
     private static final int LOCAL_SLOT = -2;
@@ -348,7 +350,8 @@ public final class NetworkConnectionPool
                 }
             }
             final NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
-                    name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, false, false));
+                    name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, false,
+                            topicMetadata.deleteRetentionMs, false));
             finishAttachConsumer.accept(attachDetailsConsumer ->
             {
                 progressHandlerConsumer.accept(
@@ -414,7 +417,7 @@ public final class NetworkConnectionPool
             {
                 NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
                         name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted,
-                                proactive, forceProactiveMessageCache));
+                                proactive, topicMetadata.deleteRetentionMs, forceProactiveMessageCache));
                 topic.addRoute(routeHeaders);
                 doConnections(topicMetadata);
                 doFlush();
@@ -1388,7 +1391,7 @@ public final class NetworkConnectionPool
                         buffer, encodeLimit, buffer.capacity())
                         .type(RESOURCE_TYPE_TOPIC)
                         .name(pendingTopicMetadata.topicName)
-                        .configNamesCount(1)
+                        .configNamesCount(2)
                         .build();
 
                 encodeLimit = resourceRequest.limit();
@@ -1396,6 +1399,13 @@ public final class NetworkConnectionPool
                 String16FW configName = configNameRW.wrap(
                         buffer, encodeLimit, buffer.capacity())
                         .set(CLEANUP_POLICY, UTF_8)
+                        .build();
+
+                encodeLimit = configName.limit();
+
+                configName = configNameRW.wrap(
+                        buffer, encodeLimit, buffer.capacity())
+                        .set(DELETE_RETENTION_MS, UTF_8)
                         .build();
 
                 encodeLimit = configName.limit();
@@ -1515,6 +1525,7 @@ public final class NetworkConnectionPool
 
             short errorCode = NONE;
             boolean compacted = false;
+            int deleteRetentionMs = KAFKA_SERVER_DEFAULT_DELETE_RETENTION_MS;
             for (int resourceIndex = 0; resourceIndex < resourceCount && errorCode == NONE; resourceIndex++)
             {
                 final ResourceResponseFW resource =
@@ -1533,10 +1544,20 @@ public final class NetworkConnectionPool
                 {
                     final ConfigResponseFW config =
                             NetworkConnectionPool.this.configResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
-                    String16FW configName = config.name();
-                    assert configName.asString().equals(CLEANUP_POLICY);
-                    compacted = config.value() != null && config.value().asString().equals(COMPACT);
-                    networkOffset = config.limit();
+                    String configName = config.name().asString();
+                    switch (configName)
+                    {
+                    case CLEANUP_POLICY:
+                        compacted = config.value() != null && config.value().asString().equals(COMPACT);
+                        networkOffset = config.limit();
+                        break;
+                    case DELETE_RETENTION_MS:
+                        deleteRetentionMs = config.value() == null ? KAFKA_SERVER_DEFAULT_DELETE_RETENTION_MS :
+                            parseInt(config.value().asString());
+                        break;
+                    default:
+                        assert false : format("Unexpected config name %s in describe configs response", configName);
+                    }
                 }
             }
             if (errorCode != NONE && KafkaErrors.isRecoverable(errorCode))
@@ -1550,6 +1571,7 @@ public final class NetworkConnectionPool
                 pendingTopicMetadata = null;
                 metadata.setErrorCode(errorCode);
                 metadata.setCompacted(compacted);
+                metadata.setDeleteRetentionMs(deleteRetentionMs);
                 metadata.setCompleted();
                 metadata.flush();
             }
@@ -1652,6 +1674,7 @@ public final class NetworkConnectionPool
             int partitionCount,
             boolean compacted,
             boolean proactive,
+            int deleteRetentionMs,
             boolean forceProactiveMessageCache)
         {
             this.topicName = topicName;
@@ -1667,7 +1690,7 @@ public final class NetworkConnectionPool
                 for (int i = 0; i < partitionCount; i++)
                 {
                     // TODO: read topic config "delete.retention.ms" and use that value if set
-                    partitionIndexes[i] = new CompactedPartitionIndex(1000, KAFKA_SERVER_DEFAULT_DELETE_RETENTION_MS,
+                    partitionIndexes[i] = new CompactedPartitionIndex(1000, deleteRetentionMs,
                             messageCache);
                 }
             }
@@ -2108,6 +2131,7 @@ public final class NetworkConnectionPool
         private final String topicName;
         private short errorCode;
         private boolean compacted;
+        private int deleteRetentionMs;
         private boolean completed;
         BrokerMetadata[] brokers;
         private int nextBrokerIndex;
@@ -2129,6 +2153,12 @@ public final class NetworkConnectionPool
         void setCompacted(boolean compacted)
         {
             this.compacted = compacted;
+        }
+
+        void setDeleteRetentionMs(
+            int deleteRetentionMs)
+        {
+             this.deleteRetentionMs = deleteRetentionMs;
         }
 
         void setCompleted()
