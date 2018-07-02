@@ -103,40 +103,47 @@ public final class CompactedPartitionIndexTest
     @Test
     public void shouldAddTombstonesForExistingMessagesAndReportUntilExpired() throws Exception
     {
-        final long future = currentTimeMillis() + 500L;
+        final long aLongTime = 100 * TOMBSTONE_LIFETIME_MILLIS;
+        final long timestamp1 = currentTimeMillis() + aLongTime;
+        final long timestamp2 = timestamp1 + aLongTime;
 
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(future, 456, asBuffer("key1"), headers, value);
+                oneOf(messageCache).put(timestamp1, 456, asBuffer("key1"), headers, value);
                 will(returnValue(0));
-                oneOf(messageCache).put(future, 457, asBuffer("key2"), headers, value);
+                oneOf(messageCache).put(timestamp1, 457, asBuffer("key2"), headers, value);
                 will(returnValue(1));
-                oneOf(messageCache).replace(0, future, 458, asBuffer("key1"), headers, null);
+                oneOf(messageCache).replace(0, timestamp1, 458, asBuffer("key1"), headers, null);
                 will(returnValue(0));
                 oneOf(messageCache).release(0);
-                oneOf(messageCache).replace(1, future + TOMBSTONE_LIFETIME_MILLIS, 459, asBuffer("key2"), headers, null);
+                oneOf(messageCache).replace(1, timestamp2, 459, asBuffer("key2"), headers, null);
                 will(returnValue(1));
                 oneOf(messageCache).release(1);
             }
         });
-        cache.add(0L, 0L, future, 456, asBuffer("key1"), headers, value, true);
-        cache.add(0L, 1L, future, 457, asBuffer("key2"), headers, value, true);
-        cache.add(0L, 2L, future, 458, asBuffer("key1"), headers, null, true);
+        cache.add(0L, 0L, timestamp1, 456, asBuffer("key1"), headers, value, true);
+        cache.add(0L, 1L, timestamp1, 457, asBuffer("key2"), headers, value, true);
+        cache.add(0L, 2L, timestamp1, 458, asBuffer("key1"), headers, null, true);
+        assert currentTimeMillis() < timestamp1 : "test failed due to unexpected execution delay";
         Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
         Entry entry = iterator.next();
         assertEquals(1L, entry.offset());
         entry = iterator.next();
         assertEquals(2L, entry.offset());
-        Thread.sleep(future - currentTimeMillis() + TOMBSTONE_LIFETIME_MILLIS);
-        cache.add(2L, 3L, future + TOMBSTONE_LIFETIME_MILLIS, 459, asBuffer("key2"), headers, null, true);
+        long delayTillAllEntriesAreExpired = timestamp1 + TOMBSTONE_LIFETIME_MILLIS - currentTimeMillis();
+        Thread.sleep(delayTillAllEntriesAreExpired);
+        cache.add(2L, 3L, timestamp2, 459, asBuffer("key2"), headers, null, true);
+        assert currentTimeMillis() < timestamp2 : "test failed due to unexpected execution delay";
         iterator = cache.entries(0L);
         entry = iterator.next();
         assertEquals(3L, entry.offset());
         assertFalse(iterator.hasNext());
-        Thread.sleep(TOMBSTONE_LIFETIME_MILLIS);
+        delayTillAllEntriesAreExpired = timestamp2 + TOMBSTONE_LIFETIME_MILLIS - currentTimeMillis();
+        Thread.sleep(delayTillAllEntriesAreExpired);
         iterator = cache.entries(0L);
         assertEquals(4L, iterator.next().offset());
+        assertFalse(iterator.hasNext());
     }
 
     @Test
