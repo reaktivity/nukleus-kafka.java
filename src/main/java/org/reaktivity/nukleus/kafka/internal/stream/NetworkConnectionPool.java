@@ -22,7 +22,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Collections.emptyIterator;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.INVALID_TOPIC_EXCEPTION;
-import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.LEADER_NOT_AVAILABLE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.OFFSET_OUT_OF_RANGE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.UNEXPECTED_SERVER_ERROR;
@@ -317,14 +316,9 @@ public final class NetworkConnectionPool
         short errorCode = topicMetadata.errorCode();
         switch(errorCode)
         {
+        case INVALID_TOPIC_EXCEPTION:
         case UNKNOWN_TOPIC_OR_PARTITION:
             onMetadataError.accept(errorCode);
-            break;
-        case INVALID_TOPIC_EXCEPTION:
-            onMetadataError.accept(errorCode);
-            break;
-        case LEADER_NOT_AVAILABLE:
-            // recoverable
             break;
         case NONE:
             if (fetchKey != null)
@@ -405,6 +399,10 @@ public final class NetworkConnectionPool
         short errorCode = topicMetadata.errorCode();
         switch(errorCode)
         {
+        case INVALID_TOPIC_EXCEPTION:
+        case UNKNOWN_TOPIC_OR_PARTITION:
+            onMetadataError.accept(errorCode, topicName);
+            break;
         case NONE:
             if (topicMetadata.compacted)
             {
@@ -417,7 +415,8 @@ public final class NetworkConnectionPool
             }
             break;
         default:
-            onMetadataError.accept(errorCode, topicName);
+            throw new RuntimeException(format("Unexpected errorCode %d from metadata query for topic %s",
+                    errorCode, topicName));
         }
     }
 
@@ -569,8 +568,7 @@ public final class NetworkConnectionPool
         {
             if (networkId != 0L)
             {
-                NetworkConnectionPool.this.clientStreamFactory
-                    .doAbort(networkTarget, networkId);
+                clientStreamFactory.doAbort(networkTarget, networkId);
                 this.networkId = 0L;
             }
         }
@@ -579,8 +577,7 @@ public final class NetworkConnectionPool
         {
             if (networkId != 0L)
             {
-                NetworkConnectionPool.this.clientStreamFactory
-                    .doEnd(networkTarget, networkId);
+                clientStreamFactory.doEnd(networkTarget, networkId);
                 this.networkId = 0L;
             }
         }
@@ -594,11 +591,11 @@ public final class NetworkConnectionPool
             switch (msgTypeId)
             {
             case WindowFW.TYPE_ID:
-                final WindowFW window = NetworkConnectionPool.this.windowRO.wrap(buffer, index, index + length);
+                final WindowFW window = windowRO.wrap(buffer, index, index + length);
                 handleWindow(window);
                 break;
             case ResetFW.TYPE_ID:
-                final ResetFW reset = NetworkConnectionPool.this.clientStreamFactory.resetRO.wrap(buffer, index, index + length);
+                final ResetFW reset = clientStreamFactory.resetRO.wrap(buffer, index, index + length);
                 handleReset(reset);
                 break;
             default:
@@ -622,7 +619,7 @@ public final class NetworkConnectionPool
         private void handleReset(
             ResetFW reset)
         {
-            NetworkConnectionPool.this.clientStreamFactory.correlations.remove(
+            clientStreamFactory.correlations.remove(
                     networkCorrelationId, AbstractNetworkConnection.this);
             handleConnectionFailed();
         }
@@ -644,12 +641,12 @@ public final class NetworkConnectionPool
         {
             if (msgTypeId == BeginFW.TYPE_ID)
             {
-                final BeginFW begin = NetworkConnectionPool.this.clientStreamFactory.beginRO.wrap(buffer, index, index + length);
+                final BeginFW begin = clientStreamFactory.beginRO.wrap(buffer, index, index + length);
                 handleBegin(begin);
             }
             else
             {
-                NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
+                clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
             }
         }
 
@@ -1642,6 +1639,7 @@ public final class NetworkConnectionPool
             {
                 // internal Kafka error, trigger connection failed and reconnect
                 pendingTopicMetadata.reset();
+                System.out.println("Unexpected server error from metadata query, aborting metadata connection");
                 abort();
             }
             else
