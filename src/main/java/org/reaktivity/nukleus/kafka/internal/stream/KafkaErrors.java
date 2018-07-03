@@ -24,7 +24,7 @@ public class KafkaErrors
     static final short NOT_LEADER_FOR_PARTITION = 6;
     static final short INVALID_TOPIC_EXCEPTION = 17;
     static final short TOPIC_AUTHORIZATION_FAILED = 29;
-    static final short UNKNOWN = -1;
+    static final short UNEXPECTED_SERVER_ERROR = -1;
 
     static boolean isRecoverable(short errorCode)
     {
