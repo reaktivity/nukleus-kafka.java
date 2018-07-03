@@ -241,9 +241,9 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                 topicName));
             break;
         default:
-            throw new IllegalStateException(format(
-                "Received error code %d from Kafka while attempting to bootstrap topic \"%s\"",
-                errorCode, topicName));
+            System.out.println(format(
+                "WARNING: bootstrap failed while getting metadata for topic \"%s\" with error code %d",
+                topicName, errorCode));
         }
     }
 
