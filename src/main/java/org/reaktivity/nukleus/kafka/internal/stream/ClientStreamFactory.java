@@ -334,7 +334,7 @@ public final class ClientStreamFactory implements StreamFactory
         target.accept(end.typeId(), end.buffer(), end.offset(), end.sizeof());
     }
 
-    private void doAbort(
+    void doAbort(
         final MessageConsumer target,
         final long targetId)
     {
