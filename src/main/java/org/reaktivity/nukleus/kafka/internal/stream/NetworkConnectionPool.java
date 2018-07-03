@@ -1639,7 +1639,6 @@ public final class NetworkConnectionPool
             {
                 // internal Kafka error, trigger connection failed and reconnect
                 pendingTopicMetadata.reset();
-                System.out.println("Unexpected server error from metadata query, aborting metadata connection");
                 abort();
             }
             else
