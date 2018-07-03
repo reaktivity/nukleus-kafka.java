@@ -31,6 +31,8 @@ import org.reaktivity.reaktor.test.ReaktorRule;
 
 public class BootstrapIT
 {
+    private static final long DELETE_RETENTION_MS = 500;
+
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
             .addScriptRoot("routeAnyTopic", "org/reaktivity/specification/nukleus/kafka/control/route")
@@ -171,6 +173,28 @@ public class BootstrapIT
         k3po.notifyBarrier("DELIVER_HISTORICAL_FETCH_RESPONSE");
         k3po.awaitBarrier("HISTORICAL_FETCH_RESPONSE_WRITTEN");
         k3po.notifyBarrier("DELIVER_SECOND_LIVE_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/compacted.message/client",
+        "${server}/compacted.tombstone.then.message/server"})
+    @ScriptProperty({ "networkAccept \"nukleus://target/streams/kafka\"",
+                      "messageOffset 12L",
+                      })
+    public void shouldExpireTombstoneKeyAndOffset() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("ROUTED_CLIENT");
+        k3po.awaitBarrier("RECEIVED_SECOND_FETCH_REQUEST");
+        long schedulingMargin = 1000;
+        long waitTimeForTombstoneExpiryToBeProcessed = DELETE_RETENTION_MS + schedulingMargin;
+        Thread.sleep(waitTimeForTombstoneExpiryToBeProcessed);
+        k3po.notifyBarrier("CONNECT_CLIENT");
+        k3po.awaitBarrier("CLIENT_CONNECTED");
+        k3po.notifyBarrier("DELIVER_SECOND_FETCH_RESPONSE");
         k3po.finish();
     }
 
