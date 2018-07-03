@@ -1689,7 +1689,6 @@ public final class NetworkConnectionPool
             {
                 for (int i = 0; i < partitionCount; i++)
                 {
-                    // TODO: read topic config "delete.retention.ms" and use that value if set
                     partitionIndexes[i] = new CompactedPartitionIndex(1000, deleteRetentionMs,
                             messageCache);
                 }
