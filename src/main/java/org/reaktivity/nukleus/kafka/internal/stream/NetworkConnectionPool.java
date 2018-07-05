@@ -541,7 +541,7 @@ public final class NetworkConnectionPool
         final void doBeginIfNotConnected(
             Flyweight.Builder.Visitor extensionVisitor)
         {
-            if (networkId == 0L)
+            if (networkId == 0L && networkReplyId == 0L)
             {
                 // TODO: progressive back-off before reconnect
                 //       if choose to give up, say after maximum retry attempts,
@@ -564,16 +564,17 @@ public final class NetworkConnectionPool
 
         abstract void doRequestIfNeeded();
 
-        void abort()
+        final void abort()
         {
             if (networkId != 0L)
             {
                 clientStreamFactory.doAbort(networkTarget, networkId);
                 this.networkId = 0L;
+                this.networkRequestBudget = 0;
             }
         }
 
-        void close()
+        final void close()
         {
             if (networkId != 0L)
             {
@@ -831,6 +832,7 @@ public final class NetworkConnectionPool
             networkRequestPadding = 0;
             networkResponseBudget = 0;
             networkId = 0L;
+            networkReplyId = 0L;
             nextRequestId = 0;
             nextResponseId = 0;
         }
