@@ -2,16 +2,6 @@ dist: trusty
 language: java
 before_install:
   - rm ~/.m2/settings.xml
-  - git clone https://github.com/cmebarrow/nukleus-kafka.spec
-  - cd nukleus-kafka.spec
-  - git checkout unknown_error_test
-  - mvn clean install -DskipTests
-  - cd ..
-  - git clone https://github.com/cmebarrow/k3po-nukleus-ext.java
-  - cd k3po-nukleus-ext.java
-  - git checkout read_aborted_write_close
-  - mvn clean install -DskipTests
-  - cd ..
 jdk:
   - oraclejdk8
 install: mvn -v
