@@ -15,15 +15,16 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static java.lang.Integer.parseInt;
 import static java.lang.String.format;
 import static java.nio.ByteBuffer.allocateDirect;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Collections.emptyIterator;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.INVALID_TOPIC_EXCEPTION;
-import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.LEADER_NOT_AVAILABLE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.OFFSET_OUT_OF_RANGE;
+import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.UNEXPECTED_SERVER_ERROR;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.UNKNOWN_TOPIC_OR_PARTITION;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 
@@ -121,6 +122,7 @@ public final class NetworkConnectionPool
 
     private static final byte RESOURCE_TYPE_TOPIC = 2;
     private static final String CLEANUP_POLICY = "cleanup.policy";
+    private static final String DELETE_RETENTION_MS = "delete.retention.ms";
     private static final String COMPACT = "compact";
 
     private static final int LOCAL_SLOT = -2;
@@ -314,14 +316,9 @@ public final class NetworkConnectionPool
         short errorCode = topicMetadata.errorCode();
         switch(errorCode)
         {
+        case INVALID_TOPIC_EXCEPTION:
         case UNKNOWN_TOPIC_OR_PARTITION:
             onMetadataError.accept(errorCode);
-            break;
-        case INVALID_TOPIC_EXCEPTION:
-            onMetadataError.accept(errorCode);
-            break;
-        case LEADER_NOT_AVAILABLE:
-            // recoverable
             break;
         case NONE:
             if (fetchKey != null)
@@ -348,7 +345,8 @@ public final class NetworkConnectionPool
                 }
             }
             final NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
-                    name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, false, false));
+                    name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, false,
+                            topicMetadata.deleteRetentionMs, false));
             finishAttachConsumer.accept(attachDetailsConsumer ->
             {
                 progressHandlerConsumer.accept(
@@ -361,7 +359,8 @@ public final class NetworkConnectionPool
 
             break;
         default:
-            throw new RuntimeException(format("Unexpected errorCode %d from metadata query", errorCode));
+            throw new RuntimeException(format("Unexpected errorCode %d from metadata query for topic %s",
+                    errorCode, topicName));
         }
     }
 
@@ -400,28 +399,24 @@ public final class NetworkConnectionPool
         short errorCode = topicMetadata.errorCode();
         switch(errorCode)
         {
+        case INVALID_TOPIC_EXCEPTION:
         case UNKNOWN_TOPIC_OR_PARTITION:
             onMetadataError.accept(errorCode, topicName);
-            break;
-        case INVALID_TOPIC_EXCEPTION:
-            onMetadataError.accept(errorCode, topicName);
-            break;
-        case LEADER_NOT_AVAILABLE:
-            // recoverable
             break;
         case NONE:
             if (topicMetadata.compacted)
             {
                 NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
                         name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted,
-                                proactive, forceProactiveMessageCache));
+                                proactive, topicMetadata.deleteRetentionMs, forceProactiveMessageCache));
                 topic.addRoute(routeHeaders);
                 doConnections(topicMetadata);
                 doFlush();
             }
             break;
         default:
-            throw new RuntimeException(format("Unexpected errorCode %d from metadata query", errorCode));
+            throw new RuntimeException(format("Unexpected errorCode %d from metadata query for topic %s",
+                    errorCode, topicName));
         }
     }
 
@@ -569,12 +564,20 @@ public final class NetworkConnectionPool
 
         abstract void doRequestIfNeeded();
 
+        void abort()
+        {
+            if (networkId != 0L)
+            {
+                clientStreamFactory.doAbort(networkTarget, networkId);
+                this.networkId = 0L;
+            }
+        }
+
         void close()
         {
             if (networkId != 0L)
             {
-                NetworkConnectionPool.this.clientStreamFactory
-                    .doEnd(networkTarget, networkId);
+                clientStreamFactory.doEnd(networkTarget, networkId);
                 this.networkId = 0L;
             }
         }
@@ -588,11 +591,11 @@ public final class NetworkConnectionPool
             switch (msgTypeId)
             {
             case WindowFW.TYPE_ID:
-                final WindowFW window = NetworkConnectionPool.this.windowRO.wrap(buffer, index, index + length);
+                final WindowFW window = windowRO.wrap(buffer, index, index + length);
                 handleWindow(window);
                 break;
             case ResetFW.TYPE_ID:
-                final ResetFW reset = NetworkConnectionPool.this.clientStreamFactory.resetRO.wrap(buffer, index, index + length);
+                final ResetFW reset = clientStreamFactory.resetRO.wrap(buffer, index, index + length);
                 handleReset(reset);
                 break;
             default:
@@ -616,10 +619,9 @@ public final class NetworkConnectionPool
         private void handleReset(
             ResetFW reset)
         {
-            NetworkConnectionPool.this.clientStreamFactory.correlations.remove(
+            clientStreamFactory.correlations.remove(
                     networkCorrelationId, AbstractNetworkConnection.this);
-            doReinitialize();
-            doRequestIfNeeded();
+            handleConnectionFailed();
         }
 
         private void handleStream(
@@ -639,12 +641,12 @@ public final class NetworkConnectionPool
         {
             if (msgTypeId == BeginFW.TYPE_ID)
             {
-                final BeginFW begin = NetworkConnectionPool.this.clientStreamFactory.beginRO.wrap(buffer, index, index + length);
+                final BeginFW begin = clientStreamFactory.beginRO.wrap(buffer, index, index + length);
                 handleBegin(begin);
             }
             else
             {
-                NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
+                clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
             }
         }
 
@@ -788,6 +790,12 @@ public final class NetworkConnectionPool
             int networkOffset,
             int networkLimit);
 
+        private void handleConnectionFailed()
+        {
+            doReinitialize();
+            doRequestIfNeeded();
+        }
+
         private void handleEnd(
             EndFW end)
         {
@@ -798,8 +806,7 @@ public final class NetworkConnectionPool
         private void handleAbort(
             AbortFW abort)
         {
-            doReinitialize();
-            doRequestIfNeeded();
+            handleConnectionFailed();
         }
 
         void doOfferResponseBudget()
@@ -1388,7 +1395,7 @@ public final class NetworkConnectionPool
                         buffer, encodeLimit, buffer.capacity())
                         .type(RESOURCE_TYPE_TOPIC)
                         .name(pendingTopicMetadata.topicName)
-                        .configNamesCount(1)
+                        .configNamesCount(2)
                         .build();
 
                 encodeLimit = resourceRequest.limit();
@@ -1396,6 +1403,13 @@ public final class NetworkConnectionPool
                 String16FW configName = configNameRW.wrap(
                         buffer, encodeLimit, buffer.capacity())
                         .set(CLEANUP_POLICY, UTF_8)
+                        .build();
+
+                encodeLimit = configName.limit();
+
+                configName = configNameRW.wrap(
+                        buffer, encodeLimit, buffer.capacity())
+                        .set(DELETE_RETENTION_MS, UTF_8)
                         .build();
 
                 encodeLimit = configName.limit();
@@ -1515,6 +1529,7 @@ public final class NetworkConnectionPool
 
             short errorCode = NONE;
             boolean compacted = false;
+            int deleteRetentionMs = KAFKA_SERVER_DEFAULT_DELETE_RETENTION_MS;
             for (int resourceIndex = 0; resourceIndex < resourceCount && errorCode == NONE; resourceIndex++)
             {
                 final ResourceResponseFW resource =
@@ -1533,10 +1548,20 @@ public final class NetworkConnectionPool
                 {
                     final ConfigResponseFW config =
                             NetworkConnectionPool.this.configResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
-                    String16FW configName = config.name();
-                    assert configName.asString().equals(CLEANUP_POLICY);
-                    compacted = config.value() != null && config.value().asString().equals(COMPACT);
-                    networkOffset = config.limit();
+                    String configName = config.name().asString();
+                    switch (configName)
+                    {
+                    case CLEANUP_POLICY:
+                        compacted = config.value() != null && config.value().asString().equals(COMPACT);
+                        networkOffset = config.limit();
+                        break;
+                    case DELETE_RETENTION_MS:
+                        deleteRetentionMs = config.value() == null ? KAFKA_SERVER_DEFAULT_DELETE_RETENTION_MS :
+                            parseInt(config.value().asString());
+                        break;
+                    default:
+                        assert false : format("Unexpected config name %s in describe configs response", configName);
+                    }
                 }
             }
             if (errorCode != NONE && KafkaErrors.isRecoverable(errorCode))
@@ -1550,6 +1575,7 @@ public final class NetworkConnectionPool
                 pendingTopicMetadata = null;
                 metadata.setErrorCode(errorCode);
                 metadata.setCompacted(compacted);
+                metadata.setDeleteRetentionMs(deleteRetentionMs);
                 metadata.setCompleted();
                 metadata.flush();
             }
@@ -1609,6 +1635,12 @@ public final class NetworkConnectionPool
             {
                 pendingTopicMetadata.nextRequiredRequestType = MetadataRequestType.DESCRIBE_CONFIGS;
             }
+            else if (errorCode == UNEXPECTED_SERVER_ERROR)
+            {
+                // internal Kafka error, trigger connection failed and reconnect
+                pendingTopicMetadata.reset();
+                abort();
+            }
             else
             {
                 if (KafkaErrors.isRecoverable(errorCode))
@@ -1652,6 +1684,7 @@ public final class NetworkConnectionPool
             int partitionCount,
             boolean compacted,
             boolean proactive,
+            int deleteRetentionMs,
             boolean forceProactiveMessageCache)
         {
             this.topicName = topicName;
@@ -1666,8 +1699,7 @@ public final class NetworkConnectionPool
             {
                 for (int i = 0; i < partitionCount; i++)
                 {
-                    // TODO: read topic config "delete.retention.ms" and use that value if set
-                    partitionIndexes[i] = new CompactedPartitionIndex(1000, KAFKA_SERVER_DEFAULT_DELETE_RETENTION_MS,
+                    partitionIndexes[i] = new CompactedPartitionIndex(1000, deleteRetentionMs,
                             messageCache);
                 }
             }
@@ -2108,6 +2140,7 @@ public final class NetworkConnectionPool
         private final String topicName;
         private short errorCode;
         private boolean compacted;
+        private int deleteRetentionMs;
         private boolean completed;
         BrokerMetadata[] brokers;
         private int nextBrokerIndex;
@@ -2129,6 +2162,12 @@ public final class NetworkConnectionPool
         void setCompacted(boolean compacted)
         {
             this.compacted = compacted;
+        }
+
+        void setDeleteRetentionMs(
+            int deleteRetentionMs)
+        {
+             this.deleteRetentionMs = deleteRetentionMs;
         }
 
         void setCompleted()

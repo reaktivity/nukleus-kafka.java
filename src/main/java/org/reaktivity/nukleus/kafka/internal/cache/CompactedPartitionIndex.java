@@ -100,6 +100,13 @@ public class CompactedPartitionIndex implements PartitionIndex
                 entry.offset = messageStartOffset;
             }
             entries.add(entry);
+            if (value == null)
+            {
+                MutableDirectBuffer keyCopy = new UnsafeBuffer(new byte[key.capacity()]);
+                keyCopy.putBytes(0,  key, 0, key.capacity());
+                tombstoneKeys.add(keyCopy);
+                tombstoneExpiryTimes.add(timestamp + tombstoneLifetimeMillis);
+            }
             if (cacheNewMessages)
             {
                 cacheMessage(entry, timestamp, traceId, key, headers, value);
@@ -187,13 +194,6 @@ public class CompactedPartitionIndex implements PartitionIndex
         HeadersFW headers,
         DirectBuffer value)
     {
-        if (value == null)
-        {
-            MutableDirectBuffer keyCopy = new UnsafeBuffer(new byte[key.capacity()]);
-            keyCopy.putBytes(0,  key, 0, key.capacity());
-            tombstoneKeys.add(keyCopy);
-            tombstoneExpiryTimes.add(timestamp + tombstoneLifetimeMillis);
-        }
         if (entry.message == NO_MESSAGE)
         {
             entry.message = messageCache.put(timestamp, traceId, key, headers, value);
