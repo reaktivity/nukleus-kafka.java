@@ -66,6 +66,28 @@ public class MetadataIT
     @Specification({
         "${route}/client/controller",
         "${client}/zero.offset/client",
+        "${metadata}/one.topic.unknown.error.abort.receive.abort.and.retry/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldAbortReceiveAbortThenReconnectAndRetryWhenMetadataQueryGivesUnknownError() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset/client",
+        "${metadata}/one.topic.unknown.error.abort.receive.end.and.retry/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldAbortReceiveEndThenReconnectAndRetryWWhenMetadataQueryGivesUnknownError() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset/client",
         "${metadata}/broker.connection.reset.and.retry/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldRetryWhenBrokerNotAvailable() throws Exception
