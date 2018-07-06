@@ -132,7 +132,7 @@ public class ControllerIT
         k3po.start();
 
         reaktor.controller(KafkaController.class)
-               .routeClient("source", 0L, "target", targetRef, topicName, headers)
+               .routeClient("source", 0L, "target", targetRef, topicName, null, headers)
                .get();
 
         k3po.finish();
@@ -153,7 +153,7 @@ public class ControllerIT
         k3po.start();
 
         reaktor.controller(KafkaController.class)
-               .routeClient("source", 0L, "target", targetRef, topicName, headers)
+               .routeClient("source", 0L, "target", targetRef, topicName, null, headers)
                .get();
 
         k3po.finish();
@@ -175,11 +175,11 @@ public class ControllerIT
         k3po.start();
 
         Long applicationRouteRef = reaktor.controller(KafkaController.class)
-               .routeClient("source", 0L, "target", targetRef, topicName, headers1)
+               .routeClient("source", 0L, "target", targetRef, topicName, null, headers1)
                .get();
 
         assertEquals(applicationRouteRef, reaktor.controller(KafkaController.class)
-                .routeClient("source", applicationRouteRef, "target", targetRef, topicName, headers2)
+                .routeClient("source", applicationRouteRef, "target", targetRef, topicName, null, headers2)
                 .get());
 
         k3po.finish();
@@ -276,13 +276,13 @@ public class ControllerIT
         k3po.start();
 
         long sourceRef = reaktor.controller(KafkaController.class)
-              .routeClient("source", 0L, "target", targetRef, topicName, headers)
+              .routeClient("source", 0L, "target", targetRef, topicName, null, headers)
               .get();
 
         k3po.notifyBarrier("ROUTED_CLIENT");
 
         reaktor.controller(KafkaController.class)
-               .unrouteClient("source", sourceRef, "target", targetRef, topicName, headers)
+               .unrouteClient("source", sourceRef, "target", targetRef, topicName, null, headers)
                .get();
 
         k3po.finish();
@@ -304,13 +304,13 @@ public class ControllerIT
         k3po.start();
 
         long sourceRef = reaktor.controller(KafkaController.class)
-              .routeClient("source", 0L, "target", targetRef, topicName, headers)
+              .routeClient("source", 0L, "target", targetRef, topicName, null, headers)
               .get();
 
         k3po.notifyBarrier("ROUTED_CLIENT");
 
         reaktor.controller(KafkaController.class)
-               .unrouteClient("source", sourceRef, "target", targetRef, topicName, headers)
+               .unrouteClient("source", sourceRef, "target", targetRef, topicName, null, headers)
                .get();
 
         k3po.finish();
@@ -333,21 +333,21 @@ public class ControllerIT
         k3po.start();
 
         Long applicationRouteRef = reaktor.controller(KafkaController.class)
-               .routeClient("source", 0L, "target", targetRef, topicName, headers1)
+               .routeClient("source", 0L, "target", targetRef, topicName, null, headers1)
                .get();
 
         reaktor.controller(KafkaController.class)
-                .routeClient("source", applicationRouteRef, "target", targetRef, topicName, headers2)
+                .routeClient("source", applicationRouteRef, "target", targetRef, topicName, null, headers2)
                 .get();
 
         k3po.notifyBarrier("ROUTED_CLIENT");
 
         reaktor.controller(KafkaController.class)
-                .unrouteClient("source", applicationRouteRef, "target",  targetRef, topicName, headers1)
+                .unrouteClient("source", applicationRouteRef, "target",  targetRef, topicName, null, headers1)
                 .get();
 
         reaktor.controller(KafkaController.class)
-                .unrouteClient("source", applicationRouteRef, "target",  targetRef, topicName, headers2)
+                .unrouteClient("source", applicationRouteRef, "target",  targetRef, topicName, null, headers2)
                 .get();
 
         k3po.finish();
