@@ -227,9 +227,13 @@ public class CompactedPartitionIndex implements PartitionIndex
                     ceiling++;
                 }
             }
-            for (int i=entries.size() - 1; i > ceiling - 1; i--)
+
+            if (ceiling != NO_POSITION)
             {
-                entries.remove(i);
+                for (int i=entries.size() - 1; i > ceiling - 1; i--)
+                {
+                    entries.remove(i);
+                }
             }
             compactFrom = Integer.MAX_VALUE;
         }
