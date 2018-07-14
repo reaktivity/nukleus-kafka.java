@@ -1281,6 +1281,7 @@ public final class NetworkConnectionPool
             case LEADER_NOT_AVAILABLE:
             case NOT_LEADER_FOR_PARTITION:
                 topicMetadataByName.get(topicName).setComplete(false);
+                metadataConnection.doRequestIfNeeded();
                 break;
             default:
                 throw new IllegalStateException(format(
@@ -1748,9 +1749,9 @@ public final class NetworkConnectionPool
             default:
                 String topicName = topicMetadata.topicName;
                 topicMetadataByName.remove(topicName);
+                detachSubscribers(topicName);
                 topicsByName.remove(topicName);
                 pendingTopicMetadata = null;
-                detachSubscribers(topicName);
                 topicMetadata.setErrorCode(error);
                 topicMetadata.flush();
             }
@@ -2277,6 +2278,16 @@ public final class NetworkConnectionPool
         void setComplete(boolean complete)
         {
             this.complete = complete;
+            if (!complete)
+            {
+                nextRequiredRequestType = MetadataRequestType.METADATA;
+
+                // Prevent fetching for the topic
+                for (int i = 0; i < nodeIdsByPartition.length; i++)
+                {
+                    nodeIdsByPartition[i] = UNKNOWN_BROKER;
+                }
+            }
         }
 
         MetadataRequestType nextRequiredRequestType()

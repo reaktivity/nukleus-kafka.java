@@ -44,8 +44,9 @@ public class HeadersMessageDispatcher implements MessageDispatcher
     @Override
     public void detach()
     {
-        for (MessageDispatcher dispatcher : dispatchers)
+        for (int i = 0; i < dispatchers.size(); i++)
         {
+            MessageDispatcher dispatcher = dispatchers.get(i);
             dispatcher.detach();
         }
     }
@@ -78,8 +79,9 @@ public class HeadersMessageDispatcher implements MessageDispatcher
             long lastOffset)
     {
         broadcast.flush(partition, requestOffset, lastOffset);
-        for (MessageDispatcher dispatcher : dispatchers)
+        for (int i = 0; i < dispatchers.size(); i++)
         {
+            MessageDispatcher dispatcher = dispatchers.get(i);
             dispatcher.flush(partition, requestOffset, lastOffset);
         }
     }

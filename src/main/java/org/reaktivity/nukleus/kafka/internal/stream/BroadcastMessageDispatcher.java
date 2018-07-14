@@ -29,8 +29,10 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
     @Override
     public void detach()
     {
-        for (MessageDispatcher dispatcher : dispatchers)
+        //  Avoid iterator allocation
+        for (int i = 0; i < dispatchers.size(); i++)
         {
+            MessageDispatcher dispatcher = dispatchers.get(i);
             dispatcher.detach();
         }
     }
@@ -47,8 +49,9 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
                  DirectBuffer value)
     {
         int result = 0;
-        for (MessageDispatcher dispatcher : dispatchers)
+        for (int i = 0; i < dispatchers.size(); i++)
         {
+            MessageDispatcher dispatcher = dispatchers.get(i);
             result |= dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
         }
         return result;
@@ -60,8 +63,9 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
             long requestOffset,
             long lastOffset)
     {
-        for (MessageDispatcher dispatcher : dispatchers)
+        for (int i = 0; i < dispatchers.size(); i++)
         {
+            MessageDispatcher dispatcher = dispatchers.get(i);
             dispatcher.flush(partition, requestOffset, lastOffset);
         }
     }

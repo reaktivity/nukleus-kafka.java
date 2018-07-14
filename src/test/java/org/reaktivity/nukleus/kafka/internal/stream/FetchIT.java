@@ -1101,7 +1101,7 @@ public class FetchIT
     @Test
     @Specification({
         "${routeAnyTopic}/client/controller",
-        "${client}/zero.offset.messages.multiple.partitions.and.topics/client",
+        "${client}/zero.offset.message.two.topics.multiple.partitions/client",
         "${server}/live.fetch.connection.aborted/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReconnectRequeryPartitionMetadataAndContinueReceivingMessagesWhenLiveFetchConnectionIsAborted()
@@ -1130,7 +1130,7 @@ public class FetchIT
     @Test
     @Specification({
         "${routeAnyTopic}/client/controller",
-        "${client}/zero.offset.messages.multiple.partitions/client",
+        "${client}/zero.offset.message.two.topics.multiple.partitions/client",
         "${server}/live.fetch.connection.reset/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReconnectRequeryPartitionMetadataAndContinueReceivingMessagesWhenLiveFetchConnectionIsReset()
@@ -1147,8 +1147,8 @@ public class FetchIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
-        "${client}/zero.offset.message.detached/client",
+        "${routeAnyTopic}/client/controller",
+        "${client}/zero.offset.message.two.topics.one.detached/client",
         "${server}/live.fetch.topic.not.found.permanently/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldDetachClientsWhenTopicIsPermanentlyDeleted() throws Exception
