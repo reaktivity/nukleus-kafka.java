@@ -41,6 +41,8 @@ public interface MessageDispatcher
         return (result & FLAGS_BLOCKED) == FLAGS_BLOCKED;
     }
 
+    void detach();
+
     int dispatch(
         int partition,
         long requestOffset,

@@ -483,7 +483,7 @@ public final class ClientStreamFactory implements StreamFactory
         private static final int UNATTACHED = -1;
 
         private final MessageConsumer applicationThrottle;
-        private final long applicationId;
+        private long applicationId;
         private final NetworkConnectionPool networkPool;
 
         private final Long2LongHashMap fetchOffsets;
@@ -538,6 +538,15 @@ public final class ClientStreamFactory implements StreamFactory
             this.fetchOffsets = new Long2LongHashMap(-1L);
             this.streamState = this::beforeBegin;
             budget = new StreamBudget();
+        }
+
+        @Override
+        public void detach()
+        {
+            budget.leaveGroup();
+            doAbort(applicationReply, applicationReplyId);
+            networkPool.doDetach(networkAttachId, fetchOffsets);
+            networkAttachId = UNATTACHED;
         }
 
         @Override
@@ -727,10 +736,7 @@ public final class ClientStreamFactory implements StreamFactory
                 // accept reply stream is allowed to outlive accept stream, so ignore END
                 break;
             case AbortFW.TYPE_ID:
-                budget.leaveGroup();
-                doAbort(applicationReply, applicationReplyId);
-                networkPool.doDetach(networkAttachId, fetchOffsets);
-                networkAttachId = UNATTACHED;
+                detach();
                 break;
             default:
                 doReset(applicationThrottle, applicationId);
@@ -822,7 +828,7 @@ public final class ClientStreamFactory implements StreamFactory
         }
 
         private void onMetadataError(
-            int errorCode)
+            KafkaError errorCode)
         {
             doReset(applicationThrottle, applicationId);
         }

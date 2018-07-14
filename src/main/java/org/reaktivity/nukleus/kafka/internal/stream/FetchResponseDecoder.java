@@ -16,7 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.Objects.requireNonNull;
-import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
+import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.NONE;
 
 import java.util.function.Function;
 
@@ -24,7 +24,7 @@ import org.agrona.BitUtil;
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
-import org.reaktivity.nukleus.kafka.internal.function.StringIntShortConsumer;
+import org.reaktivity.nukleus.kafka.internal.function.StringIntKafkaErrorConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.StringIntToLongFunction;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.Varint32FW;
@@ -73,7 +73,7 @@ public class FetchResponseDecoder implements ResponseDecoder
 
     private final Function<String, DecoderMessageDispatcher> getDispatcher;
     private final StringIntToLongFunction getRequestedOffsetForPartition;
-    private final StringIntShortConsumer errorHandler;
+    private final StringIntKafkaErrorConsumer errorHandler;
     private final int maxRecordBatchSize;
     private final MutableDirectBuffer buffer;
 
@@ -105,7 +105,7 @@ public class FetchResponseDecoder implements ResponseDecoder
     FetchResponseDecoder(
         Function<String, DecoderMessageDispatcher> getDispatcher,
         StringIntToLongFunction getRequestedOffsetForPartition,
-        StringIntShortConsumer errorHandler,
+        StringIntKafkaErrorConsumer errorHandler,
         MutableDirectBuffer decodingBuffer)
     {
         this.getDispatcher = getDispatcher;
@@ -305,9 +305,9 @@ public class FetchResponseDecoder implements ResponseDecoder
                 requestedOffset = getRequestedOffsetForPartition.apply(topicName, partition);
                 nextFetchAt = requestedOffset;
                 decoderState = abortedTransactionCount > 0 ? this::decodeTransactionResponse : this::decodeRecordSet;
-                if (errorCode != NONE)
+                if (errorCode != NONE.errorCode)
                 {
-                    errorHandler.accept(topicName, partition, errorCode);
+                    errorHandler.accept(topicName, partition, KafkaError.asKafkaError(errorCode));
                 }
             }
         }

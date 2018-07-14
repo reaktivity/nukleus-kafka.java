@@ -33,6 +33,7 @@ public class MetadataIT
 {
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
+            .addScriptRoot("routeAnyTopic", "org/reaktivity/specification/nukleus/kafka/control/route")
             .addScriptRoot("metadata", "org/reaktivity/specification/kafka/metadata.v5")
             .addScriptRoot("server", "org/reaktivity/specification/kafka/fetch.v5")
             .addScriptRoot("client", "org/reaktivity/specification/nukleus/kafka/streams/fetch");
@@ -88,9 +89,31 @@ public class MetadataIT
     @Specification({
         "${route}/client/controller",
         "${client}/zero.offset/client",
-        "${metadata}/broker.connection.reset.and.retry/server" })
+        "${metadata}/metadata.connection.aborted.and.reconnect/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldRetryWhenBrokerNotAvailable() throws Exception
+    public void shouldReconnectAndContinueMetadataQueriesWhenBrokerConnectionIsAborted() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${routeAnyTopic}/client/controller",
+        "${client}/zero.offset/client",
+        "${metadata}/metadata.connection.closed.and.reconnect/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReconnectAndContinueMetadataQueriesWhenBrokerIsEnded() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset/client",
+        "${metadata}/metadata.connection.reset.and.reconnect/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReconnectAndContinueMetadataQueriesWhenBrokerConnectionIsReset() throws Exception
     {
         k3po.finish();
     }
