@@ -495,7 +495,7 @@ public final class NetworkConnectionPool
 
     void removeConnection(HistoricalFetchConnection connection)
     {
-        ArrayUtil.remove(historicalConnections, connection);
+        historicalConnections = ArrayUtil.remove(historicalConnections, connection);
     }
 
     abstract class AbstractNetworkConnection
@@ -1285,7 +1285,7 @@ public final class NetworkConnectionPool
                 break;
             default:
                 throw new IllegalStateException(format(
-                    "%s: unexpected error code %d from fetch, topic %s, partition %d, requested offset %d",
+                    "%s: unexpected error code %s from fetch, topic %s, partition %d, requested offset %d",
                     this, errorCode, topicName, partition, getRequestedOffset(topicName, partition)));
             }
         }
