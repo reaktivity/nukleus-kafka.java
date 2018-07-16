@@ -27,7 +27,7 @@ public enum KafkaError
     INVALID_TOPIC_EXCEPTION((short) 17),
     TOPIC_AUTHORIZATION_FAILED((short) 29),
     UNEXPECTED_SERVER_ERROR((short) -1),
-    UNKNOWN_TO_KAFKA_NUKLEUS((short) -2);
+    UNRECOGNIZED_ERROR_CODE((short) -2);
 
     boolean isRecoverable()
     {
@@ -49,7 +49,7 @@ public enum KafkaError
 
     public static KafkaError asKafkaError(short errorCode)
     {
-        KafkaError result = UNKNOWN_TO_KAFKA_NUKLEUS;
+        KafkaError result = UNRECOGNIZED_ERROR_CODE;
         KafkaError[] values = KafkaError.values();
         for (int i=0; i < values.length; i++)
         {

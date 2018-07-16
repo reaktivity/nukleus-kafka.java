@@ -18,7 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.function;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaError;
 
 @FunctionalInterface
-public interface StringIntKafkaErrorConsumer
+public interface KafkaErrorConsumer
 {
-    void accept(String stringValue, int intValue, KafkaError error);
+    void accept(String topicName, int partition, KafkaError error);
 }

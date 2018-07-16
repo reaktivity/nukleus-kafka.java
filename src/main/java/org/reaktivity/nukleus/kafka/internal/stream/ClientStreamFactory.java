@@ -483,7 +483,7 @@ public final class ClientStreamFactory implements StreamFactory
         private static final int UNATTACHED = -1;
 
         private final MessageConsumer applicationThrottle;
-        private long applicationId;
+        private final long applicationId;
         private final NetworkConnectionPool networkPool;
 
         private final Long2LongHashMap fetchOffsets;

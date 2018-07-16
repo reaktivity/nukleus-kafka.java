@@ -1202,7 +1202,7 @@ public final class NetworkConnectionPool
                 {
                     final ListOffsetsPartitionResponseFW partition =
                             listOffsetsPartitionResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
-                    errorCode = KafkaError.asKafkaError(partition.errorCode());
+                    errorCode = asKafkaError(partition.errorCode());
                     if (errorCode != NONE)
                     {
                         break;
@@ -1707,7 +1707,7 @@ public final class NetworkConnectionPool
                         NetworkConnectionPool.this.topicMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
                 final String16FW topicName = topicMetadata.topic();
                 assert topicName.asString().equals(pendingTopicMetadata.topicName);
-                error = KafkaError.asKafkaError(topicMetadata.errorCode());
+                error = asKafkaError(topicMetadata.errorCode());
                 if (error != NONE)
                 {
                     break;
