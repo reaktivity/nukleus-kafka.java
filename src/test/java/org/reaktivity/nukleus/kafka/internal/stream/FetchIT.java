@@ -1218,7 +1218,10 @@ public class FetchIT
         k3po.start();
         k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
         k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_ONE");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_TWO");
         k3po.finish();
     }
 
@@ -1226,7 +1229,7 @@ public class FetchIT
     @Specification({
             "${route}/client/controller",
             "${client}/zero.offset.messages.group.budget.reset/client",
-            "${server}/zero.offset.messages.group.budget.reset/server" })
+            "${server}/zero.offset.messages.group.budget/server" })
     @ScriptProperty({"networkAccept \"nukleus://target/streams/kafka\"",
             "applicationConnectWindow 24"})
     public void shouldFanoutMessagesAtZeroOffsetUsingGroupBudgetReset() throws Exception
@@ -1235,7 +1238,9 @@ public class FetchIT
         k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
         k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
         awaitWindowFromClient();
-        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE");
+        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_ONE");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_TWO");
         k3po.finish();
     }
 
