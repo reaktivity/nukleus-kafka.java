@@ -42,6 +42,17 @@ public class HeadersMessageDispatcher implements MessageDispatcher
     }
 
     @Override
+    public void detach()
+    {
+        broadcast.detach();
+        for (int i = 0; i < dispatchers.size(); i++)
+        {
+            MessageDispatcher dispatcher = dispatchers.get(i);
+            dispatcher.detach();
+        }
+    }
+
+    @Override
     public int dispatch(
                  int partition,
                  long requestOffset,

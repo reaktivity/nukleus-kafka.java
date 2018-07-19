@@ -62,6 +62,23 @@ public final class KeyMessageDispatcherTest
     }
 
     @Test
+    public void shouldDetach()
+    {
+        MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
+        MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
+        dispatcher.add(asOctets("key1"), emptyHeaders, child1);
+        dispatcher.add(asOctets("key1"), emptyHeaders, child2);
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(child1).detach();
+                oneOf(child2).detach();
+            }
+        });
+        dispatcher.detach();
+    }
+
+    @Test
     public void shouldDispatchWithMatchingKey()
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");

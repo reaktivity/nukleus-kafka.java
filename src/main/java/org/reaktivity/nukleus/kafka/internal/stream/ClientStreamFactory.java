@@ -541,6 +541,15 @@ public final class ClientStreamFactory implements StreamFactory
         }
 
         @Override
+        public void detach()
+        {
+            budget.leaveGroup();
+            doAbort(applicationReply, applicationReplyId);
+            networkPool.doDetach(networkAttachId, fetchOffsets);
+            networkAttachId = UNATTACHED;
+        }
+
+        @Override
         public int dispatch(
             int partition,
             long requestOffset,
@@ -727,10 +736,7 @@ public final class ClientStreamFactory implements StreamFactory
                 // accept reply stream is allowed to outlive accept stream, so ignore END
                 break;
             case AbortFW.TYPE_ID:
-                budget.leaveGroup();
-                doAbort(applicationReply, applicationReplyId);
-                networkPool.doDetach(networkAttachId, fetchOffsets);
-                networkAttachId = UNATTACHED;
+                detach();
                 break;
             default:
                 doReset(applicationThrottle, applicationId);
@@ -822,7 +828,7 @@ public final class ClientStreamFactory implements StreamFactory
         }
 
         private void onMetadataError(
-            int errorCode)
+            KafkaError errorCode)
         {
             doReset(applicationThrottle, applicationId);
         }

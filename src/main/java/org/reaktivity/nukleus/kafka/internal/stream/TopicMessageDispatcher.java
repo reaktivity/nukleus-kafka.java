@@ -50,6 +50,17 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
     }
 
     @Override
+    public void detach()
+    {
+        broadcast.detach();
+        for (int i=0; i < keys.length; i++)
+        {
+            keys[i].detach();
+        }
+        headers.detach();
+    }
+
+    @Override
     public int dispatch(
         int partition,
         long requestOffset,

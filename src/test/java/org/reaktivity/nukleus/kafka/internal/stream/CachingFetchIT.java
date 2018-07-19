@@ -752,28 +752,6 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset/client",
-        "${server}/live.fetch.abort.and.reconnect/server" })
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReconnectOnAbortOnLiveFetchConnection() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/zero.offset.message/client",
-        "${server}/live.fetch.reset.reconnect.and.message/server" })
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReconnectOnResetOnLiveConnectionAndReceiveMessage() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
         "${client}/nonzero.offset/client",
         "${server}/nonzero.offset/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -1027,7 +1005,10 @@ public class CachingFetchIT
         k3po.start();
         k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
         k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_ONE");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_TWO");
         k3po.finish();
     }
 
@@ -1035,7 +1016,7 @@ public class CachingFetchIT
     @Specification({
             "${route}/client/controller",
             "${client}/zero.offset.messages.group.budget.reset/client",
-            "${server}/zero.offset.messages.group.budget.reset/server" })
+            "${server}/zero.offset.messages.group.budget/server" })
     @ScriptProperty({"networkAccept \"nukleus://target/streams/kafka\"",
             "applicationConnectWindow 24"})
     public void shouldFanoutMessagesAtZeroOffsetUsingGroupBudgetReset() throws Exception
@@ -1044,7 +1025,10 @@ public class CachingFetchIT
         k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
         k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
         awaitWindowFromClient();
-        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_ONE");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_TWO");
         k3po.finish();
     }
 
