@@ -1325,7 +1325,7 @@ public final class NetworkConnectionPool
                 Iterator<NetworkTopicPartition> iterator = topic.partitions.iterator();
                 NetworkTopicPartition candidate = iterator.hasNext() ? iterator.next() : null;
                 NetworkTopicPartition next;
-                while (candidate != null)
+                while (candidate != null && nodeIdsByPartition != null)
                 {
                     next = iterator.hasNext() ? iterator.next() : null;
                     boolean isHighestOffset = next == null || next.id != candidate.id;
