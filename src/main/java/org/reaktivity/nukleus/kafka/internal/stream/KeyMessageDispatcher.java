@@ -39,6 +39,15 @@ public class KeyMessageDispatcher implements MessageDispatcher
     }
 
     @Override
+    public void detach()
+    {
+        for (MessageDispatcher dispatcher: dispatchersByKey.values())
+        {
+            dispatcher.detach();
+        }
+    }
+
+    @Override
     public int dispatch(
         int partition,
         long requestOffset,

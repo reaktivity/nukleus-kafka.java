@@ -16,7 +16,6 @@
 package org.reaktivity.nukleus.kafka.internal;
 
 import static java.lang.String.format;
-import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.UNKNOWN_TOPIC_OR_PARTITION;
 import static org.reaktivity.nukleus.route.RouteKind.CLIENT;
 
 import java.util.ArrayList;
@@ -40,6 +39,7 @@ import org.reaktivity.nukleus.kafka.internal.memory.DefaultMemoryManager;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryLayout;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.stream.ClientStreamFactoryBuilder;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaError;
 import org.reaktivity.nukleus.kafka.internal.stream.NetworkConnectionPool;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
@@ -230,7 +230,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
     }
 
     private void onKafkaError(
-        Short errorCode,
+        KafkaError errorCode,
         String topicName)
     {
         switch(errorCode)

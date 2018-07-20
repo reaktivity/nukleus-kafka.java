@@ -27,6 +27,17 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
     private final List<MessageDispatcher> dispatchers = new ArrayList<MessageDispatcher>();
 
     @Override
+    public void detach()
+    {
+        //  Avoid iterator allocation
+        for (int i = 0; i < dispatchers.size(); i++)
+        {
+            MessageDispatcher dispatcher = dispatchers.get(i);
+            dispatcher.detach();
+        }
+    }
+
+    @Override
     public int dispatch(
                  int partition,
                  long requestOffset,

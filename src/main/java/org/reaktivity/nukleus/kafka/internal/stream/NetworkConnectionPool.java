@@ -21,11 +21,8 @@ import static java.nio.ByteBuffer.allocateDirect;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Collections.emptyIterator;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
-import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.INVALID_TOPIC_EXCEPTION;
-import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.NONE;
-import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.OFFSET_OUT_OF_RANGE;
-import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.UNEXPECTED_SERVER_ERROR;
-import static org.reaktivity.nukleus.kafka.internal.stream.KafkaErrors.UNKNOWN_TOPIC_OR_PARTITION;
+import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.NONE;
+import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.asKafkaError;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 
 import java.nio.ByteOrder;
@@ -160,6 +157,12 @@ public final class NetworkConnectionPool
 
     private static final MessageDispatcher MATCHING_MESSAGE_DISPATCHER = new MessageDispatcher()
     {
+
+        @Override
+        public void detach()
+        {
+        };
+
         @Override
         public int dispatch(
             int partition,
@@ -182,6 +185,7 @@ public final class NetworkConnectionPool
         {
         };
     };
+
     enum MetadataRequestType
     {
         METADATA, DESCRIBE_CONFIGS
@@ -286,7 +290,7 @@ public final class NetworkConnectionPool
         IntSupplier supplyWindow,
         Consumer<PartitionProgressHandler> progressHandlerConsumer,
         Consumer<Consumer<IntBooleanConsumer>> finishAttachConsumer,
-        IntConsumer onMetadataError)
+        Consumer<KafkaError> onMetadataError)
     {
         final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
         metadata.doAttach(m -> doAttach(topicName, fetchOffsets, partitionHash, fetchKey, headers,
@@ -310,10 +314,10 @@ public final class NetworkConnectionPool
         IntSupplier supplyWindow,
         Consumer<PartitionProgressHandler> progressHandlerConsumer,
         Consumer<Consumer<IntBooleanConsumer>> finishAttachConsumer,
-        IntConsumer onMetadataError,
+        Consumer<KafkaError> onMetadataError,
         TopicMetadata topicMetadata)
     {
-        short errorCode = topicMetadata.errorCode();
+        KafkaError errorCode = topicMetadata.errorCode();
         switch(errorCode)
         {
         case INVALID_TOPIC_EXCEPTION:
@@ -359,7 +363,7 @@ public final class NetworkConnectionPool
 
             break;
         default:
-            throw new RuntimeException(format("Unexpected errorCode %d from metadata query for topic %s",
+            throw new RuntimeException(format("Unexpected errorCode %s from metadata query for topic %s",
                     errorCode, topicName));
         }
     }
@@ -368,7 +372,7 @@ public final class NetworkConnectionPool
         String topicName,
         ListFW<KafkaHeaderFW> routeHeaders,
         boolean proactive,
-        BiConsumer<Short, String> onMetadataError)
+        BiConsumer<KafkaError, String> onMetadataError)
     {
         final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
 
@@ -393,10 +397,10 @@ public final class NetworkConnectionPool
         String topicName,
         ListFW<KafkaHeaderFW> routeHeaders,
         boolean proactive,
-        BiConsumer<Short, String> onMetadataError,
+        BiConsumer<KafkaError, String> onMetadataError,
         TopicMetadata topicMetadata)
     {
-        short errorCode = topicMetadata.errorCode();
+        KafkaError errorCode = topicMetadata.errorCode();
         switch(errorCode)
         {
         case INVALID_TOPIC_EXCEPTION:
@@ -482,6 +486,16 @@ public final class NetworkConnectionPool
         {
             detacher.accept(fetchOffsets);
         }
+    }
+
+    void removeConnection(LiveFetchConnection connection)
+    {
+        connections = ArrayUtil.remove(connections, connection);
+    }
+
+    void removeConnection(HistoricalFetchConnection connection)
+    {
+        historicalConnections = ArrayUtil.remove(historicalConnections, connection);
     }
 
     abstract class AbstractNetworkConnection
@@ -580,6 +594,7 @@ public final class NetworkConnectionPool
             {
                 clientStreamFactory.doEnd(networkTarget, networkId);
                 this.networkId = 0L;
+                this.streamState = this::afterClose;
             }
         }
 
@@ -622,6 +637,11 @@ public final class NetworkConnectionPool
         {
             clientStreamFactory.correlations.remove(
                     networkCorrelationId, AbstractNetworkConnection.this);
+            if (networkReplyId != 0L)
+            {
+                clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
+                networkReplyId = 0L;
+            }
             handleConnectionFailed();
         }
 
@@ -670,6 +690,28 @@ public final class NetworkConnectionPool
             case AbortFW.TYPE_ID:
                 final AbortFW abort = NetworkConnectionPool.this.clientStreamFactory.abortRO.wrap(buffer, index, index + length);
                 handleAbort(abort);
+                break;
+            default:
+                NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
+                break;
+            }
+        }
+
+        private void afterClose(
+            int msgTypeId,
+            DirectBuffer buffer,
+            int index,
+            int length)
+        {
+            switch (msgTypeId)
+            {
+            case DataFW.TYPE_ID:
+                final DataFW data = NetworkConnectionPool.this.clientStreamFactory.dataRO.wrap(buffer, index, index + length);
+                handleData(data);
+                break;
+            case EndFW.TYPE_ID:
+            case AbortFW.TYPE_ID:
+                doReinitialize();
                 break;
             default:
                 NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
@@ -791,15 +833,16 @@ public final class NetworkConnectionPool
             int networkOffset,
             int networkLimit);
 
-        private void handleConnectionFailed()
-        {
-            doReinitialize();
-            doRequestIfNeeded();
-        }
+        abstract void handleConnectionFailed();
 
         private void handleEnd(
             EndFW end)
         {
+            if (networkId != 0L)
+            {
+                clientStreamFactory.doEnd(networkTarget, networkId);
+                this.networkId = 0L;
+            }
             doReinitialize();
             doRequestIfNeeded();
         }
@@ -807,6 +850,11 @@ public final class NetworkConnectionPool
         private void handleAbort(
             AbortFW abort)
         {
+            if (networkId != 0L)
+            {
+                clientStreamFactory.doAbort(networkTarget, networkId);
+                this.networkId = 0L;
+            }
             handleConnectionFailed();
         }
 
@@ -1139,7 +1187,7 @@ public final class NetworkConnectionPool
             int topicCount = response.topicCount();
             networkOffset = response.limit();
 
-            short errorCode = NONE;
+            KafkaError errorCode = NONE;
             for (int topicIndex = 0; topicIndex < topicCount && errorCode == NONE; topicIndex++)
             {
                 final ListOffsetsTopicFW topic =
@@ -1154,7 +1202,7 @@ public final class NetworkConnectionPool
                 {
                     final ListOffsetsPartitionResponseFW partition =
                             listOffsetsPartitionResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
-                    errorCode = partition.errorCode();
+                    errorCode = asKafkaError(partition.errorCode());
                     if (errorCode != NONE)
                     {
                         break;
@@ -1179,6 +1227,33 @@ public final class NetworkConnectionPool
             super.doReinitialize();
         }
 
+        @Override
+        void handleConnectionFailed()
+        {
+            invalidateConnectionMetadata();
+            removeConnection();
+            metadataConnection.doRequestIfNeeded();
+        }
+
+        abstract void removeConnection();
+
+        private void invalidateConnectionMetadata()
+        {
+            for (TopicMetadata metadata : topicMetadataByName.values())
+            {
+                if (metadata.removeBroker(brokerId))
+                {
+                    metadata.doAttach(this::metadataUpdated);
+                }
+            }
+        }
+
+        private void metadataUpdated(TopicMetadata metadata)
+        {
+            doConnections(metadata);
+            doFlush();
+        }
+
         private DecoderMessageDispatcher getTopicDispatcher(String topicName)
         {
             NetworkTopic topic = topicsByName.get(topicName);
@@ -1190,7 +1265,7 @@ public final class NetworkConnectionPool
         private void handlePartitionResponseError(
             String topicName,
             int partition,
-            short errorCode)
+            KafkaError errorCode)
         {
             switch(errorCode)
             {
@@ -1202,9 +1277,15 @@ public final class NetworkConnectionPool
                 topicMetadata.setFirstOffset(partition, TopicMetadata.UNKNOWN_OFFSET);
 
                 break;
+            case UNKNOWN_TOPIC_OR_PARTITION:
+            case LEADER_NOT_AVAILABLE:
+            case NOT_LEADER_FOR_PARTITION:
+                topicMetadataByName.get(topicName).setComplete(false);
+                metadataConnection.doRequestIfNeeded();
+                break;
             default:
                 throw new IllegalStateException(format(
-                    "%s: unexpected error code %d from fetch, topic %s, partition %d, requested offset %d",
+                    "%s: unexpected error code %s from fetch, topic %s, partition %d, requested offset %d",
                     this, errorCode, topicName, partition, getRequestedOffset(topicName, partition)));
             }
         }
@@ -1269,6 +1350,12 @@ public final class NetworkConnectionPool
 
             return partitionCount;
         }
+
+        @Override
+        void removeConnection()
+        {
+            NetworkConnectionPool.this.removeConnection(this);
+        }
     }
 
     private final class HistoricalFetchConnection extends AbstractFetchConnection
@@ -1331,6 +1418,12 @@ public final class NetworkConnectionPool
 
             return partitionCount;
         }
+
+        @Override
+        void removeConnection()
+        {
+            NetworkConnectionPool.this.removeConnection(this);
+        }
     }
 
     private final class MetadataConnection extends AbstractNetworkConnection
@@ -1346,7 +1439,7 @@ public final class NetworkConnectionPool
             {
                 if (pendingTopicMetadata == null &&
                     ((topicMetadata = topicMetadataByName.values().stream()
-                      .filter(m -> m.nodeIdsByPartition == null).findFirst()).isPresent()))
+                      .filter(m -> !m.isComplete()).findFirst()).isPresent()))
                 {
                     pendingTopicMetadata = topicMetadata.get();
                 }
@@ -1518,7 +1611,7 @@ public final class NetworkConnectionPool
             }
         }
 
-        void handleDescribeConfigsResponse(
+        private void handleDescribeConfigsResponse(
             long networkTraceId,
             DirectBuffer networkBuffer,
             int networkOffset,
@@ -1529,24 +1622,24 @@ public final class NetworkConnectionPool
             int resourceCount = describeConfigsResponse.resourceCount();
             networkOffset = describeConfigsResponse.limit();
 
-            short errorCode = NONE;
+            KafkaError error = NONE;
             boolean compacted = false;
             int deleteRetentionMs = KAFKA_SERVER_DEFAULT_DELETE_RETENTION_MS;
-            for (int resourceIndex = 0; resourceIndex < resourceCount && errorCode == NONE; resourceIndex++)
+            for (int resourceIndex = 0; resourceIndex < resourceCount && error == NONE; resourceIndex++)
             {
                 final ResourceResponseFW resource =
                         NetworkConnectionPool.this.resourceResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
                 final String16FW name = resource.name();
                 assert name.asString().equals(pendingTopicMetadata.topicName);
-                errorCode = resource.errorCode();
-                if (errorCode != NONE)
+                error = asKafkaError(resource.errorCode());
+                if (error != NONE)
                 {
                     break;
                 }
                 final int configCount = resource.configCount();
                 networkOffset = resource.limit();
 
-                for (int configIndex = 0; configIndex < configCount && errorCode == NONE; configIndex++)
+                for (int configIndex = 0; configIndex < configCount && error == NONE; configIndex++)
                 {
                     final ConfigResponseFW config =
                             NetworkConnectionPool.this.configResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
@@ -1566,7 +1659,7 @@ public final class NetworkConnectionPool
                     }
                 }
             }
-            if (errorCode != NONE && KafkaErrors.isRecoverable(errorCode))
+            if (error.isRecoverable())
             {
                 pendingTopicMetadata.reset();
                 doRequestIfNeeded();
@@ -1575,15 +1668,15 @@ public final class NetworkConnectionPool
             {
                 TopicMetadata metadata = pendingTopicMetadata;
                 pendingTopicMetadata = null;
-                metadata.setErrorCode(errorCode);
+                metadata.setErrorCode(error);
                 metadata.setCompacted(compacted);
                 metadata.setDeleteRetentionMs(deleteRetentionMs);
-                metadata.setCompleted();
+                metadata.setComplete(true);
                 metadata.flush();
             }
         }
 
-        void handleMetadataResponse(
+        private void handleMetadataResponse(
             long networkTraceId,
             DirectBuffer networkBuffer,
             int networkOffset,
@@ -1607,57 +1700,77 @@ public final class NetworkConnectionPool
             final int topicCount = metadataResponsePart2.topicCount();
             assert topicCount == 1;
             networkOffset = metadataResponsePart2.limit();
-            short errorCode = NONE;
-            for (int topicIndex = 0; topicIndex < topicCount && errorCode == NONE; topicIndex++)
+            KafkaError error = NONE;
+            for (int topicIndex = 0; topicIndex < topicCount && error == NONE; topicIndex++)
             {
                 final TopicMetadataFW topicMetadata =
                         NetworkConnectionPool.this.topicMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
                 final String16FW topicName = topicMetadata.topic();
                 assert topicName.asString().equals(pendingTopicMetadata.topicName);
-                errorCode = topicMetadata.errorCode();
-                if (errorCode != NONE)
+                error = asKafkaError(topicMetadata.errorCode());
+                if (error != NONE)
                 {
                     break;
                 }
                 final int partitionCount = topicMetadata.partitionCount();
                 networkOffset = topicMetadata.limit();
 
-                pendingTopicMetadata.initializePartitions(partitionCount);
-                for (int partitionIndex = 0; partitionIndex < partitionCount && errorCode == NONE; partitionIndex++)
+                if (pendingTopicMetadata.initializePartitions(partitionCount))
                 {
-                    final PartitionMetadataFW partition =
-                            NetworkConnectionPool.this.partitionMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
-                    errorCode = partition.errorCode();
-                    pendingTopicMetadata.addPartition(partition.partitionId(), partition.leader());
-                    networkOffset = partition.limit();
-                }
-            }
-            final TopicMetadata topicMetadata = pendingTopicMetadata;
-            if (errorCode == NONE)
-            {
-                pendingTopicMetadata.nextRequiredRequestType = MetadataRequestType.DESCRIBE_CONFIGS;
-            }
-            else if (errorCode == UNEXPECTED_SERVER_ERROR)
-            {
-                // internal Kafka error, trigger connection failed and reconnect
-                pendingTopicMetadata.reset();
-                abort();
-            }
-            else
-            {
-                if (KafkaErrors.isRecoverable(errorCode))
-                {
-                    pendingTopicMetadata.reset();
-                    doRequestIfNeeded();
+                    for (int partitionIndex = 0; partitionIndex < partitionCount && error == NONE; partitionIndex++)
+                    {
+                        final PartitionMetadataFW partition =
+                                NetworkConnectionPool.this.partitionMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
+                        error = KafkaError.asKafkaError(partition.errorCode());
+                        pendingTopicMetadata.addPartition(partition.partitionId(), partition.leader());
+                        networkOffset = partition.limit();
+                    }
                 }
                 else
                 {
-                    topicMetadataByName.remove(topicMetadata.topicName);
-                    pendingTopicMetadata = null;
-                    topicMetadata.setErrorCode(errorCode);
-                    topicMetadata.flush();
+                    detachSubscribers(pendingTopicMetadata.topicName);
                 }
             }
+            final TopicMetadata topicMetadata = pendingTopicMetadata;
+            switch(error)
+            {
+            case NONE:
+                pendingTopicMetadata.nextRequiredRequestType = MetadataRequestType.DESCRIBE_CONFIGS;
+                break;
+            case LEADER_NOT_AVAILABLE:
+                pendingTopicMetadata.reset();
+                doRequestIfNeeded();
+                break;
+            case UNEXPECTED_SERVER_ERROR:
+                // internal Kafka error, trigger connection failed and reconnect
+                pendingTopicMetadata.reset();
+                abort();
+                break;
+            default:
+                String topicName = topicMetadata.topicName;
+                topicMetadataByName.remove(topicName);
+                detachSubscribers(topicName);
+                topicsByName.remove(topicName);
+                pendingTopicMetadata = null;
+                topicMetadata.setErrorCode(error);
+                topicMetadata.flush();
+            }
+        }
+
+        private void detachSubscribers(String topicName)
+        {
+            NetworkTopic topic = topicsByName.get(topicName);
+            if (topic != null)
+            {
+                topic.dispatcher.detach();
+            }
+        }
+
+        @Override
+        void handleConnectionFailed()
+        {
+            doReinitialize();
+            doRequestIfNeeded();
         }
     }
 
@@ -2138,12 +2251,13 @@ public final class NetworkConnectionPool
     private static final class TopicMetadata
     {
         private static final long UNKNOWN_OFFSET = -1L;
+        private static final int UNKNOWN_BROKER = -1;
 
         private final String topicName;
-        private short errorCode;
+        private KafkaError errorCode;
         private boolean compacted;
         private int deleteRetentionMs;
-        private boolean completed;
+        private boolean complete;
         BrokerMetadata[] brokers;
         private int nextBrokerIndex;
         private int[] nodeIdsByPartition;
@@ -2154,6 +2268,26 @@ public final class NetworkConnectionPool
         TopicMetadata(String topicName)
         {
             this.topicName = topicName;
+        }
+
+        boolean isComplete()
+        {
+            return complete;
+        }
+
+        void setComplete(boolean complete)
+        {
+            this.complete = complete;
+            if (!complete)
+            {
+                nextRequiredRequestType = MetadataRequestType.METADATA;
+
+                // Prevent fetching for the topic
+                for (int i = 0; i < nodeIdsByPartition.length; i++)
+                {
+                    nodeIdsByPartition[i] = UNKNOWN_BROKER;
+                }
+            }
         }
 
         MetadataRequestType nextRequiredRequestType()
@@ -2172,20 +2306,16 @@ public final class NetworkConnectionPool
              this.deleteRetentionMs = deleteRetentionMs;
         }
 
-        void setCompleted()
-        {
-            this.completed = true;
-        }
-
         void setErrorCode(
-            short errorCode)
+            KafkaError error)
         {
-            this.errorCode = errorCode;
+            this.errorCode = error;
         }
 
         void initializeBrokers(int brokerCount)
         {
-            brokers = new BrokerMetadata[brokerCount];
+            brokers = brokers != null && brokers.length == brokerCount ? brokers : new BrokerMetadata[brokerCount];
+            nextBrokerIndex = 0;
         }
 
         void addBroker(int nodeId, String host, int port)
@@ -2193,10 +2323,49 @@ public final class NetworkConnectionPool
             brokers[nextBrokerIndex++] = new BrokerMetadata(nodeId, host, port);
         }
 
-        void initializePartitions(int partitionCount)
+        public boolean removeBroker(
+            int brokerId)
         {
-            nodeIdsByPartition = new int[partitionCount];
-            firstOffsetsByPartition = new long[partitionCount];
+            boolean brokerRemoved = false;
+            if (brokers != null)
+            {
+                for (int i = 0; i < brokers.length; i++)
+                {
+                    if (brokers[i] != null && brokers[i].nodeId == brokerId)
+                    {
+                        brokers[i] = null;
+                        complete = false;
+                        brokerRemoved = true;
+                    }
+                }
+                if (brokerRemoved)
+                {
+                    nextRequiredRequestType = MetadataRequestType.METADATA;
+                    for (int i = 0; i < nodeIdsByPartition.length; i++)
+                    {
+                        if (nodeIdsByPartition[i] == brokerId)
+                        {
+                            nodeIdsByPartition[i] = UNKNOWN_BROKER;
+                        }
+                    }
+                }
+            }
+            return brokerRemoved;
+        }
+
+        boolean initializePartitions(int partitionCount)
+        {
+            boolean result = true;
+            if (nodeIdsByPartition == null)
+            {
+                nodeIdsByPartition = new int[partitionCount];
+                firstOffsetsByPartition = new long[partitionCount];
+            }
+            else if (nodeIdsByPartition.length != partitionCount)
+            {
+                result = false;
+            }
+            return result;
         }
 
         void addPartition(int partitionId, int nodeId)
@@ -2238,7 +2407,7 @@ public final class NetworkConnectionPool
             Consumer<TopicMetadata> consumer)
         {
             consumers.add(consumer);
-            if (completed)
+            if (complete)
             {
                 flush();
             }
@@ -2253,7 +2422,7 @@ public final class NetworkConnectionPool
             consumers.clear();
         }
 
-        short errorCode()
+        KafkaError errorCode()
         {
             return errorCode;
         }
@@ -2286,9 +2455,15 @@ public final class NetworkConnectionPool
 
         void reset()
         {
+            errorCode = NONE;
+            compacted = false;
+            deleteRetentionMs = 0;
+            complete = false;
             brokers = null;
-            nodeIdsByPartition = null;
             nextBrokerIndex = 0;
+            nodeIdsByPartition = null;
+            firstOffsetsByPartition = null;
+            nextRequiredRequestType = MetadataRequestType.METADATA;
         }
     }
 
@@ -2303,6 +2478,11 @@ public final class NetworkConnectionPool
         {
             offsets = new long[partitions];
             this.progressHandler = progressHandler;
+        }
+
+        @Override
+        public void detach()
+        {
         }
 
         @Override

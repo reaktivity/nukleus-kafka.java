@@ -13,21 +13,12 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.kafka.internal.stream;
+package org.reaktivity.nukleus.kafka.internal.function;
 
-public class KafkaErrors
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaError;
+
+@FunctionalInterface
+public interface KafkaErrorConsumer
 {
-    static final short NONE = 0;
-    static final short OFFSET_OUT_OF_RANGE = 1;
-    public static final short UNKNOWN_TOPIC_OR_PARTITION = 3;
-    static final short LEADER_NOT_AVAILABLE = 5;
-    static final short NOT_LEADER_FOR_PARTITION = 6;
-    static final short INVALID_TOPIC_EXCEPTION = 17;
-    static final short TOPIC_AUTHORIZATION_FAILED = 29;
-    static final short UNEXPECTED_SERVER_ERROR = -1;
-
-    static boolean isRecoverable(short errorCode)
-    {
-        return errorCode == LEADER_NOT_AVAILABLE;
-    }
+    void accept(String topicName, int partition, KafkaError error);
 }
