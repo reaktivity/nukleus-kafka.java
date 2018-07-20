@@ -2431,7 +2431,10 @@ public final class NetworkConnectionPool
         {
             for (BrokerMetadata broker : brokers)
             {
-                visitor.accept(broker);
+                if (broker != null)
+                {
+                    visitor.accept(broker);
+                }
             }
         }
 
