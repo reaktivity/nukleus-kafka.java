@@ -1086,7 +1086,6 @@ public final class NetworkConnectionPool
 
                         for (int partitionId=0; partitionId <  topicMetadata.nodeIdsByPartition.length; partitionId++)
                         {
-                            // TODO: use topicMetadata.getNodeId which returns UNKNOWN_BROKER if nodeIdsByPartition == null
                             if (topicMetadata.nodeIdsByPartition[partitionId] == brokerId)
                             {
                                 ListOffsetsPartitionRequestFW listOffsetsPartitionRequest = listOffsetsPartitionRequestRW.wrap(
@@ -1252,7 +1251,6 @@ public final class NetworkConnectionPool
 
         private void metadataUpdated(TopicMetadata metadata)
         {
-            // TODO: handle errors
             doConnections(metadata);
             doFlush();
         }
