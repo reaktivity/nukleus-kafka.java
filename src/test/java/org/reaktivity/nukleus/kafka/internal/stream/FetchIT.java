@@ -198,6 +198,10 @@ public class FetchIT
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveMessageAndTombstoneWithMultivaluedHeaderUpdated() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("DELIVER_FIRST_FETCH_RESPONSE");
         k3po.finish();
     }
 
