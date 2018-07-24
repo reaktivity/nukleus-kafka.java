@@ -27,6 +27,7 @@ import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_A
 
 import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Collections;
 import java.util.HashMap;
@@ -1085,6 +1086,7 @@ public final class NetworkConnectionPool
 
                         for (int partitionId=0; partitionId <  topicMetadata.nodeIdsByPartition.length; partitionId++)
                         {
+                            // TODO: use topicMetadata.getNodeId which returns UNKNOWN_BROKER if nodeIdsByPartition == null
                             if (topicMetadata.nodeIdsByPartition[partitionId] == brokerId)
                             {
                                 ListOffsetsPartitionRequestFW listOffsetsPartitionRequest = listOffsetsPartitionRequestRW.wrap(
@@ -1241,7 +1243,7 @@ public final class NetworkConnectionPool
         {
             for (TopicMetadata metadata : topicMetadataByName.values())
             {
-                if (metadata.removeBroker(brokerId))
+                if (metadata.invalidateBroker(brokerId))
                 {
                     metadata.doAttach(this::metadataUpdated);
                 }
@@ -1250,6 +1252,7 @@ public final class NetworkConnectionPool
 
         private void metadataUpdated(TopicMetadata metadata)
         {
+            // TODO: handle errors
             doConnections(metadata);
             doFlush();
         }
@@ -1325,7 +1328,7 @@ public final class NetworkConnectionPool
                 Iterator<NetworkTopicPartition> iterator = topic.partitions.iterator();
                 NetworkTopicPartition candidate = iterator.hasNext() ? iterator.next() : null;
                 NetworkTopicPartition next;
-                while (candidate != null && nodeIdsByPartition != null)
+                while (candidate != null)
                 {
                     next = iterator.hasNext() ? iterator.next() : null;
                     boolean isHighestOffset = next == null || next.id != candidate.id;
@@ -1661,18 +1664,22 @@ public final class NetworkConnectionPool
             }
             if (error.isRecoverable())
             {
-                pendingTopicMetadata.reset();
+                pendingTopicMetadata.invalidate();
                 doRequestIfNeeded();
             }
             else
             {
-                TopicMetadata metadata = pendingTopicMetadata;
-                pendingTopicMetadata = null;
-                metadata.setErrorCode(error);
-                metadata.setCompacted(compacted);
-                metadata.setDeleteRetentionMs(deleteRetentionMs);
-                metadata.setComplete(true);
-                metadata.flush();
+                // Guard against a possible race with invalidateBroker called due to fetch connection failure
+                if (pendingTopicMetadata.nextRequiredRequestType == MetadataRequestType.DESCRIBE_CONFIGS)
+                {
+                    TopicMetadata metadata = pendingTopicMetadata;
+                    pendingTopicMetadata = null;
+                    metadata.setErrorCode(error);
+                    metadata.setCompacted(compacted);
+                    metadata.setDeleteRetentionMs(deleteRetentionMs);
+                    metadata.setComplete(true);
+                    metadata.flush();
+                }
             }
         }
 
@@ -1705,8 +1712,8 @@ public final class NetworkConnectionPool
             {
                 final TopicMetadataFW topicMetadata =
                         NetworkConnectionPool.this.topicMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
-                final String16FW topicName = topicMetadata.topic();
-                assert topicName.asString().equals(pendingTopicMetadata.topicName);
+                String16FW topicNameFW = topicMetadata.topic();
+                assert topicNameFW.asString().equals(pendingTopicMetadata.topicName);
                 error = asKafkaError(topicMetadata.errorCode());
                 if (error != NONE)
                 {
@@ -1728,7 +1735,13 @@ public final class NetworkConnectionPool
                 }
                 else
                 {
-                    detachSubscribers(pendingTopicMetadata.topicName);
+                    // Number of partitions has changed. Discard all data related to the topic
+                    // and force clients to re-subscribe so it's treated as a new topic (which it may be).
+                    String topicName = pendingTopicMetadata.topicName;
+                    topicMetadataByName.remove(topicName);
+                    detachSubscribers(topicName);
+                    topicsByName.remove(topicName);
+                    pendingTopicMetadata = null;
                 }
             }
             final TopicMetadata topicMetadata = pendingTopicMetadata;
@@ -1738,12 +1751,12 @@ public final class NetworkConnectionPool
                 pendingTopicMetadata.nextRequiredRequestType = MetadataRequestType.DESCRIBE_CONFIGS;
                 break;
             case LEADER_NOT_AVAILABLE:
-                pendingTopicMetadata.reset();
+                pendingTopicMetadata.invalidate();
                 doRequestIfNeeded();
                 break;
             case UNEXPECTED_SERVER_ERROR:
                 // internal Kafka error, trigger connection failed and reconnect
-                pendingTopicMetadata.reset();
+                pendingTopicMetadata.invalidate();
                 abort();
                 break;
             default:
@@ -2323,7 +2336,7 @@ public final class NetworkConnectionPool
             brokers[nextBrokerIndex++] = new BrokerMetadata(nodeId, host, port);
         }
 
-        public boolean removeBroker(
+        boolean invalidateBroker(
             int brokerId)
         {
             boolean brokerRemoved = false;
@@ -2351,6 +2364,23 @@ public final class NetworkConnectionPool
                 }
             }
             return brokerRemoved;
+        }
+
+        void invalidate()
+        {
+            errorCode = NONE;
+            compacted = false;
+            deleteRetentionMs = 0;
+            complete = false;
+            if (brokers != null)
+            {
+                Arrays.fill(brokers, null);
+            }
+            if (nodeIdsByPartition != null)
+            {
+                Arrays.fill(nodeIdsByPartition, UNKNOWN_BROKER);
+            }
+            nextRequiredRequestType = MetadataRequestType.METADATA;
         }
 
         boolean initializePartitions(int partitionCount)
@@ -2431,10 +2461,7 @@ public final class NetworkConnectionPool
         {
             for (BrokerMetadata broker : brokers)
             {
-                if (broker != null)
-                {
-                    visitor.accept(broker);
-                }
+                visitor.accept(broker);
             }
         }
 
@@ -2454,19 +2481,6 @@ public final class NetworkConnectionPool
                 }
             }
             return result;
-        }
-
-        void reset()
-        {
-            errorCode = NONE;
-            compacted = false;
-            deleteRetentionMs = 0;
-            complete = false;
-            brokers = null;
-            nextBrokerIndex = 0;
-            nodeIdsByPartition = null;
-            firstOffsetsByPartition = null;
-            nextRequiredRequestType = MetadataRequestType.METADATA;
         }
     }
 

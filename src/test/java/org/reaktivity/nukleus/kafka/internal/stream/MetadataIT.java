@@ -80,7 +80,7 @@ public class MetadataIT
         "${client}/zero.offset/client",
         "${metadata}/one.topic.unknown.error.abort.receive.end.and.retry/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldAbortReceiveEndThenReconnectAndRetryWWhenMetadataQueryGivesUnknownError() throws Exception
+    public void shouldAbortReceiveEndThenReconnectAndRetryWhenMetadataQueryGivesUnknownError() throws Exception
     {
         k3po.finish();
     }
