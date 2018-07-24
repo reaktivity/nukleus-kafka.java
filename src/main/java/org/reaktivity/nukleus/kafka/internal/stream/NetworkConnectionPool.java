@@ -1710,8 +1710,8 @@ public final class NetworkConnectionPool
             {
                 final TopicMetadataFW topicMetadata =
                         NetworkConnectionPool.this.topicMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
-                String16FW topicNameFW = topicMetadata.topic();
-                assert topicNameFW.asString().equals(pendingTopicMetadata.topicName);
+                String16FW topicName = topicMetadata.topic();
+                assert topicName.asString().equals(pendingTopicMetadata.topicName);
                 error = asKafkaError(topicMetadata.errorCode());
                 if (error != NONE)
                 {
