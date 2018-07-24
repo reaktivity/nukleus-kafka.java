@@ -1112,6 +1112,26 @@ public class FetchIT
     @Test
     @Specification({
         "${routeAnyTopic}/client/controller",
+        "${client}/zero.offset.messages.multiple.partitions/client",
+        "${server}/live.fetch.connection.fails.during.metadata.refresh/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldHandleFetchConnectionFailureDuringMetadataRefresh() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("DESCRIBE_CONFIGS_REQUEST_RECEIVED");
+        k3po.notifyBarrier("ABORT_CONNECTION_TWO");
+        k3po.awaitBarrier("CONNECTION_TWO_ABORTED");
+
+        //  Give time for the broker 2 to be removed from the metadata
+        awaitWindowFromClient();
+
+        k3po.notifyBarrier("WRITE_DESCRIBE_CONFIGS_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${routeAnyTopic}/client/controller",
         "${client}/zero.offset.message.two.topics.multiple.partitions/client",
         "${server}/live.fetch.connection.reset/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -1170,6 +1190,17 @@ public class FetchIT
     @Test
     @Specification({
         "${routeAnyTopic}/client/controller",
+        "${client}/zero.offset.messages.partition.added/client",
+        "${server}/live.fetch.error.recovered.partition.added/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldBeDetachedReattachAndContinueReceivingMessagesWhenPartitionCountChanges() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${routeAnyTopic}/client/controller",
         "${client}/zero.offset.message.two.topics/client",
         "${server}/live.fetch.error.then.metadata.error/server" })
     @ScriptProperty({
@@ -1183,26 +1214,6 @@ public class FetchIT
         k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
         awaitWindowFromClient();
         k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/zero.offset.messages.multiple.partitions/client",
-        "${server}/live.fetch.connection.fails.during.metadata.refresh/server" })
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldHandleFetchConnectionFailureDuringMetadataRefresh() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("DESCRIBE_CONFIGS_REQUEST_RECEIVED");
-        k3po.notifyBarrier("ABORT_CONNECTION_TWO");
-        k3po.awaitBarrier("CONNECTION_TWO_ABORTED");
-
-        //  Give time for the broker 2 to be removed from the metadata
-        awaitWindowFromClient();
-
-        k3po.notifyBarrier("WRITE_DESCRIBE_CONFIGS_RESPONSE");
         k3po.finish();
     }
 

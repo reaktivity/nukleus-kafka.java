@@ -1735,13 +1735,7 @@ public final class NetworkConnectionPool
                 }
                 else
                 {
-                    // Number of partitions has changed. Discard all data related to the topic
-                    // and force clients to re-subscribe so it's treated as a new topic (which it may be).
-                    String topicName = pendingTopicMetadata.topicName;
-                    topicMetadataByName.remove(topicName);
-                    detachSubscribers(topicName);
-                    topicsByName.remove(topicName);
-                    pendingTopicMetadata = null;
+                    error = KafkaError.PARTITION_COUNT_CHANGED;
                 }
             }
             final TopicMetadata topicMetadata = pendingTopicMetadata;
