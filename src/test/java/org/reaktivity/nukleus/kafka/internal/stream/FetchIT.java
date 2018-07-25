@@ -1111,6 +1111,17 @@ public class FetchIT
 
     @Test
     @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset.messages/client",
+        "${server}/live.fetch.connection.closed.then.reset/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldRefreshMetadataAndReceiveMessagesWhenLiveFetchConnectionIsClosedThenResetThenReconnected() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
         "${routeAnyTopic}/client/controller",
         "${client}/zero.offset.messages.multiple.partitions/client",
         "${server}/live.fetch.connection.fails.during.metadata.refresh/server" })
