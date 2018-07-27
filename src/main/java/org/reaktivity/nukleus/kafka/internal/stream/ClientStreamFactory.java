@@ -541,6 +541,19 @@ public final class ClientStreamFactory implements StreamFactory
         }
 
         @Override
+        public void adjustOffset(
+            int partition,
+            long oldOffset,
+            long newOffset)
+        {
+            long offset = fetchOffsets.get(partition);
+            if (offset == oldOffset)
+            {
+                fetchOffsets.put(partition, newOffset);
+            }
+        }
+
+        @Override
         public void detach()
         {
             budget.leaveGroup();

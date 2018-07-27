@@ -41,6 +41,8 @@ public interface MessageDispatcher
         return (result & FLAGS_BLOCKED) == FLAGS_BLOCKED;
     }
 
+    void adjustOffset(int partition, long oldOffset, long newOffset);
+
     void detach();
 
     int dispatch(

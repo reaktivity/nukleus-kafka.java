@@ -1082,6 +1082,20 @@ public class FetchIT
 
     @Test
     @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset.messages.topic.recreated/client",
+        "${server}/live.fetch.broker.restarted.with.recreated.topic/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessagesAcrossBrokerRestartWithRecreatedTopic() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_RECEIVED_FIRST_MESSAGE");
+        k3po.notifyBarrier("SHUTDOWN_BROKER");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
         "${routeAnyTopic}/client/controller",
         "${client}/zero.offset.message.two.topics.multiple.partitions/client",
         "${server}/live.fetch.connection.aborted/server" })

@@ -43,6 +43,19 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
     }
 
     @Override
+    public void adjustOffset(
+        int partition,
+        long oldOffset,
+        long newOffset)
+    {
+        for (int i = 0; i < dispatchers.size(); i++)
+        {
+            MessageDispatcher dispatcher = dispatchers.get(i);
+            dispatcher.adjustOffset(partition, oldOffset, newOffset);
+        }
+    }
+
+    @Override
     public void detach()
     {
         for (int i = 0; i < dispatchers.size(); i++)
