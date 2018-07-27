@@ -52,6 +52,23 @@ public final class BroadcastMessageDispatcherTest
     }
 
     @Test
+    public void shouldAdjustOffset()
+    {
+        MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
+        MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
+        dispatcher.add(child1);
+        dispatcher.add(child2);
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(child1).adjustOffset(1, 10L, 5L);
+                oneOf(child2).adjustOffset(1, 10L, 5L);
+            }
+        });
+        dispatcher.adjustOffset(1, 10L, 5L);
+    }
+
+    @Test
     public void shouldDetach()
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");

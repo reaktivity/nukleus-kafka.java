@@ -39,6 +39,18 @@ public class KeyMessageDispatcher implements MessageDispatcher
     }
 
     @Override
+    public void adjustOffset(
+        int partition,
+        long oldOffset,
+        long newOffset)
+    {
+        for (MessageDispatcher dispatcher: dispatchersByKey.values())
+        {
+            dispatcher.adjustOffset(partition, oldOffset, newOffset);
+        }
+    }
+
+    @Override
     public void detach()
     {
         for (MessageDispatcher dispatcher: dispatchersByKey.values())

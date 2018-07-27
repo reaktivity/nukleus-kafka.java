@@ -87,6 +87,7 @@ public class FetchResponseDecoder implements ResponseDecoder
     private String topicName;
     private DecoderMessageDispatcher messageDispatcher;
     private int partitionCount;
+    private short errorCode;
     private int recordSetBytesRemaining;
     private int recordBatchBytesRemaining;
     private long highWatermark;
@@ -300,7 +301,7 @@ public class FetchResponseDecoder implements ResponseDecoder
                 partitionCount--;
                 newOffset = response.limit();
                 partition = response.partitionId();
-                short errorCode = response.errorCode();
+                errorCode = response.errorCode();
                 highWatermark = response.highWatermark();
                 abortedTransactionCount = response.abortedTransactionCount();
                 requestedOffset = getRequestedOffsetForPartition.apply(topicName, partition);
@@ -360,7 +361,7 @@ public class FetchResponseDecoder implements ResponseDecoder
             if (recordSetBytesRemaining == 0)
             {
                 long requestedOffset = getRequestedOffsetForPartition.apply(topicName, partition);
-                if (highWatermark > requestedOffset)
+                if (highWatermark > requestedOffset && errorCode == NONE.errorCode)
                 {
                     nextFetchAt = requestedOffset + 1;
                     messageDispatcher.flush(partition, requestedOffset, requestedOffset + 1);

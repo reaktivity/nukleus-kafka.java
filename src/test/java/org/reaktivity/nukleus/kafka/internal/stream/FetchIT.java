@@ -198,6 +198,10 @@ public class FetchIT
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveMessageAndTombstoneWithMultivaluedHeaderUpdated() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("DELIVER_FIRST_FETCH_RESPONSE");
         k3po.finish();
     }
 
@@ -1078,6 +1082,20 @@ public class FetchIT
 
     @Test
     @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset.messages.topic.recreated/client",
+        "${server}/live.fetch.broker.restarted.with.recreated.topic/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessagesAcrossBrokerRestartWithRecreatedTopic() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_RECEIVED_FIRST_MESSAGE");
+        k3po.notifyBarrier("SHUTDOWN_BROKER");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
         "${routeAnyTopic}/client/controller",
         "${client}/zero.offset.message.two.topics.multiple.partitions/client",
         "${server}/live.fetch.connection.aborted/server" })
@@ -1102,6 +1120,37 @@ public class FetchIT
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReconnectAndReceiveMessagesWhenLiveFetchConnectionIsClosed() throws Exception
     {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset.messages/client",
+        "${server}/live.fetch.connection.closed.then.reset/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldRefreshMetadataAndReceiveMessagesWhenLiveFetchConnectionIsClosedThenResetThenReconnected() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${routeAnyTopic}/client/controller",
+        "${client}/zero.offset.messages.multiple.partitions/client",
+        "${server}/live.fetch.connection.fails.during.metadata.refresh/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldHandleFetchConnectionFailureDuringMetadataRefresh() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("DESCRIBE_CONFIGS_REQUEST_RECEIVED");
+        k3po.notifyBarrier("ABORT_CONNECTION_TWO");
+        k3po.awaitBarrier("CONNECTION_TWO_ABORTED");
+
+        //  Give time for the broker 2 to be removed from the metadata
+        awaitWindowFromClient();
+
+        k3po.notifyBarrier("WRITE_DESCRIBE_CONFIGS_RESPONSE");
         k3po.finish();
     }
 
@@ -1153,6 +1202,36 @@ public class FetchIT
     "errorCode 6s"
     })
     public void shouldContinueReceivingMessagesAfterLeadershipElection() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
+        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${routeAnyTopic}/client/controller",
+        "${client}/zero.offset.messages.partition.added/client",
+        "${server}/live.fetch.error.recovered.partition.added/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldBeDetachedReattachAndContinueReceivingMessagesWhenPartitionCountChanges() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${routeAnyTopic}/client/controller",
+        "${client}/zero.offset.message.two.topics/client",
+        "${server}/live.fetch.error.then.metadata.error/server" })
+    @ScriptProperty({
+    "networkAccept \"nukleus://target/streams/kafka\""
+    })
+    public void shouldHandleFetchErrorFollowedByMetadataRefreshError() throws Exception
     {
         k3po.start();
         k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");

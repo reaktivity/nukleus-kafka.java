@@ -27,6 +27,20 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
     private final List<MessageDispatcher> dispatchers = new ArrayList<MessageDispatcher>();
 
     @Override
+    public void adjustOffset(
+        int partition,
+        long oldOffset,
+        long newOffset)
+    {
+        //  Avoid iterator allocation
+        for (int i = 0; i < dispatchers.size(); i++)
+        {
+            MessageDispatcher dispatcher = dispatchers.get(i);
+            dispatcher.adjustOffset(partition, oldOffset, newOffset);
+        }
+    }
+
+    @Override
     public void detach()
     {
         //  Avoid iterator allocation

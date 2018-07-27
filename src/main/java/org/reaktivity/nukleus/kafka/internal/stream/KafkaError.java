@@ -27,7 +27,8 @@ public enum KafkaError
     INVALID_TOPIC_EXCEPTION((short) 17),
     TOPIC_AUTHORIZATION_FAILED((short) 29),
     UNEXPECTED_SERVER_ERROR((short) -1),
-    UNRECOGNIZED_ERROR_CODE((short) -2);
+    UNRECOGNIZED_ERROR_CODE((short) -2),
+    PARTITION_COUNT_CHANGED((short) -3);
 
     boolean isRecoverable()
     {
