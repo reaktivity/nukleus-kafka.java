@@ -42,6 +42,20 @@ public class HeadersMessageDispatcher implements MessageDispatcher
     }
 
     @Override
+    public void adjustOffset(
+        int partition,
+        long oldOffset,
+        long newOffset)
+    {
+        broadcast.adjustOffset(partition, oldOffset, newOffset);
+        for (int i = 0; i < dispatchers.size(); i++)
+        {
+            MessageDispatcher dispatcher = dispatchers.get(i);
+            dispatcher.adjustOffset(partition, oldOffset, newOffset);
+        }
+    }
+
+    @Override
     public void detach()
     {
         broadcast.detach();

@@ -84,6 +84,28 @@ public final class HeaderValueMessageDispatcherTest
     }
 
     @Test
+    public void shouldAdjustOffset()
+    {
+        MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
+        MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
+        dispatcher.add(asOctets("value1"), emptyHeaders, child1);
+        Iterator<KafkaHeaderFW> headers = Arrays.asList(
+            headerRW.wrap(headersBuffer, 0, headersBuffer.capacity())
+                    .key("header2").value(asOctets("value2"))
+                    .build()).iterator();
+        dispatcher.add(asOctets("value1"), headers, child2);
+
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(child1).adjustOffset(1, 10L, 5L);
+                oneOf(child2).adjustOffset(1, 10L, 5L);
+            }
+        });
+        dispatcher.adjustOffset(1, 10L, 5L);
+    }
+
+    @Test
     public void shouldDetach()
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
