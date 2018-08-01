@@ -623,6 +623,7 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 else
                 {
+                    fragmentedMessageOffset = messageStartOffset;
                     outOfWindow = true;
                 }
                 if (outOfWindow)
@@ -650,9 +651,9 @@ public final class ClientStreamFactory implements StreamFactory
             {
                 // dispatch was not called
                 startOffset = fetchOffsets.get(partition);
-                endOffset = nextFetchOffset;
+                endOffset = fragmentedMessageOffset == UNSET ? nextFetchOffset : startOffset;
             }
-            else if (requestOffset <= startOffset && !outOfWindow)
+            else if (requestOffset <= startOffset && fragmentedMessageOffset == UNSET)
             {
                 // We didn't skip or do partial write of any messages due to lack of window, advance to highest offset
                 endOffset = nextFetchOffset;
@@ -662,8 +663,10 @@ public final class ClientStreamFactory implements StreamFactory
                 this.fetchOffsets.put(partition, endOffset);
                 progressHandler.handle(partition, startOffset, endOffset);
             }
+            progressEndOffset = UNSET;
             progressStartOffset = UNSET;
             outOfWindow = false;
+
         }
 
         private void flushPreviousMessage(

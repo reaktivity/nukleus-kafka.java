@@ -2050,7 +2050,7 @@ public final class NetworkConnectionPool
                 int maxBytes = request.maxBytes();
                 long newOffset = fetchOffset;
                 Iterator<Entry> entries = dispatcher.entries(partitionId, fetchOffset);
-                boolean requestSatisifed = true;
+                boolean partitionRequestNeeded = false;
                 boolean flushNeeded = false;
                 long requestOffset = getRequestedOffset.applyAsLong(partitionId);
                 while(entries.hasNext())
@@ -2060,7 +2060,7 @@ public final class NetworkConnectionPool
                     MessageFW message = messageCache.get(entry.message(), messageRO);
                     if (message == null)
                     {
-                        requestSatisifed = false;
+                        partitionRequestNeeded = true;
                         break;
                     }
                     else
@@ -2084,17 +2084,19 @@ public final class NetworkConnectionPool
                             // TODO: this may be too conservative, other dispatchers which did not match this message
                             //       might still have available window to deliver later messages
                         {
-                            requestSatisifed = true;
                             break;
                         }
                     }
                 }
-                if (requestSatisifed)
+
+                if (!partitionRequestNeeded)
                 {
                     if (!entries.hasNext())
                     {
+                        //  End of the partition index reached, advance to latest offset
                         newOffset = dispatcher.nextOffset(partitionId);
                     }
+
                     // Remove the partition request by shifting up the subsequent ones
                     encodeBuffer.putBytes(encodeOffset,  encodeBuffer, request.limit(), encodeLimit);
                     newEncodeLimit -= request.sizeof();
@@ -2102,7 +2104,7 @@ public final class NetworkConnectionPool
                 }
                 else
                 {
-                    // Update the partition request if needed and move on to next
+                    // Update the partition request if needed
                     if (newOffset > fetchOffset)
                     {
                         request = partitionRequestRW.wrap(encodeBuffer, encodeOffset, newEncodeLimit)
@@ -2114,6 +2116,7 @@ public final class NetworkConnectionPool
                     }
                     encodeOffset = request.limit();
                 }
+
                 if (flushNeeded)
                 {
                     dispatcher.flush(partitionId, requestOffset, newOffset);
