@@ -2075,6 +2075,8 @@ public final class NetworkConnectionPool
                                 message.timestamp(), message.traceId(), value);
 
                         flushNeeded = true;
+                        newOffset++;
+
                         if (!needsHistorical(partitionId) // caught up to live stream
                             ||
                             (MessageDispatcher.blocked(dispatched) &&
@@ -2089,7 +2091,10 @@ public final class NetworkConnectionPool
                 }
                 if (requestSatisifed)
                 {
-                    newOffset = dispatcher.nextOffset(partitionId);
+                    if (!entries.hasNext())
+                    {
+                        newOffset = dispatcher.nextOffset(partitionId);
+                    }
                     // Remove the partition request by shifting up the subsequent ones
                     encodeBuffer.putBytes(encodeOffset,  encodeBuffer, request.limit(), encodeLimit);
                     newEncodeLimit -= request.sizeof();
