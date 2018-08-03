@@ -1083,6 +1083,36 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/header.large.then.small.messages.multiple.partitions/client",
+        "${server}/header.large.then.small.messages.multiple.partitions/server" })
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "applicationConnectWindow \"200\""
+    })
+    public void shouldAdvanceFetchOffsetForNonMatchingMessagesOnPartitionDifferentFromFragmentedMessage()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/large.then.small.messages.multiple.partitions/client",
+        "${server}/large.then.small.messages.multiple.partitions/server" })
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "applicationConnectWindow \"200\""
+    })
+    public void shouldNotDeliverMessageFromPartitionDifferentFromFragmentedMessageUntilFragmentedFullyWritten()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/zero.offset.messages.topic.recreated/client",
         "${server}/live.fetch.broker.restarted.with.recreated.topic/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
