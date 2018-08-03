@@ -518,6 +518,7 @@ public final class ClientStreamFactory implements StreamFactory
 
         int fragmentedMessageBytesWritten;
         long fragmentedMessageOffset = UNSET;
+        long fragmentedMessagePartition = UNSET;
 
         private long progressStartOffset = UNSET;
         private long progressEndOffset;
@@ -596,7 +597,8 @@ public final class ClientStreamFactory implements StreamFactory
 
             if (requestOffset <= progressStartOffset // avoid out of order delivery
                 && messageStartOffset >= progressStartOffset // avoid repeated delivery
-                && (fragmentedMessageOffset == UNSET || messageStartOffset == fragmentedMessageOffset)
+                && (fragmentedMessageOffset == UNSET ||
+                   (messageStartOffset == fragmentedMessageOffset && partition == fragmentedMessagePartition))
                 )
             {
                 final int payloadLength = value == null ? 0 : value.capacity() - fragmentedMessageBytesWritten;
@@ -623,7 +625,6 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 else
                 {
-                    fragmentedMessageOffset = messageStartOffset;
                     outOfWindow = true;
                 }
                 if (outOfWindow)
@@ -651,9 +652,9 @@ public final class ClientStreamFactory implements StreamFactory
             {
                 // dispatch was not called
                 startOffset = fetchOffsets.get(partition);
-                endOffset = fragmentedMessageOffset == UNSET ? nextFetchOffset : startOffset;
+                endOffset = nextFetchOffset;
             }
-            else if (requestOffset <= startOffset && fragmentedMessageOffset == UNSET)
+            else if (requestOffset <= startOffset && !outOfWindow)
             {
                 // We didn't skip or do partial write of any messages due to lack of window, advance to highest offset
                 endOffset = nextFetchOffset;
@@ -663,10 +664,8 @@ public final class ClientStreamFactory implements StreamFactory
                 this.fetchOffsets.put(partition, endOffset);
                 progressHandler.handle(partition, startOffset, endOffset);
             }
-            progressEndOffset = UNSET;
             progressStartOffset = UNSET;
             outOfWindow = false;
-
         }
 
         private void flushPreviousMessage(
@@ -698,12 +697,14 @@ public final class ClientStreamFactory implements StreamFactory
                 {
                     fragmentedMessageBytesWritten = 0;
                     fragmentedMessageOffset = UNSET;
+                    fragmentedMessagePartition = UNSET;
                     progressEndOffset = nextFetchOffset;
                 }
                 else
                 {
                     fragmentedMessageBytesWritten += (pendingMessageValueLimit - pendingMessageValueOffset);
                     fragmentedMessageOffset = pendingMessageOffset;
+                    fragmentedMessagePartition = partition;
                     progressEndOffset = pendingMessageOffset;
                     this.fetchOffsets.put(partition, pendingMessageOffset);
                 }
