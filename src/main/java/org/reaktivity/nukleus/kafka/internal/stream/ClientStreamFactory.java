@@ -586,6 +586,7 @@ public final class ClientStreamFactory implements StreamFactory
                 if (messagePending && fragmentedMessageBytesWritten == 0)
                 {
                     messagePending = false;
+                    dispatchBlocked = false;
                     final int previousLength = pendingMessageValue == null ? 0 : pendingMessageValue.capacity();
                     budget.incApplicationReplyBudget(previousLength + applicationReplyPadding);
                 }
