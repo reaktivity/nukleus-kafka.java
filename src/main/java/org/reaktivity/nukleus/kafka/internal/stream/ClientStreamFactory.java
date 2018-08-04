@@ -507,7 +507,7 @@ public final class ClientStreamFactory implements StreamFactory
         private final DirectBuffer pendingMessageValueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
         private boolean messagePending;
-        private boolean outOfWindow;
+        private boolean dispatchBlocked;
         private DirectBuffer pendingMessageKey;
         private long pendingMessageTimestamp;
         private long pendingMessageTraceId;
@@ -595,11 +595,14 @@ public final class ClientStreamFactory implements StreamFactory
                 flushPreviousMessage(partition, messageStartOffset);
             }
 
+            if (fragmentedMessageOffset != UNSET
+                    && (fragmentedMessagePartition != partition || messageStartOffset != fragmentedMessageOffset))
+            {
+                dispatchBlocked = true;
+            }
             if (requestOffset <= progressStartOffset // avoid out of order delivery
                 && messageStartOffset >= progressStartOffset // avoid repeated delivery
-                && (fragmentedMessageOffset == UNSET ||
-                   (messageStartOffset == fragmentedMessageOffset && partition == fragmentedMessagePartition))
-                )
+                && !dispatchBlocked)
             {
                 final int payloadLength = value == null ? 0 : value.capacity() - fragmentedMessageBytesWritten;
                 int applicationReplyBudget = budget.applicationReplyBudget();
@@ -620,14 +623,14 @@ public final class ClientStreamFactory implements StreamFactory
                     messagePending = true;
                     if (bytesToWrite < payloadLength)
                     {
-                        outOfWindow = true;
+                        dispatchBlocked = true;
                     }
                 }
                 else
                 {
-                    outOfWindow = true;
+                    dispatchBlocked = true;
                 }
-                if (outOfWindow)
+                if (dispatchBlocked)
                 {
                     result |= MessageDispatcher.FLAGS_BLOCKED;
                 }
@@ -654,7 +657,7 @@ public final class ClientStreamFactory implements StreamFactory
                 startOffset = fetchOffsets.get(partition);
                 endOffset = nextFetchOffset;
             }
-            else if (requestOffset <= startOffset && !outOfWindow)
+            else if (requestOffset <= startOffset && !dispatchBlocked)
             {
                 // We didn't skip or do partial write of any messages due to lack of window, advance to highest offset
                 endOffset = nextFetchOffset;
@@ -665,7 +668,7 @@ public final class ClientStreamFactory implements StreamFactory
                 progressHandler.handle(partition, startOffset, endOffset);
             }
             progressStartOffset = UNSET;
-            outOfWindow = false;
+            dispatchBlocked = false;
         }
 
         private void flushPreviousMessage(
