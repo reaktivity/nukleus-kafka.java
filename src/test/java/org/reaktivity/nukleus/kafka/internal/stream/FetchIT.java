@@ -1114,12 +1114,12 @@ public class FetchIT
     @Specification({
         "${route}/client/controller",
         "${client}/large.then.small.messages.multiple.partitions/client",
-        "${server}/large.exceeding.window.then.small.messages.multiple.partitions/server" })
+        "${server}/large.equals.window.then.small.messages.multiple.partitions/server" })
     @ScriptProperty({
         "networkAccept \"nukleus://target/streams/kafka\"",
-        "applicationConnectWindow \"200\""
+        "applicationConnectWindow \"266\""
     })
-    public void shouldNotDeliverMessageFromPartitionDifferentFromFragmentedMessageUntilFragmentedFullyWritten()
+    public void shouldDeliverLargeMessageFillingWindowThenSmallMessagesFromMultiplePartitions()
             throws Exception
     {
         k3po.finish();
@@ -1129,12 +1129,12 @@ public class FetchIT
     @Specification({
         "${route}/client/controller",
         "${client}/large.then.small.messages.multiple.partitions/client",
-        "${server}/large.equals.window.then.small.messages.multiple.partitions/server" })
+        "${server}/large.exceeding.window.then.small.messages.multiple.partitions/server" })
     @ScriptProperty({
         "networkAccept \"nukleus://target/streams/kafka\"",
-        "applicationConnectWindow \"266\""
+        "applicationConnectWindow \"200\""
     })
-    public void shouldDeliverLargeMessageFillingWindowThenSmallMessagesFromMultiplePartitions()
+    public void shouldNotDeliverMessageFromPartitionDifferentFromFragmentedMessageUntilFragmentedFullyWritten()
             throws Exception
     {
         k3po.finish();
