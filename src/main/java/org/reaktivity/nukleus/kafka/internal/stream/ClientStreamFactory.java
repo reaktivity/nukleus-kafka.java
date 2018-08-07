@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.wrap;
@@ -670,6 +671,17 @@ public final class ClientStreamFactory implements StreamFactory
             }
             progressStartOffset = UNSET;
             dispatchBlocked = false;
+        }
+
+        @Override
+        public String toString()
+        {
+            return format("fetchOffsets %s, fragmentedMessageOffset %d, fragmentedMessagePartition %d, " +
+                                 "applicationId %x, applicationReplyId %x",
+                    ClientAcceptStream.this.fetchOffsets,
+                    ClientAcceptStream.this.fragmentedMessageOffset,
+                    ClientAcceptStream.this.applicationId,
+                    ClientAcceptStream.this.applicationReplyId);
         }
 
         private void flushPreviousMessage(

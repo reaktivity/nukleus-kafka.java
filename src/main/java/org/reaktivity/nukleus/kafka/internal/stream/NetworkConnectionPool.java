@@ -1301,8 +1301,9 @@ public final class NetworkConnectionPool
         @Override
         public String toString()
         {
-            return String.format("%s [brokerId=%d, host=%s, port=%d, budget=%d, padding=%d]",
-                    getClass().getName(), brokerId, host, port, networkRequestBudget, networkRequestPadding);
+            return String.format("%s [brokerId=%d, host=%s, port=%d, budget=%d, padding=%d, networkId=%d, networkReplyId=%d]",
+                    getClass().getName(), brokerId, host, port, networkRequestBudget, networkRequestPadding,
+                    networkId, networkReplyId);
         }
     }
 

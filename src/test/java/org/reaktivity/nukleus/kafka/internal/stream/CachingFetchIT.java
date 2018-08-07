@@ -707,6 +707,17 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/compacted.header.message.multiple.clients/client",
+        "${server}/compacted.header.first.matches.repeated/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveHistoricalMessageMatchingHeaderFirstFromCache() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/header.zero.offset.message/client",
         "${server}/header.zero.offset.last.matches/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")

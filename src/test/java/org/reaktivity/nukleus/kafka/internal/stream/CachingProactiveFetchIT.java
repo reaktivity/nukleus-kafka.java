@@ -66,4 +66,16 @@ public class CachingProactiveFetchIT
     {
         k3po.finish();
     }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/compacted.header.message.multiple.clients/client",
+        "${server}/compacted.header.first.matches/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveHistoricalMessageMatchingHeaderFromCache() throws Exception
+    {
+        k3po.finish();
+    }
+
 }
