@@ -627,19 +627,19 @@ public final class ClientStreamFactory implements StreamFactory
                     {
                         dispatchBlocked = true;
                     }
+                    else
+                    {
+                        result |= MessageDispatcher.FLAGS_DELIVERED;
+                    }
                 }
                 else
                 {
                     dispatchBlocked = true;
                 }
-                if (dispatchBlocked)
-                {
-                    result |= MessageDispatcher.FLAGS_BLOCKED;
-                }
-                else
-                {
-                    result |= MessageDispatcher.FLAGS_DELIVERED;
-                }
+            }
+            if (dispatchBlocked)
+            {
+                result |= MessageDispatcher.FLAGS_BLOCKED;
             }
             return result;
         }
