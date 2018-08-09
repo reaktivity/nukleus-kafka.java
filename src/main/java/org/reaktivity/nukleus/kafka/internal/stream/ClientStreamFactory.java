@@ -911,6 +911,8 @@ public final class ClientStreamFactory implements StreamFactory
             {
                 budget.incApplicationReplyBudget(window.credit());
             }
+
+            System.out.format("[networkPool.doFlush()] %s budget=%s\n", window, budget);
             networkPool.doFlush();
         }
 
