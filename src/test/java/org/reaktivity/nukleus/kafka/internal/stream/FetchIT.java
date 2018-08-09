@@ -928,6 +928,17 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/record.batch.ends.with.truncated.record.length/client",
+        "${server}/record.batch.ends.with.truncated.record.length/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageWithTruncatedRecordLength() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/record.batch.truncated/client",
         "${server}/record.batch.truncated/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
