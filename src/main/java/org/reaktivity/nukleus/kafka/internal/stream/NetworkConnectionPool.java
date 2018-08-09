@@ -2180,7 +2180,6 @@ public final class NetworkConnectionPool
                         // caught up to live stream
                         System.out.format("[satisfyPartitionRequestsFromCache()] caught up to live on partition=%d\n",
                                 partitionId);
-                        break;
                     }
                 }
             } // end for each partition
