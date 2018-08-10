@@ -510,7 +510,7 @@ public final class NetworkConnectionPool
 
     abstract class AbstractNetworkConnection
     {
-        boolean tempPostBegin; 
+        boolean tempPostBegin;
         final MessageConsumer networkTarget;
 
         long networkId;
