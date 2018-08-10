@@ -2102,7 +2102,7 @@ public final class NetworkConnectionPool
                 Iterator<Entry> entries = dispatcher.entries(partitionId, fetchOffset);
                 boolean partitionRequestNeeded = false;
                 boolean flushNeeded = false;
-                long requestOffset = getRequestedOffset.applyAsLong(partitionId);
+                final long requestOffset = getRequestedOffset.applyAsLong(partitionId);
 
                 while(entries.hasNext())
                 {
@@ -2122,7 +2122,7 @@ public final class NetworkConnectionPool
                                 message.headers().limit());
 
                         // call the dispatch variant which does not attempt to re-cache the message
-                        int dispatched = dispatcher.dispatch(partitionId, fetchOffset, newOffset, key, headers.headerSupplier(),
+                        int dispatched = dispatcher.dispatch(partitionId, requestOffset, newOffset, key, headers.headerSupplier(),
                                 message.timestamp(), message.traceId(), value);
 
                         flushNeeded = true;
