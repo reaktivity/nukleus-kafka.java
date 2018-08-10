@@ -88,16 +88,19 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
     {
         int result = dispatch(partition, requestOffset, messageOffset, key, headers.headerSupplier(), timestamp,
                 traceId, value);
+
         if (messageOffset + 1 == highWatermark)
         {
-            // Caught up to live stream, enable proactive message caching
+            // Caught up to live stream, enable pro-active message caching
             cacheNewMessages[partition] = true;
         }
+
         if (MessageDispatcher.matched(result))
         {
             indexes[partition].add(requestOffset, messageOffset, timestamp, traceId, key, headers, value,
                     cacheNewMessages[partition]);
         }
+
         return result;
     }
 

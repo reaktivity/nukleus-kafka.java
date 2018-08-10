@@ -162,6 +162,17 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/compacted.header.message.multiple.clients/client",
+        "${server}/compacted.header.first.matches.repeated/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveHistoricalMessageMatchingHeaderFirstFromCache() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/compacted.header.messages.and.tombstone/client",
         "${server}/compacted.header.matches.removed.in.subsequent.response/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -221,7 +232,6 @@ public class CachingFetchIT
         "${client}/compacted.historical.uses.cached.key.then.live/client",
         "${server}/compacted.historical.uses.cached.key.then.live.no.historical/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    // TODO: Fix failure
     public void shouldReceiveCompactedMessageUsingCachedKeyOffsetThenCatchUpToLiveStream() throws Exception
     {
         k3po.start();

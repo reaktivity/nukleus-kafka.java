@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.wrap;
@@ -507,7 +508,7 @@ public final class ClientStreamFactory implements StreamFactory
         private final DirectBuffer pendingMessageValueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
         private boolean messagePending;
-        private boolean outOfWindow;
+        private boolean dispatchBlocked;
         private DirectBuffer pendingMessageKey;
         private long pendingMessageTimestamp;
         private long pendingMessageTraceId;
@@ -518,6 +519,7 @@ public final class ClientStreamFactory implements StreamFactory
 
         int fragmentedMessageBytesWritten;
         long fragmentedMessageOffset = UNSET;
+        long fragmentedMessagePartition = UNSET;
 
         private long progressStartOffset = UNSET;
         private long progressEndOffset;
@@ -585,6 +587,7 @@ public final class ClientStreamFactory implements StreamFactory
                 if (messagePending && fragmentedMessageBytesWritten == 0)
                 {
                     messagePending = false;
+                    dispatchBlocked = false;
                     final int previousLength = pendingMessageValue == null ? 0 : pendingMessageValue.capacity();
                     budget.incApplicationReplyBudget(previousLength + applicationReplyPadding);
                 }
@@ -594,10 +597,14 @@ public final class ClientStreamFactory implements StreamFactory
                 flushPreviousMessage(partition, messageStartOffset);
             }
 
+            if (fragmentedMessageOffset != UNSET
+                    && (fragmentedMessagePartition != partition || messageStartOffset != fragmentedMessageOffset))
+            {
+                dispatchBlocked = true;
+            }
             if (requestOffset <= progressStartOffset // avoid out of order delivery
                 && messageStartOffset >= progressStartOffset // avoid repeated delivery
-                && (fragmentedMessageOffset == UNSET || messageStartOffset == fragmentedMessageOffset)
-                )
+                && !dispatchBlocked)
             {
                 final int payloadLength = value == null ? 0 : value.capacity() - fragmentedMessageBytesWritten;
                 int applicationReplyBudget = budget.applicationReplyBudget();
@@ -618,21 +625,21 @@ public final class ClientStreamFactory implements StreamFactory
                     messagePending = true;
                     if (bytesToWrite < payloadLength)
                     {
-                        outOfWindow = true;
+                        dispatchBlocked = true;
+                    }
+                    else
+                    {
+                        result |= MessageDispatcher.FLAGS_DELIVERED;
                     }
                 }
                 else
                 {
-                    outOfWindow = true;
+                    dispatchBlocked = true;
                 }
-                if (outOfWindow)
-                {
-                    result |= MessageDispatcher.FLAGS_BLOCKED;
-                }
-                else
-                {
-                    result |= MessageDispatcher.FLAGS_DELIVERED;
-                }
+            }
+            if (dispatchBlocked)
+            {
+                result |= MessageDispatcher.FLAGS_BLOCKED;
             }
             return result;
         }
@@ -652,7 +659,7 @@ public final class ClientStreamFactory implements StreamFactory
                 startOffset = fetchOffsets.get(partition);
                 endOffset = nextFetchOffset;
             }
-            else if (requestOffset <= startOffset && !outOfWindow)
+            else if (requestOffset <= startOffset && !dispatchBlocked)
             {
                 // We didn't skip or do partial write of any messages due to lack of window, advance to highest offset
                 endOffset = nextFetchOffset;
@@ -663,7 +670,18 @@ public final class ClientStreamFactory implements StreamFactory
                 progressHandler.handle(partition, startOffset, endOffset);
             }
             progressStartOffset = UNSET;
-            outOfWindow = false;
+            dispatchBlocked = false;
+        }
+
+        @Override
+        public String toString()
+        {
+            return format("fetchOffsets %s, fragmentedMessageOffset %d, fragmentedMessagePartition %d, " +
+                                 "applicationId %x, applicationReplyId %x",
+                    ClientAcceptStream.this.fetchOffsets,
+                    ClientAcceptStream.this.fragmentedMessageOffset,
+                    ClientAcceptStream.this.applicationId,
+                    ClientAcceptStream.this.applicationReplyId);
         }
 
         private void flushPreviousMessage(
@@ -695,12 +713,14 @@ public final class ClientStreamFactory implements StreamFactory
                 {
                     fragmentedMessageBytesWritten = 0;
                     fragmentedMessageOffset = UNSET;
+                    fragmentedMessagePartition = UNSET;
                     progressEndOffset = nextFetchOffset;
                 }
                 else
                 {
                     fragmentedMessageBytesWritten += (pendingMessageValueLimit - pendingMessageValueOffset);
                     fragmentedMessageOffset = pendingMessageOffset;
+                    fragmentedMessagePartition = partition;
                     progressEndOffset = pendingMessageOffset;
                     this.fetchOffsets.put(partition, pendingMessageOffset);
                 }
@@ -891,6 +911,7 @@ public final class ClientStreamFactory implements StreamFactory
             {
                 budget.incApplicationReplyBudget(window.credit());
             }
+
             networkPool.doFlush();
         }
 
