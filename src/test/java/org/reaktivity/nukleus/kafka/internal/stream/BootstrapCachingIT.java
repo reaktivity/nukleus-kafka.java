@@ -52,6 +52,7 @@ public class BootstrapCachingIT
         .counterValuesBufferCapacity(1024)
         .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "true")
         .configure(KafkaConfiguration.MESSAGE_CACHE_CAPACITY_PROPERTY, Integer.toString(1024 * 1024))
+        .configure(KafkaConfiguration.MESSAGE_CACHE_PROACTIVE_PROPERTY, "true")
         .clean();
 
     @Rule
@@ -80,6 +81,25 @@ public class BootstrapCachingIT
             Thread.sleep(100);
         }
 
+        k3po.notifyBarrier("CONNECT_CLIENT_ONE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/compacted.historical.large.message.and.small/client",
+        "${server}/compacted.messages.first.exceeds.256.bytes/server"})
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "applicationConnectWindow1 \"2000\"",
+        "applicationConnectWindow2 \"200\""
+    })
+    public void shouldReceiveCompactedFragmentedMessageAndFollowingFromCacheWhenNotSubscribedToKey() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("ROUTED_CLIENT");
+        k3po.awaitBarrier("BOOTSTRAP_COMPLETE");
         k3po.notifyBarrier("CONNECT_CLIENT_ONE");
         k3po.finish();
     }

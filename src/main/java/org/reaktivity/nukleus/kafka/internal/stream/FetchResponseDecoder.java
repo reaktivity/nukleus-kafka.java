@@ -479,31 +479,40 @@ public class FetchResponseDecoder implements ResponseDecoder
         {
             assert recordCount > 0 : "protocol violation: excess bytes following partition response or incorrect record count";
             Varint32FW recordLength = varint32RO.tryWrap(buffer, offset, limit);
+            int recordSize = -1;
             if (recordLength != null)
             {
-                int recordSize = recordLength.sizeof() + recordLength.value();
-                if (recordSize > recordSetBytesRemaining)
+                recordSize = recordLength.sizeof() + recordLength.value();
+            }
+            else
+            {
+                // record length truncated, record size must be GT recordSetBytesRemaining
+                assert limit - offset == recordSetBytesRemaining;
+                recordSize = recordSetBytesRemaining + 1;
+            }
+            if (recordSize > recordSetBytesRemaining)
+            {
+                // Truncated record at end of batch, make sure we attempt to re-fetch it.
+                // We assume the record batch's lastOffsetDelta is that of this truncated record, because
+                // otherwise it would be impossible to distinguish from deleted records case.
+                nextFetchAt = firstOffset + lastOffsetDelta;
+                messageDispatcher.flush(partition, requestedOffset, nextFetchAt);
+                skipBytesDecoderState.bytesToSkip = recordSetBytesRemaining;
+                skipBytesDecoderState.nextState = this::decodePartitionResponse;
+                decoderState = skipBytesDecoderState;
+            }
+            else
+            {
+                assert recordSize <= recordBatchBytesRemaining :
+                    "protocol violation: truncated record batch not last in record set";
+                recordBatchBytesRemaining -= recordSize;
+                recordSetBytesRemaining -= recordSize;
+                decoderState = this::decodeRecord;
+                if (recordSetBytesRemaining < 0)
                 {
-                    // Truncated record at end of batch, make sure we attempt to re-fetch it
-                    nextFetchAt = firstOffset + lastOffsetDelta;
-                    messageDispatcher.flush(partition, requestedOffset, nextFetchAt);
-                    skipBytesDecoderState.bytesToSkip = recordSetBytesRemaining;
-                    skipBytesDecoderState.nextState = this::decodePartitionResponse;
-                    decoderState = skipBytesDecoderState;
-                }
-                else
-                {
-                    assert recordSize <= recordBatchBytesRemaining :
-                        "protocol violation: truncated record batch not last in record set";
-                    recordBatchBytesRemaining -= recordSize;
-                    recordSetBytesRemaining -= recordSize;
-                    decoderState = this::decodeRecord;
-                    if (recordSetBytesRemaining < 0)
-                    {
-                        System.out.println(String.format(
-                                "W2: recordCount=%d, recordSize=%d, recordSetBytesRemaining=%d, recordBatchBytesRemaining=%d",
-                                recordCount, recordSize, recordSetBytesRemaining, recordBatchBytesRemaining));
-                    }
+                    System.out.println(String.format(
+                            "W2: recordCount=%d, recordSize=%d, recordSetBytesRemaining=%d, recordBatchBytesRemaining=%d",
+                            recordCount, recordSize, recordSetBytesRemaining, recordBatchBytesRemaining));
                 }
             }
         }

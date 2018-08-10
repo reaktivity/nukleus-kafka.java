@@ -141,7 +141,7 @@ public class CompactedPartitionIndex implements PartitionIndex
     {
         Iterator<Entry> result;
         int position = locate(requestOffset);
-        if (position == -1)
+        if (position == NO_POSITION)
         {
             long offset = Math.max(requestOffset, validToOffset);
             result = noMessagesIterator.reset(offset);

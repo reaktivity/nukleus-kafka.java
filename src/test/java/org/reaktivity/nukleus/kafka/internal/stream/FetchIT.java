@@ -928,6 +928,17 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/record.batch.ends.with.truncated.record.length/client",
+        "${server}/record.batch.ends.with.truncated.record.length/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveMessageWithTruncatedRecordLength() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/record.batch.truncated/client",
         "${server}/record.batch.truncated/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -1075,6 +1086,81 @@ public class FetchIT
         "${server}/historical.connection.reset/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReconnectRequeryPartitionMetadataAndContinueReceivingMessagesWhenHistoricalFetchConnectionIsReset()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/header.large.then.small.messages.multiple.partitions/client",
+        "${server}/header.large.exceeding.window.then.small.messages.multiple.partitions/server" })
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "applicationConnectWindow \"200\""
+    })
+    public void shouldAdvanceFetchOffsetForNonMatchingMessagesOnPartitionDifferentFromFragmentedMessage()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/header.large.then.small.messages.multiple.partitions/client",
+        "${server}/header.large.equals.window.then.small.messages.multiple.partitions/server" })
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "applicationConnectWindow \"266\""
+    })
+    public void shouldAdvanceFetchOffsetForNonMatchingMessagesOnPartitionDifferentFromMessageExhaustingWindow()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/large.then.small.messages.multiple.partitions/client",
+        "${server}/large.equals.window.then.small.messages.multiple.partitions/server" })
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "applicationConnectWindow \"266\""
+    })
+    public void shouldDeliverLargeMessageFillingWindowThenSmallMessagesFromMultiplePartitions()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/large.then.small.messages.multiple.partitions/client",
+        "${server}/large.exceeding.window.then.small.messages.multiple.partitions/server" })
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "applicationConnectWindow \"200\""
+    })
+    public void shouldNotDeliverMessageFromPartitionDifferentFromFragmentedMessageUntilFragmentedFullyWritten()
+            throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/large.then.small.messages.multiple.partitions/client",
+        "${server}/large.then.small.other.partition.first.in.next.response/server" })
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "applicationConnectWindow \"200\""
+    })
+    public void shouldNotDeliverSecondFragmentFromADifferentMessageFromAnotherPartition()
             throws Exception
     {
         k3po.finish();
