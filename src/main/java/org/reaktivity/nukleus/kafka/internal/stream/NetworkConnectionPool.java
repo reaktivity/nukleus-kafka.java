@@ -511,7 +511,6 @@ public final class NetworkConnectionPool
     abstract class AbstractNetworkConnection
     {
         final MessageConsumer networkTarget;
-        boolean tempPostBegin;
 
         long networkId;
         long networkCorrelationId;
@@ -586,7 +585,6 @@ public final class NetworkConnectionPool
 
                 this.networkId = newNetworkId;
                 this.networkCorrelationId = newCorrelationId;
-                tempPostBegin = true;
             }
         }
 
