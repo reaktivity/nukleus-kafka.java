@@ -55,6 +55,7 @@ import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.IntArrayList;
 import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2LongHashMap.LongIterator;
+import org.agrona.collections.LongArrayList;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
@@ -260,6 +261,8 @@ public final class NetworkConnectionPool
     private final Map<String, List<ListFW<KafkaHeaderFW>>> routeHeadersByTopic;
     private final Int2ObjectHashMap<Consumer<Long2LongHashMap>> detachersById;
 
+    private final List<NetworkTopicPartition> partitionsWorkList = new ArrayList<NetworkTopicPartition>();
+    private final LongArrayList offsetsWorkList = new LongArrayList();
     private int nextAttachId;
 
     NetworkConnectionPool(
@@ -1339,6 +1342,7 @@ public final class NetworkConnectionPool
                 Iterator<NetworkTopicPartition> iterator = topic.partitions.iterator();
                 NetworkTopicPartition candidate = iterator.hasNext() ? iterator.next() : null;
                 NetworkTopicPartition next;
+
                 while (candidate != null)
                 {
                     next = iterator.hasNext() ? iterator.next() : null;
@@ -1354,18 +1358,41 @@ public final class NetworkConnectionPool
                             .maxBytes(maxPartitionBytes)
                             .build();
 
+                        long requestedOffset = candidate.offset;
+
                         if (offset < candidate.offset)
                         {
                             // Topic was recreated, we have to go back to an earlier offset
                             topic.dispatcher.adjustOffset(candidate.id, candidate.offset, offset);
-                            candidate.offset = offset; // TODO: this is wrong, must remove and add from topic.partitions
-                            throw new IllegalStateException("Illegal update of candidate.offset");
+                            requestedOffset = offset;
+
+                            // Prepare to update the partition offset later
+                            NetworkTopicPartition partition = candidate.clone();
+                            partitionsWorkList.add(partition);
+                            offsetsWorkList.addLong(offset);
                         }
-                        setRequestedOffset.accept(candidate.id,  candidate.offset);
+
+                        setRequestedOffset.accept(candidate.id, requestedOffset);
                         encodeLimit = partitionRequest.limit();
                         partitionCount++;
                     }
                     candidate = next;
+                }
+
+                if (!partitionsWorkList.isEmpty())
+                {
+                    // Update the partition offsets. We must remove and add to preserve ordering.
+                    for (int i=0; i < partitionsWorkList.size(); i++)
+                    {
+                        NetworkTopicPartition partition = partitionsWorkList.get(i);
+                        boolean removed = topic.partitions.remove(partition);
+                        assert removed;
+                        partition.offset = offsetsWorkList.getLong(i);
+                        topic.partitions.add(partition);
+                    }
+
+                    partitionsWorkList.clear();
+                    offsetsWorkList.clear();
                 }
             }
 
@@ -1405,9 +1432,14 @@ public final class NetworkConnectionPool
                     final int[] nodeIdsByPartition = metadata.nodeIdsByPartition;
 
                     int partitionId = -1;
+
                     // TODO: eliminate iterator allocation
-                    for (NetworkTopicPartition partition : topic.partitions)
+                    Iterator<NetworkTopicPartition> partitions = topic.partitions.iterator();
+
+                    while (partitions.hasNext())
                     {
+                        NetworkTopicPartition partition = partitions.next();
+
                         if (topic.needsHistorical(partition.id) &&
                                 partitionId < partition.id && nodeIdsByPartition[partition.id] == brokerId)
                         {
@@ -1423,9 +1455,11 @@ public final class NetworkConnectionPool
                             if (offset < partition.offset)
                             {
                                 // Topic was recreated, we have to go back to an earlier offset
+                                // We must remove and add the partition to preserve ordering
                                 topic.dispatcher.adjustOffset(partition.id, partition.offset, offset);
-                                partition.offset = offset; // TODO: this is wrong, must remove and add from topic.partitions
-                                throw new IllegalStateException("Illegal update of partition.offset");
+                                partitions.remove();
+                                partition.offset = offset;
+                                partitionsWorkList.add(partition);
                             }
                             setRequestedOffset.accept(partition.id,  partition.offset);
                             encodeLimit = partitionRequest.limit();
@@ -1433,6 +1467,13 @@ public final class NetworkConnectionPool
                             partitionCount++;
                         }
                     }
+
+                    if (!partitionsWorkList.isEmpty())
+                    {
+                        topic.partitions.addAll(partitionsWorkList);
+                        partitionsWorkList.clear();
+                    }
+
                     partitionCount = topic.satisfyPartitionRequestsFromCache(
                             partitionCount,
                             getRequestedOffset,
@@ -2236,6 +2277,16 @@ public final class NetworkConnectionPool
         int id;
         long offset;
         private int refs;
+
+        @Override
+        protected NetworkTopicPartition clone()
+        {
+            NetworkTopicPartition result = new NetworkTopicPartition();
+            result.id = id;
+            result.offset = offset;
+            result.refs = refs;
+            return result;
+        }
 
         @Override
         public int compareTo(
