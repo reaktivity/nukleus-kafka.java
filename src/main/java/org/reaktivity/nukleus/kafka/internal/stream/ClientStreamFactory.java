@@ -602,6 +602,14 @@ public final class ClientStreamFactory implements StreamFactory
             {
                 dispatchBlocked = true;
             }
+            boolean requiredMessageLost = fragmentedMessageOffset != UNSET &&
+                    fragmentedMessagePartition != partition &&
+                    requestOffset <= fragmentedMessageOffset &&
+                    messageStartOffset > fragmentedMessageOffset;
+            if (requiredMessageLost)
+            {
+                System.out.format("requiredMessageLost:  \n");
+            }
             if (requestOffset <= progressStartOffset // avoid out of order delivery
                 && messageStartOffset >= progressStartOffset // avoid repeated delivery
                 && !dispatchBlocked)
@@ -680,6 +688,7 @@ public final class ClientStreamFactory implements StreamFactory
                                  "applicationId %x, applicationReplyId %x",
                     ClientAcceptStream.this.fetchOffsets,
                     ClientAcceptStream.this.fragmentedMessageOffset,
+                    ClientAcceptStream.this.fragmentedMessagePartition,
                     ClientAcceptStream.this.applicationId,
                     ClientAcceptStream.this.applicationReplyId);
         }
