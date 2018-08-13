@@ -520,6 +520,7 @@ public final class ClientStreamFactory implements StreamFactory
         int fragmentedMessageBytesWritten;
         long fragmentedMessageOffset = UNSET;
         long fragmentedMessagePartition = UNSET;
+        boolean fragmentedMessageDispatched;
 
         private long progressStartOffset = UNSET;
         private long progressEndOffset;
@@ -597,14 +598,28 @@ public final class ClientStreamFactory implements StreamFactory
                 flushPreviousMessage(partition, messageStartOffset);
             }
 
-            if (fragmentedMessageOffset != UNSET
-                    && (fragmentedMessagePartition != partition || messageStartOffset != fragmentedMessageOffset))
+            boolean skipMessage = false;
+
+            if (fragmentedMessageOffset != UNSET)
             {
-                dispatchBlocked = true;
+               if (fragmentedMessagePartition != partition)
+               {
+                   dispatchBlocked = true;
+                   skipMessage = true;
+               }
+               else if (messageStartOffset < fragmentedMessageOffset)
+               {
+                   skipMessage = true;
+               }
+               else if (messageStartOffset == fragmentedMessageOffset)
+               {
+                   fragmentedMessageDispatched = true;
+               }
             }
+
             if (requestOffset <= progressStartOffset // avoid out of order delivery
                 && messageStartOffset >= progressStartOffset // avoid repeated delivery
-                && !dispatchBlocked)
+                && !skipMessage)
             {
                 final int payloadLength = value == null ? 0 : value.capacity() - fragmentedMessageBytesWritten;
                 int applicationReplyBudget = budget.applicationReplyBudget();
@@ -653,6 +668,7 @@ public final class ClientStreamFactory implements StreamFactory
             flushPreviousMessage(partition, nextFetchOffset);
             long startOffset = progressStartOffset;
             long endOffset = progressEndOffset;
+
             if (startOffset == UNSET)
             {
                 // dispatch was not called
@@ -664,6 +680,18 @@ public final class ClientStreamFactory implements StreamFactory
                 // We didn't skip or do partial write of any messages due to lack of window, advance to highest offset
                 endOffset = nextFetchOffset;
             }
+
+            if (fragmentedMessageOffset != UNSET &&
+                fragmentedMessagePartition == partition &&
+                !fragmentedMessageDispatched &&
+                startOffset <= fragmentedMessageOffset &&
+                nextFetchOffset > fragmentedMessageOffset)
+            {
+                // Partially written message no longer exists, we cannot complete it.
+                // Abort the connection to force the client to re-attach.
+                detach();
+            }
+
             if (endOffset > startOffset && requestOffset <= startOffset)
             {
                 this.fetchOffsets.put(partition, endOffset);
@@ -671,6 +699,7 @@ public final class ClientStreamFactory implements StreamFactory
             }
             progressStartOffset = UNSET;
             dispatchBlocked = false;
+            fragmentedMessageDispatched = false;
         }
 
         @Override
@@ -721,6 +750,7 @@ public final class ClientStreamFactory implements StreamFactory
                     fragmentedMessageBytesWritten += (pendingMessageValueLimit - pendingMessageValueOffset);
                     fragmentedMessageOffset = pendingMessageOffset;
                     fragmentedMessagePartition = partition;
+                    fragmentedMessageDispatched = true;
                     progressEndOffset = pendingMessageOffset;
                     this.fetchOffsets.put(partition, pendingMessageOffset);
                 }
