@@ -1029,6 +1029,8 @@ public final class NetworkConnectionPool
                 else
                 {
                     encodeLimit = originalEncodeLimit;
+                    System.out.println(format("%s: no fetch needed for topic %s",
+                            this, topicsByName.get(topicName)));
                 }
             }
 
@@ -1064,7 +1066,7 @@ public final class NetworkConnectionPool
                 networkRequestBudget -= payload.sizeof() + networkRequestPadding;
                 if (tempPostBegin)
                 {
-                    System.out.println(format("%s: first request listOffsets issued", this));
+                    System.out.println(format("%s: first request (fetch) issued", this));
                     tempPostBegin = false;
                 }
             }
@@ -1075,7 +1077,7 @@ public final class NetworkConnectionPool
             }
             else
             {
-                System.out.println(format("%s: fetch request ABANDONED, topicCount=%d, topic=%s",
+                System.out.println(format("%s: historical fetch request abandoned, no topics to fetch, topicCount=%d, topic=%s",
                         this, topicCount,
                         topicsByName.keySet().iterator().hasNext() ? topicsByName.values().iterator().next() : null));
             }
@@ -1501,6 +1503,8 @@ public final class NetworkConnectionPool
                                 partition.offset = offset;
                                 partitionsWorkList.add(partition);
                             }
+                            System.out.println(format("%s addTopicToRequest: requestOffset=%d, topic=%s",
+                                    this, partition.offset, topic));
                             setRequestedOffset.accept(partition.id,  partition.offset);
                             encodeLimit = partitionRequest.limit();
                             partitionId = partition.id;
