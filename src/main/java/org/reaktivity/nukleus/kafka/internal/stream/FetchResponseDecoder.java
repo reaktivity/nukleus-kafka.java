@@ -360,12 +360,6 @@ public class FetchResponseDecoder implements ResponseDecoder
             newOffset = response.limit();
             if (recordSetBytesRemaining == 0)
             {
-                long requestedOffset = getRequestedOffsetForPartition.apply(topicName, partition);
-                if (highWatermark > requestedOffset && errorCode == NONE.errorCode)
-                {
-                    nextFetchAt = requestedOffset + 1;
-                    messageDispatcher.flush(partition, requestedOffset, requestedOffset + 1);
-                }
                 decoderState = this::decodePartitionResponse;
             }
             else if (recordSetBytesRemaining > maxRecordBatchSize)
