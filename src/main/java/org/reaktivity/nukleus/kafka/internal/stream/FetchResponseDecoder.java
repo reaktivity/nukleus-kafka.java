@@ -97,7 +97,6 @@ public class FetchResponseDecoder implements ResponseDecoder
     private long nextFetchAt;
     private int recordCount;
     private long firstOffset;
-    private int lastOffsetDelta;
     private long firstTimestamp;
 
     private final SkipBytesDecoderState skipBytesDecoderState = new SkipBytesDecoderState();
@@ -427,7 +426,6 @@ public class FetchResponseDecoder implements ResponseDecoder
             else
             {
                 firstOffset = recordBatch.firstOffset();
-                lastOffsetDelta = recordBatch.lastOffsetDelta();
                 firstTimestamp = recordBatch.firstTimestamp();
                 recordCount = recordBatch.recordCount();
                 nextFetchAt = firstOffset;
@@ -451,17 +449,6 @@ public class FetchResponseDecoder implements ResponseDecoder
         int newOffset = offset;
         if (recordSetBytesRemaining == 0)
         {
-            if (recordBatchBytesRemaining > 0 || recordCount > 0)
-            {
-                //  record batch truncated at a record boundary, make sure we attempt to fetch the missing records
-                nextFetchAt = firstOffset + lastOffsetDelta;
-            }
-            else
-            {
-                // If there are deleted records, the last offset reported on the record batch may exceed the
-                // offset of the last record in the batch. So we must use this to make sure we continue to advance.
-                nextFetchAt = firstOffset + lastOffsetDelta + 1;
-            }
             messageDispatcher.flush(partition, requestedOffset, nextFetchAt);
             decoderState = this::decodePartitionResponse;
         }
@@ -486,10 +473,11 @@ public class FetchResponseDecoder implements ResponseDecoder
             }
             if (recordSize > recordSetBytesRemaining)
             {
-                // Truncated record at end of batch, make sure we attempt to re-fetch it.
-                // We assume the record batch's lastOffsetDelta is that of this truncated record, because
-                // otherwise it would be impossible to distinguish from deleted records case.
-                nextFetchAt = firstOffset + lastOffsetDelta;
+                // Truncated record at end of batch, make sure we attempt to re-fetch it. Experience shows
+                // the record batch's lastOffsetDelta is that of the last record that would have been in
+                // in the batch had it not been truncated, so we must re-fetch this record using the
+                // the offset of the previous record plus 1 (if there was a previous record) else the
+                // first offset of the record batch.
                 messageDispatcher.flush(partition, requestedOffset, nextFetchAt);
                 skipBytesDecoderState.bytesToSkip = recordSetBytesRemaining;
                 skipBytesDecoderState.nextState = this::decodePartitionResponse;
