@@ -97,6 +97,7 @@ public class FetchResponseDecoder implements ResponseDecoder
     private long nextFetchAt;
     private int recordCount;
     private long firstOffset;
+    private int lastOffsetDelta;
     private long firstTimestamp;
 
     private final SkipBytesDecoderState skipBytesDecoderState = new SkipBytesDecoderState();
@@ -426,6 +427,7 @@ public class FetchResponseDecoder implements ResponseDecoder
             else
             {
                 firstOffset = recordBatch.firstOffset();
+                lastOffsetDelta = recordBatch.lastOffsetDelta();
                 firstTimestamp = recordBatch.firstTimestamp();
                 recordCount = recordBatch.recordCount();
                 nextFetchAt = firstOffset;
@@ -449,6 +451,12 @@ public class FetchResponseDecoder implements ResponseDecoder
         int newOffset = offset;
         if (recordSetBytesRemaining == 0)
         {
+            if (recordBatchBytesRemaining == 0)
+            {
+                // If there are deleted records, the last offset reported on the record batch may exceed the
+                // offset of the last record in the batch. So we must use this to make sure we continue to advance.
+                nextFetchAt = firstOffset + lastOffsetDelta + 1;
+            }
             messageDispatcher.flush(partition, requestedOffset, nextFetchAt);
             decoderState = this::decodePartitionResponse;
         }

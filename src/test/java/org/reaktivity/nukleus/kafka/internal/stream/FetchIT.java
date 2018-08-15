@@ -290,20 +290,6 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.message/client",
-        "${server}/zero.length.record.batch/server"})
-    @ScriptProperty({
-        "networkAccept \"nukleus://target/streams/kafka\"",
-        "messageOffset 2"
-    })
-    public void shouldSkipZeroLengthRecordBatch() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
         "${client}/compacted.message/client",
         "${server}/compacted.message/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
