@@ -152,7 +152,7 @@ public class DefaultMemoryManagerTest
 
     @Test
     @ConfigureMemoryLayout(capacity = GB_1, smallestBlockSize = KB)
-    public void shouldAllocateAndReleaseMBlocks1GBCache()
+    public void shouldAllocateAndReleaseBlocks1GBCache()
     {
         final MemoryManager memoryManager = memoryManagerRule.memoryManager();
         memoryManagerRule.assertReleased();
