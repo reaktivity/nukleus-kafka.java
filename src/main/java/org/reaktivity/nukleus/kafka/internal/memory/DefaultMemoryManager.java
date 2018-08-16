@@ -16,8 +16,9 @@
 package org.reaktivity.nukleus.kafka.internal.memory;
 
 import static java.lang.Integer.highestOneBit;
-import static java.lang.Integer.numberOfTrailingZeros;
+import static java.lang.Long.numberOfTrailingZeros;
 import static org.agrona.BitUtil.findNextPositivePowerOfTwo;
+import static org.agrona.BitUtil.isPowerOfTwo;
 import static org.reaktivity.nukleus.kafka.internal.memory.BTreeFW.EMPTY;
 import static org.reaktivity.nukleus.kafka.internal.memory.BTreeFW.FULL;
 import static org.reaktivity.nukleus.kafka.internal.memory.BTreeFW.SPLIT;
@@ -32,20 +33,20 @@ public class DefaultMemoryManager implements MemoryManager
     private final BTreeFW btreeRO;
 
     private final int blockSizeShift;
-    private final int maximumBlockSize;
+    private final long maximumBlockSize;
     private final int maximumOrder;
 
-    private final MutableDirectBuffer memoryBuffer;
+    private final MutableDirectBuffer[] memoryBuffers;
     private final AtomicBuffer metadataBuffer;
 
 
     public DefaultMemoryManager(
         MemoryLayout memoryLayout)
     {
-        final int minimumBlockSize = memoryLayout.minimumBlockSize();
-        final int maximumBlockSize = memoryLayout.maximumBlockSize();
+        final long minimumBlockSize = memoryLayout.minimumBlockSize();
+        final long maximumBlockSize = memoryLayout.maximumBlockSize();
 
-        this.memoryBuffer = memoryLayout.memoryBuffer();
+        this.memoryBuffers = memoryLayout.memoryBuffers();
         this.metadataBuffer = memoryLayout.metadataBuffer();
         this.blockSizeShift = numberOfTrailingZeros(minimumBlockSize);
         this.maximumBlockSize = maximumBlockSize;
@@ -57,6 +58,19 @@ public class DefaultMemoryManager implements MemoryManager
     public long resolve(
         long address)
     {
+        MutableDirectBuffer memoryBuffer;
+        int firstCapacity = memoryBuffers[0].capacity();
+        if (address < firstCapacity)
+        {
+            memoryBuffer = memoryBuffers[0];
+        }
+        else
+        {
+            assert isPowerOfTwo(firstCapacity);
+            int index = (int) (address >> Integer.numberOfTrailingZeros(firstCapacity));
+            memoryBuffer = memoryBuffers[index];
+        }
+
         return memoryBuffer.addressOffset() + address;
     }
 
