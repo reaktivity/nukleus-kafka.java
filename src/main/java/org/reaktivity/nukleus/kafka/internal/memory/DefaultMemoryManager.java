@@ -18,7 +18,6 @@ package org.reaktivity.nukleus.kafka.internal.memory;
 import static java.lang.Integer.highestOneBit;
 import static java.lang.Long.numberOfTrailingZeros;
 import static org.agrona.BitUtil.findNextPositivePowerOfTwo;
-import static org.agrona.BitUtil.isPowerOfTwo;
 import static org.reaktivity.nukleus.kafka.internal.memory.BTreeFW.EMPTY;
 import static org.reaktivity.nukleus.kafka.internal.memory.BTreeFW.FULL;
 import static org.reaktivity.nukleus.kafka.internal.memory.BTreeFW.SPLIT;
@@ -37,6 +36,9 @@ public class DefaultMemoryManager implements MemoryManager
     private final int maximumOrder;
 
     private final MutableDirectBuffer[] memoryBuffers;
+    private final int firstBufferCapacity;
+    private final int addressShift;
+    private final long addressMask;
     private final AtomicBuffer metadataBuffer;
 
 
@@ -52,6 +54,9 @@ public class DefaultMemoryManager implements MemoryManager
         this.maximumBlockSize = maximumBlockSize;
         this.maximumOrder = numberOfTrailingZeros(maximumBlockSize) - numberOfTrailingZeros(minimumBlockSize);
         this.btreeRO = new BTreeFW(maximumOrder).wrap(metadataBuffer, BTREE_OFFSET, metadataBuffer.capacity() - BTREE_OFFSET);
+        firstBufferCapacity = memoryBuffers[0].capacity();
+        addressShift = Integer.numberOfTrailingZeros(firstBufferCapacity);
+        addressMask = firstBufferCapacity - 1;
     }
 
     @Override
@@ -59,16 +64,16 @@ public class DefaultMemoryManager implements MemoryManager
         long address)
     {
         MutableDirectBuffer memoryBuffer;
-        int firstCapacity = memoryBuffers[0].capacity();
-        if (address < firstCapacity)
+
+        if (address < firstBufferCapacity)
         {
             memoryBuffer = memoryBuffers[0];
         }
         else
         {
-            assert isPowerOfTwo(firstCapacity);
-            int index = (int) (address >> Integer.numberOfTrailingZeros(firstCapacity));
+            int index = (int) (address >> addressShift);
             memoryBuffer = memoryBuffers[index];
+            address &= addressMask;
         }
 
         return memoryBuffer.addressOffset() + address;
@@ -87,6 +92,7 @@ public class DefaultMemoryManager implements MemoryManager
         final int allocationOrder = numberOfTrailingZeros(allocationSize >> blockSizeShift);
 
         final BTreeFW node = btreeRO.walk(0);
+
         while (node.order() != allocationOrder || node.flag(SPLIT) || node.flag(FULL))
         {
             if (node.order() < allocationOrder || node.flag(FULL))

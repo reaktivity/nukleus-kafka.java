@@ -83,31 +83,20 @@ public final class MemoryLayout extends Layout
         return memoryBuffers;
     }
 
-    public long minimumBlockSize()
+    public int minimumBlockSize()
     {
         return metadataBuffer.getInt(MINIMUM_BLOCK_SIZE_OFFSET);
     }
 
     public long maximumBlockSize()
     {
-        return metadataBuffer.getInt(MAXIMUM_BLOCK_SIZE_OFFSET);
-    }
-
-    public long capacity()
-    {
-        long capacity = 0;
-        for (MutableDirectBuffer memoryBuffer : memoryBuffers)
-        {
-            capacity += memoryBuffer.capacity();
-        }
-        return capacity;
+        return metadataBuffer.getLong(MAXIMUM_BLOCK_SIZE_OFFSET);
     }
 
     public static final class Builder extends Layout.Builder<MemoryLayout>
     {
         private Path path;
-        private long capacity;
-        private long minimumBlockSize;
+        private int minimumBlockSize;
         private long maximumBlockSize;
         private boolean create;
 
@@ -126,7 +115,7 @@ public final class MemoryLayout extends Layout
         }
 
         public Builder minimumBlockSize(
-            long minimumBlockSize)
+            int minimumBlockSize)
         {
             if (!isPowerOfTwo(minimumBlockSize))
             {
@@ -145,13 +134,12 @@ public final class MemoryLayout extends Layout
                 throw new IllegalArgumentException("maximum block size MUST be a power of 2");
             }
 
-            if (capacity >> Integer.numberOfTrailingZeros(ONE_GB) > Integer.MAX_VALUE)
+            if (maximumBlockSize >> Integer.numberOfTrailingZeros(ONE_GB) > Integer.MAX_VALUE)
             {
                 throw new IllegalStateException("capacity too large, number of 1GB buffers would exceed Integer.MAX_VALUE");
             }
 
-            this.maximumBlockSize = Math.min(maximumBlockSize, ONE_GB);
-            this.capacity = maximumBlockSize;
+            this.maximumBlockSize = maximumBlockSize;
             return this;
         }
 
@@ -172,7 +160,7 @@ public final class MemoryLayout extends Layout
                             "BTree size %d exceeds ONE_GB, difference between minimum and maximum block size is too great",
                             metadataSizeAligned));
                 }
-                CloseHelper.close(createEmptyFile(memory, metadataSizeAligned + capacity));
+                CloseHelper.close(createEmptyFile(memory, metadataSizeAligned + maximumBlockSize));
             }
             else
             {
@@ -186,26 +174,25 @@ public final class MemoryLayout extends Layout
 
                 metadataSize = BTREE_OFFSET + sizeofBTree(minimumBlockSize, maximumBlockSize);
                 metadataSizeAligned = align(metadataSize, CACHE_LINE_LENGTH);
-                capacity = memory.length() - metadataSizeAligned;
 
             }
 
             final MappedByteBuffer mappedMetadata = mapExistingFile(memory, "metadata", 0, metadataSizeAligned);
             final AtomicBuffer metadataBuffer = new UnsafeBuffer(mappedMetadata, 0, (int) metadataSize);
-            metadataBuffer.putLong(MINIMUM_BLOCK_SIZE_OFFSET, minimumBlockSize);
+            metadataBuffer.putInt(MINIMUM_BLOCK_SIZE_OFFSET, minimumBlockSize);
             metadataBuffer.putLong(MAXIMUM_BLOCK_SIZE_OFFSET, maximumBlockSize);
 
             final MappedByteBuffer[] mappedMemoryBuffers;
             long start = metadataSizeAligned;
 
-            if (capacity <= ONE_GB)
+            if (maximumBlockSize <= ONE_GB)
             {
                 mappedMemoryBuffers = new MappedByteBuffer[1];
-                mappedMemoryBuffers[0] = mapExistingFile(memory, "memory", start, capacity);
+                mappedMemoryBuffers[0] = mapExistingFile(memory, "memory", start, maximumBlockSize);
             }
             else
             {
-                int buffersNeeded = (int) (capacity >> Integer.numberOfTrailingZeros(ONE_GB));
+                int buffersNeeded = (int) (maximumBlockSize >> Integer.numberOfTrailingZeros(ONE_GB));
                 mappedMemoryBuffers = new MappedByteBuffer[buffersNeeded];
                 for (int i = 0; i < buffersNeeded; i++)
                 {

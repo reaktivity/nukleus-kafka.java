@@ -128,7 +128,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
         Function<String, LongSupplier> supplyCounter)
     {
         MemoryManager result;
-        int capacity = kafkaConfig.messageCacheCapacity();
+        long capacity = kafkaConfig.messageCacheCapacity();
         if (capacity == 0)
         {
             result = OUT_OF_SPACE_MEMORY_MANAGER;

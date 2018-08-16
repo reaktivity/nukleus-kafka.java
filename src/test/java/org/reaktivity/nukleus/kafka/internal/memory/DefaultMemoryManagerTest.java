@@ -30,6 +30,9 @@ import org.junit.Test;
 public class DefaultMemoryManagerTest
 {
     private UnsafeBuffer writeBuffer = new UnsafeBuffer(new byte[1]);
+    private static final int GB_1 = 1024 * 1024 * 1024;
+    private static final long GB_2 = 2L * GB_1;
+    private static final int HALF_GB = GB_1 / 2;
     private static final int MB_128 = 128 * 1024 * 1024;
     private static final int KB = 1024;
     private static final int BYTES_64 = 64;
@@ -144,8 +147,60 @@ public class DefaultMemoryManagerTest
     }
 
     @Test
+    @ConfigureMemoryLayout(capacity = GB_1, smallestBlockSize = KB)
+    public void shouldAllocateAndReleaseMBlocks1GBCache()
+    {
+        final MemoryManager memoryManager = memoryManagerRule.memoryManager();
+        memoryManagerRule.assertReleased();
+
+
+        long address1 = memoryManager.acquire(4238);
+        long address2 = memoryManager.acquire(3024);
+        long address3 = memoryManager.acquire(13743);
+
+        memoryManager.release(address3, 13743);
+        memoryManager.release(address2, 3024);
+        memoryManager.release(address1, 4238);
+
+        assertTrue(address2 - address1 > 4238);
+        assertTrue(address3 - address2 > 3024);
+        memoryManagerRule.assertReleased();
+    }
+
+    @Test
+    @ConfigureMemoryLayout(capacity = GB_2, smallestBlockSize = KB)
+    public void shouldAllocateAndReleaseBlocksBeyond1GB()
+    {
+        final MemoryManager memoryManager = memoryManagerRule.memoryManager();
+        memoryManagerRule.assertReleased();
+
+        long address1 = memoryManager.acquire(4238);
+        assertEquals(0L, address1);
+
+        long address2 = memoryManager.acquire(HALF_GB);
+        assertTrue(address2 < GB_1);
+
+        long address3 = memoryManager.acquire(HALF_GB);
+        assertEquals(GB_1, address3);
+
+        long address4 = memoryManager.acquire(13743);
+        assertTrue(address4 < GB_1);
+
+        long address5 = memoryManager.acquire(HALF_GB);
+        assertEquals(GB_1 + HALF_GB, address5);
+
+        memoryManager.release(address5, HALF_GB);
+        memoryManager.release(address4, 13743);
+        memoryManager.release(address3, HALF_GB);
+        memoryManager.release(address2, HALF_GB);
+        memoryManager.release(address1, 4238);
+
+        memoryManagerRule.assertReleased();
+    }
+
+    @Test
     @ConfigureMemoryLayout(capacity = MB_128, smallestBlockSize = KB)
-    public void shouldAllocateAndReleaseMediumBlocksLargeCache()
+    public void shouldAllocateAndReleaseMediumBlocksLargerCache()
     {
         final MemoryManager memoryManager = memoryManagerRule.memoryManager();
         memoryManagerRule.assertReleased();
