@@ -226,11 +226,7 @@ public class DefaultMemoryManagerTest
         }
         assertEquals(expectedNumberOfAddresses, addresses.size());
 
-        for (int i=0; i < addresses.size(); i++)
-        {
-            memoryManager.release(addresses.get(i), allocationSize);
-        }
-        //addresses.forEach(a -> memoryManager.release(a, allocationSize));
+        addresses.forEach(a -> memoryManager.release(a, allocationSize));
 
         memoryManagerRule.assertReleased();
     }
