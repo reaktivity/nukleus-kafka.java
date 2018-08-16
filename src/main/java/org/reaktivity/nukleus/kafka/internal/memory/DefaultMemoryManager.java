@@ -147,7 +147,8 @@ public class DefaultMemoryManager implements MemoryManager
             }
         }
 
-        return ((nodeIndex + 1) & ~highestOneBit(nodeIndex + 1)) << blockSizeShift << nodeOrder;
+        long addressToShift = ((nodeIndex + 1) & ~highestOneBit(nodeIndex + 1));
+        return addressToShift << blockSizeShift << nodeOrder;
     }
 
     @Override

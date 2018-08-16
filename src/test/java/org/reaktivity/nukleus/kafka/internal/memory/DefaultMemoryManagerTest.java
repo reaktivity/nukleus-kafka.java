@@ -15,13 +15,17 @@
  */
 package org.reaktivity.nukleus.kafka.internal.memory;
 
+import static java.lang.String.format;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.LongSupplier;
 
+import org.agrona.BitUtil;
 import org.agrona.collections.LongArrayList;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.Rule;
@@ -31,7 +35,7 @@ public class DefaultMemoryManagerTest
 {
     private UnsafeBuffer writeBuffer = new UnsafeBuffer(new byte[1]);
     private static final int GB_1 = 1024 * 1024 * 1024;
-    private static final long GB_2 = 2L * GB_1;
+    private static final long GB_4 = 4L * GB_1;
     private static final int HALF_GB = GB_1 / 2;
     private static final int MB_128 = 128 * 1024 * 1024;
     private static final int KB = 1024;
@@ -168,7 +172,7 @@ public class DefaultMemoryManagerTest
     }
 
     @Test
-    @ConfigureMemoryLayout(capacity = GB_2, smallestBlockSize = KB)
+    @ConfigureMemoryLayout(capacity = GB_4, smallestBlockSize = KB)
     public void shouldAllocateAndReleaseBlocksBeyond1GB()
     {
         final MemoryManager memoryManager = memoryManagerRule.memoryManager();
@@ -194,6 +198,39 @@ public class DefaultMemoryManagerTest
         memoryManager.release(address3, HALF_GB);
         memoryManager.release(address2, HALF_GB);
         memoryManager.release(address1, 4238);
+
+        memoryManagerRule.assertReleased();
+    }
+
+    @Test
+    @ConfigureMemoryLayout(capacity = GB_4, smallestBlockSize = KB)
+    public void shouldAllocateAndReleaseMediumBlocksBeyond1GB()
+    {
+        final MemoryManager memoryManager = memoryManagerRule.memoryManager();
+        memoryManagerRule.assertReleased();
+
+        long address = 0;
+        int allocationSize = 20000;
+        int expectedNumberOfAddresses = (int) (GB_4 / BitUtil.findNextPositivePowerOfTwo(allocationSize));
+        List<Long> addresses = new ArrayList<>(expectedNumberOfAddresses);
+        while (true)
+        {
+            address = memoryManager.acquire(20000);
+            if (address == -1L)
+            {
+                break;
+            }
+            assertTrue(format("Should not be negative: address %d, addresses.size()=%d\n", address, addresses.size()),
+                       address >= 0L);
+            addresses.add(address);
+        }
+        assertEquals(expectedNumberOfAddresses, addresses.size());
+
+        for (int i=0; i < addresses.size(); i++)
+        {
+            memoryManager.release(addresses.get(i), allocationSize);
+        }
+        //addresses.forEach(a -> memoryManager.release(a, allocationSize));
 
         memoryManagerRule.assertReleased();
     }
