@@ -193,6 +193,14 @@ public class DefaultMemoryManagerTest
         long address5 = memoryManager.acquire(HALF_GB);
         assertEquals(GB_1 + HALF_GB, address5);
 
+        long address6 = memoryManager.acquire(GB_1);
+        assertEquals(2L * GB_1, address6);
+
+        long address7 = memoryManager.acquire(GB_1);
+        assertEquals(3L * GB_1, address7);
+
+        memoryManager.release(address7, GB_1);
+        memoryManager.release(address6, GB_1);
         memoryManager.release(address5, HALF_GB);
         memoryManager.release(address4, 13743);
         memoryManager.release(address3, HALF_GB);
@@ -204,7 +212,7 @@ public class DefaultMemoryManagerTest
 
     @Test
     @ConfigureMemoryLayout(capacity = GB_4, smallestBlockSize = KB)
-    public void shouldAllocateAndReleaseMediumBlocksBeyond1GB()
+    public void shouldAllocateToFillAndReleaseMediumBlocksBeyond1GB()
     {
         final MemoryManager memoryManager = memoryManagerRule.memoryManager();
         memoryManagerRule.assertReleased();
@@ -342,4 +350,45 @@ public class DefaultMemoryManagerTest
         assertNotEquals(-1, acquire64Address.getAsLong());
         assertEquals(-1, acquire64Address.getAsLong());
     }
+
+    @Test
+    @ConfigureMemoryLayout(capacity = GB_4, smallestBlockSize = KB)
+    public void shouldResolveAddressesBeyond1GB()
+    {
+        final MemoryManager memoryManager = memoryManagerRule.memoryManager();
+        memoryManagerRule.assertReleased();
+
+        long address1 = memoryManager.acquire(4238);
+        assertEquals(0L, address1);
+        long resolved1 = memoryManager.resolve(address1);
+
+        long address2 = memoryManager.acquire(HALF_GB);
+        assertTrue(address2 < GB_1);
+        long resolved2 = memoryManager.resolve(address2);
+        assertEquals(address2 - address1, resolved2 - resolved1);
+
+        long address3 = memoryManager.acquire(HALF_GB);
+        assertEquals(GB_1, address3);
+        long resolved3 = memoryManager.resolve(address3);
+
+        long address4 = memoryManager.acquire(13743);
+        assertTrue(address4 < GB_1);
+        long resolved4 = memoryManager.resolve(address4);
+        assertEquals(address4 - address1, resolved4 - resolved1);
+
+        long address5 = memoryManager.acquire(HALF_GB);
+        assertEquals(GB_1 + HALF_GB, address5);
+        long resolved5 = memoryManager.resolve(address5);
+        assertEquals(HALF_GB, resolved5 - resolved3);
+        assertEquals(address5 - address3, resolved5 - resolved3);
+
+        memoryManager.release(address5, HALF_GB);
+        memoryManager.release(address4, 13743);
+        memoryManager.release(address3, HALF_GB);
+        memoryManager.release(address2, HALF_GB);
+        memoryManager.release(address1, 4238);
+
+        memoryManagerRule.assertReleased();
+    }
+
 }

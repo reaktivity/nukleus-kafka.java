@@ -41,10 +41,8 @@ public final class MemoryLayout extends Layout
     public static final int BITS_PER_BTREE_NODE = 1 << BITS_PER_BTREE_NODE_SHIFT;
     public static final int MASK_PER_BTREE_NODE = (1 << BITS_PER_BTREE_NODE) - 1;
 
-    public static final int LOCK_OFFSET = 0;
-    public static final int LOCK_SIZE = Long.BYTES;
-    public static final int MINIMUM_BLOCK_SIZE_OFFSET = LOCK_OFFSET + LOCK_SIZE;
-    public static final int MINIMUM_BLOCK_SIZE_SIZE = Long.BYTES;
+    public static final int MINIMUM_BLOCK_SIZE_OFFSET = 0;
+    public static final int MINIMUM_BLOCK_SIZE_SIZE = Integer.BYTES;
     public static final int MAXIMUM_BLOCK_SIZE_OFFSET = MINIMUM_BLOCK_SIZE_OFFSET + MINIMUM_BLOCK_SIZE_SIZE;
     public static final int MAXIMUM_BLOCK_SIZE_SIZE = Long.BYTES;
     public static final int BTREE_OFFSET = MAXIMUM_BLOCK_SIZE_OFFSET + MAXIMUM_BLOCK_SIZE_SIZE;
@@ -171,10 +169,6 @@ public final class MemoryLayout extends Layout
                 metadataSize = BTREE_OFFSET + sizeofBTree(minimumBlockSize, maximumBlockSize);
                 metadataSizeAligned = align(metadataSize, CACHE_LINE_LENGTH);
                 unmap(mappedBootstrap);
-
-                metadataSize = BTREE_OFFSET + sizeofBTree(minimumBlockSize, maximumBlockSize);
-                metadataSizeAligned = align(metadataSize, CACHE_LINE_LENGTH);
-
             }
 
             final MappedByteBuffer mappedMetadata = mapExistingFile(memory, "metadata", 0, metadataSizeAligned);
@@ -202,10 +196,10 @@ public final class MemoryLayout extends Layout
             }
 
             final MutableDirectBuffer[] memoryBuffers = new MutableDirectBuffer[mappedMemoryBuffers.length];
+
             for (int i=0; i < memoryBuffers.length; i++)
             {
                 memoryBuffers[i] = new UnsafeBuffer(mappedMemoryBuffers[i]);
-
             }
 
             return new MemoryLayout(metadataBuffer, memoryBuffers);

@@ -32,7 +32,6 @@ public class DefaultMemoryManager implements MemoryManager
     private final BTreeFW btreeRO;
 
     private final int blockSizeShift;
-    private final long maximumBlockSize;
     private final int maximumOrder;
 
     private final MutableDirectBuffer[] memoryBuffers;
@@ -51,7 +50,6 @@ public class DefaultMemoryManager implements MemoryManager
         this.memoryBuffers = memoryLayout.memoryBuffers();
         this.metadataBuffer = memoryLayout.metadataBuffer();
         this.blockSizeShift = numberOfTrailingZeros(minimumBlockSize);
-        this.maximumBlockSize = maximumBlockSize;
         this.maximumOrder = numberOfTrailingZeros(maximumBlockSize) - numberOfTrailingZeros(minimumBlockSize);
         this.btreeRO = new BTreeFW(maximumOrder).wrap(metadataBuffer, BTREE_OFFSET, metadataBuffer.capacity() - BTREE_OFFSET);
         firstBufferCapacity = memoryBuffers[0].capacity();
@@ -81,9 +79,9 @@ public class DefaultMemoryManager implements MemoryManager
 
     @Override
     public long acquire(
-        int capacity)
+        final int capacity)
     {
-        if (capacity > this.maximumBlockSize)
+        if (capacity > this.firstBufferCapacity)
         {
             return -1;
         }
@@ -119,7 +117,7 @@ public class DefaultMemoryManager implements MemoryManager
 
         if (node.flag(FULL) || node.flag(SPLIT))
         {
-            return -1;
+            return -1L;
         }
         assert node.order() == allocationOrder;
 
