@@ -138,4 +138,18 @@ public class FetchLimitsIT
     {
         k3po.finish();
     }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset.messages.multiple.partitions/client",
+        "${server}/record.set.size.zero.record.too.large/server"})
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "offsetMessage2 2"
+    })
+    public void shouldSkipRecordLargerThanFetchPartitionMaxBytes() throws Exception
+    {
+        k3po.finish();
+    }
 }
