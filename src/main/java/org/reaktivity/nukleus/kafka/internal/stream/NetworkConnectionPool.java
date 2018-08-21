@@ -133,10 +133,7 @@ public final class NetworkConnectionPool
     private static final int KAFKA_SERVER_DEFAULT_DELETE_RETENTION_MS = 86400000;
     private static final PartitionIndex DEFAULT_PARTITION_INDEX = new DefaultPartitionIndex();
 
-    private static final LongSupplier NO_COUNTER = () ->
-    {
-        return 0L;
-    };
+    private static final LongSupplier NO_COUNTER = Long.valueOf(0L)::longValue;
 
     private static final DecoderMessageDispatcher NOOP_DISPATCHER = new DecoderMessageDispatcher()
     {

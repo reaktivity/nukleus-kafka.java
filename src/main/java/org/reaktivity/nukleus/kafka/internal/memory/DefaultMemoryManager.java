@@ -15,7 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.memory;
 
-import static java.lang.Integer.highestOneBit;
+import static java.lang.Long.highestOneBit;
 import static java.lang.Long.numberOfTrailingZeros;
 import static org.agrona.BitUtil.findNextPositivePowerOfTwo;
 import static org.reaktivity.nukleus.kafka.internal.memory.BTreeFW.EMPTY;
@@ -61,19 +61,9 @@ public class DefaultMemoryManager implements MemoryManager
     public long resolve(
         long address)
     {
-        MutableDirectBuffer memoryBuffer;
-
-        if (address < firstBufferCapacity)
-        {
-            memoryBuffer = memoryBuffers[0];
-        }
-        else
-        {
-            int index = (int) (address >> addressShift);
-            memoryBuffer = memoryBuffers[index];
-            address &= addressMask;
-        }
-
+        int index = (int) (address >> addressShift);
+        MutableDirectBuffer memoryBuffer = memoryBuffers[index];
+        address &= addressMask;
         return memoryBuffer.addressOffset() + address;
     }
 
@@ -145,8 +135,7 @@ public class DefaultMemoryManager implements MemoryManager
             }
         }
 
-        long addressToShift = ((nodeIndex + 1) & ~highestOneBit(nodeIndex + 1));
-        return addressToShift << blockSizeShift << nodeOrder;
+        return ((nodeIndex + 1) & ~highestOneBit(nodeIndex + 1)) << blockSizeShift << nodeOrder;
     }
 
     @Override
