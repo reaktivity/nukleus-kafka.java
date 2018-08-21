@@ -46,7 +46,7 @@ public class DefaultMemoryManagerRule implements TestRule
             ConfigureMemoryLayout configures = description.getTestClass()
                     .getDeclaredMethod(testMethod)
                     .getAnnotation(ConfigureMemoryLayout.class);
-            mlb.maximumBlockSize(configures.capacity())
+            mlb.capacity(configures.capacity())
                .minimumBlockSize(configures.smallestBlockSize())
                .create(true);
         }

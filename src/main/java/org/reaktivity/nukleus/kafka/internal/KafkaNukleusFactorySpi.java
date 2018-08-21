@@ -141,7 +141,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                     // TODO: non-deprecated way of getting nukleus's home directory; change name of memory0?
                     .path(kafkaConfig.directory().resolve("kafka").resolve("memory0"))
                     .minimumBlockSize(kafkaConfig.messageCacheBlockCapacity())
-                    .maximumBlockSize(capacity)
+                    .capacity(capacity)
                     .create(true)
                     .build();
             this.memoryLayout = memoryLayout;

@@ -43,9 +43,9 @@ public final class MemoryLayout extends Layout
 
     public static final int MINIMUM_BLOCK_SIZE_OFFSET = 0;
     public static final int MINIMUM_BLOCK_SIZE_SIZE = Integer.BYTES;
-    public static final int MAXIMUM_BLOCK_SIZE_OFFSET = MINIMUM_BLOCK_SIZE_OFFSET + MINIMUM_BLOCK_SIZE_SIZE;
-    public static final int MAXIMUM_BLOCK_SIZE_SIZE = Long.BYTES;
-    public static final int BTREE_OFFSET = MAXIMUM_BLOCK_SIZE_OFFSET + MAXIMUM_BLOCK_SIZE_SIZE;
+    public static final int CAPACITY_OFFSET = MINIMUM_BLOCK_SIZE_OFFSET + MINIMUM_BLOCK_SIZE_SIZE;
+    public static final int CAPACITY_SIZE = Long.BYTES;
+    public static final int BTREE_OFFSET = CAPACITY_OFFSET + CAPACITY_SIZE;
 
     public static final long MAX_MAPPABLE_BYTES = Integer.MAX_VALUE;
     public static final int ONE_GB = 0x40000000;
@@ -86,16 +86,16 @@ public final class MemoryLayout extends Layout
         return metadataBuffer.getInt(MINIMUM_BLOCK_SIZE_OFFSET);
     }
 
-    public long maximumBlockSize()
+    public long capacity()
     {
-        return metadataBuffer.getLong(MAXIMUM_BLOCK_SIZE_OFFSET);
+        return metadataBuffer.getLong(CAPACITY_OFFSET);
     }
 
     public static final class Builder extends Layout.Builder<MemoryLayout>
     {
         private Path path;
         private int minimumBlockSize;
-        private long maximumBlockSize;
+        private long capacity;
         private boolean create;
 
         public Builder path(
@@ -124,20 +124,20 @@ public final class MemoryLayout extends Layout
             return this;
         }
 
-        public Builder maximumBlockSize(
-            long maximumBlockSize)
+        public Builder capacity(
+            long capacity)
         {
-            if (!isPowerOfTwo(maximumBlockSize))
+            if (!isPowerOfTwo(capacity))
             {
                 throw new IllegalArgumentException("maximum block size MUST be a power of 2");
             }
 
-            if (maximumBlockSize >> Integer.numberOfTrailingZeros(ONE_GB) > Integer.MAX_VALUE)
+            if (capacity >> Integer.numberOfTrailingZeros(ONE_GB) > Integer.MAX_VALUE)
             {
                 throw new IllegalStateException("capacity too large, number of 1GB buffers would exceed Integer.MAX_VALUE");
             }
 
-            this.maximumBlockSize = maximumBlockSize;
+            this.capacity = capacity;
             return this;
         }
 
@@ -150,7 +150,7 @@ public final class MemoryLayout extends Layout
 
             if (create)
             {
-                metadataSize = BTREE_OFFSET + sizeofBTree(minimumBlockSize, maximumBlockSize);
+                metadataSize = BTREE_OFFSET + sizeofBTree(minimumBlockSize, capacity);
                 metadataSizeAligned = align(metadataSize, CACHE_LINE_LENGTH);
                 if (metadataSizeAligned > MAX_MAPPABLE_BYTES)
                 {
@@ -158,14 +158,14 @@ public final class MemoryLayout extends Layout
                             "BTree size %d exceeds ONE_GB, difference between minimum and maximum block size is too great",
                             metadataSizeAligned));
                 }
-                CloseHelper.close(createEmptyFile(memory, metadataSizeAligned + maximumBlockSize));
+                CloseHelper.close(createEmptyFile(memory, metadataSizeAligned + capacity));
             }
             else
             {
                 final MappedByteBuffer mappedBootstrap = mapExistingFile(memory, "bootstrap", 0, BTREE_OFFSET);
                 final DirectBuffer bootstrapBuffer = new UnsafeBuffer(mappedBootstrap);
                 final long minimumBlockSize = bootstrapBuffer.getLong(MINIMUM_BLOCK_SIZE_OFFSET);
-                final long maximumBlockSize = bootstrapBuffer.getLong(MAXIMUM_BLOCK_SIZE_OFFSET);
+                final long maximumBlockSize = bootstrapBuffer.getLong(CAPACITY_OFFSET);
                 metadataSize = BTREE_OFFSET + sizeofBTree(minimumBlockSize, maximumBlockSize);
                 metadataSizeAligned = align(metadataSize, CACHE_LINE_LENGTH);
                 unmap(mappedBootstrap);
@@ -174,19 +174,19 @@ public final class MemoryLayout extends Layout
             final MappedByteBuffer mappedMetadata = mapExistingFile(memory, "metadata", 0, metadataSizeAligned);
             final AtomicBuffer metadataBuffer = new UnsafeBuffer(mappedMetadata, 0, (int) metadataSize);
             metadataBuffer.putInt(MINIMUM_BLOCK_SIZE_OFFSET, minimumBlockSize);
-            metadataBuffer.putLong(MAXIMUM_BLOCK_SIZE_OFFSET, maximumBlockSize);
+            metadataBuffer.putLong(CAPACITY_OFFSET, capacity);
 
             final MappedByteBuffer[] mappedMemoryBuffers;
             long start = metadataSizeAligned;
 
-            if (maximumBlockSize <= ONE_GB)
+            if (capacity <= ONE_GB)
             {
                 mappedMemoryBuffers = new MappedByteBuffer[1];
-                mappedMemoryBuffers[0] = mapExistingFile(memory, "memory", start, maximumBlockSize);
+                mappedMemoryBuffers[0] = mapExistingFile(memory, "memory", start, capacity);
             }
             else
             {
-                int buffersNeeded = (int) (maximumBlockSize >> Integer.numberOfTrailingZeros(ONE_GB));
+                int buffersNeeded = (int) (capacity >> Integer.numberOfTrailingZeros(ONE_GB));
                 mappedMemoryBuffers = new MappedByteBuffer[buffersNeeded];
                 for (int i = 0; i < buffersNeeded; i++)
                 {

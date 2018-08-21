@@ -35,7 +35,7 @@ public class DefaultMemoryManager implements MemoryManager
     private final int maximumOrder;
 
     private final MutableDirectBuffer[] memoryBuffers;
-    private final int firstBufferCapacity;
+    private final int maximumBlockSize;
     private final int addressShift;
     private final long addressMask;
     private final AtomicBuffer metadataBuffer;
@@ -45,16 +45,16 @@ public class DefaultMemoryManager implements MemoryManager
         MemoryLayout memoryLayout)
     {
         final long minimumBlockSize = memoryLayout.minimumBlockSize();
-        final long maximumBlockSize = memoryLayout.maximumBlockSize();
+        final long capacity = memoryLayout.capacity();
 
         this.memoryBuffers = memoryLayout.memoryBuffers();
         this.metadataBuffer = memoryLayout.metadataBuffer();
         this.blockSizeShift = numberOfTrailingZeros(minimumBlockSize);
-        this.maximumOrder = numberOfTrailingZeros(maximumBlockSize) - numberOfTrailingZeros(minimumBlockSize);
+        this.maximumOrder = numberOfTrailingZeros(capacity) - numberOfTrailingZeros(minimumBlockSize);
         this.btreeRO = new BTreeFW(maximumOrder).wrap(metadataBuffer, BTREE_OFFSET, metadataBuffer.capacity() - BTREE_OFFSET);
-        firstBufferCapacity = memoryBuffers[0].capacity();
-        addressShift = Integer.numberOfTrailingZeros(firstBufferCapacity);
-        addressMask = firstBufferCapacity - 1;
+        maximumBlockSize = memoryBuffers[0].capacity();
+        addressShift = Integer.numberOfTrailingZeros(maximumBlockSize);
+        addressMask = maximumBlockSize - 1;
     }
 
     @Override
@@ -71,7 +71,7 @@ public class DefaultMemoryManager implements MemoryManager
     public long acquire(
         final int capacity)
     {
-        if (capacity > this.firstBufferCapacity)
+        if (capacity > this.maximumBlockSize)
         {
             return -1;
         }

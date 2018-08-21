@@ -38,13 +38,13 @@ public class MemoryLayoutTest
         MemoryLayout layout = builder
                .create(true)
                .minimumBlockSize(BYTES_64)
-               .maximumBlockSize(GB_2)
+               .capacity(GB_2)
                .build();
         assertEquals(2, layout.memoryBuffers().length);
         assertEquals(GB_1, layout.memoryBuffers()[0].capacity());
         assertEquals(GB_1, layout.memoryBuffers()[1].capacity());
         assertEquals(BYTES_64, layout.minimumBlockSize());
-        assertEquals(GB_2, layout.maximumBlockSize());
+        assertEquals(GB_2, layout.capacity());
     }
 
     @Test
@@ -53,7 +53,7 @@ public class MemoryLayoutTest
         MemoryLayout layout = builder
                .create(true)
                .minimumBlockSize(BYTES_64)
-               .maximumBlockSize(GB_1)
+               .capacity(GB_1)
                .build();
         assertEquals(1, layout.memoryBuffers().length);
         assertEquals(GB_1, layout.memoryBuffers()[0].capacity());
