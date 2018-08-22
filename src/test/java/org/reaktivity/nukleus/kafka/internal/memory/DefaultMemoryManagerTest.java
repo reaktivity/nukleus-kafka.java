@@ -15,13 +15,17 @@
  */
 package org.reaktivity.nukleus.kafka.internal.memory;
 
+import static java.lang.String.format;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.LongSupplier;
 
+import org.agrona.BitUtil;
 import org.agrona.collections.LongArrayList;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.Rule;
@@ -30,6 +34,9 @@ import org.junit.Test;
 public class DefaultMemoryManagerTest
 {
     private UnsafeBuffer writeBuffer = new UnsafeBuffer(new byte[1]);
+    private static final int GB_1 = 1024 * 1024 * 1024;
+    private static final long GB_4 = 4L * GB_1;
+    private static final int HALF_GB = GB_1 / 2;
     private static final int MB_128 = 128 * 1024 * 1024;
     private static final int KB = 1024;
     private static final int BYTES_64 = 64;
@@ -144,8 +151,97 @@ public class DefaultMemoryManagerTest
     }
 
     @Test
+    @ConfigureMemoryLayout(capacity = GB_1, smallestBlockSize = KB)
+    public void shouldAllocateAndReleaseBlocks1GBCache()
+    {
+        final MemoryManager memoryManager = memoryManagerRule.memoryManager();
+        memoryManagerRule.assertReleased();
+
+
+        long address1 = memoryManager.acquire(4238);
+        long address2 = memoryManager.acquire(3024);
+        long address3 = memoryManager.acquire(13743);
+
+        memoryManager.release(address3, 13743);
+        memoryManager.release(address2, 3024);
+        memoryManager.release(address1, 4238);
+
+        assertTrue(address2 - address1 > 4238);
+        assertTrue(address3 - address2 > 3024);
+        memoryManagerRule.assertReleased();
+    }
+
+    @Test
+    @ConfigureMemoryLayout(capacity = GB_4, smallestBlockSize = KB)
+    public void shouldAllocateAndReleaseBlocksBeyond1GB()
+    {
+        final MemoryManager memoryManager = memoryManagerRule.memoryManager();
+        memoryManagerRule.assertReleased();
+
+        long address1 = memoryManager.acquire(4238);
+        assertEquals(0L, address1);
+
+        long address2 = memoryManager.acquire(HALF_GB);
+        assertTrue(address2 < GB_1);
+
+        long address3 = memoryManager.acquire(HALF_GB);
+        assertEquals(GB_1, address3);
+
+        long address4 = memoryManager.acquire(13743);
+        assertTrue(address4 < GB_1);
+
+        long address5 = memoryManager.acquire(HALF_GB);
+        assertEquals(GB_1 + HALF_GB, address5);
+
+        long address6 = memoryManager.acquire(GB_1);
+        assertEquals(2L * GB_1, address6);
+
+        long address7 = memoryManager.acquire(GB_1);
+        assertEquals(3L * GB_1, address7);
+
+        memoryManager.release(address7, GB_1);
+        memoryManager.release(address6, GB_1);
+        memoryManager.release(address5, HALF_GB);
+        memoryManager.release(address4, 13743);
+        memoryManager.release(address3, HALF_GB);
+        memoryManager.release(address2, HALF_GB);
+        memoryManager.release(address1, 4238);
+
+        memoryManagerRule.assertReleased();
+    }
+
+    @Test
+    @ConfigureMemoryLayout(capacity = GB_4, smallestBlockSize = KB)
+    public void shouldAllocateToFillAndReleaseMediumBlocksBeyond1GB()
+    {
+        final MemoryManager memoryManager = memoryManagerRule.memoryManager();
+        memoryManagerRule.assertReleased();
+
+        long address = 0;
+        int allocationSize = 20000;
+        int expectedNumberOfAddresses = (int) (GB_4 / BitUtil.findNextPositivePowerOfTwo(allocationSize));
+        List<Long> addresses = new ArrayList<>(expectedNumberOfAddresses);
+        while (true)
+        {
+            address = memoryManager.acquire(20000);
+            if (address == -1L)
+            {
+                break;
+            }
+            assertTrue(format("Should not be negative: address %d, addresses.size()=%d\n", address, addresses.size()),
+                       address >= 0L);
+            addresses.add(address);
+        }
+        assertEquals(expectedNumberOfAddresses, addresses.size());
+
+        addresses.forEach(a -> memoryManager.release(a, allocationSize));
+
+        memoryManagerRule.assertReleased();
+    }
+
+    @Test
     @ConfigureMemoryLayout(capacity = MB_128, smallestBlockSize = KB)
-    public void shouldAllocateAndReleaseMediumBlocksLargeCache()
+    public void shouldAllocateAndReleaseMediumBlocksLargerCache()
     {
         final MemoryManager memoryManager = memoryManagerRule.memoryManager();
         memoryManagerRule.assertReleased();
@@ -254,4 +350,45 @@ public class DefaultMemoryManagerTest
         assertNotEquals(-1, acquire64Address.getAsLong());
         assertEquals(-1, acquire64Address.getAsLong());
     }
+
+    @Test
+    @ConfigureMemoryLayout(capacity = GB_4, smallestBlockSize = KB)
+    public void shouldResolveAddressesBeyond1GB()
+    {
+        final MemoryManager memoryManager = memoryManagerRule.memoryManager();
+        memoryManagerRule.assertReleased();
+
+        long address1 = memoryManager.acquire(4238);
+        assertEquals(0L, address1);
+        long resolved1 = memoryManager.resolve(address1);
+
+        long address2 = memoryManager.acquire(HALF_GB);
+        assertTrue(address2 < GB_1);
+        long resolved2 = memoryManager.resolve(address2);
+        assertEquals(address2 - address1, resolved2 - resolved1);
+
+        long address3 = memoryManager.acquire(HALF_GB);
+        assertEquals(GB_1, address3);
+        long resolved3 = memoryManager.resolve(address3);
+
+        long address4 = memoryManager.acquire(13743);
+        assertTrue(address4 < GB_1);
+        long resolved4 = memoryManager.resolve(address4);
+        assertEquals(address4 - address1, resolved4 - resolved1);
+
+        long address5 = memoryManager.acquire(HALF_GB);
+        assertEquals(GB_1 + HALF_GB, address5);
+        long resolved5 = memoryManager.resolve(address5);
+        assertEquals(HALF_GB, resolved5 - resolved3);
+        assertEquals(address5 - address3, resolved5 - resolved3);
+
+        memoryManager.release(address5, HALF_GB);
+        memoryManager.release(address4, 13743);
+        memoryManager.release(address3, HALF_GB);
+        memoryManager.release(address2, HALF_GB);
+        memoryManager.release(address1, 4238);
+
+        memoryManagerRule.assertReleased();
+    }
+
 }

@@ -50,6 +50,7 @@ import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
 public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
 {
     public static final String MESSAGE_CACHE_BUFFER_ACQUIRES = "message.cache.buffer.acquires";
+    public static final String HISTORICAL_FETCHES = "historical.fetches";
     private static final String MESSAGE_CACHE_BUFFER_RELEASES = "message.cache.buffer.releases";
 
     private static final MemoryManager OUT_OF_SPACE_MEMORY_MANAGER = new MemoryManager()
@@ -128,7 +129,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
         Function<String, LongSupplier> supplyCounter)
     {
         MemoryManager result;
-        int capacity = kafkaConfig.messageCacheCapacity();
+        long capacity = kafkaConfig.messageCacheCapacity();
         if (capacity == 0)
         {
             result = OUT_OF_SPACE_MEMORY_MANAGER;
@@ -140,7 +141,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                     // TODO: non-deprecated way of getting nukleus's home directory; change name of memory0?
                     .path(kafkaConfig.directory().resolve("kafka").resolve("memory0"))
                     .minimumBlockSize(kafkaConfig.messageCacheBlockCapacity())
-                    .maximumBlockSize(capacity)
+                    .capacity(capacity)
                     .create(true)
                     .build();
             this.memoryLayout = memoryLayout;

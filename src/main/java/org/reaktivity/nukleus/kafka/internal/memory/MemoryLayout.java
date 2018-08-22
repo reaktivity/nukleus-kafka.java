@@ -15,11 +15,10 @@
  */
 package org.reaktivity.nukleus.kafka.internal.memory;
 
-import static java.lang.Integer.numberOfTrailingZeros;
+import static java.lang.Long.numberOfTrailingZeros;
 import static java.lang.Math.max;
+import static java.lang.String.format;
 import static org.agrona.BitUtil.CACHE_LINE_LENGTH;
-import static org.agrona.BitUtil.align;
-import static org.agrona.BitUtil.isPowerOfTwo;
 import static org.agrona.IoUtil.createEmptyFile;
 import static org.agrona.IoUtil.mapExistingFile;
 import static org.agrona.IoUtil.unmap;
@@ -42,30 +41,34 @@ public final class MemoryLayout extends Layout
     public static final int BITS_PER_BTREE_NODE = 1 << BITS_PER_BTREE_NODE_SHIFT;
     public static final int MASK_PER_BTREE_NODE = (1 << BITS_PER_BTREE_NODE) - 1;
 
-    public static final int LOCK_OFFSET = 0;
-    public static final int LOCK_SIZE = Long.BYTES;
-    public static final int MINIMUM_BLOCK_SIZE_OFFSET = LOCK_OFFSET + LOCK_SIZE;
+    public static final int MINIMUM_BLOCK_SIZE_OFFSET = 0;
     public static final int MINIMUM_BLOCK_SIZE_SIZE = Integer.BYTES;
-    public static final int MAXIMUM_BLOCK_SIZE_OFFSET = MINIMUM_BLOCK_SIZE_OFFSET + MINIMUM_BLOCK_SIZE_SIZE;
-    public static final int MAXIMUM_BLOCK_SIZE_SIZE = Integer.BYTES;
-    public static final int BTREE_OFFSET = MAXIMUM_BLOCK_SIZE_OFFSET + MAXIMUM_BLOCK_SIZE_SIZE;
+    public static final int CAPACITY_OFFSET = MINIMUM_BLOCK_SIZE_OFFSET + MINIMUM_BLOCK_SIZE_SIZE;
+    public static final int CAPACITY_SIZE = Long.BYTES;
+    public static final int BTREE_OFFSET = CAPACITY_OFFSET + CAPACITY_SIZE;
+
+    public static final long MAX_MAPPABLE_BYTES = Integer.MAX_VALUE;
+    public static final int ONE_GB = 0x40000000;
 
     private final AtomicBuffer metadataBuffer;
-    private final MutableDirectBuffer memoryBuffer;
+    private final MutableDirectBuffer[] memoryBuffers;
 
     private MemoryLayout(
         AtomicBuffer metadataBuffer,
-        MutableDirectBuffer memoryBuffer)
+        MutableDirectBuffer[] memoryBuffers)
     {
         this.metadataBuffer = metadataBuffer;
-        this.memoryBuffer = memoryBuffer;
+        this.memoryBuffers = memoryBuffers;
     }
 
     @Override
     public void close()
     {
         unmap(metadataBuffer.byteBuffer());
-        unmap(memoryBuffer.byteBuffer());
+        for (MutableDirectBuffer memoryBuffer : memoryBuffers)
+        {
+            unmap(memoryBuffer.byteBuffer());
+        }
     }
 
     public AtomicBuffer metadataBuffer()
@@ -73,9 +76,9 @@ public final class MemoryLayout extends Layout
         return metadataBuffer;
     }
 
-    public MutableDirectBuffer memoryBuffer()
+    public MutableDirectBuffer[] memoryBuffers()
     {
-        return memoryBuffer;
+        return memoryBuffers;
     }
 
     public int minimumBlockSize()
@@ -83,22 +86,16 @@ public final class MemoryLayout extends Layout
         return metadataBuffer.getInt(MINIMUM_BLOCK_SIZE_OFFSET);
     }
 
-    public int maximumBlockSize()
+    public long capacity()
     {
-        return metadataBuffer.getInt(MAXIMUM_BLOCK_SIZE_OFFSET);
-    }
-
-    public int capacity()
-    {
-        return memoryBuffer.capacity();
+        return metadataBuffer.getLong(CAPACITY_OFFSET);
     }
 
     public static final class Builder extends Layout.Builder<MemoryLayout>
     {
         private Path path;
-        private int capacity;
         private int minimumBlockSize;
-        private int maximumBlockSize;
+        private long capacity;
         private boolean create;
 
         public Builder path(
@@ -127,16 +124,20 @@ public final class MemoryLayout extends Layout
             return this;
         }
 
-        public Builder maximumBlockSize(
-            int maximumBlockSize)
+        public Builder capacity(
+            long capacity)
         {
-            if (!isPowerOfTwo(maximumBlockSize))
+            if (!isPowerOfTwo(capacity))
             {
                 throw new IllegalArgumentException("maximum block size MUST be a power of 2");
             }
 
-            this.maximumBlockSize = maximumBlockSize;
-            this.capacity = maximumBlockSize;
+            if (capacity >> Integer.numberOfTrailingZeros(ONE_GB) > Integer.MAX_VALUE)
+            {
+                throw new IllegalStateException("capacity too large, number of 1GB buffers would exceed Integer.MAX_VALUE");
+            }
+
+            this.capacity = capacity;
             return this;
         }
 
@@ -144,51 +145,101 @@ public final class MemoryLayout extends Layout
         public MemoryLayout build()
         {
             final File memory = path.toFile();
+            long metadataSize;
+            long metadataSizeAligned;
 
             if (create)
             {
-                final int metadataSize = BTREE_OFFSET + sizeofBTree(minimumBlockSize, maximumBlockSize);
-                final int metadataSizeAligned = align(metadataSize, CACHE_LINE_LENGTH);
+                metadataSize = BTREE_OFFSET + sizeofBTree(minimumBlockSize, capacity);
+                metadataSizeAligned = align(metadataSize, CACHE_LINE_LENGTH);
+                if (metadataSizeAligned > MAX_MAPPABLE_BYTES)
+                {
+                    throw new IllegalStateException(format(
+                            "BTree size %d exceeds ONE_GB, difference between minimum and maximum block size is too great",
+                            metadataSizeAligned));
+                }
                 CloseHelper.close(createEmptyFile(memory, metadataSizeAligned + capacity));
-
-                final MappedByteBuffer mappedMetadata = mapExistingFile(memory, "metadata", 0, metadataSizeAligned);
-                final MappedByteBuffer mappedMemory = mapExistingFile(memory, "memory", metadataSizeAligned, capacity);
-
-                final AtomicBuffer metadataBuffer = new UnsafeBuffer(mappedMetadata, 0, metadataSize);
-                final MutableDirectBuffer memoryBuffer = new UnsafeBuffer(mappedMemory);
-
-                metadataBuffer.putInt(MINIMUM_BLOCK_SIZE_OFFSET, minimumBlockSize);
-                metadataBuffer.putInt(MAXIMUM_BLOCK_SIZE_OFFSET, maximumBlockSize);
-                return new MemoryLayout(metadataBuffer, memoryBuffer);
             }
             else
             {
                 final MappedByteBuffer mappedBootstrap = mapExistingFile(memory, "bootstrap", 0, BTREE_OFFSET);
                 final DirectBuffer bootstrapBuffer = new UnsafeBuffer(mappedBootstrap);
-                final int minimumBlockSize = bootstrapBuffer.getInt(MINIMUM_BLOCK_SIZE_OFFSET);
-                final int maximumBlockSize = bootstrapBuffer.getInt(MAXIMUM_BLOCK_SIZE_OFFSET);
+                final long minimumBlockSize = bootstrapBuffer.getLong(MINIMUM_BLOCK_SIZE_OFFSET);
+                final long maximumBlockSize = bootstrapBuffer.getLong(CAPACITY_OFFSET);
+                metadataSize = BTREE_OFFSET + sizeofBTree(minimumBlockSize, maximumBlockSize);
+                metadataSizeAligned = align(metadataSize, CACHE_LINE_LENGTH);
                 unmap(mappedBootstrap);
-
-                final int metadataSize = BTREE_OFFSET + sizeofBTree(minimumBlockSize, maximumBlockSize);
-                final int metadataSizeAligned = align(metadataSize, CACHE_LINE_LENGTH);
-                final int capacity = (int) memory.length() - metadataSizeAligned;
-
-                final MappedByteBuffer mappedMetadata = mapExistingFile(memory, "metadata", 0, metadataSize);
-                final MappedByteBuffer mappedMemory = mapExistingFile(memory, "memory", metadataSizeAligned, capacity);
-
-                final AtomicBuffer metadataBuffer = new UnsafeBuffer(mappedMetadata);
-                final MutableDirectBuffer memoryBuffer = new UnsafeBuffer(mappedMemory);
-
-                return new MemoryLayout(metadataBuffer, memoryBuffer);
             }
+
+            final MappedByteBuffer mappedMetadata = mapExistingFile(memory, "metadata", 0, metadataSizeAligned);
+            final AtomicBuffer metadataBuffer = new UnsafeBuffer(mappedMetadata, 0, (int) metadataSize);
+            metadataBuffer.putInt(MINIMUM_BLOCK_SIZE_OFFSET, minimumBlockSize);
+            metadataBuffer.putLong(CAPACITY_OFFSET, capacity);
+
+            final MappedByteBuffer[] mappedMemoryBuffers;
+            long start = metadataSizeAligned;
+
+            if (capacity <= ONE_GB)
+            {
+                mappedMemoryBuffers = new MappedByteBuffer[1];
+                mappedMemoryBuffers[0] = mapExistingFile(memory, "memory", start, capacity);
+            }
+            else
+            {
+                int buffersNeeded = (int) (capacity >> Integer.numberOfTrailingZeros(ONE_GB));
+                mappedMemoryBuffers = new MappedByteBuffer[buffersNeeded];
+                for (int i = 0; i < buffersNeeded; i++)
+                {
+                    mappedMemoryBuffers[i] = mapExistingFile(memory, "memory" + i, start, ONE_GB);
+                    start += ONE_GB;
+                }
+            }
+
+            final MutableDirectBuffer[] memoryBuffers = new MutableDirectBuffer[mappedMemoryBuffers.length];
+
+            for (int i=0; i < memoryBuffers.length; i++)
+            {
+                memoryBuffers[i] = new UnsafeBuffer(mappedMemoryBuffers[i]);
+            }
+
+            return new MemoryLayout(metadataBuffer, memoryBuffers);
         }
 
-        private static int sizeofBTree(
-            int minimumBlockSize,
-            int maximumBlockSize)
+        private static long sizeofBTree(
+            long minimumBlockSize,
+            long maximumBlockSize)
         {
             int orderCount = numberOfTrailingZeros(maximumBlockSize) - numberOfTrailingZeros(minimumBlockSize) + 1;
-            return align(max(1 << orderCount << BITS_PER_BTREE_NODE_SHIFT >> BITS_PER_BYTE_SHIFT, Byte.BYTES), Byte.BYTES);
+            return align(max(1L << orderCount << BITS_PER_BTREE_NODE_SHIFT >> BITS_PER_BYTE_SHIFT, Byte.BYTES), Byte.BYTES);
         }
+
+        /**
+         * Align a value to the next multiple up of alignment.
+         * If the value equals an alignment multiple then it is returned unchanged.
+         * <p>
+         * This method executes without branching. This code is designed to be use in the fast path and should not
+         * be used with negative numbers. Negative numbers will result in undefined behaviour.
+         *
+         * @param value     to be aligned up.
+         * @param alignment to be used.
+         * @return the value aligned to the next boundary.
+         */
+        private static long align(final long value, final long alignment)
+        {
+            return (value + (alignment - 1)) & ~(alignment - 1);
+        }
+
+        /**
+         * Is a value a positive power of two.
+         *
+         * @param value to be checked.
+         * @return true if the number is a positive power of two otherwise false.
+         */
+        private static boolean isPowerOfTwo(final long value)
+        {
+            return value > 0 && ((value & (~value + 1)) == value);
+        }
+
+
     }
 }
