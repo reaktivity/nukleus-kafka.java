@@ -788,6 +788,10 @@ public class FetchIT
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveMessageMatchingAnyOccurrenceOfARepeatedHeader() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
 

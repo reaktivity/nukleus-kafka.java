@@ -41,7 +41,7 @@ public class KafkaConfiguration extends Configuration
 
     public static final String MESSAGE_CACHE_BLOCK_CAPACITY_PROPERTY = "nukleus.kafka.message.cache.block.capacity";
 
-    public static final int MESSAGE_CACHE_CAPACITY_DEFAULT = 128 * 1024 * 1024;
+    public static final long MESSAGE_CACHE_CAPACITY_DEFAULT = 128 * 1024 * 1024;
 
     public static final int MESSAGE_CACHE_BLOCK_CAPACITY_DEFAULT = 1024;
 
@@ -68,9 +68,9 @@ public class KafkaConfiguration extends Configuration
         return getInteger(FETCH_PARTITION_MAX_BYTES_PROPERTY, FETCH_PARTITION_MAX_BYTES_DEFAULT);
     }
 
-    public int messageCacheCapacity()
+    public long messageCacheCapacity()
     {
-        return getInteger(MESSAGE_CACHE_CAPACITY_PROPERTY, MESSAGE_CACHE_CAPACITY_DEFAULT);
+        return getLong(MESSAGE_CACHE_CAPACITY_PROPERTY, MESSAGE_CACHE_CAPACITY_DEFAULT);
     }
 
     public int messageCacheBlockCapacity()
