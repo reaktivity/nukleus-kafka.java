@@ -24,6 +24,6 @@ import java.lang.annotation.Target;
 @Target({ ElementType.METHOD })
 public @interface ConfigureMemoryLayout
 {
-    int capacity();
+    long capacity();
     int smallestBlockSize();
 }

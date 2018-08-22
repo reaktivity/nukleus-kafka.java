@@ -46,6 +46,7 @@ import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 import java.util.function.IntToLongFunction;
+import java.util.function.LongSupplier;
 
 import org.agrona.BitUtil;
 import org.agrona.DirectBuffer;
@@ -59,6 +60,7 @@ import org.agrona.collections.LongArrayList;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
+import org.reaktivity.nukleus.kafka.internal.KafkaNukleusFactorySpi;
 import org.reaktivity.nukleus.kafka.internal.cache.CompactedPartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.DefaultPartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
@@ -130,6 +132,8 @@ public final class NetworkConnectionPool
 
     private static final int KAFKA_SERVER_DEFAULT_DELETE_RETENTION_MS = 86400000;
     private static final PartitionIndex DEFAULT_PARTITION_INDEX = new DefaultPartitionIndex();
+
+    private static final LongSupplier NO_COUNTER = Long.valueOf(0L)::longValue;
 
     private static final DecoderMessageDispatcher NOOP_DISPATCHER = new DecoderMessageDispatcher()
     {
@@ -263,6 +267,7 @@ public final class NetworkConnectionPool
 
     private final List<NetworkTopicPartition> partitionsWorkList = new ArrayList<NetworkTopicPartition>();
     private final LongArrayList offsetsWorkList = new LongArrayList();
+    private final LongSupplier historicalFetches;
     private int nextAttachId;
 
     NetworkConnectionPool(
@@ -273,6 +278,7 @@ public final class NetworkConnectionPool
         int fetchPartitionMaxBytes,
         BufferPool bufferPool,
         MessageCache messageCache,
+        Function<String, LongSupplier> supplyCounter,
         boolean forceProactiveMessageCache)
     {
         this.clientStreamFactory = clientStreamFactory;
@@ -283,6 +289,8 @@ public final class NetworkConnectionPool
         this.bufferPool = bufferPool;
         this.messageCache = messageCache;
         this.forceProactiveMessageCache = forceProactiveMessageCache;
+        this.historicalFetches = supplyCounter.apply(
+                format("%s.%s.%d", KafkaNukleusFactorySpi.HISTORICAL_FETCHES, networkName, networkRef));
         this.encodeBuffer = new UnsafeBuffer(new byte[clientStreamFactory.bufferPool.slotCapacity()]);
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
@@ -918,12 +926,17 @@ public final class NetworkConnectionPool
         Map<String, long[]> requestedFetchOffsetsByTopic = new HashMap<>();
         final ResponseDecoder fetchResponseDecoder;
 
-        private AbstractFetchConnection(BrokerMetadata broker)
+        private final LongSupplier fetches;
+
+        private AbstractFetchConnection(
+            BrokerMetadata broker,
+            LongSupplier fetches)
         {
             super();
             this.brokerId = broker.nodeId;
             this.host = broker.host;
             this.port = broker.port;
+            this.fetches = fetches;
             fetchResponseDecoder = new FetchResponseDecoder(
                     this::getTopicDispatcher,
                     this::getRequestedOffset,
@@ -1060,6 +1073,8 @@ public final class NetworkConnectionPool
                     .wrap(NetworkConnectionPool.this.encodeBuffer, encodeOffset, encodeLimit)
                     .set((b, o, m) -> m - o)
                     .build();
+
+                fetches.getAsLong();
 
                 NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId,
                         networkRequestPadding, payload);
@@ -1361,7 +1376,7 @@ public final class NetworkConnectionPool
     {
         LiveFetchConnection(BrokerMetadata broker)
         {
-            super(broker);
+            super(broker, NO_COUNTER);
         }
 
         @Override
@@ -1452,7 +1467,7 @@ public final class NetworkConnectionPool
     {
         private HistoricalFetchConnection(BrokerMetadata broker)
         {
-            super(broker);
+            super(broker, historicalFetches);
         }
 
         @Override
