@@ -638,10 +638,10 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/fetch.key.no.offsets.message/client",
-        "${server}/fetch.key.zero.offset.first.matches/server"})
+        "${client}/fetch.key.unspecified.offset.message/client",
+        "${server}/fetch.key.high.water.mark.offset.first.matches/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveMessageMatchingFetchKeyFirstWithZeroLengthOffsetsArray() throws Exception
+    public void shouldReceiveLiveMessageMatchingFetchKey() throws Exception
     {
         k3po.finish();
     }
