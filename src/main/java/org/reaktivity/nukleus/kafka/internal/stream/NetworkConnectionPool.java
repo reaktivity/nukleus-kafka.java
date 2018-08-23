@@ -22,6 +22,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Collections.emptyIterator;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.NONE;
+import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.UNEXPECTED_SERVER_ERROR;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.asKafkaError;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 
@@ -1746,6 +1747,12 @@ public final class NetworkConnectionPool
             {
                 pendingTopicMetadata.invalidate();
                 doRequestIfNeeded();
+            }
+            else if (error == UNEXPECTED_SERVER_ERROR)
+            {
+                // internal Kafka error, trigger connection failed and reconnect
+                pendingTopicMetadata.invalidate();
+                abort();
             }
             else
             {
