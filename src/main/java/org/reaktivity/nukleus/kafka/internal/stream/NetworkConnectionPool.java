@@ -1989,7 +1989,8 @@ public final class NetworkConnectionPool
             candidate.offset = fetchOffset;
             NetworkTopicPartition partition = partitions.floor(candidate);
 
-            if (fetchOffset == MAX_OFFSET && partition != null && partition.isHighWaterMark())
+            if (fetchOffset == MAX_OFFSET &&
+                partition != null && partition.id == candidate.id && partition.isHighWaterMark())
             {
                 // Attach to live stream
                 candidate.offset = partition.offset;

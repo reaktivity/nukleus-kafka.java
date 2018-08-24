@@ -1050,8 +1050,23 @@ public class FetchIT
         "${client}/unspecified.offset/client",
         "${server}/high.water.mark.offset/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldAttachAtHighWaterMarkOffsetForStreamingTopic() throws Exception
+    public void shouldFetchFromHighWaterMarkOffsetForStreamingTopic() throws Exception
     {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/unspecified.offset.fanout.messages/client",
+        "${server}/high.water.mark.offset.messages/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldFanoutStreamingMessagesWithSingleListOffsetsRequest() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("WRITE_SECOND_FETCH_RESPONSE");
         k3po.finish();
     }
 
