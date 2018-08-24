@@ -1858,6 +1858,7 @@ public final class NetworkConnectionPool
         private final PartitionProgressHandler progressHandler;
 
         private BitSet needsHistoricalByPartition = new BitSet();
+        private BitSet isLiveByPartition = new BitSet();
         private final boolean proactive;
 
         @Override
@@ -1878,6 +1879,7 @@ public final class NetworkConnectionPool
             this.candidate = new NetworkTopicPartition();
             this.progressHandler = this::handleProgress;
             PartitionIndex[] partitionIndexes = new PartitionIndex[partitionCount];
+
             if (compacted)
             {
                 for (int i = 0; i < partitionCount; i++)
@@ -1941,10 +1943,11 @@ public final class NetworkConnectionPool
             IntSupplier supplyWindow)
         {
             windowSuppliers.add(supplyWindow);
-            int fetchKeyPartition;
+            headersIterator.wrap(headers);
+
             if (fetchKey == null)
             {
-                fetchKeyPartition = -1;
+                this.dispatcher.add(null, -1, headersIterator, dispatcher);
                 final LongIterator keys = fetchOffsets.keySet().iterator();
                 while (keys.hasNext())
                 {
@@ -1961,7 +1964,8 @@ public final class NetworkConnectionPool
             }
             else
             {
-                fetchKeyPartition = fetchOffsets.keySet().iterator().next().intValue();
+                int fetchKeyPartition = fetchOffsets.keySet().iterator().next().intValue();
+                this.dispatcher.add(fetchKey, fetchKeyPartition, headersIterator, dispatcher);
                 long fetchOffset = fetchOffsets.get(fetchKeyPartition);
                 if (compacted)
                 {
@@ -1975,8 +1979,6 @@ public final class NetworkConnectionPool
                 attachToPartition(fetchKeyPartition, fetchOffset, 1);
             }
 
-            headersIterator.wrap(headers);
-            this.dispatcher.add(fetchKey, fetchKeyPartition, headersIterator, dispatcher);
             return progressHandler;
         }
 
@@ -1990,7 +1992,7 @@ public final class NetworkConnectionPool
             NetworkTopicPartition partition = partitions.floor(candidate);
 
             if (fetchOffset == MAX_OFFSET &&
-                partition != null && partition.id == candidate.id && partition.isHighWaterMark())
+                partition != null && partition.id == candidate.id && isLiveByPartition.get(partitionId))
             {
                 // Attach to live stream
                 candidate.offset = partition.offset;
@@ -2013,10 +2015,14 @@ public final class NetworkConnectionPool
 
                 needsHistoricalByPartition.set(candidate.id, needsHistorical);
                 partition = new NetworkTopicPartition();
-                partition.isLive = fetchOffset == MAX_OFFSET;
                 partition.id = candidate.id;
                 partition.offset = candidate.offset;
                 add(partition);
+
+                if (fetchOffset == MAX_OFFSET)
+                {
+                    isLiveByPartition.set(partitionId);
+                }
 
             }
 
@@ -2064,6 +2070,16 @@ public final class NetworkConnectionPool
                 if (partition.refs == 0)
                 {
                     remove(partition);
+
+                    if (isLiveByPartition.get(partitionId))
+                    {
+                        // If we just removed the highest offset then we are no longer on live stream
+                        partition = partitions.floor(candidate);
+                        if (partition != null && partition.id == partitionId && partition.offset < fetchOffset)
+                        {
+                            isLiveByPartition.clear(partitionId);
+                        }
+                    }
                 }
             }
         }
@@ -2262,19 +2278,18 @@ public final class NetworkConnectionPool
             int partitionId,
             long offset)
         {
+            assert isLiveByPartition.get(partitionId);
             candidate.id = partitionId;
             candidate.offset = MAX_OFFSET;
             NetworkTopicPartition maxOffset = partitions.floor(candidate);
             assert maxOffset.id == partitionId;
             assert maxOffset.offset == MAX_OFFSET;
-            assert maxOffset.isHighWaterMark();
             partitions.remove(maxOffset);
 
             NetworkTopicPartition existing = partitions.floor(candidate);
 
             if (existing != null && existing.id == partitionId && existing.offset == offset)
             {
-                existing.isLive = true;
                 NetworkTopicPartition floor = partitions.floor(existing);
                 if (floor.id == partitionId && floor.offset != offset)
                 {
@@ -2314,7 +2329,6 @@ public final class NetworkConnectionPool
 
         int id;
         long offset;
-        boolean isLive;
         private int refs;
 
         @Override
@@ -2324,7 +2338,6 @@ public final class NetworkConnectionPool
             result.id = id;
             result.offset = offset;
             result.refs = refs;
-            result.isLive = isLive;
             return result;
         }
 
@@ -2387,11 +2400,6 @@ public final class NetworkConnectionPool
         public String toString()
         {
             return format("id=%d, offset=%d, refs=%d", id, offset, refs);
-        }
-
-        private boolean isHighWaterMark()
-        {
-            return isLive;
         }
     }
 
