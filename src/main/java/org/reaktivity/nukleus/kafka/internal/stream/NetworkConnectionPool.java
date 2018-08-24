@@ -2312,16 +2312,11 @@ public final class NetworkConnectionPool
         public int compareTo(
             NetworkTopicPartition that)
         {
-            int comparison = this.id - that.id;
+            int comparison = Integer.compare(this.id, that.id);
 
             if (comparison == 0)
             {
-                comparison = (int)(((this.offset - that.offset) >> 32) & 0xFFFF_FFFF);
-            }
-
-            if (comparison == 0)
-            {
-                comparison = (int)((this.offset - that.offset) & 0xFFFF_FFFF);
+                comparison = Long.compare(this.offset, that.offset);
             }
 
             assert compareToResponseValid(that, comparison) : format("compareTo response %d invalid for this=%s, that=%s",
@@ -2359,8 +2354,7 @@ public final class NetworkConnectionPool
         @Override
         public int hashCode()
         {
-            int offsetHash = id ^ (id >>> 32);
-            return 31 * id + offsetHash;
+            return 31 * id + Long.hashCode(offset);
         }
 
         @Override
