@@ -1047,8 +1047,32 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/specified.then.unspecified.offset.messages/client",
-        "${server}/specified.offset.then.high.water.mark.messages/server"})
+        "${client}/live.then.specified.offset.then.live.messages/client",
+        "${server}/live.then.specified.offset.then.live.messages/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveLiveHistoricalThenLiveMessagesFromStreamingTopic() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
+        k3po.awaitBarrier("HISTORICAL_REQUEST_RECEIVED");
+        k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
+        k3po.awaitBarrier("CLIENT_ONE_DETACHED");
+        k3po.notifyBarrier("WRITE_HISTORICAL_RESPONSE");
+        k3po.awaitBarrier("CLIENT_TWO_RECEIVED_MESSAGE");
+        k3po.notifyBarrier("WRITE_SECOND_FETCH_RESPONSE");
+        k3po.awaitBarrier("THIRD_FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("CONNECT_CLIENT_THREE");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("WRITE_THIRD_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/specified.offset.then.live.messages/client",
+        "${server}/specified.offset.then.live.messages/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveHistoricalThenLiveMessagesFromStreamingTopic() throws Exception
     {
