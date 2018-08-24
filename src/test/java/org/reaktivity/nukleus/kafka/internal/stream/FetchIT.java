@@ -997,19 +997,6 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/no.offsets.message/client",
-        "${server}/zero.offset.message/server" })
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveMessageAtZeroOffsetWhenEmptyOffsetsArray() throws Exception
-    {
-        k3po.start();
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
         "${client}/zero.offset.and.reset/client",
         "${server}/zero.offset.message/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -1070,7 +1057,7 @@ public class FetchIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${routeAnyTopic}/client/controller",
         "${client}/unspecified.offset.multiple.topics/client",
         "${server}/high.water.mark.offset.multiple.topics/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -1080,6 +1067,8 @@ public class FetchIT
         k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
         k3po.notifyBarrier("CONNECT_CLIENT_TWO");
         k3po.awaitBarrier("CLIENT_THREE_CONNECTED");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("UNSUBSCRIBE_CLIENT_ONE");
         awaitWindowFromClient();
         k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
         k3po.finish();
