@@ -819,7 +819,7 @@ public final class ClientStreamFactory implements StreamFactory
                     ListFW<KafkaHeaderFW> headers = beginEx.headers();
                     if (headers != null && headers.sizeof() > 0)
                     {
-                        MutableDirectBuffer headersBuffer = new UnsafeBuffer(new byte[headers.limit() - headers.offset()]);
+                        MutableDirectBuffer headersBuffer = new UnsafeBuffer(new byte[headers.sizeof()]);
                         headersBuffer.putBytes(0, headers.buffer(),  headers.offset(), headers.sizeof());
                         headers = new ListFW<KafkaHeaderFW>(new KafkaHeaderFW()).wrap(headersBuffer, 0, headersBuffer.capacity());
                     }
@@ -827,7 +827,7 @@ public final class ClientStreamFactory implements StreamFactory
                     if (fetchKey != null)
                     {
                         subscribedByKey = true;
-                        MutableDirectBuffer keyBuffer = new UnsafeBuffer(new byte[fetchKey.limit() - fetchKey.offset()]);
+                        MutableDirectBuffer keyBuffer = new UnsafeBuffer(new byte[fetchKey.sizeof()]);
                         keyBuffer.putBytes(0, fetchKey.buffer(),  fetchKey.offset(), fetchKey.sizeof());
                         fetchKey = new OctetsFW().wrap(keyBuffer, 0, keyBuffer.capacity());
                         hashCode = hashCodesCount == 1 ? beginEx.fetchKeyHash().nextInt()
