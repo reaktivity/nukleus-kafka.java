@@ -76,6 +76,11 @@ public final class ClientStreamFactory implements StreamFactory
         .wrap(new UnsafeBuffer(new byte[4]), 0, 4)
         .build();
 
+    private static final PartitionProgressHandler NOOP_PROGRESS_HANDLER = (p, f, n) ->
+    {
+
+    };
+
     private final UnsafeBuffer workBuffer1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     private final UnsafeBuffer workBuffer2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
@@ -564,6 +569,7 @@ public final class ClientStreamFactory implements StreamFactory
         {
             budget.leaveGroup();
             doAbort(applicationReply, applicationReplyId);
+            progressHandler = NOOP_PROGRESS_HANDLER;
             networkPool.doDetach(networkAttachId, fetchOffsets);
             networkAttachId = UNATTACHED;
         }
@@ -942,10 +948,11 @@ public final class ClientStreamFactory implements StreamFactory
         private void handleReset(
             ResetFW reset)
         {
+            doReset(applicationThrottle, applicationId);
+            budget.leaveGroup();
+            progressHandler = NOOP_PROGRESS_HANDLER;
             networkPool.doDetach(networkAttachId, fetchOffsets);
             networkAttachId = UNATTACHED;
-            budget.leaveGroup();
-            doReset(applicationThrottle, applicationId);
         }
 
         private int writeableBytes()
