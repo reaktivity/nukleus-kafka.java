@@ -133,7 +133,7 @@ public class BootstrapIT
     @Test
     @Specification({
         "${control}/route/client/controller",
-        "${client}/no.offsets.message/client",
+        "${client}/zero.offset.message/client",
         "${server}/zero.offset.message/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldNotBootstrapWhenTopicBootstrapIsEnabledButTopicIsNotCompacted() throws Exception
