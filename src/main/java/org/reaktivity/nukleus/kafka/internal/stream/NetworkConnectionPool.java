@@ -2071,7 +2071,7 @@ public final class NetworkConnectionPool
             candidate.id = partitionId;
             candidate.offset = fetchOffset;
             NetworkTopicPartition partition = partitions.floor(candidate);
-            if (partition == null || partition.id != candidate.id || partition.offset == candidate.offset)
+            if (partition == null || partition.id != candidate.id || partition.offset != candidate.offset)
             {
                 throw new IllegalStateException(
                    format("floor gave %s, expected {id=%d, offset=%d}; topic=%s",
