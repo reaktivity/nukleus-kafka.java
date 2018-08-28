@@ -2126,23 +2126,25 @@ public final class NetworkConnectionPool
             candidate.id = partitionId;
             candidate.offset = fetchOffset;
             NetworkTopicPartition partition = partitions.floor(candidate);
-            if (partition != null)
+            if (partition == null || partition.id != candidate.id || partition.offset != candidate.offset)
             {
-                assert partition.id == candidate.id;
-                partition.refs--;
+                throw new IllegalStateException(
+                   format("floor gave %s, expected (id=%d, offset=%d); topic=%s",
+                           partition, partitionId, fetchOffset, this));
+            }
 
-                if (partition.refs == 0)
+            partition.refs--;
+            if (partition.refs == 0)
+            {
+                remove(partition);
+
+                if (isLiveByPartition.get(partitionId))
                 {
-                    remove(partition);
-
-                    if (isLiveByPartition.get(partitionId))
+                    // If we just removed the highest offset then we are no longer on live stream
+                    partition = partitions.floor(candidate);
+                    if (partition != null && partition.id == partitionId && partition.offset < fetchOffset)
                     {
-                        // If we just removed the highest offset then we are no longer on live stream
-                        partition = partitions.floor(candidate);
-                        if (partition != null && partition.id == partitionId && partition.offset < fetchOffset)
-                        {
-                            isLiveByPartition.clear(partitionId);
-                        }
+                        isLiveByPartition.clear(partitionId);
                     }
                 }
             }
@@ -2277,9 +2279,14 @@ public final class NetworkConnectionPool
             candidate.id = partitionId;
             candidate.offset = firstOffset;
             NetworkTopicPartition first = partitions.floor(candidate);
-            assert first != null;
-            assert first.id == partitionId;
-            assert first.offset == firstOffset;
+
+            if (first == null || first.id != partitionId || first.offset != firstOffset)
+            {
+                throw new IllegalStateException(
+                        format("floor gave %s, expected (id=%d, offset=%d); nextOffset = %d, topic=%s",
+                                first, partitionId, firstOffset, nextOffset, this));
+            }
+
             first.refs--;
 
             candidate.offset = nextOffset;
@@ -2456,7 +2463,7 @@ public final class NetworkConnectionPool
         @Override
         public String toString()
         {
-            return format("id=%d, offset=%d, refs=%d", id, offset, refs);
+            return format("(id=%d, offset=%d, refs=%d)", id, offset, refs);
         }
     }
 
