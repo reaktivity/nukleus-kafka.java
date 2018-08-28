@@ -2129,7 +2129,7 @@ public final class NetworkConnectionPool
             if (partition == null || partition.id != candidate.id || partition.offset != candidate.offset)
             {
                 throw new IllegalStateException(
-                   format("floor gave %s, expected {id=%d, offset=%d}; topic=%s",
+                   format("floor gave %s, expected (id=%d, offset=%d); topic=%s",
                            partition, partitionId, fetchOffset, this));
             }
 
@@ -2283,7 +2283,7 @@ public final class NetworkConnectionPool
             if (first == null || first.id != partitionId || first.offset != firstOffset)
             {
                 throw new IllegalStateException(
-                        format("floor gave %s, expected {id=%d, offset=%d}; nextOffset = %d, topic=%s",
+                        format("floor gave %s, expected (id=%d, offset=%d); nextOffset = %d, topic=%s",
                                 first, partitionId, firstOffset, nextOffset, this));
             }
 
@@ -2463,7 +2463,7 @@ public final class NetworkConnectionPool
         @Override
         public String toString()
         {
-            return format("{id=%d, offset=%d, refs=%d}", id, offset, refs);
+            return format("(id=%d, offset=%d, refs=%d)", id, offset, refs);
         }
     }
 
