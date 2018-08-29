@@ -1341,6 +1341,7 @@ public final class NetworkConnectionPool
             default:
                 // kafka error, trigger connection failed and reconnect
                 abort();
+                break;
             }
         }
 
