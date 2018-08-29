@@ -281,22 +281,6 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/compacted.message.tombstone.repeated.same.key/client",
-        "${server}/compacted.message.tombstone.repeated.same.key/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldProcessRepeatedMessageAndTombstoneForSameKey() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("DELIVER_HISTORICAL_RESPONSE");
-        k3po.finish();
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
         "${client}/compacted.message/client",
         "${server}/compacted.message/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
