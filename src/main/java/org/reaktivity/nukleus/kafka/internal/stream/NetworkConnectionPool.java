@@ -22,7 +22,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Collections.emptyIterator;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.NONE;
-import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.UNEXPECTED_SERVER_ERROR;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.asKafkaError;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 
@@ -1340,9 +1339,8 @@ public final class NetworkConnectionPool
                 metadataConnection.doRequestIfNeeded();
                 break;
             default:
-                throw new IllegalStateException(format(
-                    "%s: unexpected error code %s from fetch, topic %s, partition %d, requested offset %d",
-                    this, errorCode, topicName, partition, getRequestedOffset(topicName, partition)));
+                // kafka error, trigger connection failed and reconnect
+                abort();
             }
         }
 
@@ -1783,9 +1781,9 @@ public final class NetworkConnectionPool
                 pendingTopicMetadata.invalidate();
                 doRequestIfNeeded();
             }
-            else if (error == UNEXPECTED_SERVER_ERROR)
+            else if (error != NONE)
             {
-                // internal Kafka error, trigger connection failed and reconnect
+                // kafka error, trigger connection failed and reconnect
                 pendingTopicMetadata.invalidate();
                 abort();
             }
@@ -1870,12 +1868,9 @@ public final class NetworkConnectionPool
                 pendingTopicMetadata.invalidate();
                 doRequestIfNeeded();
                 break;
-            case UNEXPECTED_SERVER_ERROR:
-                // internal Kafka error, trigger connection failed and reconnect
-                pendingTopicMetadata.invalidate();
-                abort();
-                break;
-            default:
+            case UNKNOWN_TOPIC_OR_PARTITION:
+            case INVALID_TOPIC_EXCEPTION:
+            case PARTITION_COUNT_CHANGED:
                 String topicName = topicMetadata.topicName;
                 topicMetadataByName.remove(topicName);
                 detachSubscribers(topicName);
@@ -1883,6 +1878,12 @@ public final class NetworkConnectionPool
                 pendingTopicMetadata = null;
                 topicMetadata.setErrorCode(error);
                 topicMetadata.flush();
+                break;
+            default:
+                // internal Kafka error, trigger connection failed and reconnect
+                pendingTopicMetadata.invalidate();
+                abort();
+                break;
             }
         }
 
@@ -2605,7 +2606,7 @@ public final class NetworkConnectionPool
                 nodeIdsByPartition = new int[partitionCount];
                 firstOffsetsByPartition = new long[partitionCount];
                 offsetsOutOfRangeByPartition = new long[partitionCount];
-                Arrays.setAll(offsetsOutOfRangeByPartition, i -> NO_OFFSET);
+                Arrays.fill(offsetsOutOfRangeByPartition, NO_OFFSET);
             }
             else if (nodeIdsByPartition.length != partitionCount)
             {
