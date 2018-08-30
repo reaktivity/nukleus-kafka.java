@@ -74,6 +74,7 @@ public class FetchResponseDecoder implements ResponseDecoder
 
     private final Function<String, DecoderMessageDispatcher> getDispatcher;
     private final StringIntToLongFunction getRequestedOffsetForPartition;
+    private final Runnable abortHandler;
     private final KafkaErrorConsumer errorHandler;
     private final int maxRecordBatchSize;
     private final MutableDirectBuffer buffer;
@@ -108,10 +109,12 @@ public class FetchResponseDecoder implements ResponseDecoder
         Function<String, DecoderMessageDispatcher> getDispatcher,
         StringIntToLongFunction getRequestedOffsetForPartition,
         KafkaErrorConsumer errorHandler,
+        Runnable abortHandler,
         MutableDirectBuffer decodingBuffer)
     {
         this.getDispatcher = getDispatcher;
         this.getRequestedOffsetForPartition = getRequestedOffsetForPartition;
+        this.abortHandler = abortHandler;
         this.errorHandler = errorHandler;
         this.buffer = requireNonNull(decodingBuffer);
         this.maxRecordBatchSize = buffer.capacity();
@@ -519,16 +522,26 @@ public class FetchResponseDecoder implements ResponseDecoder
         RecordFW record = recordRO.tryWrap(buffer, offset, limit);
         if (record != null)
         {
-            recordCount--;
             final long currentFetchAt = firstOffset + record.offsetDelta();
             int headersOffset = record.limit();
             int headersLimit = headersOffset;
             final int headerCount = record.headerCount();
             for (int i = 0; i < headerCount; i++)
             {
-                final HeaderFW header = headerRO.wrap(buffer, headersLimit, limit);
+                final HeaderFW header = headerRO.tryWrap(buffer, headersLimit, limit);
+                if (header == null)
+                {
+                    skipBytesDecoderState.bytesToSkip = Integer.MAX_VALUE;
+                    skipBytesDecoderState.nextState = skipBytesDecoderState;
+                    decoderState = skipBytesDecoderState;
+                    abortHandler.run();
+                    return newOffset;
+                }
                 headersLimit = header.limit();
             }
+
+            recordCount--;
+
             if (currentFetchAt >= requestedOffset)
                 // The only guarantee is the response will encompass the requested offset.
             {
@@ -555,6 +568,7 @@ public class FetchResponseDecoder implements ResponseDecoder
                 messageDispatcher.dispatch(partition, requestedOffset, currentFetchAt, highWatermark,
                         key, headers, timestamp, traceId, value);
             }
+
             newOffset = headersLimit;
             decoderState = this::decodeRecordLength;
         }

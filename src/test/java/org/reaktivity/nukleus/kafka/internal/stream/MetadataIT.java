@@ -173,4 +173,13 @@ public class MetadataIT
         k3po.finish();
     }
 
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset/client",
+        "${metadata}/describe.configs.incomplete.response.aborts/server"})
+    public void shouldAbortWhenDescribeConfigsWhenResponseIncomplete() throws Exception
+    {
+        k3po.finish();
+    }
 }
