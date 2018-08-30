@@ -48,7 +48,7 @@ import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
 import org.reaktivity.nukleus.kafka.internal.util.DelayedTaskScheduler;
 
-public final class KafkaNukleusFactorySpi implements NukleusFactorySpi
+public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
 {
     public static final String MESSAGE_CACHE_BUFFER_ACQUIRES = "message.cache.buffer.acquires";
     public static final String HISTORICAL_FETCHES = "historical.fetches";
@@ -113,8 +113,8 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi
 
         return builder.streamFactory(CLIENT, streamFactoryBuilder)
                       .routeHandler(CLIENT, this::handleRoute)
-                      .inject(this::process)
                       .inject(scheduler::process)
+                      .inject(this)
                       .build();
     }
 

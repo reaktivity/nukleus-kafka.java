@@ -41,15 +41,11 @@ public class KafkaConfiguration extends Configuration
 
     public static final String MESSAGE_CACHE_BLOCK_CAPACITY_PROPERTY = "nukleus.kafka.message.cache.block.capacity";
 
-    public static final String READ_IDLE_TIMEOUT_PROPERTY = "nukleus.kafka.read.idle.timeout";
-
     public static final long MESSAGE_CACHE_CAPACITY_DEFAULT = 128 * 1024 * 1024;
 
     public static final int MESSAGE_CACHE_BLOCK_CAPACITY_DEFAULT = 1024;
 
     public static final boolean DEFAULT_MESSAGE_CACHE_PROACTIVE = false;
-
-    public static final int READ_IDLE_TIMEOUT_DEFAULT = 5000;
 
     public KafkaConfiguration(
         Configuration config)
@@ -85,11 +81,6 @@ public class KafkaConfiguration extends Configuration
     public boolean messageCacheProactive()
     {
         return getBoolean(MESSAGE_CACHE_PROACTIVE_PROPERTY, DEFAULT_MESSAGE_CACHE_PROACTIVE);
-    }
-
-    public int readIdleTimeout()
-    {
-        return getInteger(READ_IDLE_TIMEOUT_PROPERTY, READ_IDLE_TIMEOUT_DEFAULT);
     }
 
 }

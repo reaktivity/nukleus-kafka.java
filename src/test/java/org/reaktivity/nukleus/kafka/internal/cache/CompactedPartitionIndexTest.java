@@ -20,6 +20,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.reaktivity.nukleus.kafka.internal.cache.MessageCache.NO_MESSAGE;
 import static org.reaktivity.nukleus.kafka.internal.test.TestUtil.asBuffer;
 import static org.reaktivity.nukleus.kafka.internal.test.TestUtil.asOctets;
 
@@ -32,6 +33,7 @@ import org.jmock.Expectations;
 import org.jmock.integration.junit4.JUnitRuleMockery;
 import org.junit.Rule;
 import org.junit.Test;
+import org.reaktivity.nukleus.kafka.internal.cache.CompactedPartitionIndex.EntryImpl;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
@@ -56,7 +58,7 @@ public final class CompactedPartitionIndexTest
         }
     };
 
-    private PartitionIndex cache = new CompactedPartitionIndex(5, TOMBSTONE_LIFETIME_MILLIS, messageCache);
+    private PartitionIndex index = new CompactedPartitionIndex(5, TOMBSTONE_LIFETIME_MILLIS, messageCache);
 
     @Test
     public void shouldAddAndCacheNewMessage()
@@ -68,14 +70,31 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(0));
             }
         });
-        cache.add(0L, 1L, 123, 456, key, headers, value, true);
+        index.add(0L, 1L, 123, 456, key, headers, value, true);
     }
 
     @Test
     public void shouldAddAndNotCacheNewMessage()
     {
-        cache.add(0L, 1L, 123, 456, key, headers, value, false);
+        index.add(0L, 1L, 123, 456, key, headers, value, false);
     }
+
+    @Test
+    public void shouldCompactWhenTooManyInvalidEntries()
+    {
+        long offset = 0;
+
+        for (int i=0; i <= CompactedPartitionIndex.MAX_INVALID_ENTRIES + 1; i++)
+        {
+            index.add(0L, offset++, 123L, 456L, key, headers, value, false);
+        }
+
+        assertEquals(CompactedPartitionIndex.MAX_INVALID_ENTRIES + 2, ((CompactedPartitionIndex) index).numberOfEntries());
+
+        index.add(0L, offset++, 123L, 456L, key, headers, value, false);
+        assertEquals(2, ((CompactedPartitionIndex) index).numberOfEntries());
+    }
+
 
     @Test
     public void shouldAddTombstoneMessageAndReportUntilTombstoneExpires() throws Exception
@@ -90,13 +109,13 @@ public final class CompactedPartitionIndexTest
                 oneOf(messageCache).release(0);
             }
         });
-        cache.add(0L, 1L, future, 456, key, headers, null, true);
-        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
+        index.add(0L, 1L, future, 456, key, headers, null, true);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(1L, entry.offset());
         Thread.sleep(future - currentTimeMillis() + TOMBSTONE_LIFETIME_MILLIS);
-        iterator = cache.entries(0L);
+        iterator = index.entries(0L);
         assertEquals(2L, iterator.next().offset());
     }
 
@@ -122,26 +141,26 @@ public final class CompactedPartitionIndexTest
                 oneOf(messageCache).release(1);
             }
         });
-        cache.add(0L, 0L, timestamp1, 456, asBuffer("key1"), headers, value, true);
-        cache.add(0L, 1L, timestamp1, 457, asBuffer("key2"), headers, value, true);
-        cache.add(0L, 2L, timestamp1, 458, asBuffer("key1"), headers, null, true);
+        index.add(0L, 0L, timestamp1, 456, asBuffer("key1"), headers, value, true);
+        index.add(0L, 1L, timestamp1, 457, asBuffer("key2"), headers, value, true);
+        index.add(0L, 2L, timestamp1, 458, asBuffer("key1"), headers, null, true);
         assert currentTimeMillis() < timestamp1 : "test failed due to unexpected execution delay";
-        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L);
         Entry entry = iterator.next();
         assertEquals(1L, entry.offset());
         entry = iterator.next();
         assertEquals(2L, entry.offset());
         long delayTillAllEntriesAreExpired = timestamp1 + TOMBSTONE_LIFETIME_MILLIS - currentTimeMillis();
         Thread.sleep(delayTillAllEntriesAreExpired);
-        cache.add(2L, 3L, timestamp2, 459, asBuffer("key2"), headers, null, true);
+        index.add(2L, 3L, timestamp2, 459, asBuffer("key2"), headers, null, true);
         assert currentTimeMillis() < timestamp2 : "test failed due to unexpected execution delay";
-        iterator = cache.entries(0L);
+        iterator = index.entries(0L);
         entry = iterator.next();
         assertEquals(3L, entry.offset());
         assertFalse(iterator.hasNext());
         delayTillAllEntriesAreExpired = timestamp2 + TOMBSTONE_LIFETIME_MILLIS - currentTimeMillis();
         Thread.sleep(delayTillAllEntriesAreExpired);
-        iterator = cache.entries(0L);
+        iterator = index.entries(0L);
         assertEquals(4L, iterator.next().offset());
         assertFalse(iterator.hasNext());
     }
@@ -153,27 +172,78 @@ public final class CompactedPartitionIndexTest
         final long timestamp1 = currentTimeMillis() + aLongTime;
         final long timestamp2 = timestamp1 + aLongTime;
 
-        cache.add(0L, 0L, timestamp1, 456, asBuffer("key1"), headers, value, false);
-        cache.add(0L, 1L, timestamp1, 457, asBuffer("key2"), headers, value, false);
-        cache.add(0L, 2L, timestamp1, 458, asBuffer("key1"), headers, null, false);
+        index.add(0L, 0L, timestamp1, 456, asBuffer("key1"), headers, value, false);
+        index.add(0L, 1L, timestamp1, 457, asBuffer("key2"), headers, value, false);
+        index.add(0L, 2L, timestamp1, 458, asBuffer("key1"), headers, null, false);
         assert currentTimeMillis() < timestamp1 : "test failed due to unexpected execution delay";
-        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L);
         Entry entry = iterator.next();
         assertEquals(1L, entry.offset());
         entry = iterator.next();
         assertEquals(2L, entry.offset());
         long delayTillAllEntriesAreExpired = timestamp1 + TOMBSTONE_LIFETIME_MILLIS - currentTimeMillis();
         Thread.sleep(delayTillAllEntriesAreExpired);
-        cache.add(2L, 3L, timestamp2, 459, asBuffer("key2"), headers, null, false);
+        index.add(2L, 3L, timestamp2, 459, asBuffer("key2"), headers, null, false);
         assert currentTimeMillis() < timestamp2 : "test failed due to unexpected execution delay";
-        iterator = cache.entries(0L);
+        iterator = index.entries(0L);
         entry = iterator.next();
         assertEquals(3L, entry.offset());
         assertFalse(iterator.hasNext());
         delayTillAllEntriesAreExpired = timestamp2 + TOMBSTONE_LIFETIME_MILLIS - currentTimeMillis();
         Thread.sleep(delayTillAllEntriesAreExpired);
-        iterator = cache.entries(0L);
+        iterator = index.entries(0L);
         assertEquals(4L, iterator.next().offset());
+        assertFalse(iterator.hasNext());
+    }
+
+    @Test
+    public void shouldReplaceTombstoneWithNewMessageAndRemoveOnlyWhenASubsequentTombstoneExpires() throws Exception
+    {
+        final long aLongTime = 100 * TOMBSTONE_LIFETIME_MILLIS;
+        final long timestamp1 = currentTimeMillis() + aLongTime;
+        final long timestamp2 = timestamp1 + aLongTime;
+
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(messageCache).put(timestamp1, 456, asBuffer("key1"), headers, value);
+                will(returnValue(0));
+                oneOf(messageCache).replace(0, timestamp1, 457, asBuffer("key1"), headers, null);
+                will(returnValue(0));
+                oneOf(messageCache).replace(0, timestamp1, 458, asBuffer("key1"), headers, value);
+                will(returnValue(0));
+                oneOf(messageCache).replace(0, timestamp2, 459, asBuffer("key1"), headers, null);
+                will(returnValue(0));
+                oneOf(messageCache).release(0);
+            }
+        });
+        index.add(0L, 0L, timestamp1, 456, asBuffer("key1"), headers, value, true);
+        index.add(1L, 1L, timestamp1, 457, asBuffer("key1"), headers, null, true);
+        index.add(2L, 2L, timestamp1, 458, asBuffer("key1"), headers, value, true);
+        assert currentTimeMillis() < timestamp1 : "test failed due to unexpected execution delay";
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L);
+        Entry entry = iterator.next();
+        assertEquals(2L, entry.offset());
+        assertEquals(0, entry.message());
+        assertFalse(iterator.hasNext());
+        long delayTillEntryHasExpired = timestamp1 + TOMBSTONE_LIFETIME_MILLIS - currentTimeMillis();
+        Thread.sleep(delayTillEntryHasExpired);
+        iterator = index.entries(0L);
+        entry = iterator.next();
+
+        // Since the message now has a value again it should not be remove by expiry of the previous tombstone
+        assertEquals(0, entry.message());
+
+        assertEquals(2L, entry.offset());
+        assertFalse(iterator.hasNext());
+
+        index.add(3L, 3L, timestamp2, 459, asBuffer("key1"), headers, null, true);
+        delayTillEntryHasExpired = timestamp2 + TOMBSTONE_LIFETIME_MILLIS - currentTimeMillis();
+        Thread.sleep(delayTillEntryHasExpired);
+        iterator = index.entries(0L);
+        entry = iterator.next();
+        assertEquals(4L, entry.offset());
+        assertEquals(-1, entry.message());
         assertFalse(iterator.hasNext());
     }
 
@@ -193,11 +263,11 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(3));
             }
         });
-        cache.add(101L, 110L, 123, 456, asBuffer("key1"), headers, value, true);
-        cache.add(0L, 100L, 124, 457, asBuffer("key2"), headers, value, true);
-        cache.add(102L, 110L, 125, 458, asBuffer("key3"), headers, value, true);
-        cache.add(101L, 101L, 126, 459, asBuffer("key4"), headers, value, true);
-        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(100L);
+        index.add(101L, 110L, 123, 456, asBuffer("key1"), headers, value, true);
+        index.add(0L, 100L, 124, 457, asBuffer("key2"), headers, value, true);
+        index.add(102L, 110L, 125, 458, asBuffer("key3"), headers, value, true);
+        index.add(101L, 101L, 126, 459, asBuffer("key4"), headers, value, true);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(100L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(100L, entry.offset());
@@ -220,12 +290,12 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(1));
             }
         });
-        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
-        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
-        Entry entry = cache.getEntry(0L, asOctets("key1"));
+        index.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
+        index.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
+        Entry entry = index.getEntry(0L, asOctets("key1"));
         assertEquals(0L, entry.offset());
         assertEquals(0, entry.message());
-        entry = cache.getEntry(0L, asOctets("key2"));
+        entry = index.getEntry(0L, asOctets("key2"));
         assertEquals(1L, entry.offset());
         assertEquals(1, entry.message());
     }
@@ -242,9 +312,9 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(1));
             }
         });
-        cache.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value, true);
-        cache.add(0L, 2L, 124, 457, asBuffer("key2"), headers, value, true);
-        Entry entry = cache.getEntry(1L, asOctets("unknownKey"));
+        index.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value, true);
+        index.add(0L, 2L, 124, 457, asBuffer("key2"), headers, value, true);
+        Entry entry = index.getEntry(1L, asOctets("unknownKey"));
         assertEquals(3L, entry.offset());
         assertEquals(MessageCache.NO_MESSAGE, entry.message());
     }
@@ -261,9 +331,9 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(1));
             }
         });
-        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
-        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
-        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
+        index.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
+        index.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(0L, entry.offset());
@@ -284,8 +354,8 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(0));
             }
         });
-        cache.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value, true);
-        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
+        index.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value, true);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L);
         assertTrue(iterator.hasNext());
         assertNotNull(iterator.next());
         assertFalse(iterator.hasNext());
@@ -308,11 +378,11 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(1));
             }
         });
-        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
-        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
-        cache.add(0L, 2L, 125, 458, asBuffer("key3"), headers, value, true);
-        cache.add(0L, 10L, 126, 459, asBuffer("key2"), headers, value, true);
-        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(5L);
+        index.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
+        index.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
+        index.add(0L, 2L, 125, 458, asBuffer("key3"), headers, value, true);
+        index.add(0L, 10L, 126, 459, asBuffer("key2"), headers, value, true);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(5L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(10L, entry.offset());
@@ -323,7 +393,7 @@ public final class CompactedPartitionIndexTest
     @Test
     public void shouldReturnIteratorWithRequestedOffsetAndNoMessageWhenCacheIsEmpty()
     {
-        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(100L);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(100L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(100L, entry.offset());
@@ -334,7 +404,7 @@ public final class CompactedPartitionIndexTest
     @Test(expected=NoSuchElementException.class)
     public void shouldThrowExceptionFromNoMessageIteratorNextWhenNoMoreElements()
     {
-        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(102L);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(102L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(102L, entry.offset());
@@ -353,8 +423,8 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(0));
             }
         });
-        cache.add(0L, 101L, 123, 456, asBuffer("key1"), headers, value, true);
-        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(102L);
+        index.add(0L, 101L, 123, 456, asBuffer("key1"), headers, value, true);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(102L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(102L, entry.offset());
@@ -380,10 +450,10 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(1));
             }
         });
-        cache.add(0L, 101L, 123, 456, asBuffer("key1"), headers, value, true);
-        cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value, true);
-        cache.add(100L, 103L, 125, 458, asBuffer("key3"), headers, value, true);
-        cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value, true);
+        index.add(0L, 101L, 123, 456, asBuffer("key1"), headers, value, true);
+        index.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value, true);
+        index.add(100L, 103L, 125, 458, asBuffer("key3"), headers, value, true);
+        index.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value, true);
     }
 
     @Test
@@ -402,10 +472,10 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(messageRO));
             }
         });
-        cache.add(0L, 101L, 123, 456, asBuffer("key1"), headers, value, true);
-        cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value, true);
-        cache.add(100L, 103L, 125, 458, asBuffer("key3"), headers, value, true);
-        cache.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value, true);
+        index.add(0L, 101L, 123, 456, asBuffer("key1"), headers, value, true);
+        index.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value, true);
+        index.add(100L, 103L, 125, 458, asBuffer("key3"), headers, value, true);
+        index.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value, true);
     }
 
     @Test
@@ -418,8 +488,8 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(0));
             }
         });
-        cache.add(0L, 110L, 123, 456, asBuffer("key1"), headers, value, true);
-        cache.add(112L, 113L, 124, 457, asBuffer("key1"), headers, value, true);
+        index.add(0L, 110L, 123, 456, asBuffer("key1"), headers, value, true);
+        index.add(112L, 113L, 124, 457, asBuffer("key1"), headers, value, true);
     }
 
     @Test
@@ -434,8 +504,8 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(1));
             }
         });
-        cache.add(0L, 110L, 123, 456, asBuffer("key1"), headers, value, true);
-        cache.add(112L, 113L, 124, 457, asBuffer("key2"), headers, value, true);
+        index.add(0L, 110L, 123, 456, asBuffer("key1"), headers, value, true);
+        index.add(112L, 113L, 124, 457, asBuffer("key2"), headers, value, true);
     }
 
     @Test
@@ -454,11 +524,11 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(0));
             }
         });
-        cache.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
-        cache.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
-        cache.add(0L, 2L, 125, 458, asBuffer("key2"), headers, value, true);
-        cache.add(0L, 3L, 126, 459, asBuffer("key1"), headers, value, true);
-        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
+        index.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
+        index.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
+        index.add(0L, 2L, 125, 458, asBuffer("key2"), headers, value, true);
+        index.add(0L, 3L, 126, 459, asBuffer("key1"), headers, value, true);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(2L, entry.offset());
@@ -479,12 +549,38 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(77));
             }
         });
-        cache.add(0L, 100L, 123, 456, asBuffer("key1"), headers, value, true);
-        Iterator<CompactedPartitionIndex.Entry> iterator = cache.entries(0L);
+        index.add(0L, 100L, 123, 456, asBuffer("key1"), headers, value, true);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L);
         Entry entry = iterator.next();
         String result = entry.toString();
         assertTrue(result.contains("100"));
         assertTrue(result.contains("77"));
+    }
+
+    @Test
+    public void shouldMaintainIsTombstoneStateOnEntryImpl()
+    {
+        EntryImpl entry = new EntryImpl(123L, NO_MESSAGE, 0);
+        assertFalse(entry.isTombstone());
+        assertEquals(0, entry.position());
+
+        assertFalse(entry.getAndSetIsTombstone(true));
+        assertTrue(entry.isTombstone());
+        assertEquals(0, entry.position());
+
+        assertTrue(entry.getAndSetIsTombstone(false));
+        assertFalse(entry.isTombstone());
+        assertFalse(entry.getAndSetIsTombstone(false));
+        assertFalse(entry.isTombstone());
+        assertEquals(0, entry.position());
+
+        entry.setPosition(1);
+        assertFalse(entry.isTombstone());
+        assertFalse(entry.getAndSetIsTombstone(true));
+        assertTrue(entry.isTombstone());
+        assertEquals(1, entry.position());
+        entry.setPosition(2);
+        assertTrue(entry.isTombstone());
     }
 
 }
