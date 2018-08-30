@@ -29,6 +29,7 @@ import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
+import org.reaktivity.nukleus.kafka.internal.util.DelayedTaskScheduler;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
@@ -40,6 +41,7 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     private final Consumer<BiFunction<String, Long, NetworkConnectionPool>> connectPoolFactoryConsumer;
     private final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
     private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools;
+    private final DelayedTaskScheduler scheduler;
 
     private RouteManager router;
     private MutableDirectBuffer writeBuffer;
@@ -53,13 +55,15 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
         KafkaConfiguration config,
         Function<Function<String, LongSupplier>, MemoryManager> supplyMemoryManager,
         Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools,
-        Consumer<BiFunction<String, Long, NetworkConnectionPool>> connectPoolFactoryConsumer)
+        Consumer<BiFunction<String, Long, NetworkConnectionPool>> connectPoolFactoryConsumer,
+        DelayedTaskScheduler scheduler)
     {
         this.config = config;
         this.supplyMemoryManager = supplyMemoryManager;
         this.connectPoolFactoryConsumer = connectPoolFactoryConsumer;
         this.correlations = new Long2ObjectHashMap<>();
         this.connectionPools = connectionPools;
+        this.scheduler = scheduler;
     }
 
     @Override
@@ -139,6 +143,6 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
         final MemoryManager memoryManager = supplyMemoryManager.apply(supplyCounter);
 
         return new ClientStreamFactory(config, router, writeBuffer, bufferPool, memoryManager, supplyStreamId, supplyTrace,
-                supplyCorrelationId, supplyCounter, correlations, connectionPools, connectPoolFactoryConsumer);
+                supplyCorrelationId, supplyCounter, correlations, connectionPools, connectPoolFactoryConsumer, scheduler);
     }
 }

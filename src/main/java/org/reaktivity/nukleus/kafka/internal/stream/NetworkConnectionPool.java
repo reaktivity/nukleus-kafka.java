@@ -51,6 +51,7 @@ import java.util.function.LongSupplier;
 import org.agrona.BitUtil;
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
+import org.agrona.TimerWheel.Timer;
 import org.agrona.collections.ArrayUtil;
 import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.IntArrayList;
@@ -248,6 +249,7 @@ public final class NetworkConnectionPool
     private final long networkRef;
     private final int fetchMaxBytes;
     private final int fetchPartitionMaxBytes;
+    private final int readIdleTimeout;
     private final BufferPool bufferPool;
 
     private final MessageCache messageCache;
@@ -281,7 +283,8 @@ public final class NetworkConnectionPool
         BufferPool bufferPool,
         MessageCache messageCache,
         Function<String, LongSupplier> supplyCounter,
-        boolean forceProactiveMessageCache)
+        boolean forceProactiveMessageCache,
+        int readIdleTimeout)
     {
         this.clientStreamFactory = clientStreamFactory;
         this.networkName = networkName;
@@ -298,6 +301,7 @@ public final class NetworkConnectionPool
         this.topicMetadataByName = new HashMap<>();
         this.routeHeadersByTopic = new HashMap<>();
         this.detachersById = new Int2ObjectHashMap<>();
+        this.readIdleTimeout = readIdleTimeout;
     }
 
     void doAttach(
@@ -524,6 +528,7 @@ public final class NetworkConnectionPool
     abstract class AbstractNetworkConnection
     {
         final MessageConsumer networkTarget;
+        private Timer timer;
 
         long networkId;
         long networkCorrelationId;
@@ -595,6 +600,8 @@ public final class NetworkConnectionPool
                     .doBegin(networkTarget, newNetworkId, networkRef, newCorrelationId, extensionVisitor);
                 NetworkConnectionPool.this.clientStreamFactory.router.setThrottle(
                         networkName, newNetworkId, this::handleThrottle);
+                timer = clientStreamFactory.scheduler.newTimeout(readIdleTimeout, this::idle);
+System.out.println("Adding timer for " + readIdleTimeout);
 
                 this.networkId = newNetworkId;
                 this.networkCorrelationId = newCorrelationId;
@@ -602,6 +609,12 @@ public final class NetworkConnectionPool
         }
 
         abstract void doRequestIfNeeded();
+
+        final void idle()
+        {
+            System.out.println("Idle");
+            abort();
+        }
 
         final void abort()
         {
@@ -850,6 +863,10 @@ public final class NetworkConnectionPool
                     }
                 }
             }
+
+            timer.cancel();
+System.out.println("handleData(): Cancelling and rescheduling timer");
+            clientStreamFactory.scheduler.reScheduleTimeout(readIdleTimeout, timer);
         }
 
         abstract void handleResponse(
@@ -870,6 +887,9 @@ public final class NetworkConnectionPool
             }
             doReinitialize();
             doRequestIfNeeded();
+            System.out.println("handleEnd(): Cancelling timer");
+
+            timer.cancel();
         }
 
         private void handleAbort(
@@ -881,6 +901,9 @@ public final class NetworkConnectionPool
                 this.networkId = 0L;
             }
             handleConnectionFailed();
+            System.out.println("handleAbort(): Cancelling timer");
+
+            timer.cancel();
         }
 
         void doOfferResponseBudget()

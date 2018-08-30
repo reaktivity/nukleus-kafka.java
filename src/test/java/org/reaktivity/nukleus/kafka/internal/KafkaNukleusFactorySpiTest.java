@@ -29,6 +29,7 @@ import org.reaktivity.nukleus.Configuration;
 import org.reaktivity.nukleus.Nukleus;
 import org.reaktivity.nukleus.NukleusBuilder;
 import org.reaktivity.nukleus.NukleusFactory;
+import org.reaktivity.nukleus.kafka.internal.util.DelayedTaskScheduler;
 import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 import org.reaktivity.reaktor.internal.ReaktorConfiguration;
 
@@ -46,6 +47,7 @@ public class KafkaNukleusFactorySpiTest
         {
             {
                 oneOf(builder).streamFactory(with(CLIENT), with(any(StreamFactoryBuilder.class)));
+                oneOf(builder).inject(with(any(DelayedTaskScheduler.class)));
             }
         });
 
