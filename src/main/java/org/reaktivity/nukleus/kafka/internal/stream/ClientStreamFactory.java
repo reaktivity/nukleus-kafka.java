@@ -64,6 +64,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
 import org.reaktivity.nukleus.kafka.internal.util.Flags;
+import org.reaktivity.nukleus.kafka.internal.util.DelayedTaskScheduler;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 
@@ -120,6 +121,7 @@ public final class ClientStreamFactory implements StreamFactory
     final BufferPool bufferPool;
     final MessageCache messageCache;
     private final MutableDirectBuffer writeBuffer;
+    final DelayedTaskScheduler scheduler;
 
     final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
 
@@ -144,7 +146,8 @@ public final class ClientStreamFactory implements StreamFactory
         Function<String, LongSupplier> supplyCounter,
         Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations,
         Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools,
-        Consumer<BiFunction<String, Long, NetworkConnectionPool>> setConnectionPoolFactory)
+        Consumer<BiFunction<String, Long, NetworkConnectionPool>> setConnectionPoolFactory,
+        DelayedTaskScheduler scheduler)
     {
         this.fetchMaxBytes = config.fetchMaxBytes();
         this.fetchPartitionMaxBytes = config.fetchPartitionMaxBytes();
@@ -164,6 +167,7 @@ public final class ClientStreamFactory implements StreamFactory
         setConnectionPoolFactory.accept((networkName, ref) ->
             new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes, bufferPool,
                     messageCache, supplyCounter, forceProactiveMessageCache));
+        this.scheduler = scheduler;
     }
 
     @Override
