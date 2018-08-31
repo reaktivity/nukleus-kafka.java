@@ -33,7 +33,7 @@ public class DelayedTaskScheduler
         return timerWheel.newTimeout(delay, TimeUnit.MILLISECONDS, task);
     }
 
-    public void reScheduleTimeout(long delay, TimerWheel.Timer timer)
+    public void rescheduleTimeout(long delay, TimerWheel.Timer timer)
     {
         timerWheel.rescheduleTimeout(delay, TimeUnit.MILLISECONDS, timer);
     }
