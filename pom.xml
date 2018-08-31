@@ -278,6 +278,7 @@
         <version>2.19.1</version>
         <configuration>
           <argLine>@{argLine}</argLine>
+          <trimStackTrace>false</trimStackTrace>
         </configuration>
         <executions>
           <execution>
