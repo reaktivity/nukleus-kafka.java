@@ -28,6 +28,11 @@ public class DelayedTaskScheduler
         this.timerWheel = new TimerWheel(500, TimeUnit.MILLISECONDS, 32);
     }
 
+    public TimerWheel.Timer newBlankTimer()
+    {
+        return timerWheel.newBlankTimer();
+    }
+
     public TimerWheel.Timer newTimeout(long delay, Runnable task)
     {
         return timerWheel.newTimeout(delay, TimeUnit.MILLISECONDS, task);
