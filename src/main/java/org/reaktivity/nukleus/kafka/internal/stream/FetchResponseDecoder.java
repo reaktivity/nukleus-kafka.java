@@ -74,7 +74,6 @@ public class FetchResponseDecoder implements ResponseDecoder
 
     private final Function<String, DecoderMessageDispatcher> getDispatcher;
     private final StringIntToLongFunction getRequestedOffsetForPartition;
-    private final Runnable abortHandler;
     private final KafkaErrorConsumer errorHandler;
     private final int maxRecordBatchSize;
     private final MutableDirectBuffer buffer;
@@ -109,12 +108,10 @@ public class FetchResponseDecoder implements ResponseDecoder
         Function<String, DecoderMessageDispatcher> getDispatcher,
         StringIntToLongFunction getRequestedOffsetForPartition,
         KafkaErrorConsumer errorHandler,
-        Runnable abortHandler,
         MutableDirectBuffer decodingBuffer)
     {
         this.getDispatcher = getDispatcher;
         this.getRequestedOffsetForPartition = getRequestedOffsetForPartition;
-        this.abortHandler = abortHandler;
         this.errorHandler = errorHandler;
         this.buffer = requireNonNull(decodingBuffer);
         this.maxRecordBatchSize = buffer.capacity();
@@ -531,10 +528,6 @@ public class FetchResponseDecoder implements ResponseDecoder
                 final HeaderFW header = headerRO.tryWrap(buffer, headersLimit, limit);
                 if (header == null)
                 {
-                    skipBytesDecoderState.bytesToSkip = Integer.MAX_VALUE;
-                    skipBytesDecoderState.nextState = skipBytesDecoderState;
-                    decoderState = skipBytesDecoderState;
-                    abortHandler.run();
                     return newOffset;
                 }
                 headersLimit = header.limit();

@@ -934,7 +934,6 @@ public final class NetworkConnectionPool
                     this::getTopicDispatcher,
                     this::getRequestedOffset,
                     this::handlePartitionResponseError,
-                    this::abort,
                     localDecodeBuffer);
         }
 
