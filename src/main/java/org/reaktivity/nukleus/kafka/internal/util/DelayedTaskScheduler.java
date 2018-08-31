@@ -40,7 +40,7 @@ public class DelayedTaskScheduler
 
     public int process()
     {
-        if (timerWheel.computeDelayInMs() == 0)
+        if (timerWheel.computeDelayInMs() <= 0)
         {
             return timerWheel.expireTimers();
         }
