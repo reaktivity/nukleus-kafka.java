@@ -598,6 +598,7 @@ public final class NetworkConnectionPool
 
                 NetworkConnectionPool.this.clientStreamFactory
                     .doBegin(networkTarget, newNetworkId, networkRef, newCorrelationId, extensionVisitor);
+                System.out.printf("doBeginIfNotConnected %d\n", newNetworkId);
                 NetworkConnectionPool.this.clientStreamFactory.router.setThrottle(
                         networkName, newNetworkId, this::handleThrottle);
 
@@ -613,6 +614,7 @@ public final class NetworkConnectionPool
 System.out.printf("idle: id=%d reply-id=%d timer=%s\n", networkId, networkReplyId, System.identityHashCode(timer));
 
             abort();
+            handleConnectionFailed();
         }
 
         final void abort()
@@ -773,8 +775,8 @@ networkId, networkReplyId, System.identityHashCode(timer));
         {
             timer.cancel();
             clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer);
-System.out.printf("handleData(): id=%d reply-id=%d Cancelling & rescheduling timer=%s\n",
-networkId, networkReplyId, System.identityHashCode(timer));
+//System.out.printf("handleData(): id=%d reply-id=%d Cancelling & rescheduling timer=%s\n",
+//networkId, networkReplyId, System.identityHashCode(timer));
 
 
             final OctetsFW payload = data.payload();
@@ -1228,8 +1230,8 @@ networkId, networkReplyId, System.identityHashCode(timer));
             {
                 timer.cancel();
                 clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer);
-System.out.printf("handleData(): id=%d reply-id=%d Cancelling & rescheduling timer=%s\n",
-networkId, networkReplyId, System.identityHashCode(timer));
+//System.out.printf("handleData(): id=%d reply-id=%d Cancelling & rescheduling timer=%s\n",
+//networkId, networkReplyId, System.identityHashCode(timer));
 
                 final OctetsFW payload = data.payload();
                 networkResponseBudget -= payload.sizeof() + data.padding();
@@ -1706,7 +1708,7 @@ networkId, networkReplyId, System.identityHashCode(timer));
 
                     timer.cancel();
                     timer.reset(readIdleTimeout, this::idle);
-System.out.printf("doDescribeConfigsRequest(): id=%d reply-id=%d Cancelling timer=%s\n",
+System.out.printf("doDescribeConfigsRequest(): id=%d reply-id=%d reset timer=%s\n",
 networkId, networkReplyId, System.identityHashCode(timer));
 
                 }
