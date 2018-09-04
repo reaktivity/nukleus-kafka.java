@@ -272,6 +272,7 @@ public final class NetworkConnectionPool
     private final List<NetworkTopicPartition> partitionsWorkList = new ArrayList<NetworkTopicPartition>();
     private final LongArrayList offsetsWorkList = new LongArrayList();
     private final LongSupplier historicalFetches;
+    private final LongSupplier idleRequests;
     private int nextAttachId;
 
     NetworkConnectionPool(
@@ -296,6 +297,8 @@ public final class NetworkConnectionPool
         this.forceProactiveMessageCache = forceProactiveMessageCache;
         this.historicalFetches = supplyCounter.apply(
                 format("%s.%s.%d", KafkaNukleusFactorySpi.HISTORICAL_FETCHES, networkName, networkRef));
+        this.idleRequests = supplyCounter.apply(
+                format("%s.%s.%d", KafkaNukleusFactorySpi.IDLE_REQUESTS, networkName, networkRef));
         this.encodeBuffer = new UnsafeBuffer(new byte[clientStreamFactory.bufferPool.slotCapacity()]);
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
@@ -611,6 +614,7 @@ public final class NetworkConnectionPool
 
         final void idle()
         {
+            idleRequests.getAsLong();
             abort();
             handleConnectionFailed();
         }

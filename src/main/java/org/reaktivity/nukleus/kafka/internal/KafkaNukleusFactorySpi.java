@@ -53,6 +53,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
     public static final String MESSAGE_CACHE_BUFFER_ACQUIRES = "message.cache.buffer.acquires";
     public static final String HISTORICAL_FETCHES = "historical.fetches";
     private static final String MESSAGE_CACHE_BUFFER_RELEASES = "message.cache.buffer.releases";
+    public static final String IDLE_REQUESTS = "idle.requests";
 
     private static final MemoryManager OUT_OF_SPACE_MEMORY_MANAGER = new MemoryManager()
     {
