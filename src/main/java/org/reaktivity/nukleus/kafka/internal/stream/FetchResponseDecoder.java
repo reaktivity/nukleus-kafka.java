@@ -519,16 +519,22 @@ public class FetchResponseDecoder implements ResponseDecoder
         RecordFW record = recordRO.tryWrap(buffer, offset, limit);
         if (record != null)
         {
-            recordCount--;
             final long currentFetchAt = firstOffset + record.offsetDelta();
             int headersOffset = record.limit();
             int headersLimit = headersOffset;
             final int headerCount = record.headerCount();
             for (int i = 0; i < headerCount; i++)
             {
-                final HeaderFW header = headerRO.wrap(buffer, headersLimit, limit);
+                final HeaderFW header = headerRO.tryWrap(buffer, headersLimit, limit);
+                if (header == null)
+                {
+                    return newOffset;
+                }
                 headersLimit = header.limit();
             }
+
+            recordCount--;
+
             if (currentFetchAt >= requestedOffset)
                 // The only guarantee is the response will encompass the requested offset.
             {

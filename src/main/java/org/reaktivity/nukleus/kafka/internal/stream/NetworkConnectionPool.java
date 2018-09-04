@@ -22,6 +22,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Collections.emptyIterator;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.NONE;
+import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.UNEXPECTED_SERVER_ERROR;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.asKafkaError;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 
@@ -48,7 +49,6 @@ import java.util.function.IntSupplier;
 import java.util.function.IntToLongFunction;
 import java.util.function.LongSupplier;
 
-import org.agrona.BitUtil;
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.TimerWheel.Timer;
@@ -802,16 +802,8 @@ public final class NetworkConnectionPool
                         networkLimit = networkSlotOffset;
                     }
 
-                    ResponseHeaderFW response = null;
-                    int responseSize = 0;
-                    if (networkOffset + BitUtil.SIZE_OF_INT <= networkLimit)
-                    {
-                        response = NetworkConnectionPool.this.responseRO.wrap(networkBuffer, networkOffset, networkLimit);
-                        networkOffset = response.limit();
-                        responseSize = response.size();
-                    }
-
-                    if (response == null || networkOffset + responseSize > networkLimit)
+                    ResponseHeaderFW response = responseRO.tryWrap(networkBuffer, networkOffset, networkLimit);
+                    if (response == null || response.limit() + response.size() > networkLimit)
                     {
                         if (networkSlot == NO_SLOT)
                         {
@@ -826,6 +818,7 @@ public final class NetworkConnectionPool
                     }
                     else
                     {
+                        networkOffset = response.limit();
                         handleResponse(networkTraceId, networkBuffer, networkOffset, networkLimit);
                         networkOffset += response.size();
                         nextResponseId++;
@@ -1253,17 +1246,26 @@ public final class NetworkConnectionPool
         {
             timer.cancel();
 
+            final ListOffsetsResponseFW response = listOffsetsResponseRO.tryWrap(networkBuffer, networkOffset, networkLimit);
+            if (response == null)
+            {
+                abort();
+                return;
+            }
 
-            final ListOffsetsResponseFW response =
-                    NetworkConnectionPool.this.listOffsetsResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
             int topicCount = response.topicCount();
             networkOffset = response.limit();
 
             KafkaError errorCode = NONE;
             for (int topicIndex = 0; topicIndex < topicCount && errorCode == NONE; topicIndex++)
             {
-                final ListOffsetsTopicFW topic =
-                        listOffsetsTopicRO.wrap(networkBuffer, networkOffset, networkLimit);
+                final ListOffsetsTopicFW topic = listOffsetsTopicRO.tryWrap(networkBuffer, networkOffset, networkLimit);
+                if (topic == null)
+                {
+                    abort();
+                    return;
+                }
+
                 final String16FW name = topic.name();
                 String topicName = name.asString();
                 TopicMetadata topicMetadata = topicMetadataByName.get(topicName);
@@ -1274,13 +1276,20 @@ public final class NetworkConnectionPool
                 for (int i = 0; i < partitionCount && errorCode == NONE; i++)
                 {
                     final ListOffsetsPartitionResponseFW partition =
-                            listOffsetsPartitionResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
+                            listOffsetsPartitionResponseRO.tryWrap(networkBuffer, networkOffset, networkLimit);
+                    if (partition == null)
+                    {
+                        abort();
+                        return;
+                    }
+
                     errorCode = asKafkaError(partition.errorCode());
                     if (errorCode != NONE)
                     {
                         handlePartitionResponseError(name.asString(), i, errorCode);
                         break;
                     }
+
                     final long offset = partition.firstOffset();
                     final int partitionId = partition.partitionId();
 
@@ -1775,47 +1784,69 @@ public final class NetworkConnectionPool
             timer.cancel();
 
             final DescribeConfigsResponseFW describeConfigsResponse =
-                    NetworkConnectionPool.this.describeConfigsResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
-            int resourceCount = describeConfigsResponse.resourceCount();
-            networkOffset = describeConfigsResponse.limit();
+                    describeConfigsResponseRO.tryWrap(networkBuffer, networkOffset, networkLimit);
 
             KafkaError error = NONE;
             boolean compacted = false;
             int deleteRetentionMs = KAFKA_SERVER_DEFAULT_DELETE_RETENTION_MS;
-            for (int resourceIndex = 0; resourceIndex < resourceCount && error == NONE; resourceIndex++)
-            {
-                final ResourceResponseFW resource =
-                        NetworkConnectionPool.this.resourceResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
-                final String16FW name = resource.name();
-                assert name.asString().equals(pendingTopicMetadata.topicName);
-                error = asKafkaError(resource.errorCode());
-                if (error != NONE)
-                {
-                    break;
-                }
-                final int configCount = resource.configCount();
-                networkOffset = resource.limit();
 
-                for (int configIndex = 0; configIndex < configCount && error == NONE; configIndex++)
+            if (describeConfigsResponse == null)
+            {
+                error = UNEXPECTED_SERVER_ERROR;
+            }
+            else
+            {
+                int resourceCount = describeConfigsResponse.resourceCount();
+                networkOffset = describeConfigsResponse.limit();
+
+                loop:
+                for (int resourceIndex = 0; resourceIndex < resourceCount && error == NONE; resourceIndex++)
                 {
-                    final ConfigResponseFW config =
-                            NetworkConnectionPool.this.configResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
-                    String configName = config.name().asString();
-                    switch (configName)
+                    final ResourceResponseFW resource = resourceResponseRO.tryWrap(networkBuffer, networkOffset, networkLimit);
+                    if (resource == null)
                     {
-                    case CLEANUP_POLICY:
-                        compacted = config.value() != null && config.value().asString().equals(COMPACT);
-                        networkOffset = config.limit();
+                        error = UNEXPECTED_SERVER_ERROR;
+                        break loop;
+                    }
+
+                    final String16FW name = resource.name();
+                    assert name.asString().equals(pendingTopicMetadata.topicName);
+                    error = asKafkaError(resource.errorCode());
+                    if (error != NONE)
+                    {
                         break;
-                    case DELETE_RETENTION_MS:
-                        deleteRetentionMs = config.value() == null ? KAFKA_SERVER_DEFAULT_DELETE_RETENTION_MS :
-                            parseInt(config.value().asString());
-                        break;
-                    default:
-                        assert false : format("Unexpected config name %s in describe configs response", configName);
+                    }
+                    final int configCount = resource.configCount();
+                    networkOffset = resource.limit();
+
+                    for (int configIndex = 0; configIndex < configCount && error == NONE; configIndex++)
+                    {
+                        final ConfigResponseFW configResponse =
+                                configResponseRO.tryWrap(networkBuffer, networkOffset, networkLimit);
+                        if (configResponse == null)
+                        {
+                            error = UNEXPECTED_SERVER_ERROR;
+                            break loop;
+                        }
+
+                        String configName = configResponse.name().asString();
+                        switch (configName)
+                        {
+                        case CLEANUP_POLICY:
+                            compacted = configResponse.value() != null && configResponse.value().asString().equals(COMPACT);
+                            networkOffset = configResponse.limit();
+                            break;
+                        case DELETE_RETENTION_MS:
+                            deleteRetentionMs = configResponse.value() == null ? KAFKA_SERVER_DEFAULT_DELETE_RETENTION_MS :
+                                parseInt(configResponse.value().asString());
+                            break;
+                        default:
+                            assert false : format("Unexpected config name %s in describe configs response", configName);
+                        }
                     }
                 }
             }
+
             if (error.isRecoverable())
             {
                 pendingTopicMetadata.invalidate();
@@ -1851,56 +1882,7 @@ public final class NetworkConnectionPool
         {
             timer.cancel();
 
-
-            final MetadataResponseFW metadataResponse =
-                    NetworkConnectionPool.this.metadataResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
-            final int brokerCount = metadataResponse.brokerCount();
-            pendingTopicMetadata.initializeBrokers(brokerCount);
-            networkOffset = metadataResponse.limit();
-            for (int brokerIndex=0; brokerIndex < brokerCount; brokerIndex++)
-            {
-                final BrokerMetadataFW broker =
-                        NetworkConnectionPool.this.brokerMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
-                pendingTopicMetadata.addBroker(broker.nodeId(), broker.host().asString(), broker.port());
-                networkOffset = broker.limit();
-            }
-
-            final MetadataResponsePart2FW metadataResponsePart2 =
-                    NetworkConnectionPool.this.metadataResponsePart2RO.wrap(networkBuffer, networkOffset, networkLimit);
-            final int topicCount = metadataResponsePart2.topicCount();
-            assert topicCount == 1;
-            networkOffset = metadataResponsePart2.limit();
-            KafkaError error = NONE;
-            for (int topicIndex = 0; topicIndex < topicCount && error == NONE; topicIndex++)
-            {
-                final TopicMetadataFW topicMetadata =
-                        NetworkConnectionPool.this.topicMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
-                String16FW topicName = topicMetadata.topic();
-                assert topicName.asString().equals(pendingTopicMetadata.topicName);
-                error = asKafkaError(topicMetadata.errorCode());
-                if (error != NONE)
-                {
-                    break;
-                }
-                final int partitionCount = topicMetadata.partitionCount();
-                networkOffset = topicMetadata.limit();
-
-                if (pendingTopicMetadata.initializePartitions(partitionCount))
-                {
-                    for (int partitionIndex = 0; partitionIndex < partitionCount && error == NONE; partitionIndex++)
-                    {
-                        final PartitionMetadataFW partition =
-                                NetworkConnectionPool.this.partitionMetadataRO.wrap(networkBuffer, networkOffset, networkLimit);
-                        error = KafkaError.asKafkaError(partition.errorCode());
-                        pendingTopicMetadata.addPartition(partition.partitionId(), partition.leader());
-                        networkOffset = partition.limit();
-                    }
-                }
-                else
-                {
-                    error = KafkaError.PARTITION_COUNT_CHANGED;
-                }
-            }
+            KafkaError error = decodeMetadataResponse(networkBuffer, networkOffset, networkLimit);
             final TopicMetadata topicMetadata = pendingTopicMetadata;
             switch(error)
             {
@@ -1928,6 +1910,86 @@ public final class NetworkConnectionPool
                 abort();
                 break;
             }
+        }
+
+        private KafkaError decodeMetadataResponse(
+            DirectBuffer networkBuffer,
+            int networkOffset,
+            int networkLimit)
+        {
+            final MetadataResponseFW metadataResponse = metadataResponseRO.tryWrap(networkBuffer, networkOffset, networkLimit);
+            if (metadataResponse == null)
+            {
+                return UNEXPECTED_SERVER_ERROR;
+            }
+
+            final int brokerCount = metadataResponse.brokerCount();
+            pendingTopicMetadata.initializeBrokers(brokerCount);
+            networkOffset = metadataResponse.limit();
+            KafkaError error = NONE;
+            for (int brokerIndex=0; brokerIndex < brokerCount; brokerIndex++)
+            {
+                final BrokerMetadataFW broker = brokerMetadataRO.tryWrap(networkBuffer, networkOffset, networkLimit);
+                if (broker == null)
+                {
+                    return UNEXPECTED_SERVER_ERROR;
+                }
+
+                pendingTopicMetadata.addBroker(broker.nodeId(), broker.host().asString(), broker.port());
+                networkOffset = broker.limit();
+            }
+
+            final MetadataResponsePart2FW metadataResponsePart2 =
+                    metadataResponsePart2RO.tryWrap(networkBuffer, networkOffset, networkLimit);
+            if (metadataResponsePart2 == null)
+            {
+                return UNEXPECTED_SERVER_ERROR;
+            }
+
+            final int topicCount = metadataResponsePart2.topicCount();
+            assert topicCount == 1;
+            networkOffset = metadataResponsePart2.limit();
+            for (int topicIndex = 0; topicIndex < topicCount && error == NONE; topicIndex++)
+            {
+                final TopicMetadataFW topicMetadata = topicMetadataRO.tryWrap(networkBuffer, networkOffset, networkLimit);
+                if (topicMetadata == null)
+                {
+                    return UNEXPECTED_SERVER_ERROR;
+                }
+
+                String16FW topicName = topicMetadata.topic();
+                assert topicName.asString().equals(pendingTopicMetadata.topicName);
+                error = asKafkaError(topicMetadata.errorCode());
+                if (error != NONE)
+                {
+                    break;
+                }
+                final int partitionCount = topicMetadata.partitionCount();
+                networkOffset = topicMetadata.limit();
+
+                if (pendingTopicMetadata.initializePartitions(partitionCount))
+                {
+                    for (int partitionIndex = 0; partitionIndex < partitionCount && error == NONE; partitionIndex++)
+                    {
+                        final PartitionMetadataFW partition =
+                                partitionMetadataRO.tryWrap(networkBuffer, networkOffset, networkLimit);
+                        if (partition == null)
+                        {
+                            return UNEXPECTED_SERVER_ERROR;
+                        }
+
+                        error = KafkaError.asKafkaError(partition.errorCode());
+                        pendingTopicMetadata.addPartition(partition.partitionId(), partition.leader());
+                        networkOffset = partition.limit();
+                    }
+                }
+                else
+                {
+                    error = KafkaError.PARTITION_COUNT_CHANGED;
+                }
+            }
+
+            return error;
         }
 
         private void detachSubscribers(String topicName)
