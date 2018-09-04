@@ -556,6 +556,7 @@ public final class NetworkConnectionPool
             this.networkTarget = NetworkConnectionPool.this.clientStreamFactory.router.supplyTarget(networkName);
             localDecodeBuffer = new UnsafeBuffer(allocateDirect(fetchPartitionMaxBytes));
             timer = clientStreamFactory.scheduler.newBlankTimer();
+            timer.reset(readIdleTimeout, this::idle);
         }
 
         @Override
@@ -1084,7 +1085,7 @@ public final class NetworkConnectionPool
                 networkRequestBudget -= payload.sizeof() + networkRequestPadding;
 
                 timer.cancel();
-                timer.reset(readIdleTimeout, this::idle);
+                clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer);
             }
         }
 
@@ -1184,7 +1185,7 @@ public final class NetworkConnectionPool
                 networkRequestBudget -= payload.sizeof() + networkRequestPadding;
 
                 timer.cancel();
-                timer.reset(readIdleTimeout, this::idle);
+                clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer);
             }
         }
 
@@ -1692,7 +1693,7 @@ public final class NetworkConnectionPool
                     pendingRequest = MetadataRequestType.DESCRIBE_CONFIGS;
 
                     timer.cancel();
-                    timer.reset(readIdleTimeout, this::idle);
+                    clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer);
                 }
             }
         }
@@ -1752,7 +1753,7 @@ public final class NetworkConnectionPool
                     pendingRequest = MetadataRequestType.METADATA;
 
                     timer.cancel();
-                    timer.reset(readIdleTimeout, this::idle);
+                    clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer);
                 }
             }
         }
