@@ -598,7 +598,6 @@ public final class NetworkConnectionPool
 
                 NetworkConnectionPool.this.clientStreamFactory
                     .doBegin(networkTarget, newNetworkId, networkRef, newCorrelationId, extensionVisitor);
-                System.out.printf("doBeginIfNotConnected %d\n", newNetworkId);
                 NetworkConnectionPool.this.clientStreamFactory.router.setThrottle(
                         networkName, newNetworkId, this::handleThrottle);
 
@@ -611,8 +610,6 @@ public final class NetworkConnectionPool
 
         final void idle()
         {
-System.out.printf("idle: id=%d reply-id=%d timer=%s\n", networkId, networkReplyId, System.identityHashCode(timer));
-
             abort();
             handleConnectionFailed();
         }
@@ -682,8 +679,6 @@ System.out.printf("idle: id=%d reply-id=%d timer=%s\n", networkId, networkReplyI
                 networkReplyId = 0L;
             }
             handleConnectionFailed();
-System.out.printf("handleReset(): id=%d reply-id=%d Cancelling timer=%s\n",
-networkId, networkReplyId, System.identityHashCode(timer));
             timer.cancel();
         }
 
@@ -775,9 +770,6 @@ networkId, networkReplyId, System.identityHashCode(timer));
         {
             timer.cancel();
             clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer);
-//System.out.printf("handleData(): id=%d reply-id=%d Cancelling & rescheduling timer=%s\n",
-//networkId, networkReplyId, System.identityHashCode(timer));
-
 
             final OctetsFW payload = data.payload();
             final long networkTraceId = data.trace();
@@ -893,8 +885,6 @@ networkId, networkReplyId, System.identityHashCode(timer));
             }
             doReinitialize();
             doRequestIfNeeded();
-System.out.printf("handleEnd(): id=%d reply-id=%d Cancelling timer=%s\n",
-networkId, networkReplyId, System.identityHashCode(timer));
             timer.cancel();
         }
 
@@ -907,8 +897,6 @@ networkId, networkReplyId, System.identityHashCode(timer));
                 this.networkId = 0L;
             }
             handleConnectionFailed();
-System.out.printf("handleAbort(): id=%d reply-id=%d Cancelling timer=%s\n",
-networkId, networkReplyId, System.identityHashCode(timer));
             timer.cancel();
         }
 
@@ -1104,9 +1092,6 @@ networkId, networkReplyId, System.identityHashCode(timer));
 
                 timer.cancel();
                 timer.reset(readIdleTimeout, this::idle);
-System.out.printf("doFetchRequest(): id=%d reply-id=%d reset timer=%s\n",
-networkId, networkReplyId, System.identityHashCode(timer));
-
             }
         }
 
@@ -1207,9 +1192,6 @@ networkId, networkReplyId, System.identityHashCode(timer));
 
                 timer.cancel();
                 timer.reset(readIdleTimeout, this::idle);
-System.out.printf("doListOffsetsRequest(): id=%d reply-id=%d reset timer=%s\n",
-networkId, networkReplyId, System.identityHashCode(timer));
-
             }
         }
 
@@ -1230,8 +1212,6 @@ networkId, networkReplyId, System.identityHashCode(timer));
             {
                 timer.cancel();
                 clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer);
-//System.out.printf("handleData(): id=%d reply-id=%d Cancelling & rescheduling timer=%s\n",
-//networkId, networkReplyId, System.identityHashCode(timer));
 
                 final OctetsFW payload = data.payload();
                 networkResponseBudget -= payload.sizeof() + data.padding();
@@ -1244,8 +1224,6 @@ networkId, networkReplyId, System.identityHashCode(timer));
                 if (excessBytes >= 0) // response complete
                 {
                     timer.cancel();
-System.out.printf("handleData(): id=%d reply-id=%d Cancelling timer=%s\n",
-networkId, networkReplyId, System.identityHashCode(timer));
 
                     assert excessBytes == 0 : "bytes remaining after fetch response, pipelined requests are not being used";
                     nextResponseId++;
@@ -1274,8 +1252,6 @@ networkId, networkReplyId, System.identityHashCode(timer));
             int networkLimit)
         {
             timer.cancel();
-System.out.printf("handleListOffsetsResponse(): id=%d reply-id=%d Cancelling timer=%s\n",
-networkId, networkReplyId, System.identityHashCode(timer));
 
 
             final ListOffsetsResponseFW response =
@@ -1708,9 +1684,6 @@ networkId, networkReplyId, System.identityHashCode(timer));
 
                     timer.cancel();
                     timer.reset(readIdleTimeout, this::idle);
-System.out.printf("doDescribeConfigsRequest(): id=%d reply-id=%d reset timer=%s\n",
-networkId, networkReplyId, System.identityHashCode(timer));
-
                 }
             }
         }
@@ -1771,9 +1744,6 @@ networkId, networkReplyId, System.identityHashCode(timer));
 
                     timer.cancel();
                     timer.reset(readIdleTimeout, this::idle);
-System.out.printf("doMetadataRequest(): id=%d reply-id=%d reset timer=%s\n",
-networkId, networkReplyId, System.identityHashCode(timer));
-
                 }
             }
         }
@@ -1803,9 +1773,6 @@ networkId, networkReplyId, System.identityHashCode(timer));
             final int networkLimit)
         {
             timer.cancel();
-System.out.printf("handleDescribeConfigsResponse(): id=%d reply-id=%d Cancelling timer=%s\n",
-networkId, networkReplyId, System.identityHashCode(timer));
-
 
             final DescribeConfigsResponseFW describeConfigsResponse =
                     NetworkConnectionPool.this.describeConfigsResponseRO.wrap(networkBuffer, networkOffset, networkLimit);
@@ -1883,8 +1850,6 @@ networkId, networkReplyId, System.identityHashCode(timer));
             final int networkLimit)
         {
             timer.cancel();
-System.out.printf("handleMetadataResponse(): id=%d reply-id=%d Cancelling timer=%s\n",
-networkId, networkReplyId, System.identityHashCode(timer));
 
 
             final MetadataResponseFW metadataResponse =

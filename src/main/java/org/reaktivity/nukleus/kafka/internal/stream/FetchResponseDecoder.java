@@ -555,6 +555,7 @@ public class FetchResponseDecoder implements ResponseDecoder
                 messageDispatcher.dispatch(partition, requestedOffset, currentFetchAt, highWatermark,
                         key, headers, timestamp, traceId, value);
             }
+
             newOffset = headersLimit;
             decoderState = this::decodeRecordLength;
         }
