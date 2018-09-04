@@ -273,6 +273,13 @@ public final class NetworkConnectionPool
     private final LongArrayList offsetsWorkList = new LongArrayList();
     private final LongSupplier historicalFetches;
     private final LongSupplier idleRequests;
+    private final LongSupplier metadataTimeoutsScheduled;
+    private final LongSupplier metadataTimeoutsCancelled;
+    private final LongSupplier configsTimeoutsScheduled;
+    private final LongSupplier configsTimeoutsCancelled;
+    private final LongSupplier fetchTimeoutsScheduled;
+    private final LongSupplier fetchTimeoutsCancelled;
+
     private int nextAttachId;
 
     NetworkConnectionPool(
@@ -299,6 +306,18 @@ public final class NetworkConnectionPool
                 format("%s.%s.%d", KafkaNukleusFactorySpi.HISTORICAL_FETCHES, networkName, networkRef));
         this.idleRequests = supplyCounter.apply(
                 format("%s.%s.%d", KafkaNukleusFactorySpi.IDLE_REQUESTS, networkName, networkRef));
+        this.metadataTimeoutsScheduled = supplyCounter.apply(
+                format("%s.%s.%d", KafkaNukleusFactorySpi.METADATA_TIMEOUTS_SCHEDULED, networkName, networkRef));
+        this.metadataTimeoutsCancelled = supplyCounter.apply(
+                format("%s.%s.%d", KafkaNukleusFactorySpi.METADATA_TIMEOUTS_CANCELLED, networkName, networkRef));
+        this.configsTimeoutsScheduled = supplyCounter.apply(
+                format("%s.%s.%d", KafkaNukleusFactorySpi.CONFIGS_TIMEOUTS_SCHEDULED, networkName, networkRef));
+        this.configsTimeoutsCancelled = supplyCounter.apply(
+                format("%s.%s.%d", KafkaNukleusFactorySpi.CONFIGS_TIMEOUTS_CANCELLED, networkName, networkRef));
+        this.fetchTimeoutsScheduled = supplyCounter.apply(
+                format("%s.%s.%d", KafkaNukleusFactorySpi.FETCH_TIMEOUTS_SCHEDULED, networkName, networkRef));
+        this.fetchTimeoutsCancelled = supplyCounter.apply(
+                format("%s.%s.%d", KafkaNukleusFactorySpi.FETCH_TIMEOUTS_CANCELLED, networkName, networkRef));
         this.encodeBuffer = new UnsafeBuffer(new byte[clientStreamFactory.bufferPool.slotCapacity()]);
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
@@ -1090,6 +1109,7 @@ public final class NetworkConnectionPool
 
                 timer.cancel();
                 clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer);
+                fetchTimeoutsScheduled.getAsLong();
             }
         }
 
@@ -1190,6 +1210,7 @@ public final class NetworkConnectionPool
 
                 timer.cancel();
                 clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer);
+                fetchTimeoutsScheduled.getAsLong();
             }
         }
 
@@ -1222,7 +1243,7 @@ public final class NetworkConnectionPool
                 if (excessBytes >= 0) // response complete
                 {
                     timer.cancel();
-
+                    fetchTimeoutsCancelled.getAsLong();
                     assert excessBytes == 0 : "bytes remaining after fetch response, pipelined requests are not being used";
                     nextResponseId++;
                     doRequestIfNeeded();
@@ -1698,6 +1719,7 @@ public final class NetworkConnectionPool
 
                     timer.cancel();
                     clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer);
+                    configsTimeoutsScheduled.getAsLong();
                 }
             }
         }
@@ -1758,6 +1780,7 @@ public final class NetworkConnectionPool
 
                     timer.cancel();
                     clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer);
+                    metadataTimeoutsScheduled.getAsLong();
                 }
             }
         }
@@ -1787,6 +1810,7 @@ public final class NetworkConnectionPool
             final int networkLimit)
         {
             timer.cancel();
+            configsTimeoutsCancelled.getAsLong();
 
             final DescribeConfigsResponseFW describeConfigsResponse =
                     describeConfigsResponseRO.tryWrap(networkBuffer, networkOffset, networkLimit);
@@ -1886,6 +1910,7 @@ public final class NetworkConnectionPool
             final int networkLimit)
         {
             timer.cancel();
+            metadataTimeoutsCancelled.getAsLong();
 
             KafkaError error = decodeMetadataResponse(networkBuffer, networkOffset, networkLimit);
             final TopicMetadata topicMetadata = pendingTopicMetadata;

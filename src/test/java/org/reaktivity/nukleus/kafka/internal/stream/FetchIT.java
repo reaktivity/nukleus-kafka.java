@@ -48,7 +48,7 @@ public class FetchIT
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
-        .counterValuesBufferCapacity(1024)
+        .counterValuesBufferCapacity(4096)
         .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false")
         .configure(KafkaConfiguration.MESSAGE_CACHE_CAPACITY_PROPERTY, "0")
         .clean();

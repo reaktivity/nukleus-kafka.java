@@ -54,6 +54,12 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
     public static final String HISTORICAL_FETCHES = "historical.fetches";
     private static final String MESSAGE_CACHE_BUFFER_RELEASES = "message.cache.buffer.releases";
     public static final String IDLE_REQUESTS = "idle.requests";
+    public static final String METADATA_TIMEOUTS_SCHEDULED = "metadata.timeouts.scheduled";
+    public static final String METADATA_TIMEOUTS_CANCELLED = "metadata.timeouts.cancelled";
+    public static final String CONFIGS_TIMEOUTS_SCHEDULED = "describe.configs.timeouts.scheduled";
+    public static final String CONFIGS_TIMEOUTS_CANCELLED = "describe.configs.timeouts.cancelled";
+    public static final String FETCH_TIMEOUTS_SCHEDULED = "fetch.timeouts.scheduled";
+    public static final String FETCH_TIMEOUTS_CANCELLED = "fetch.timeouts.cancelled";
 
     private static final MemoryManager OUT_OF_SPACE_MEMORY_MANAGER = new MemoryManager()
     {
