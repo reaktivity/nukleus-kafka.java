@@ -43,6 +43,11 @@ public class DelayedTaskScheduler
         timerWheel.rescheduleTimeout(delay, TimeUnit.MILLISECONDS, timer);
     }
 
+    public void rescheduleTimeout(long delay, TimerWheel.Timer timer, Runnable task)
+    {
+        timerWheel.rescheduleTimeout(delay, TimeUnit.MILLISECONDS, timer, task);
+    }
+
     public int process()
     {
         if (timerWheel.computeDelayInMs() <= 0)

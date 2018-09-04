@@ -53,13 +53,10 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
     public static final String MESSAGE_CACHE_BUFFER_ACQUIRES = "message.cache.buffer.acquires";
     public static final String HISTORICAL_FETCHES = "historical.fetches";
     private static final String MESSAGE_CACHE_BUFFER_RELEASES = "message.cache.buffer.releases";
-    public static final String IDLE_REQUESTS = "idle.requests";
-    public static final String METADATA_TIMEOUTS_SCHEDULED = "metadata.timeouts.scheduled";
-    public static final String METADATA_TIMEOUTS_CANCELLED = "metadata.timeouts.cancelled";
-    public static final String CONFIGS_TIMEOUTS_SCHEDULED = "describe.configs.timeouts.scheduled";
-    public static final String CONFIGS_TIMEOUTS_CANCELLED = "describe.configs.timeouts.cancelled";
-    public static final String FETCH_TIMEOUTS_SCHEDULED = "fetch.timeouts.scheduled";
-    public static final String FETCH_TIMEOUTS_CANCELLED = "fetch.timeouts.cancelled";
+    public static final String METADATA_REQUEST_IDLE_TIMEOUTS = "metadata.request.idle.timeouts";
+    public static final String DESCRIBE_CONFIGS_REQUEST_IDLE_TIMEOUTS = "describe.configs.request.idle.timeouts";
+    public static final String LIST_OFFSETS_REQUEST_IDLE_TIMEOUTS = "list.offsets.request.idle.timeouts";
+    public static final String FETCH_REQUEST_IDLE_TIMEOUTS = "fetch.request.idle.timeouts";
 
     private static final MemoryManager OUT_OF_SPACE_MEMORY_MANAGER = new MemoryManager()
     {
