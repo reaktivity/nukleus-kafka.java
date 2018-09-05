@@ -47,7 +47,7 @@ public class FetchLimitsIT
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
-        .counterValuesBufferCapacity(1024)
+        .counterValuesBufferCapacity(4096)
         .clean()
         .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false")
         .configure(ReaktorConfiguration.BUFFER_SLOT_CAPACITY_PROPERTY, 256)

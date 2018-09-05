@@ -51,6 +51,7 @@ import java.util.function.LongSupplier;
 
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
+import org.agrona.TimerWheel.Timer;
 import org.agrona.collections.ArrayUtil;
 import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.IntArrayList;
@@ -60,7 +61,7 @@ import org.agrona.collections.LongArrayList;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
-import org.reaktivity.nukleus.kafka.internal.KafkaNukleusFactorySpi;
+import org.reaktivity.nukleus.kafka.internal.KafkaRefCounters;
 import org.reaktivity.nukleus.kafka.internal.cache.CompactedPartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.DefaultPartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
@@ -248,6 +249,7 @@ public final class NetworkConnectionPool
     private final long networkRef;
     private final int fetchMaxBytes;
     private final int fetchPartitionMaxBytes;
+    private final int readIdleTimeout;
     private final BufferPool bufferPool;
 
     private final MessageCache messageCache;
@@ -269,7 +271,8 @@ public final class NetworkConnectionPool
 
     private final List<NetworkTopicPartition> partitionsWorkList = new ArrayList<NetworkTopicPartition>();
     private final LongArrayList offsetsWorkList = new LongArrayList();
-    private final LongSupplier historicalFetches;
+    private final KafkaRefCounters routeCounters;
+
     private int nextAttachId;
 
     NetworkConnectionPool(
@@ -281,7 +284,8 @@ public final class NetworkConnectionPool
         BufferPool bufferPool,
         MessageCache messageCache,
         Function<String, LongSupplier> supplyCounter,
-        boolean forceProactiveMessageCache)
+        boolean forceProactiveMessageCache,
+        int readIdleTimeout)
     {
         this.clientStreamFactory = clientStreamFactory;
         this.networkName = networkName;
@@ -291,13 +295,13 @@ public final class NetworkConnectionPool
         this.bufferPool = bufferPool;
         this.messageCache = messageCache;
         this.forceProactiveMessageCache = forceProactiveMessageCache;
-        this.historicalFetches = supplyCounter.apply(
-                format("%s.%s.%d", KafkaNukleusFactorySpi.HISTORICAL_FETCHES, networkName, networkRef));
+        this.routeCounters = clientStreamFactory.counters.supplyRef(networkName, networkRef);
         this.encodeBuffer = new UnsafeBuffer(new byte[clientStreamFactory.bufferPool.slotCapacity()]);
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
         this.routeHeadersByTopic = new HashMap<>();
         this.detachersById = new Int2ObjectHashMap<>();
+        this.readIdleTimeout = readIdleTimeout;
     }
 
     void doAttach(
@@ -524,6 +528,7 @@ public final class NetworkConnectionPool
     abstract class AbstractNetworkConnection
     {
         final MessageConsumer networkTarget;
+        Timer timer;
 
         long networkId;
         long networkCorrelationId;
@@ -550,7 +555,7 @@ public final class NetworkConnectionPool
         {
             this.networkTarget = NetworkConnectionPool.this.clientStreamFactory.router.supplyTarget(networkName);
             localDecodeBuffer = new UnsafeBuffer(allocateDirect(fetchPartitionMaxBytes));
-
+            timer = clientStreamFactory.scheduler.newBlankTimer();
         }
 
         @Override
@@ -602,6 +607,36 @@ public final class NetworkConnectionPool
         }
 
         abstract void doRequestIfNeeded();
+
+        final void metadataRequestIdle()
+        {
+            routeCounters.metadataRequestIdleTimeouts.getAsLong();
+            idle();
+        }
+
+        final void describeConfigsRequestIdle()
+        {
+            routeCounters.describeConfigsRequestIdleTimeouts.getAsLong();
+            idle();
+        }
+
+        final void fetchRequestIdle()
+        {
+            routeCounters.fetchRequestIdleTimeouts.getAsLong();
+            idle();
+        }
+
+        final void listOffsetsRequestIdle()
+        {
+            routeCounters.listOffsetsRequestIdleTimeouts.getAsLong();
+            idle();
+        }
+
+        final void idle()
+        {
+            abort();
+            handleConnectionFailed();
+        }
 
         final void abort()
         {
@@ -668,6 +703,7 @@ public final class NetworkConnectionPool
                 networkReplyId = 0L;
             }
             handleConnectionFailed();
+            timer.cancel();
         }
 
         private void handleStream(
@@ -756,6 +792,9 @@ public final class NetworkConnectionPool
         void handleData(
             DataFW data)
         {
+            timer.cancel();
+            clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer);
+
             final OctetsFW payload = data.payload();
             final long networkTraceId = data.trace();
 
@@ -863,6 +902,7 @@ public final class NetworkConnectionPool
             }
             doReinitialize();
             doRequestIfNeeded();
+            timer.cancel();
         }
 
         private void handleAbort(
@@ -874,6 +914,7 @@ public final class NetworkConnectionPool
                 this.networkId = 0L;
             }
             handleConnectionFailed();
+            timer.cancel();
         }
 
         void doOfferResponseBudget()
@@ -1065,6 +1106,9 @@ public final class NetworkConnectionPool
                 NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId,
                         networkRequestPadding, payload);
                 networkRequestBudget -= payload.sizeof() + networkRequestPadding;
+
+                timer.cancel();
+                clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer, this::fetchRequestIdle);
             }
         }
 
@@ -1162,6 +1206,9 @@ public final class NetworkConnectionPool
                 NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId,
                         networkRequestPadding, payload);
                 networkRequestBudget -= payload.sizeof() + networkRequestPadding;
+
+                timer.cancel();
+                clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer, this::listOffsetsRequestIdle);
             }
         }
 
@@ -1180,6 +1227,9 @@ public final class NetworkConnectionPool
             }
             else
             {
+                timer.cancel();
+                clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer);
+
                 final OctetsFW payload = data.payload();
                 networkResponseBudget -= payload.sizeof() + data.padding();
                 if (networkResponseBudget < 0)
@@ -1190,6 +1240,7 @@ public final class NetworkConnectionPool
                 doOfferResponseBudget();
                 if (excessBytes >= 0) // response complete
                 {
+                    timer.cancel();
                     assert excessBytes == 0 : "bytes remaining after fetch response, pipelined requests are not being used";
                     nextResponseId++;
                     doRequestIfNeeded();
@@ -1216,6 +1267,8 @@ public final class NetworkConnectionPool
             int networkOffset,
             int networkLimit)
         {
+            timer.cancel();
+
             final ListOffsetsResponseFW response = listOffsetsResponseRO.tryWrap(networkBuffer, networkOffset, networkLimit);
             if (response == null)
             {
@@ -1468,7 +1521,7 @@ public final class NetworkConnectionPool
     {
         private HistoricalFetchConnection(BrokerMetadata broker)
         {
-            super(broker, historicalFetches);
+            super(broker, routeCounters.historicalFetches);
         }
 
         @Override
@@ -1660,6 +1713,9 @@ public final class NetworkConnectionPool
                             networkRequestPadding, payload);
                     networkRequestBudget -= payload.sizeof() + networkRequestPadding;
                     pendingRequest = MetadataRequestType.DESCRIBE_CONFIGS;
+
+                    timer.cancel();
+                    clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer, this::describeConfigsRequestIdle);
                 }
             }
         }
@@ -1717,6 +1773,9 @@ public final class NetworkConnectionPool
                             networkRequestPadding, payload);
                     networkRequestBudget -= payload.sizeof() + networkRequestPadding;
                     pendingRequest = MetadataRequestType.METADATA;
+
+                    timer.cancel();
+                    clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer, this::metadataRequestIdle);
                 }
             }
         }
@@ -1745,6 +1804,8 @@ public final class NetworkConnectionPool
             int networkOffset,
             final int networkLimit)
         {
+            timer.cancel();
+
             final DescribeConfigsResponseFW describeConfigsResponse =
                     describeConfigsResponseRO.tryWrap(networkBuffer, networkOffset, networkLimit);
 
@@ -1842,6 +1903,8 @@ public final class NetworkConnectionPool
             int networkOffset,
             final int networkLimit)
         {
+            timer.cancel();
+
             KafkaError error = decodeMetadataResponse(networkBuffer, networkOffset, networkLimit);
             final TopicMetadata topicMetadata = pendingTopicMetadata;
             switch(error)

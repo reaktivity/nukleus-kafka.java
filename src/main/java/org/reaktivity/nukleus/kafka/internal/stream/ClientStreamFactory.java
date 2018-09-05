@@ -39,6 +39,7 @@ import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
+import org.reaktivity.nukleus.kafka.internal.KafkaCounters;
 import org.reaktivity.nukleus.kafka.internal.cache.DefaultMessageCache;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
 import org.reaktivity.nukleus.kafka.internal.function.IntBooleanConsumer;
@@ -64,6 +65,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
 import org.reaktivity.nukleus.kafka.internal.util.Flags;
+import org.reaktivity.nukleus.kafka.internal.util.DelayedTaskScheduler;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 
@@ -120,6 +122,8 @@ public final class ClientStreamFactory implements StreamFactory
     final BufferPool bufferPool;
     final MessageCache messageCache;
     private final MutableDirectBuffer writeBuffer;
+    final DelayedTaskScheduler scheduler;
+    final KafkaCounters counters;
 
     final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
 
@@ -130,7 +134,7 @@ public final class ClientStreamFactory implements StreamFactory
     private final int fetchMaxBytes;
     private final int fetchPartitionMaxBytes;
     private final boolean forceProactiveMessageCache;
-
+    private final int readIdleTimeout;
 
     public ClientStreamFactory(
         KafkaConfiguration config,
@@ -144,11 +148,14 @@ public final class ClientStreamFactory implements StreamFactory
         Function<String, LongSupplier> supplyCounter,
         Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations,
         Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools,
-        Consumer<BiFunction<String, Long, NetworkConnectionPool>> setConnectionPoolFactory)
+        Consumer<BiFunction<String, Long, NetworkConnectionPool>> setConnectionPoolFactory,
+        DelayedTaskScheduler scheduler,
+        KafkaCounters counters)
     {
         this.fetchMaxBytes = config.fetchMaxBytes();
         this.fetchPartitionMaxBytes = config.fetchPartitionMaxBytes();
         this.forceProactiveMessageCache = config.messageCacheProactive();
+        this.readIdleTimeout = config.readIdleTimeout();
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
         this.bufferPool = requireNonNull(bufferPool);
@@ -163,7 +170,9 @@ public final class ClientStreamFactory implements StreamFactory
         groupMembers = new Long2LongHashMap(-1);
         setConnectionPoolFactory.accept((networkName, ref) ->
             new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes, bufferPool,
-                    messageCache, supplyCounter, forceProactiveMessageCache));
+                    messageCache, supplyCounter, forceProactiveMessageCache, readIdleTimeout));
+        this.scheduler = scheduler;
+        this.counters = counters;
     }
 
     @Override
@@ -220,7 +229,7 @@ public final class ClientStreamFactory implements StreamFactory
 
                 NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef,
                         ref -> new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes,
-                                bufferPool, messageCache, supplyCounter, forceProactiveMessageCache));
+                                bufferPool, messageCache, supplyCounter, forceProactiveMessageCache, readIdleTimeout));
 
                 newStream = new ClientAcceptStream(applicationThrottle, applicationId, connectionPool)::handleStream;
             }

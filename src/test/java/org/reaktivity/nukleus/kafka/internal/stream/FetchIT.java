@@ -29,6 +29,7 @@ import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
+import org.reaktivity.reaktor.test.annotation.Configure;
 
 public class FetchIT
 {
@@ -47,7 +48,7 @@ public class FetchIT
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
-        .counterValuesBufferCapacity(1024)
+        .counterValuesBufferCapacity(4096)
         .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false")
         .configure(KafkaConfiguration.MESSAGE_CACHE_CAPACITY_PROPERTY, "0")
         .clean();
@@ -1534,6 +1535,44 @@ public class FetchIT
         k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
         k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_ONE");
         k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_TWO");
+        k3po.finish();
+    }
+
+    @Test
+    @Configure(name=KafkaConfiguration.READ_IDLE_TIMEOUT_PROPERTY, value="2000")
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset/client",
+        "${server}/metadata.idle/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldTimeoutMetadataResponse() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Configure(name=KafkaConfiguration.READ_IDLE_TIMEOUT_PROPERTY, value="2000")
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset/client",
+        "${server}/describe.configs.idle/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldTimeoutDescribeConfigsResponse() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Configure(name=KafkaConfiguration.READ_IDLE_TIMEOUT_PROPERTY, value="2000")
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset.message/client",
+        "${server}/fetch.idle/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldTimeoutFetchResponse() throws Exception
+    {
+        k3po.start();
+        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
 
