@@ -28,19 +28,29 @@ public class DelayedTaskScheduler
         this.timerWheel = new TimerWheel(500, TimeUnit.MILLISECONDS, 32);
     }
 
+    public TimerWheel.Timer newBlankTimer()
+    {
+        return timerWheel.newBlankTimer();
+    }
+
     public TimerWheel.Timer newTimeout(long delay, Runnable task)
     {
         return timerWheel.newTimeout(delay, TimeUnit.MILLISECONDS, task);
     }
 
-    public void reScheduleTimeout(long delay, TimerWheel.Timer timer)
+    public void rescheduleTimeout(long delay, TimerWheel.Timer timer)
     {
         timerWheel.rescheduleTimeout(delay, TimeUnit.MILLISECONDS, timer);
     }
 
+    public void rescheduleTimeout(long delay, TimerWheel.Timer timer, Runnable task)
+    {
+        timerWheel.rescheduleTimeout(delay, TimeUnit.MILLISECONDS, timer, task);
+    }
+
     public int process()
     {
-        if (timerWheel.computeDelayInMs() == 0)
+        if (timerWheel.computeDelayInMs() <= 0)
         {
             return timerWheel.expireTimers();
         }
