@@ -51,12 +51,7 @@ import org.reaktivity.nukleus.kafka.internal.util.DelayedTaskScheduler;
 public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
 {
     public static final String MESSAGE_CACHE_BUFFER_ACQUIRES = "message.cache.buffer.acquires";
-    public static final String HISTORICAL_FETCHES = "historical.fetches";
     private static final String MESSAGE_CACHE_BUFFER_RELEASES = "message.cache.buffer.releases";
-    public static final String METADATA_REQUEST_IDLE_TIMEOUTS = "metadata.request.idle.timeouts";
-    public static final String DESCRIBE_CONFIGS_REQUEST_IDLE_TIMEOUTS = "describe.configs.request.idle.timeouts";
-    public static final String LIST_OFFSETS_REQUEST_IDLE_TIMEOUTS = "list.offsets.request.idle.timeouts";
-    public static final String FETCH_REQUEST_IDLE_TIMEOUTS = "fetch.request.idle.timeouts";
 
     private static final MemoryManager OUT_OF_SPACE_MEMORY_MANAGER = new MemoryManager()
     {

@@ -61,7 +61,7 @@ import org.agrona.collections.LongArrayList;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
-import org.reaktivity.nukleus.kafka.internal.KafkaNukleusFactorySpi;
+import org.reaktivity.nukleus.kafka.internal.KafkaRefCounters;
 import org.reaktivity.nukleus.kafka.internal.cache.CompactedPartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.DefaultPartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
@@ -271,11 +271,7 @@ public final class NetworkConnectionPool
 
     private final List<NetworkTopicPartition> partitionsWorkList = new ArrayList<NetworkTopicPartition>();
     private final LongArrayList offsetsWorkList = new LongArrayList();
-    private final LongSupplier historicalFetches;
-    private final LongSupplier metadataRequestIdleTimeouts;
-    private final LongSupplier describeConfigsRequestIdleTimeouts;
-    private final LongSupplier listOffsetsRequestIdleTimeouts;
-    private final LongSupplier fetchRequestIdleTimeouts;
+    private final KafkaRefCounters routeCounters;
 
     private int nextAttachId;
 
@@ -299,17 +295,7 @@ public final class NetworkConnectionPool
         this.bufferPool = bufferPool;
         this.messageCache = messageCache;
         this.forceProactiveMessageCache = forceProactiveMessageCache;
-        this.historicalFetches = supplyCounter.apply(
-                format("%s.%s.%d", KafkaNukleusFactorySpi.HISTORICAL_FETCHES, networkName, networkRef));
-        this.metadataRequestIdleTimeouts = supplyCounter.apply(
-                format("%s.%s.%d", KafkaNukleusFactorySpi.METADATA_REQUEST_IDLE_TIMEOUTS, networkName, networkRef));
-        this.describeConfigsRequestIdleTimeouts = supplyCounter.apply(
-                format("%s.%s.%d", KafkaNukleusFactorySpi.DESCRIBE_CONFIGS_REQUEST_IDLE_TIMEOUTS, networkName, networkRef));
-        this.listOffsetsRequestIdleTimeouts = supplyCounter.apply(
-                format("%s.%s.%d", KafkaNukleusFactorySpi.LIST_OFFSETS_REQUEST_IDLE_TIMEOUTS, networkName, networkRef));
-        this.fetchRequestIdleTimeouts = supplyCounter.apply(
-                format("%s.%s.%d", KafkaNukleusFactorySpi.FETCH_REQUEST_IDLE_TIMEOUTS, networkName, networkRef));
-
+        this.routeCounters = clientStreamFactory.counters.supplyRef(networkName, networkRef);
         this.encodeBuffer = new UnsafeBuffer(new byte[clientStreamFactory.bufferPool.slotCapacity()]);
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
@@ -624,25 +610,25 @@ public final class NetworkConnectionPool
 
         final void metadataRequestIdle()
         {
-            metadataRequestIdleTimeouts.getAsLong();
+            routeCounters.metadataRequestIdleTimeouts.getAsLong();
             idle();
         }
 
         final void describeConfigsRequestIdle()
         {
-            describeConfigsRequestIdleTimeouts.getAsLong();
+            routeCounters.describeConfigsRequestIdleTimeouts.getAsLong();
             idle();
         }
 
         final void fetchRequestIdle()
         {
-            fetchRequestIdleTimeouts.getAsLong();
+            routeCounters.fetchRequestIdleTimeouts.getAsLong();
             idle();
         }
 
         final void listOffsetsRequestIdle()
         {
-            listOffsetsRequestIdleTimeouts.getAsLong();
+            routeCounters.listOffsetsRequestIdleTimeouts.getAsLong();
             idle();
         }
 
@@ -1535,7 +1521,7 @@ public final class NetworkConnectionPool
     {
         private HistoricalFetchConnection(BrokerMetadata broker)
         {
-            super(broker, historicalFetches);
+            super(broker, routeCounters.historicalFetches);
         }
 
         @Override
