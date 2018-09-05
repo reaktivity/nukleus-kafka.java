@@ -126,11 +126,16 @@ public class FetchIT
     @Test
     @Specification({
         "${routeAnyTopic}/client/controller",
-        "${client}/unknown.topic.name/client",
-        "${metadata}/two.topics.error.unknown.topic/server" })
+        "${client}/zero.offset.two.topics/client",
+        "${metadata}/unknown.and.known.topics/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldRejectWhenTopicIsUnknown() throws Exception
+    public void shouldRepeatMetadataRequestsWhenTopicIsUnknownWithoutBlockingOtherTopicUsage() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("SECOND_UNKNOWN_TOPIC_METADATA_REQUEST_RECEIVED");
+        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
+        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
+        k3po.notifyBarrier("WRITE_SECOND_UNKNOWN_TOPIC_METADATA_RESPONSE");
         k3po.finish();
     }
 
@@ -1407,10 +1412,10 @@ public class FetchIT
     @Test
     @Specification({
         "${routeAnyTopic}/client/controller",
-        "${client}/zero.offset.message.two.topics.one.detached/client",
+        "${client}/zero.offset.message.two.topics/client",
         "${server}/live.fetch.topic.not.found.permanently/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldDetachClientsWhenTopicIsPermanentlyDeleted() throws Exception
+    public void shouldNotDetachClientsWhenTopicIsPermanentlyDeleted() throws Exception
     {
         k3po.start();
         k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
@@ -1418,6 +1423,17 @@ public class FetchIT
         k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
         awaitWindowFromClient();
         k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${routeAnyTopic}/client/controller",
+        "${client}/zero.offset.message.end.with.offset.zero.message/client",
+        "${server}/live.fetch.topic.not.found.recovered/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldEndWithOffsetZeroWhenTopicIsDeletedThenRecreated() throws Exception
+    {
         k3po.finish();
     }
 

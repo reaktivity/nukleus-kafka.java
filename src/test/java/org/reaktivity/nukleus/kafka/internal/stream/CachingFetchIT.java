@@ -117,11 +117,16 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${routeAnyTopic}/client/controller",
-        "${client}/unknown.topic.name/client",
-        "${metadata}/two.topics.error.unknown.topic/server" })
+        "${client}/zero.offset.two.topics/client",
+        "${metadata}/unknown.and.known.topics/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldRejectWhenTopicIsUnknown() throws Exception
+    public void shouldRepeatMetadataRequestsWhenTopicIsUnknownWithoutBlockingOtherTopicUsage() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("SECOND_UNKNOWN_TOPIC_METADATA_REQUEST_RECEIVED");
+        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
+        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
+        k3po.notifyBarrier("WRITE_SECOND_UNKNOWN_TOPIC_METADATA_RESPONSE");
         k3po.finish();
     }
 
