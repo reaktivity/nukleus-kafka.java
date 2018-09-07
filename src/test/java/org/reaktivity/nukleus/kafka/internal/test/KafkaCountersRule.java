@@ -38,7 +38,6 @@ public class KafkaCountersRule implements TestRule
             @Override
             public void evaluate() throws Throwable
             {
-                KafkaController controller = controller();
                 base.evaluate();
             }
         };
