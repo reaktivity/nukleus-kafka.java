@@ -263,6 +263,7 @@ public final class NetworkConnectionPool
     private AbstractFetchConnection[] connections = new LiveFetchConnection[0];
     private HistoricalFetchConnection[] historicalConnections = new HistoricalFetchConnection[0];
     private MetadataConnection metadataConnection;
+    private final Backoff metadataBackoffMillis;
 
     private final Map<String, TopicMetadata> topicMetadataByName;
     private final Map<String, NetworkTopic> topicsByName;
@@ -302,6 +303,7 @@ public final class NetworkConnectionPool
         this.routeHeadersByTopic = new HashMap<>();
         this.detachersById = new Int2ObjectHashMap<>();
         this.readIdleTimeout = readIdleTimeout;
+        this.metadataBackoffMillis = new Backoff(500, 10_000);
     }
 
     void doAttach(
@@ -2628,6 +2630,7 @@ public final class NetworkConnectionPool
         private long[] offsetsOutOfRangeByPartition;
         private List<Consumer<TopicMetadata>> consumers = new ArrayList<>();
         private MetadataRequestType nextRequiredRequestType = MetadataRequestType.METADATA;
+        private int tries;
 
         TopicMetadata(String topicName)
         {
@@ -2652,11 +2655,11 @@ public final class NetworkConnectionPool
                     {
                         nodeIdsByPartition[i] = UNKNOWN_BROKER;
                     }
-                    refreshDelayMillis = backoff.initial();
+                    tries = 0;
                 }
                 else
                 {
-                    refreshDelayMillis = backoff.next();
+                    tries++;
                 }
             }
             this.complete = complete;

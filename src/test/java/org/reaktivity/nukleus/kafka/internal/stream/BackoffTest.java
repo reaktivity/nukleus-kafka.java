@@ -28,16 +28,6 @@ public final class BackoffTest
         Backoff backoff = new Backoff(500, 10_000);
         assertEquals(500, backoff.next(0));
     }
-    @Test
-    public void test()
-    {
-        Backoff backoff = new Backoff(1, 10_000);
-        assertEquals(10_000, backoff.next(30));
-        assertEquals(10_000, backoff.next(31));
-        assertEquals(10_000, backoff.next(32));
-        assertEquals(10_000, backoff.next(33));
-        assertEquals(10_000, backoff.next(40));
-    }
 
     @Test
     public void shouldDoubleUpToMaximum()
@@ -54,12 +44,22 @@ public final class BackoffTest
         assertEquals(10000, backoff.next(123456));
     }
 
-    @Test
-    public void shouldHandleMaximumLessThanMinimum()
+    @Test(expected = AssertionError.class)
+    public void shouldRejectMaximumLessThanMinimum()
     {
-        Backoff backoff = new Backoff(1000, 50);
-        assertEquals(50, backoff.next(0));
-        assertEquals(50, backoff.next(123));
+        new Backoff(1000, 50);
+    }
+
+    @Test(expected = AssertionError.class)
+    public void shouldRejectNegativeMaximum()
+    {
+        new Backoff(-10, -50);
+    }
+
+    @Test(expected = AssertionError.class)
+    public void shouldRejectNegativeMinium()
+    {
+        new Backoff(-10, 50);
     }
 
 }

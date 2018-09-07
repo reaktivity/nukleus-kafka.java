@@ -21,25 +21,28 @@ public class Backoff
 {
     private final int minimum;
     private final int maximum;
+    private final int maximumTries;
 
     Backoff(
         int minimum,
         int maximum)
     {
+        assert minimum > 0;
+        assert maximum > minimum;
         this.minimum = minimum;
         this.maximum = maximum;
+        this.maximumTries = Integer.numberOfLeadingZeros(minimum) - 1;
     }
 
     public int next(
         int tries)
     {
-        int candidate = minimum;
-        if (tries < 32)
+        int candidate = maximum;
+        if (tries < maximumTries)
         {
-            candidate <<= tries;
-            System.out.format("%d << %d = %d\n", minimum, tries, candidate);
+            candidate = minimum << tries;
         }
-        return candidate <= 0 || candidate == minimum ? maximum : Math.min(candidate, maximum);
+        return Math.min(candidate, maximum);
     }
 
     @Override
