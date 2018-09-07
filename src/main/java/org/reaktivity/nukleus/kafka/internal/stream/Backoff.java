@@ -28,7 +28,7 @@ public class Backoff
         int maximum)
     {
         assert minimum > 0;
-        assert maximum > minimum;
+        assert maximum >= minimum;
         this.minimum = minimum;
         this.maximum = maximum;
         this.maximumTries = Integer.numberOfLeadingZeros(minimum) - 1;

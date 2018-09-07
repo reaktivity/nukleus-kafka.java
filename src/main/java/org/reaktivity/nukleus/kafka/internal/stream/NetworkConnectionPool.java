@@ -110,6 +110,8 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.TcpBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
+import org.reaktivity.nukleus.kafka.internal.util.DelayedTaskScheduler;
+import org.reaktivity.reaktor.test.ReaktorRule;
 
 public final class NetworkConnectionPool
 {
@@ -303,7 +305,7 @@ public final class NetworkConnectionPool
         this.routeHeadersByTopic = new HashMap<>();
         this.detachersById = new Int2ObjectHashMap<>();
         this.readIdleTimeout = readIdleTimeout;
-        this.metadataBackoffMillis = new Backoff(500, 10_000);
+        this.metadataBackoffMillis = new Backoff(10, 10_000);
     }
 
     void doAttach(
@@ -1400,8 +1402,10 @@ public final class NetworkConnectionPool
             case UNKNOWN_TOPIC_OR_PARTITION:
             case LEADER_NOT_AVAILABLE:
             case NOT_LEADER_FOR_PARTITION:
-                topicMetadataByName.get(topicName).setComplete(false);
-                metadataConnection.doRequestIfNeeded();
+                topicMetadataByName.get(topicName).scheduleRefresh(
+                        clientStreamFactory.scheduler,
+                        metadataBackoffMillis,
+                        metadataConnection);
                 break;
             default:
                 // kafka error, trigger connection failed and reconnect
@@ -1874,8 +1878,11 @@ public final class NetworkConnectionPool
 
             if (error.isRecoverable())
             {
-                pendingTopicMetadata.invalidate();
-                doRequestIfNeeded();
+                pendingTopicMetadata.scheduleRefresh(
+                        clientStreamFactory.scheduler,
+                        metadataBackoffMillis,
+                        metadataConnection);
+                pendingTopicMetadata = null;
             }
             else if (error != NONE)
             {
@@ -1893,7 +1900,7 @@ public final class NetworkConnectionPool
                     metadata.setErrorCode(error);
                     metadata.setCompacted(compacted);
                     metadata.setDeleteRetentionMs(deleteRetentionMs);
-                    metadata.setComplete(true);
+                    metadata.setComplete();
                     metadata.flush();
                 }
             }
@@ -1917,8 +1924,11 @@ public final class NetworkConnectionPool
             case LEADER_NOT_AVAILABLE:
             case TOPIC_AUTHORIZATION_FAILED:
             case UNKNOWN_TOPIC_OR_PARTITION:
-                pendingTopicMetadata.invalidate();
-                doRequestIfNeeded();
+                pendingTopicMetadata.scheduleRefresh(
+                        clientStreamFactory.scheduler,
+                        metadataBackoffMillis,
+                        metadataConnection);
+                pendingTopicMetadata = null;
                 break;
             case INVALID_TOPIC_EXCEPTION:
             case PARTITION_COUNT_CHANGED:
@@ -2630,7 +2640,8 @@ public final class NetworkConnectionPool
         private long[] offsetsOutOfRangeByPartition;
         private List<Consumer<TopicMetadata>> consumers = new ArrayList<>();
         private MetadataRequestType nextRequiredRequestType = MetadataRequestType.METADATA;
-        private int tries;
+        private int retries;
+        private Timer retryTimer;
 
         TopicMetadata(String topicName)
         {
@@ -2642,27 +2653,40 @@ public final class NetworkConnectionPool
             return complete;
         }
 
-        void setComplete(boolean complete)
+        void setComplete()
         {
-            if (!complete)
+            complete = true;
+            if (retryTimer != null)
             {
-                if (this.complete)
-                {
-                    nextRequiredRequestType = MetadataRequestType.METADATA;
-
-                    // Prevent fetching for the topic
-                    for (int i = 0; i < nodeIdsByPartition.length; i++)
-                    {
-                        nodeIdsByPartition[i] = UNKNOWN_BROKER;
-                    }
-                    tries = 0;
-                }
-                else
-                {
-                    tries++;
-                }
+                retryTimer.cancel();
             }
-            this.complete = complete;
+        }
+
+        void scheduleRefresh(
+            DelayedTaskScheduler scheduler,
+            Backoff backoffMillis,
+            MetadataConnection connection)
+        {
+            if (complete)
+            {
+                invalidate();
+                retries = 0;
+            }
+            else
+            {
+                retries++;
+            }
+            complete = true;
+            Timer timer = getOrCreateTimer(scheduler);
+            timer.cancel();
+            scheduler.rescheduleTimeout(backoffMillis.next(retries), timer, () -> doRefresh(connection));
+        }
+
+        void doRefresh(
+            MetadataConnection connection)
+        {
+            complete = false;
+            connection.doRequestIfNeeded();
         }
 
         MetadataRequestType nextRequiredRequestType()
@@ -2874,6 +2898,16 @@ public final class NetworkConnectionPool
                 }
             }
             return result;
+        }
+
+        private Timer getOrCreateTimer(
+            DelayedTaskScheduler scheduler)
+        {
+            if (retryTimer == null)
+            {
+                retryTimer = scheduler.newBlankTimer();
+            }
+            return retryTimer;
         }
     }
 
