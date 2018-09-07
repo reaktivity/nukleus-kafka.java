@@ -17,21 +17,37 @@ package org.reaktivity.nukleus.kafka.internal;
 
 import org.agrona.collections.Long2ObjectHashMap;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.function.LongConsumer;
 import java.util.function.LongSupplier;
 
 public class KafkaCounters
 {
     private final Function<String, LongSupplier> supplyCounter;
+    private final Function<String, LongConsumer> supplyAccumulator;
     private final Map<String, Long2ObjectHashMap<KafkaRefCounters>> countersByRef;
+
+    public final LongSupplier cacheHits;
+    public final LongSupplier cacheMisses;
+    public final LongConsumer cacheInUse;
+    public final LongSupplier cacheBufferAcquires;
+    public final LongSupplier cacheBufferReleases;
+
 
     public KafkaCounters(
         Function<String, LongSupplier> supplyCounter,
-        Map<String, Long2ObjectHashMap<KafkaRefCounters>> countersByRef)
+        Function<String, LongConsumer> supplyAccumulator)
     {
         this.supplyCounter = supplyCounter;
-        this.countersByRef = countersByRef;
+        this.supplyAccumulator = supplyAccumulator;
+        this.countersByRef = new HashMap<>();
+        this.cacheHits = supplyCounter.apply("cache.hits");
+        this.cacheMisses = supplyCounter.apply("cache.misses");
+        this.cacheInUse = supplyAccumulator.apply("cache.inuse");
+        this.cacheBufferAcquires = supplyCounter.apply("message.cache.buffer.acquires");
+        this.cacheBufferReleases = supplyCounter.apply("message.cache.buffer.releases");
     }
 
     public KafkaRefCounters supplyRef(
@@ -43,10 +59,4 @@ public class KafkaCounters
         return refCounters.computeIfAbsent(networkRef, ref -> new KafkaRefCounters(networkName, networkRef, supplyCounter));
     }
 
-    private KafkaRefCounters newRouteCounters(
-        String networkName,
-        long networkRef)
-    {
-        return new KafkaRefCounters(networkName, networkRef, supplyCounter);
-    }
 }

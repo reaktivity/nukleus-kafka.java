@@ -2357,6 +2357,8 @@ public final class NetworkConnectionPool
 
                 if (!partitionRequestNeeded)
                 {
+                    clientStreamFactory.counters.cacheHits.getAsLong();
+
                     if (!entries.hasNext())
                     {
                         //  End of the partition index reached, advance to latest offset
@@ -2370,6 +2372,8 @@ public final class NetworkConnectionPool
                 }
                 else
                 {
+                    clientStreamFactory.counters.cacheMisses.getAsLong();
+
                     // Update the partition request if needed
                     if (newOffset > fetchOffset)
                     {

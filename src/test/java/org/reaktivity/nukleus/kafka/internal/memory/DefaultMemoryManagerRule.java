@@ -20,11 +20,15 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.util.function.Function;
+import java.util.function.LongConsumer;
+import java.util.function.LongSupplier;
 
 import org.agrona.LangUtil;
 import org.junit.rules.TestRule;
 import org.junit.runner.Description;
 import org.junit.runners.model.Statement;
+import org.reaktivity.nukleus.kafka.internal.KafkaCounters;
 
 public class DefaultMemoryManagerRule implements TestRule
 {
@@ -55,7 +59,10 @@ public class DefaultMemoryManagerRule implements TestRule
             LangUtil.rethrowUnchecked(e);
         }
         this.layout = mlb.build();
-        this.memoryManager = new DefaultMemoryManager(layout);
+        Function<String, LongSupplier> supplyCounter = (x) -> (LongSupplier) () -> 0;
+        Function<String, LongConsumer> supplyAccumulator = (x) -> (LongConsumer) value -> {};
+        KafkaCounters counters = new KafkaCounters(supplyCounter, supplyAccumulator);
+        this.memoryManager = new DefaultMemoryManager(layout, counters);
         return new Statement()
         {
             @Override
