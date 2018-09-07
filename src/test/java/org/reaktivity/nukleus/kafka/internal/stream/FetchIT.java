@@ -1347,26 +1347,6 @@ public class FetchIT
         "${server}/live.fetch.error.recovered/server" })
     @ScriptProperty({
     "networkAccept \"nukleus://target/streams/kafka\"",
-    "errorCode 3s"
-    })
-    public void shouldContinueReceivingMessagesWhenTopicFetchResponseIsErrorCode3DuringKafkaRestart() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/zero.offset.message.two.topics/client",
-        "${server}/live.fetch.error.recovered/server" })
-    @ScriptProperty({
-    "networkAccept \"nukleus://target/streams/kafka\"",
     "errorCode 6s"
     })
     public void shouldContinueReceivingMessagesAfterLeadershipElection() throws Exception
@@ -1430,7 +1410,7 @@ public class FetchIT
     @Test
     @Specification({
         "${routeAnyTopic}/client/controller",
-        "${client}/zero.offset.message.end.with.offset.zero.message/client",
+        "${client}/zero.offset.message.reattach.message/client",
         "${server}/live.fetch.topic.not.found.recovered/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldEndWithOffsetZeroWhenTopicIsDeletedThenRecreated() throws Exception
