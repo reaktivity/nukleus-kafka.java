@@ -850,7 +850,20 @@ public final class ClientStreamFactory implements StreamFactory
                     }
                     networkPool.doAttach(topicName, this.fetchOffsets, hashCode, fetchKey, headers,
                             this, this::writeableBytes, h -> progressHandler = h, this::onAttachPrepared, this::onMetadataError);
+
                     this.streamState = this::afterBegin;
+
+                    // Start the response stream to the client
+                    final long newReplyId = supplyStreamId.getAsLong();
+                    final String replyName = applicationName;
+                    final MessageConsumer newReply = router.supplyTarget(replyName);
+
+                    doKafkaBegin(newReply, newReplyId, 0L, applicationCorrelationId, applicationBeginExtension);
+                    router.setThrottle(applicationName, newReplyId, this::handleThrottle);
+
+                    doWindow(applicationThrottle, applicationId, 0, 0, 0);
+                    this.applicationReply = newReply;
+                    this.applicationReplyId = newReplyId;
                 }
             }
         }
@@ -858,17 +871,15 @@ public final class ClientStreamFactory implements StreamFactory
         private void onAttachPrepared(
             Consumer<IntBooleanConsumer> attacher)
         {
-            this.attacher = attacher;
-            final long newReplyId = supplyStreamId.getAsLong();
-            final String replyName = applicationName;
-            final MessageConsumer newReply = router.supplyTarget(replyName);
-
-            doKafkaBegin(newReply, newReplyId, 0L, applicationCorrelationId, applicationBeginExtension);
-            router.setThrottle(applicationName, newReplyId, this::handleThrottle);
-
-            doWindow(applicationThrottle, applicationId, 0, 0, 0);
-            this.applicationReply = newReply;
-            this.applicationReplyId = newReplyId;
+            if (budget.applicationReplyBudget() > 0)
+            {
+                attacher.accept(this::onAttached);
+                networkPool.doFlush();
+            }
+            else
+            {
+                this.attacher = attacher;
+            }
         }
 
         private void onAttached(

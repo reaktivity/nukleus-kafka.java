@@ -1913,10 +1913,11 @@ public final class NetworkConnectionPool
                 pendingTopicMetadata.nextRequiredRequestType = MetadataRequestType.DESCRIBE_CONFIGS;
                 break;
             case LEADER_NOT_AVAILABLE:
+            case TOPIC_AUTHORIZATION_FAILED:
+            case UNKNOWN_TOPIC_OR_PARTITION:
                 pendingTopicMetadata.invalidate();
                 doRequestIfNeeded();
                 break;
-            case UNKNOWN_TOPIC_OR_PARTITION:
             case INVALID_TOPIC_EXCEPTION:
             case PARTITION_COUNT_CHANGED:
                 String topicName = topicMetadata.topicName;
@@ -2640,17 +2641,25 @@ public final class NetworkConnectionPool
 
         void setComplete(boolean complete)
         {
-            this.complete = complete;
             if (!complete)
             {
-                nextRequiredRequestType = MetadataRequestType.METADATA;
-
-                // Prevent fetching for the topic
-                for (int i = 0; i < nodeIdsByPartition.length; i++)
+                if (this.complete)
                 {
-                    nodeIdsByPartition[i] = UNKNOWN_BROKER;
+                    nextRequiredRequestType = MetadataRequestType.METADATA;
+
+                    // Prevent fetching for the topic
+                    for (int i = 0; i < nodeIdsByPartition.length; i++)
+                    {
+                        nodeIdsByPartition[i] = UNKNOWN_BROKER;
+                    }
+                    refreshDelayMillis = backoff.initial();
+                }
+                else
+                {
+                    refreshDelayMillis = backoff.next();
                 }
             }
+            this.complete = complete;
         }
 
         MetadataRequestType nextRequiredRequestType()
@@ -2804,6 +2813,14 @@ public final class NetworkConnectionPool
             long badOffset)
         {
             offsetsOutOfRangeByPartition[partition] = badOffset;
+        }
+
+        @Override
+        public String toString()
+        {
+            return format(
+                    "Topic %s: errorCode=%s, compacted=%b, complete=%b, brokers=%s, nod",
+                    topicName, errorCode, compacted, complete, brokers, nodeIdsByPartition);
         }
 
         void doAttach(
