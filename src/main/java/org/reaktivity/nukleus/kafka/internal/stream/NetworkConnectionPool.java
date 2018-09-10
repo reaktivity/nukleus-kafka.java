@@ -1320,11 +1320,19 @@ public final class NetworkConnectionPool
                     final long offset = partition.firstOffset();
                     final int partitionId = partition.partitionId();
 
-                    if (topicMetadata.offsetsOutOfRangeByPartition[partitionId] == MAX_OFFSET)
+                    long outOfRangeOffset = topicMetadata.offsetsOutOfRangeByPartition[partitionId];
+                    if (outOfRangeOffset == MAX_OFFSET)
                     {
                         NetworkTopic networkTopic = topicsByName.get(topicName);
                         networkTopic.dispatcher.adjustOffset(partitionId, MAX_OFFSET, offset);
                         networkTopic.setLiveOffset(partitionId, offset);
+                    }
+                    else if (outOfRangeOffset > offset)
+                    {
+                        // first offset is now lower than client requested offset, topic was recreated,
+                        // force client(s) to re-attach at offset 0
+                        NetworkTopic networkTopic = topicsByName.get(topicName);
+                        networkTopic.dispatcher.detach(true);
                     }
                     else
                     {

@@ -126,22 +126,6 @@ public class FetchIT
 
     @Test
     @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/zero.offset.two.topics/client",
-        "${metadata}/unknown.and.known.topics/server" })
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldRepeatMetadataRequestsWhenTopicIsUnknownWithoutBlockingOtherTopicUsage() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("SECOND_UNKNOWN_TOPIC_METADATA_REQUEST_RECEIVED");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        k3po.notifyBarrier("WRITE_SECOND_UNKNOWN_TOPIC_METADATA_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
         "${route}/client/controller",
         "${client}/compacted.delivers.deleted.messages/client",
         "${server}/compacted.delivers.deleted.messages/server"})
@@ -273,10 +257,10 @@ public class FetchIT
     @Test
     @Specification(
     {"${route}/client/controller",
-            "${client}/compacted.historical.uses.cached.key.then.live.after.offset.too.early.and.null.message/client",
-            "${server}/compacted.historical.uses.cached.key.then.live.after.offset.too.early.and.null.message/server"})
+            "${client}/compacted.historical.uses.cached.key.then.live.after.offset.too.low.and.null.message/client",
+            "${server}/compacted.historical.uses.cached.key.then.live.after.offset.too.low.and.null.message/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCompactedMessagesFromLiveStreamAfterOffsetTooEarlyAndCachedKeyRemovedByNullMessage()
+    public void shouldReceiveCompactedMessagesFromLiveStreamAfterOffsetTooLowAndCachedKeyRemovedByNullMessage()
             throws Exception
     {
         k3po.finish();
@@ -679,10 +663,10 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/fetch.key.nonzero.offset.too.early.message/client",
-        "${server}/fetch.key.nonzero.offset.too.early.first.matches/server"})
+        "${client}/fetch.key.nonzero.offset.too.low.message/client",
+        "${server}/fetch.key.nonzero.offset.too.low.first.matches/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldUseEarliestAvailableOffsetIfGreaterThanRequestedOffset() throws Exception
+    public void shouldUseFirstAvailableOffsetIfGreaterThanRequestedOffset() throws Exception
     {
         k3po.finish();
     }
@@ -870,8 +854,8 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/offset.too.early.message/client",
-        "${server}/offset.too.early.message/server" })
+        "${client}/offset.too.low.message/client",
+        "${server}/offset.too.low.message/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldRefetchUsingReportedFirstOffset() throws Exception
     {
@@ -883,8 +867,8 @@ public class FetchIT
     @Test
     @Specification({
         "${routeAnyTopic}/client/controller",
-        "${client}/offset.too.early.multiple.nodes/client",
-        "${server}/offset.too.early.multiple.nodes/server" })
+        "${client}/offset.too.low.multiple.nodes/client",
+        "${server}/offset.too.low.multiple.nodes/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldRefetchUsingReportedFirstOffsetOnMultipleNodes() throws Exception
     {
@@ -894,8 +878,8 @@ public class FetchIT
     @Test
     @Specification({
         "${routeAnyTopic}/client/controller",
-        "${client}/offset.too.early.multiple.topics/client",
-        "${server}/offset.too.early.multiple.topics/server" })
+        "${client}/offset.too.low.multiple.topics/client",
+        "${server}/offset.too.low.multiple.topics/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldRefetchUsingReportedFirstOffsetOnMultipleTopics() throws Exception
     {
@@ -907,6 +891,19 @@ public class FetchIT
         k3po.awaitBarrier("CLIENT_TWO_SUBSCRIBED");
         awaitWindowFromClient();
         k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/nonzero.offset.reattach.message/client",
+        "${server}/offset.too.high.message/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldRefetchUsingLowerReportedFirstOffset() throws Exception
+    {
+        k3po.start();
+        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
 
@@ -994,6 +991,19 @@ public class FetchIT
         "${server}/zero.offset.message/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveMessageAtZeroOffset() throws Exception
+    {
+        k3po.start();
+        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset.message/client",
+        "${server}/zero.offset.message.topic.not.found.initially//server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldRequeryMetadataUntilFoundThenReceiveMessageAtZeroOffset() throws Exception
     {
         k3po.start();
         k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
@@ -1251,7 +1261,7 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.messages.topic.recreated/client",
+        "${client}/zero.offset.message.reattach.message/client",
         "${server}/live.fetch.broker.restarted.with.recreated.topic/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveMessagesAcrossBrokerRestartWithRecreatedTopic() throws Exception
