@@ -263,8 +263,8 @@ public class CachingFetchIT
 //    @Test
 //    @Specification(
 //    {"${route}/client/controller",
-//            "${client}/compacted.historical.uses.cached.key.then.live.after.offset.too.early.and.null.message/client",
-//            "${server}/compacted.historical.uses.cached.key.then.live.after.offset.too.early.and.null.message/server"})
+//            "${client}/compacted.historical.uses.cached.key.then.live.after.offset.too.low.and.null.message/client",
+//            "${server}/compacted.historical.uses.cached.key.then.live.after.offset.too.low.and.null.message/server"})
 //    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
 //    public void shouldReceiveCompactedMessagesFromLiveStreamAfterOffsetTooEarlyAndCachedKeyRemovedByNullMessage()
 //            throws Exception
@@ -621,8 +621,8 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/fetch.key.nonzero.offset.too.early.message/client",
-        "${server}/fetch.key.nonzero.offset.too.early.first.matches/server"})
+        "${client}/fetch.key.nonzero.offset.too.low.message/client",
+        "${server}/fetch.key.nonzero.offset.too.low.first.matches/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldUseEarliestAvailableOffsetIfGreaterThanRequestedOffset() throws Exception
     {
@@ -786,8 +786,8 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/offset.too.early.message/client",
-        "${server}/offset.too.early.message/server" })
+        "${client}/offset.too.low.message/client",
+        "${server}/offset.too.low.message/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldRefetchUsingReportedFirstOffset() throws Exception
     {
@@ -799,8 +799,8 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${routeAnyTopic}/client/controller",
-        "${client}/offset.too.early.multiple.nodes/client",
-        "${server}/offset.too.early.multiple.nodes/server" })
+        "${client}/offset.too.low.multiple.nodes/client",
+        "${server}/offset.too.low.multiple.nodes/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldRefetchUsingReportedFirstOffsetOnMultipleNodes() throws Exception
     {
@@ -810,8 +810,8 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${routeAnyTopic}/client/controller",
-        "${client}/offset.too.early.multiple.topics/client",
-        "${server}/offset.too.early.multiple.topics/server" })
+        "${client}/offset.too.low.multiple.topics/client",
+        "${server}/offset.too.low.multiple.topics/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldRefetchUsingReportedFirstOffsetOnMultipleTopics() throws Exception
     {
