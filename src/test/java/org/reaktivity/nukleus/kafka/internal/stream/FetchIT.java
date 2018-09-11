@@ -1133,6 +1133,22 @@ public class FetchIT
         k3po.finish();
     }
 
+
+    @Test
+    @Specification({
+        "${routeAnyTopic}/client/controller",
+        "${client}/unspecified.offset.multiple.streaming.topics/client",
+        "${server}/high.water.mark.offset.multiple.streaming.topics/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldFetchFromHighWaterMarkOffsetForMultipleStreamingTopics() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("CONNECTED_CLIENT_TWO");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("SEND_FETCH_RESPONSE_ONE");
+        k3po.finish();
+    }
+
     @Test
     @Specification({
         "${route}/client/controller",
