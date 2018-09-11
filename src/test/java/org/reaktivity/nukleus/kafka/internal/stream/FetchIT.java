@@ -900,10 +900,8 @@ public class FetchIT
         "${client}/nonzero.offset.reattach.message/client",
         "${server}/offset.too.high.message/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldRefetchUsingLowerReportedFirstOffset() throws Exception
+    public void shouldReattachAndRefetchUsingLowerReportedFirstOffset() throws Exception
     {
-        k3po.start();
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
 

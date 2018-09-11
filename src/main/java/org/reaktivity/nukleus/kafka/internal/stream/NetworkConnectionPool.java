@@ -124,6 +124,7 @@ public final class NetworkConnectionPool
     private static final short DESCRIBE_CONFIGS_API_KEY = 32;
 
     private static final long MAX_OFFSET = Long.MAX_VALUE;
+    private static final long NO_OFFSET = -1L;
 
     private static final byte RESOURCE_TYPE_TOPIC = 2;
     private static final String CLEANUP_POLICY = "cleanup.policy";
@@ -1147,37 +1148,35 @@ public final class NetworkConnectionPool
 
             for (TopicMetadata topicMetadata : topicMetadataByName.values())
             {
-                if (topicMetadata.offsetsRequired(brokerId))
+                int partitionCount = topicMetadata.offsetsRequired(brokerId);
+                if (partitionCount > 0)
                 {
-                    int partitionCount = topicMetadata.partitionCount(brokerId);
-                    if (partitionCount > 0)
+                    topicCount++;
+                    ListOffsetsTopicFW listOffsetsTopic = listOffsetsTopicRW.wrap(
+                            NetworkConnectionPool.this.encodeBuffer, encodeLimit,
+                            NetworkConnectionPool.this.encodeBuffer.capacity())
+                            .name(topicMetadata.topicName)
+                            .partitionCount(partitionCount)
+                            .build();
+
+                    encodeLimit = listOffsetsTopic.limit();
+
+                    for (int partitionId=0; partitionId <  topicMetadata.nodeIdsByPartition.length; partitionId++)
                     {
-                        topicCount++;
-                        ListOffsetsTopicFW listOffsetsTopic = listOffsetsTopicRW.wrap(
-                                NetworkConnectionPool.this.encodeBuffer, encodeLimit,
-                                NetworkConnectionPool.this.encodeBuffer.capacity())
-                                .name(topicMetadata.topicName)
-                                .partitionCount(partitionCount)
-                                .build();
-
-                        encodeLimit = listOffsetsTopic.limit();
-
-                        for (int partitionId=0; partitionId <  topicMetadata.nodeIdsByPartition.length; partitionId++)
+                        if (topicMetadata.nodeIdsByPartition[partitionId] == brokerId &&
+                            topicMetadata.offsetsOutOfRangeByPartition[partitionId] != NO_OFFSET)
                         {
-                            if (topicMetadata.nodeIdsByPartition[partitionId] == brokerId)
-                            {
-                                long requestedTimestamp = topicMetadata.offsetsOutOfRangeByPartition[partitionId] == MAX_OFFSET
-                                        ? NEXT_OFFSET
-                                        : EARLIEST_AVAILABLE_OFFSET;
-                                ListOffsetsPartitionRequestFW listOffsetsPartitionRequest = listOffsetsPartitionRequestRW.wrap(
-                                        NetworkConnectionPool.this.encodeBuffer, encodeLimit,
-                                        NetworkConnectionPool.this.encodeBuffer.capacity())
-                                        .partitionId(partitionId)
-                                        .timestamp(requestedTimestamp)
-                                        .build();
+                            long requestedTimestamp = topicMetadata.offsetsOutOfRangeByPartition[partitionId] == MAX_OFFSET
+                                    ? NEXT_OFFSET
+                                    : EARLIEST_AVAILABLE_OFFSET;
+                            ListOffsetsPartitionRequestFW listOffsetsPartitionRequest = listOffsetsPartitionRequestRW.wrap(
+                                    NetworkConnectionPool.this.encodeBuffer, encodeLimit,
+                                    NetworkConnectionPool.this.encodeBuffer.capacity())
+                                    .partitionId(partitionId)
+                                    .timestamp(requestedTimestamp)
+                                    .build();
 
-                                encodeLimit = listOffsetsPartitionRequest.limit();
-                            }
+                            encodeLimit = listOffsetsPartitionRequest.limit();
                         }
                     }
                 }
@@ -1321,22 +1320,32 @@ public final class NetworkConnectionPool
                     final int partitionId = partition.partitionId();
 
                     long outOfRangeOffset = topicMetadata.offsetsOutOfRangeByPartition[partitionId];
-                    if (outOfRangeOffset == MAX_OFFSET)
+                    if (offset > outOfRangeOffset)
                     {
-                        NetworkTopic networkTopic = topicsByName.get(topicName);
-                        networkTopic.dispatcher.adjustOffset(partitionId, MAX_OFFSET, offset);
-                        networkTopic.setLiveOffset(partitionId, offset);
-                    }
-                    else if (outOfRangeOffset > offset)
-                    {
-                        // first offset is now lower than client requested offset, topic was recreated,
-                        // force client(s) to re-attach at offset 0
-                        NetworkTopic networkTopic = topicsByName.get(topicName);
-                        networkTopic.dispatcher.detach(true);
+                        // offset was too low, adjust higher
+                        topicMetadata.setFirstOffset(partitionId, offset);
                     }
                     else
                     {
-                        topicMetadata.setFirstOffset(partitionId, offset);
+                        NetworkTopic networkTopic = topicsByName.get(topicName);
+
+                        // networkTopic can be null if all clients have detached (e.g.
+                        // because we called detach while processing a previous partition response)
+                        if (networkTopic != null)
+                        {
+                            if (outOfRangeOffset == MAX_OFFSET)
+                            {
+                                // subscribed to streaming topic, offset is high watermark
+                                networkTopic.dispatcher.adjustOffset(partitionId, MAX_OFFSET, offset);
+                                networkTopic.setLiveOffset(partitionId, offset);
+                            }
+                            else
+                            {
+                                // first offset is now lower than client requested offset, topic was
+                                // recreated, force client(s) to re-attach at offset 0
+                                networkTopic.dispatcher.detach(true);
+                            }
+                        }
                     }
 
                     networkOffset = partition.limit();
@@ -2532,6 +2541,7 @@ public final class NetworkConnectionPool
 
             if (existing != null && existing.id == partitionId && existing.offset == offset)
             {
+                existing.refs++;
                 NetworkTopicPartition floor = partitions.floor(existing);
                 if (floor.id == partitionId && floor.offset != offset)
                 {
@@ -2653,7 +2663,6 @@ public final class NetworkConnectionPool
 
     private static final class TopicMetadata
     {
-        private static final long NO_OFFSET = -1L;
         private static final int UNKNOWN_BROKER = -1;
 
         private final String topicName;
@@ -2840,10 +2849,10 @@ public final class NetworkConnectionPool
         }
 
 
-        boolean offsetsRequired(
+        int offsetsRequired(
             int nodeId)
         {
-            boolean result = false;
+            int result = 0;
             if (nodeIdsByPartition != null)
             {
                 for (int i=0; i < nodeIdsByPartition.length; i++)
@@ -2851,8 +2860,7 @@ public final class NetworkConnectionPool
                     if (nodeIdsByPartition[i] == nodeId &&
                             offsetsOutOfRangeByPartition[i] != NO_OFFSET)
                     {
-                        result = true;
-                        break;
+                        result++;
                     }
                 }
             }
@@ -2914,19 +2922,6 @@ public final class NetworkConnectionPool
         int partitionCount()
         {
             return nodeIdsByPartition.length;
-        }
-
-        int partitionCount(int nodeId)
-        {
-            int result = 0;
-            for (int i=0; i < nodeIdsByPartition.length; i++)
-            {
-                if (nodeIdsByPartition[i] == nodeId)
-                {
-                    result++;
-                }
-            }
-            return result;
         }
 
         private Timer getOrCreateTimer(
