@@ -122,6 +122,7 @@ public final class NetworkConnectionPool
     private static final short DESCRIBE_CONFIGS_API_VERSION = 0;
     private static final short DESCRIBE_CONFIGS_API_KEY = 32;
 
+    private static final long NO_OFFSET = -1L;
     private static final long MAX_OFFSET = Long.MAX_VALUE;
 
     private static final byte RESOURCE_TYPE_TOPIC = 2;
@@ -1321,6 +1322,8 @@ public final class NetworkConnectionPool
                         NetworkTopic networkTopic = topicsByName.get(topicName);
                         networkTopic.dispatcher.adjustOffset(partitionId, MAX_OFFSET, offset);
                         networkTopic.setLiveOffset(partitionId, offset);
+
+                        topicMetadata.offsetsOutOfRangeByPartition[partitionId] = NO_OFFSET;
                     }
                     else
                     {
@@ -2616,7 +2619,6 @@ public final class NetworkConnectionPool
 
     private static final class TopicMetadata
     {
-        private static final long NO_OFFSET = -1L;
         private static final int UNKNOWN_BROKER = -1;
 
         private final String topicName;
@@ -2858,6 +2860,12 @@ public final class NetworkConnectionPool
                 }
             }
             return result;
+        }
+
+        @Override
+        public String toString()
+        {
+            return String.format("[TopicMetadata] topicName=%s, complete=%s", topicName, complete);
         }
     }
 
