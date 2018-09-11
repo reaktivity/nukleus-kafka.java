@@ -42,7 +42,6 @@ import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaCounters;
 import org.reaktivity.nukleus.kafka.internal.cache.DefaultMessageCache;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
-import org.reaktivity.nukleus.kafka.internal.function.IntBooleanConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
@@ -569,7 +568,9 @@ public final class ClientStreamFactory implements StreamFactory
         private long groupId;
         private Budget budget;
 
-        private Consumer<IntBooleanConsumer> attacher;
+        private Consumer<Consumer<Boolean>> attacher;
+
+        private String topicName;
 
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
@@ -603,7 +604,7 @@ public final class ClientStreamFactory implements StreamFactory
         {
             budget.leaveGroup();
             progressHandler = NOOP_PROGRESS_HANDLER;
-            networkPool.doDetach(networkAttachId, fetchOffsets);
+            networkPool.doDetach(topicName, networkAttachId, fetchOffsets);
             networkAttachId = UNATTACHED;
             if (reattach)
             {
@@ -814,7 +815,7 @@ public final class ClientStreamFactory implements StreamFactory
             {
             case DataFW.TYPE_ID:
                 doReset(applicationThrottle, applicationId);
-                networkPool.doDetach(networkAttachId, fetchOffsets);
+                networkPool.doDetach(topicName, networkAttachId, fetchOffsets);
                 break;
             case EndFW.TYPE_ID:
                 // accept reply stream is allowed to outlive accept stream, so ignore END
@@ -846,7 +847,7 @@ public final class ClientStreamFactory implements StreamFactory
 
                 final KafkaBeginExFW beginEx = extension.get(beginExRO::wrap);
 
-                final String topicName = beginEx.topicName().asString();
+                topicName = beginEx.topicName().asString();
                 final ArrayFW<Varint64FW> fetchOffsets = beginEx.fetchOffsets();
 
                 this.fetchOffsets.clear();
@@ -880,8 +881,10 @@ public final class ClientStreamFactory implements StreamFactory
                         hashCode = hashCodesCount == 1 ? beginEx.fetchKeyHash().nextInt()
                                 : BufferUtil.defaultHashCode(fetchKey.buffer(), fetchKey.offset(), fetchKey.limit());
                     }
-                    networkPool.doAttach(topicName, this.fetchOffsets, hashCode, fetchKey, headers,
-                            this, this::writeableBytes, h -> progressHandler = h, this::onAttachPrepared, this::onMetadataError);
+                    networkAttachId = networkPool.doAttach(
+                            topicName, this.fetchOffsets, hashCode, fetchKey, headers,
+                            this, this::writeableBytes, h -> progressHandler = h, this::onAttachPrepared,
+                            this::onMetadataError);
 
                     this.streamState = this::afterBegin;
 
@@ -901,7 +904,7 @@ public final class ClientStreamFactory implements StreamFactory
         }
 
         private void onAttachPrepared(
-            Consumer<IntBooleanConsumer> attacher)
+            Consumer<Consumer<Boolean>> attacher)
         {
             if (budget.applicationReplyBudget() > 0)
             {
@@ -915,10 +918,8 @@ public final class ClientStreamFactory implements StreamFactory
         }
 
         private void onAttached(
-            int newNetworkAttachId,
             boolean compacted)
         {
-            this.networkAttachId = newNetworkAttachId;
             this.compacted = compacted;
         }
 
@@ -1003,7 +1004,7 @@ public final class ClientStreamFactory implements StreamFactory
             doReset(applicationThrottle, applicationId);
             budget.leaveGroup();
             progressHandler = NOOP_PROGRESS_HANDLER;
-            networkPool.doDetach(networkAttachId, fetchOffsets);
+            networkPool.doDetach(topicName, networkAttachId, fetchOffsets);
             networkAttachId = UNATTACHED;
         }
 

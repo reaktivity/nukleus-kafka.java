@@ -67,7 +67,6 @@ import org.reaktivity.nukleus.kafka.internal.cache.DefaultPartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
-import org.reaktivity.nukleus.kafka.internal.function.IntBooleanConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.IntLongConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
@@ -309,7 +308,7 @@ public final class NetworkConnectionPool
         this.metadataBackoffMillis = new Backoff(10, 10_000);
     }
 
-    void doAttach(
+    int doAttach(
         String topicName,
         Long2LongHashMap fetchOffsets,
         int partitionHash,
@@ -318,11 +317,14 @@ public final class NetworkConnectionPool
         MessageDispatcher dispatcher,
         IntSupplier supplyWindow,
         Consumer<PartitionProgressHandler> progressHandlerConsumer,
-        Consumer<Consumer<IntBooleanConsumer>> finishAttachConsumer,
+        Consumer<Consumer<Consumer<Boolean>>> finishAttachConsumer,
         Consumer<KafkaError> onMetadataError)
     {
         final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
-        metadata.doAttach(m -> doAttach(topicName, fetchOffsets, partitionHash, fetchKey, headers,
+        final int newAttachId = nextAttachId++;
+        metadata.doAttach(
+                newAttachId,
+                m -> doAttach(topicName, fetchOffsets, partitionHash, fetchKey, headers, newAttachId,
                 dispatcher, supplyWindow, progressHandlerConsumer, finishAttachConsumer, onMetadataError, m));
 
         if (metadataConnection == null)
@@ -331,6 +333,7 @@ public final class NetworkConnectionPool
         }
 
         metadataConnection.doRequestIfNeeded();
+        return newAttachId;
     }
 
     private void doAttach(
@@ -339,10 +342,11 @@ public final class NetworkConnectionPool
         int partitionHash,
         OctetsFW fetchKey,
         ListFW<KafkaHeaderFW> headers,
+        int attachId,
         MessageDispatcher dispatcher,
         IntSupplier supplyWindow,
         Consumer<PartitionProgressHandler> progressHandlerConsumer,
-        Consumer<Consumer<IntBooleanConsumer>> finishAttachConsumer,
+        Consumer<Consumer<Consumer<Boolean>>> finishAttachConsumer,
         Consumer<KafkaError> onMetadataError,
         TopicMetadata topicMetadata)
     {
@@ -387,10 +391,9 @@ public final class NetworkConnectionPool
             {
                 progressHandlerConsumer.accept(
                         topic.doAttach(fetchOffsets, fetchKey, headers, dispatcher, supplyWindow));
-                final int newAttachId = nextAttachId++;
-                detachersById.put(newAttachId, f -> topic.doDetach(f, fetchKey, headers, dispatcher, supplyWindow));
+                detachersById.put(attachId, f -> topic.doDetach(f, fetchKey, headers, dispatcher, supplyWindow));
                 doConnections(topicMetadata);
-                attachDetailsConsumer.accept(newAttachId, topicMetadata.compacted);
+                attachDetailsConsumer.accept(topicMetadata.compacted);
             });
 
             break;
@@ -410,7 +413,10 @@ public final class NetworkConnectionPool
 
         if (proactive)
         {
-            metadata.doAttach(m -> addRoute(topicName, routeHeaders, proactive, onMetadataError, m));
+            int newAttachId = nextAttachId++;
+            metadata.doAttach(
+                    newAttachId,
+                    m -> addRoute(topicName, routeHeaders, proactive, onMetadataError, m));
             if (metadataConnection == null)
             {
                 metadataConnection = new MetadataConnection();
@@ -510,11 +516,24 @@ public final class NetworkConnectionPool
     }
 
     void doDetach(
+        String topicName,
         int attachId,
         Long2LongHashMap fetchOffsets)
     {
         final Consumer<Long2LongHashMap> detacher = detachersById.remove(attachId);
-        if (detacher != null)
+        if (detacher == null)
+        {
+            TopicMetadata metadata = topicMetadataByName.get(topicName);
+            if (metadata != null)
+            {
+                metadata.doDetach(attachId);
+                if (!metadata.hasConsumers())
+                {
+                    topicMetadataByName.remove(topicName);
+                }
+            }
+        }
+        else
         {
             detacher.accept(fetchOffsets);
         }
@@ -1381,7 +1400,8 @@ public final class NetworkConnectionPool
             {
                 if (metadata.invalidateBroker(brokerId))
                 {
-                    metadata.doAttach(this::metadataUpdated);
+                    int newAttachId = nextAttachId++;
+                    metadata.doAttach(newAttachId, this::metadataUpdated);
                 }
             }
         }
@@ -1955,10 +1975,13 @@ public final class NetworkConnectionPool
             case LEADER_NOT_AVAILABLE:
             case TOPIC_AUTHORIZATION_FAILED:
             case UNKNOWN_TOPIC_OR_PARTITION:
-                pendingTopicMetadata.scheduleRefresh(
-                        clientStreamFactory.scheduler,
-                        metadataBackoffMillis,
-                        metadataConnection);
+                if (pendingTopicMetadata.hasConsumers())
+                {
+                    pendingTopicMetadata.scheduleRefresh(
+                            clientStreamFactory.scheduler,
+                            metadataBackoffMillis,
+                            metadataConnection);
+                }
                 pendingTopicMetadata = null;
                 break;
             case INVALID_TOPIC_EXCEPTION:
@@ -2675,7 +2698,7 @@ public final class NetworkConnectionPool
         private int[] nodeIdsByPartition;
         private long[] firstOffsetsByPartition;
         private long[] offsetsOutOfRangeByPartition;
-        private List<Consumer<TopicMetadata>> consumers = new ArrayList<>();
+        private Int2ObjectHashMap<Consumer<TopicMetadata>> consumers = new Int2ObjectHashMap<>();
         private MetadataRequestType nextRequiredRequestType = MetadataRequestType.METADATA;
         private int retries;
         private Timer retryTimer;
@@ -2888,18 +2911,29 @@ public final class NetworkConnectionPool
         }
 
         void doAttach(
+            int consumerId,
             Consumer<TopicMetadata> consumer)
         {
-            consumers.add(consumer);
+            consumers.put(consumerId, consumer);
             if (complete)
             {
                 flush();
             }
         }
 
+        void doDetach(
+            int consumerId)
+        {
+            consumers.remove(consumerId);
+            if (retryTimer != null && consumers.isEmpty())
+            {
+                retryTimer.cancel();
+            }
+        }
+
         void flush()
         {
-            for (Consumer<TopicMetadata> consumer: consumers)
+            for (Consumer<TopicMetadata> consumer: consumers.values())
             {
                 consumer.accept(this);
             }
@@ -2909,6 +2943,11 @@ public final class NetworkConnectionPool
         KafkaError errorCode()
         {
             return errorCode;
+        }
+
+        boolean hasConsumers()
+        {
+            return !consumers.isEmpty();
         }
 
         void visitBrokers(Consumer<BrokerMetadata> visitor)
