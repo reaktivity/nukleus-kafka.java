@@ -43,7 +43,8 @@ public interface MessageDispatcher
 
     void adjustOffset(int partition, long oldOffset, long newOffset);
 
-    void detach();
+    void detach(
+        boolean reattach);
 
     int dispatch(
         int partition,

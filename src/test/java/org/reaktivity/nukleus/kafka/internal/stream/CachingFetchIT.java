@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.junit.Assert.assertEquals;
 import static org.junit.rules.RuleChain.outerRule;
 
 import org.junit.Ignore;
@@ -28,6 +29,7 @@ import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
+import org.reaktivity.nukleus.kafka.internal.test.KafkaCountersRule;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
 public class CachingFetchIT
@@ -44,16 +46,19 @@ public class CachingFetchIT
 
     private final ReaktorRule reaktor = new ReaktorRule()
         .nukleus("kafka"::equals)
+        .controller("kafka"::equals)
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
-        .counterValuesBufferCapacity(1024)
+        .counterValuesBufferCapacity(4096)
         .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false")
         .configure(KafkaConfiguration.MESSAGE_CACHE_CAPACITY_PROPERTY, Integer.toString(1024 * 1024))
         .clean();
 
+    private final KafkaCountersRule counters = new KafkaCountersRule(reaktor);
+
     @Rule
-    public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
+    public final TestRule chain = outerRule(reaktor).around(k3po).around(counters).around(timeout);
 
     @Ignore("BEGIN vs RESET read order not yet guaranteed to match write order")
     @Test
@@ -116,17 +121,6 @@ public class CachingFetchIT
 
     @Test
     @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/unknown.topic.name/client",
-        "${metadata}/two.topics.error.unknown.topic/server" })
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldRejectWhenTopicIsUnknown() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
         "${route}/client/controller",
         "${client}/compacted.delivers.deleted.messages/client",
         "${server}/compacted.delivers.deleted.messages/server"})
@@ -168,6 +162,8 @@ public class CachingFetchIT
     public void shouldReceiveHistoricalMessageMatchingHeaderFirstFromCache() throws Exception
     {
         k3po.finish();
+        assertEquals(1, counters.cacheMisses());
+        assertEquals(1, counters.cacheHits());
     }
 
     @Test
@@ -223,6 +219,7 @@ public class CachingFetchIT
         awaitWindowFromClient();
         k3po.notifyBarrier("DELIVER_SECOND_LIVE_RESPONSE");
         k3po.finish();
+        assertEquals(1, counters.cacheHits());
     }
 
     // No historical fetch with message cache active
@@ -258,8 +255,8 @@ public class CachingFetchIT
 //    @Test
 //    @Specification(
 //    {"${route}/client/controller",
-//            "${client}/compacted.historical.uses.cached.key.then.live.after.offset.too.early.and.null.message/client",
-//            "${server}/compacted.historical.uses.cached.key.then.live.after.offset.too.early.and.null.message/server"})
+//            "${client}/compacted.historical.uses.cached.key.then.live.after.offset.too.low.and.null.message/client",
+//            "${server}/compacted.historical.uses.cached.key.then.live.after.offset.too.low.and.null.message/server"})
 //    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
 //    public void shouldReceiveCompactedMessagesFromLiveStreamAfterOffsetTooEarlyAndCachedKeyRemovedByNullMessage()
 //            throws Exception
@@ -276,6 +273,7 @@ public class CachingFetchIT
     public void shouldReceiveCompactedMessagesWithUncachedKeyUsingZeroOffset() throws Exception
     {
         k3po.finish();
+        assertEquals(2, counters.cacheMisses());
     }
 
     @Test
@@ -363,6 +361,7 @@ public class CachingFetchIT
     public void shouldReceiveCompactedHistoricalMessagesFromCacheWhenOriginallyReceivedAsLiveMessages() throws Exception
     {
         k3po.finish();
+        assertEquals(1, counters.cacheHits());
     }
 
     @Test
@@ -616,8 +615,8 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/fetch.key.nonzero.offset.too.early.message/client",
-        "${server}/fetch.key.nonzero.offset.too.early.first.matches/server"})
+        "${client}/fetch.key.nonzero.offset.too.low.message/client",
+        "${server}/fetch.key.nonzero.offset.too.low.first.matches/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldUseEarliestAvailableOffsetIfGreaterThanRequestedOffset() throws Exception
     {
@@ -781,8 +780,8 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/offset.too.early.message/client",
-        "${server}/offset.too.early.message/server" })
+        "${client}/offset.too.low.message/client",
+        "${server}/offset.too.low.message/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldRefetchUsingReportedFirstOffset() throws Exception
     {
@@ -794,8 +793,8 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${routeAnyTopic}/client/controller",
-        "${client}/offset.too.early.multiple.nodes/client",
-        "${server}/offset.too.early.multiple.nodes/server" })
+        "${client}/offset.too.low.multiple.nodes/client",
+        "${server}/offset.too.low.multiple.nodes/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldRefetchUsingReportedFirstOffsetOnMultipleNodes() throws Exception
     {
@@ -805,8 +804,8 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${routeAnyTopic}/client/controller",
-        "${client}/offset.too.early.multiple.topics/client",
-        "${server}/offset.too.early.multiple.topics/server" })
+        "${client}/offset.too.low.multiple.topics/client",
+        "${server}/offset.too.low.multiple.topics/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldRefetchUsingReportedFirstOffsetOnMultipleTopics() throws Exception
     {

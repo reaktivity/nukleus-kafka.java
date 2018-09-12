@@ -23,8 +23,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
-import java.util.function.Function;
-import java.util.function.LongSupplier;
 
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
@@ -46,12 +44,11 @@ import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
+import org.reaktivity.nukleus.kafka.internal.util.DelayedTaskScheduler;
 
 public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
 {
     public static final String MESSAGE_CACHE_BUFFER_ACQUIRES = "message.cache.buffer.acquires";
-    public static final String HISTORICAL_FETCHES = "historical.fetches";
-    private static final String MESSAGE_CACHE_BUFFER_RELEASES = "message.cache.buffer.releases";
 
     private static final MemoryManager OUT_OF_SPACE_MEMORY_MANAGER = new MemoryManager()
     {
@@ -105,28 +102,30 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
         NukleusBuilder builder)
     {
         kafkaConfig = new KafkaConfiguration(config);
+        DelayedTaskScheduler scheduler = new DelayedTaskScheduler();
 
         ClientStreamFactoryBuilder streamFactoryBuilder = new ClientStreamFactoryBuilder(kafkaConfig,
-                this::supplyMemoryManager, connectionPools, this::setConnectionPoolFactory);
+                this::supplyMemoryManager, connectionPools, this::setConnectionPoolFactory, scheduler);
 
         return builder.streamFactory(CLIENT, streamFactoryBuilder)
                       .routeHandler(CLIENT, this::handleRoute)
+                      .inject(scheduler::process)
                       .inject(this)
                       .build();
     }
 
     private MemoryManager supplyMemoryManager(
-        Function<String, LongSupplier> supplyCounter)
+        KafkaCounters counters)
     {
         if (memoryManager == null)
         {
-            memoryManager = createMemoryManager(supplyCounter);
+            memoryManager = createMemoryManager(counters);
         }
         return memoryManager;
     }
 
     private MemoryManager createMemoryManager(
-        Function<String, LongSupplier> supplyCounter)
+        KafkaCounters counters)
     {
         MemoryManager result;
         long capacity = kafkaConfig.messageCacheCapacity();
@@ -145,11 +144,11 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                     .create(true)
                     .build();
             this.memoryLayout = memoryLayout;
-            MemoryManager memoryManager = new DefaultMemoryManager(memoryLayout);
+            MemoryManager memoryManager = new DefaultMemoryManager(memoryLayout, counters);
             result = new CountingMemoryManager(
                 memoryManager,
-                supplyCounter.apply(MESSAGE_CACHE_BUFFER_ACQUIRES),
-                supplyCounter.apply(MESSAGE_CACHE_BUFFER_RELEASES));
+                counters.cacheBufferAcquires,
+                counters.cacheBufferReleases);
         }
         return result;
     }

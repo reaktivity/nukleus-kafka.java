@@ -40,6 +40,8 @@ public class CompactedPartitionIndex implements PartitionIndex
     private static final int NO_POSITION = -1;
     private static final long NO_EXPIRY_TIME = -1L;
 
+    static final int MAX_INVALID_ENTRIES = 10000;
+
     private final MessageCache messageCache;
     private final MessageFW messageRO = new MessageFW();
     private final long tombstoneLifetimeMillis;
@@ -52,9 +54,11 @@ public class CompactedPartitionIndex implements PartitionIndex
     private final EntryIterator iterator = new EntryIterator();
     private final NoMessagesIterator noMessagesIterator = new NoMessagesIterator();
     private final UnsafeBuffer buffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    private final UnsafeBuffer buffer2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     private final EntryImpl candidate = new EntryImpl(0L, NO_MESSAGE, NO_POSITION);
 
     private int compactFrom = Integer.MAX_VALUE;
+    private int invalidEntries;
     private long validToOffset = 0L;
 
     public CompactedPartitionIndex(
@@ -79,6 +83,11 @@ public class CompactedPartitionIndex implements PartitionIndex
         DirectBuffer value,
         boolean cacheNewMessages)
     {
+        if (invalidEntries > MAX_INVALID_ENTRIES)
+        {
+            compact();
+            invalidEntries = 0;
+        }
         buffer.wrap(key, 0, key.capacity());
         EntryImpl entry = offsetsByKey.get(buffer);
 
@@ -96,8 +105,14 @@ public class CompactedPartitionIndex implements PartitionIndex
             else
             {
                 compactFrom = Math.min(compactFrom, entry.position);
-                entry.position = entries.size();
+                invalidEntries++;
+                entry.setPosition(entries.size());
                 entry.offset = messageStartOffset;
+
+                if (entry.getAndSetIsTombstone(false))
+                {
+                    cancelTombstoneExpiry(buffer);
+                }
             }
             entries.add(entry);
             if (value == null)
@@ -106,6 +121,7 @@ public class CompactedPartitionIndex implements PartitionIndex
                 keyCopy.putBytes(0,  key, 0, key.capacity());
                 tombstoneKeys.add(keyCopy);
                 tombstoneExpiryTimes.add(timestamp + tombstoneLifetimeMillis);
+                entry.getAndSetIsTombstone(true);
             }
             if (cacheNewMessages)
             {
@@ -186,6 +202,11 @@ public class CompactedPartitionIndex implements PartitionIndex
         return validToOffset;
     }
 
+    int numberOfEntries()
+    {
+        return entries.size();
+    }
+
     private void cacheMessage(
         EntryImpl entry,
         long timestamp,
@@ -204,33 +225,50 @@ public class CompactedPartitionIndex implements PartitionIndex
         }
     }
 
+    private void cancelTombstoneExpiry(
+        UnsafeBuffer key)
+    {
+        int pos = 0;
+        for (pos=0; pos < tombstoneKeys.size(); pos++)
+        {
+            DirectBuffer candidate = tombstoneKeys.get(pos);
+            buffer2.wrap(candidate, 0, candidate.capacity());
+            if (key.equals(buffer2))
+            {
+                 tombstoneKeys.remove(pos);
+                 tombstoneExpiryTimes.remove(pos);
+                 break;
+            }
+        }
+    }
+
     private void compact()
     {
         evictExpiredTombstones();
         if (compactFrom < entries.size())
         {
-            int ceiling = NO_POSITION;
+            int invalidFrom = NO_POSITION;
             for (int i=0; i < entries.size(); i++)
             {
                 EntryImpl entry = entries.get(i);
-                if (entry.position != i)
+                if (entry.position() != i)
                 {
-                    if (ceiling == NO_POSITION)
+                    if (invalidFrom == NO_POSITION)
                     {
-                        ceiling = i;
+                        invalidFrom = i;
                     }
                 }
-                else if (ceiling != NO_POSITION)
+                else if (invalidFrom != NO_POSITION)
                 {
-                    entry.position = ceiling;
-                    entries.set(ceiling, entry);
-                    ceiling++;
+                    entry.setPosition(invalidFrom);
+                    entries.set(invalidFrom, entry);
+                    invalidFrom++;
                 }
             }
 
-            if (ceiling != NO_POSITION)
+            if (invalidFrom != NO_POSITION)
             {
-                for (int i=entries.size() - 1; i > ceiling - 1; i--)
+                for (int i=entries.size() - 1; i > invalidFrom - 1; i--)
                 {
                     entries.remove(i);
                 }
@@ -314,7 +352,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         return result;
     }
 
-    public final class EntryIterator implements Iterator<Entry>
+    final class EntryIterator implements Iterator<Entry>
     {
         private int position;
 
@@ -332,7 +370,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         }
     }
 
-    public final class NoMessagesIterator implements Iterator<Entry>
+    final class NoMessagesIterator implements Iterator<Entry>
     {
         private EntryImpl entry = new EntryImpl(0L, NO_MESSAGE, NO_POSITION);
         private int remaining;
@@ -364,13 +402,16 @@ public class CompactedPartitionIndex implements PartitionIndex
         }
     }
 
-    public static final class EntryImpl implements Comparable<EntryImpl>, Entry
+    static final class EntryImpl implements Comparable<EntryImpl>, Entry
     {
+        private static final int IS_TOMBSTONE_MASK = 0x80000000;
+        private static final int POSITION_MASK = ~IS_TOMBSTONE_MASK;
+
         private long offset;
         private int  message;
         private int  position;
 
-        private  EntryImpl(
+         EntryImpl(
             long offset,
             int  message,
             int  position)
@@ -402,7 +443,38 @@ public class CompactedPartitionIndex implements PartitionIndex
         @Override
         public String toString()
         {
-            return String.format("Entry[%d, %d, %d]", offset, position, message);
+            return String.format("Entry[offset=%d, position=%d, %b, %d]", offset, position(), isTombstone(), message);
+        }
+
+        int position()
+        {
+            return position & POSITION_MASK;
+        }
+
+        void setPosition(int newPosition)
+        {
+            assert newPosition >= 0;
+            position = (position & IS_TOMBSTONE_MASK) | newPosition;
+        }
+
+        boolean isTombstone()
+        {
+            return (position & IS_TOMBSTONE_MASK) == IS_TOMBSTONE_MASK;
+        }
+
+        boolean getAndSetIsTombstone(
+            boolean isTombstone)
+        {
+            boolean priorValue = isTombstone();
+            if (isTombstone)
+            {
+                position |= IS_TOMBSTONE_MASK;
+            }
+            else
+            {
+                position &= POSITION_MASK;
+            }
+            return priorValue;
         }
     }
 

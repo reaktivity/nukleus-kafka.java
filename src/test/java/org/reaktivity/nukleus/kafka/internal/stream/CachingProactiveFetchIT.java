@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.junit.Assert.assertEquals;
 import static org.junit.rules.RuleChain.outerRule;
 
 import org.junit.Rule;
@@ -27,6 +28,7 @@ import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
+import org.reaktivity.nukleus.kafka.internal.test.KafkaCountersRule;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
 public class CachingProactiveFetchIT
@@ -43,17 +45,20 @@ public class CachingProactiveFetchIT
 
     private final ReaktorRule reaktor = new ReaktorRule()
         .nukleus("kafka"::equals)
+        .controller("kafka"::equals)
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
-        .counterValuesBufferCapacity(1024)
+        .counterValuesBufferCapacity(4096)
         .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false")
         .configure(KafkaConfiguration.MESSAGE_CACHE_PROACTIVE_PROPERTY, "true")
         .configure(KafkaConfiguration.MESSAGE_CACHE_CAPACITY_PROPERTY, Integer.toString(1024 * 1024))
         .clean();
 
+    private final KafkaCountersRule counters = new KafkaCountersRule(reaktor);
+
     @Rule
-    public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
+    public final TestRule chain = outerRule(reaktor).around(k3po).around(counters).around(timeout);
 
     @Test
     @Specification({
@@ -65,6 +70,7 @@ public class CachingProactiveFetchIT
     public void shouldReceiveCompactedHistoricalMessagesFromCacheWhenProactiveMessageCachingIsEnabled() throws Exception
     {
         k3po.finish();
+        assertEquals(1, counters.cacheHits());
     }
 
     @Test
@@ -76,6 +82,7 @@ public class CachingProactiveFetchIT
     public void shouldReceiveHistoricalMessageMatchingHeaderFromCache() throws Exception
     {
         k3po.finish();
+        assertEquals(2, counters.cacheHits());
     }
 
 }

@@ -51,11 +51,12 @@ public class KeyMessageDispatcher implements MessageDispatcher
     }
 
     @Override
-    public void detach()
+    public void detach(
+        boolean reattach)
     {
         for (MessageDispatcher dispatcher: dispatchersByKey.values())
         {
-            dispatcher.detach();
+            dispatcher.detach(reattach);
         }
     }
 

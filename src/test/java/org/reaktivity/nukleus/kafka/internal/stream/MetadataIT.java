@@ -28,6 +28,7 @@ import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
+import org.reaktivity.reaktor.test.annotation.Configure;
 
 public class MetadataIT
 {
@@ -45,7 +46,7 @@ public class MetadataIT
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
-        .counterValuesBufferCapacity(1024)
+        .counterValuesBufferCapacity(4096)
         .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false")
         .clean();
 
@@ -173,4 +174,113 @@ public class MetadataIT
         k3po.finish();
     }
 
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset/client",
+        "${metadata}/metadata.incomplete.response.aborts/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldAbortWhenMetadataResponseIsIncomplete() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset/client",
+        "${metadata}/metadata.incomplete.response.broker.aborts/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldAbortWhenMetadataResponseBrokerIsIncomplete() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset/client",
+        "${metadata}/metadata.incomplete.response.after.brokers.aborts/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldAbortWhenMetadataResponseAfterBrokersIsIncomplete() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset/client",
+        "${metadata}/metadata.incomplete.response.topic.aborts/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldAbortWhenMetadataResponseTopicIsIncomplete() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset/client",
+        "${metadata}/metadata.incomplete.response.topic.partition.aborts/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldAbortWhenMetadataResponseTopicPartitionIsIncomplete() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset/client",
+        "${metadata}/describe.configs.incomplete.response.aborts/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldAbortWhenDescribeConfigsResponseIsIncomplete() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset/client",
+        "${metadata}/describe.configs.incomplete.response.resource.aborts/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldAbortWhenDescribeConfigsResponseResourceIsIncomplete() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset/client",
+        "${metadata}/describe.configs.incomplete.response.resource.config.aborts/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldAbortWhenDescribeConfigsResponseResourceConfigIsIncomplete() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Configure(name=KafkaConfiguration.READ_IDLE_TIMEOUT_PROPERTY, value="2000000")
+    @Specification({
+        "${routeAnyTopic}/client/controller",
+        "${client}/zero.offset.multiple.topics/client",
+        "${metadata}/unknown.and.known.topics/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldRepeatMetadataRequestsWhileTopicIsUnknownAndClientsAreAttachedWithoutBlockingOtherTopicUsage()
+            throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("SECOND_UNKNOWN_TOPIC_METADATA_REQUEST_RECEIVED");
+        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
+        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
+        k3po.notifyBarrier("WRITE_SECOND_UNKNOWN_TOPIC_METADATA_RESPONSE");
+        k3po.awaitBarrier("THIRD_UNKNOWN_TOPIC_METADATA_REQUEST_RECEIVED");
+        k3po.notifyBarrier("DISCONNECT_CLIENT_ONE");
+        k3po.notifyBarrier("WRITE_THIRD_UNKNOWN_TOPIC_METADATA_RESPONSE");
+        k3po.notifyBarrier("CONNECT_CLIENT_THREE");
+        k3po.finish();
+    }
 }

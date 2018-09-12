@@ -39,9 +39,9 @@ import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
+import org.reaktivity.nukleus.kafka.internal.KafkaCounters;
 import org.reaktivity.nukleus.kafka.internal.cache.DefaultMessageCache;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
-import org.reaktivity.nukleus.kafka.internal.function.IntBooleanConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
@@ -59,22 +59,21 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.DataFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaEndExFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
 import org.reaktivity.nukleus.kafka.internal.util.Flags;
+import org.reaktivity.nukleus.kafka.internal.util.DelayedTaskScheduler;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class ClientStreamFactory implements StreamFactory
 {
-    static final long UNSET = -1;
+    private static final long UNSET = -1;
 
-    static final ListFW<KafkaHeaderFW> EMPTY_KAFKA_HEADERS =
-        new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
-        .wrap(new UnsafeBuffer(new byte[4]), 0, 4)
-        .build();
+    private static final long[] ZERO_OFFSETS = new long[] {0L};
 
     private static final PartitionProgressHandler NOOP_PROGRESS_HANDLER = (p, f, n) ->
     {
@@ -102,6 +101,7 @@ public final class ClientStreamFactory implements StreamFactory
     private final AbortFW.Builder abortRW = new AbortFW.Builder();
 
     private final KafkaDataExFW.Builder dataExRW = new KafkaDataExFW.Builder();
+    private final KafkaEndExFW.Builder endExRW = new KafkaEndExFW.Builder();
 
     private final WindowFW.Builder windowRW = new WindowFW.Builder();
     private final ResetFW.Builder resetRW = new ResetFW.Builder();
@@ -120,6 +120,8 @@ public final class ClientStreamFactory implements StreamFactory
     final BufferPool bufferPool;
     final MessageCache messageCache;
     private final MutableDirectBuffer writeBuffer;
+    final DelayedTaskScheduler scheduler;
+    final KafkaCounters counters;
 
     final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
 
@@ -130,7 +132,7 @@ public final class ClientStreamFactory implements StreamFactory
     private final int fetchMaxBytes;
     private final int fetchPartitionMaxBytes;
     private final boolean forceProactiveMessageCache;
-
+    private final int readIdleTimeout;
 
     public ClientStreamFactory(
         KafkaConfiguration config,
@@ -144,11 +146,14 @@ public final class ClientStreamFactory implements StreamFactory
         Function<String, LongSupplier> supplyCounter,
         Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations,
         Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools,
-        Consumer<BiFunction<String, Long, NetworkConnectionPool>> setConnectionPoolFactory)
+        Consumer<BiFunction<String, Long, NetworkConnectionPool>> setConnectionPoolFactory,
+        DelayedTaskScheduler scheduler,
+        KafkaCounters counters)
     {
         this.fetchMaxBytes = config.fetchMaxBytes();
         this.fetchPartitionMaxBytes = config.fetchPartitionMaxBytes();
         this.forceProactiveMessageCache = config.messageCacheProactive();
+        this.readIdleTimeout = config.readIdleTimeout();
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
         this.bufferPool = requireNonNull(bufferPool);
@@ -163,7 +168,9 @@ public final class ClientStreamFactory implements StreamFactory
         groupMembers = new Long2LongHashMap(-1);
         setConnectionPoolFactory.accept((networkName, ref) ->
             new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes, bufferPool,
-                    messageCache, supplyCounter, forceProactiveMessageCache));
+                    messageCache, supplyCounter, forceProactiveMessageCache, readIdleTimeout));
+        this.scheduler = scheduler;
+        this.counters = counters;
     }
 
     @Override
@@ -220,7 +227,7 @@ public final class ClientStreamFactory implements StreamFactory
 
                 NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef,
                         ref -> new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes,
-                                bufferPool, messageCache, supplyCounter, forceProactiveMessageCache));
+                                bufferPool, messageCache, supplyCounter, forceProactiveMessageCache, readIdleTimeout));
 
                 newStream = new ClientAcceptStream(applicationThrottle, applicationId, connectionPool)::handleStream;
             }
@@ -334,14 +341,39 @@ public final class ClientStreamFactory implements StreamFactory
 
     void doEnd(
         final MessageConsumer target,
-        final long targetId)
+        final long targetId,
+        final long[] offsets)
     {
         final EndFW end = endRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .streamId(targetId)
                 .trace(supplyTrace.getAsLong())
+                .extension(b -> b.set(visitKafkaEndEx(offsets)))
                 .build();
 
         target.accept(end.typeId(), end.buffer(), end.offset(), end.sizeof());
+    }
+
+    private Flyweight.Builder.Visitor visitKafkaEndEx(
+        long[] fetchOffsets)
+    {
+        return (b, o, l) ->
+        {
+            return endExRW.wrap(b, o, l)
+                    .fetchOffsets(a ->
+                    {
+                        if (fetchOffsets != null)
+                        {
+                        for (int i=0; i < fetchOffsets.length; i++)
+                            {
+                                final long offset = fetchOffsets[i];
+                                a.item(p -> p.set(offset));
+
+                            }
+                        }
+                    })
+                    .build()
+                    .sizeof();
+        };
     }
 
     void doAbort(
@@ -537,7 +569,9 @@ public final class ClientStreamFactory implements StreamFactory
         private long groupId;
         private Budget budget;
 
-        private Consumer<IntBooleanConsumer> attacher;
+        private Consumer<Consumer<Boolean>> attacher;
+
+        private String topicName;
 
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
@@ -566,13 +600,21 @@ public final class ClientStreamFactory implements StreamFactory
         }
 
         @Override
-        public void detach()
+        public void detach(
+            boolean reattach)
         {
             budget.leaveGroup();
-            doAbort(applicationReply, applicationReplyId);
             progressHandler = NOOP_PROGRESS_HANDLER;
-            networkPool.doDetach(networkAttachId, fetchOffsets);
+            networkPool.doDetach(topicName, networkAttachId, fetchOffsets);
             networkAttachId = UNATTACHED;
+            if (reattach)
+            {
+                doEnd(applicationReply, applicationReplyId, ZERO_OFFSETS);
+            }
+            else
+            {
+                doAbort(applicationReply, applicationReplyId);
+            }
         }
 
         @Override
@@ -717,7 +759,7 @@ public final class ClientStreamFactory implements StreamFactory
                         "REQUIRED MESSAGE LOST detected in flush, detaching: " +
                         "partition=%d, requestOffset=%d, startOffset=%d, nextFetchOffset=%d, this=%s\n",
                         partition, requestOffset, startOffset, nextFetchOffset, this);
-                detach();
+                detach(false);
             }
 
             if (endOffset > startOffset && requestOffset <= startOffset)
@@ -828,13 +870,13 @@ public final class ClientStreamFactory implements StreamFactory
             {
             case DataFW.TYPE_ID:
                 doReset(applicationThrottle, applicationId);
-                networkPool.doDetach(networkAttachId, fetchOffsets);
+                networkPool.doDetach(topicName, networkAttachId, fetchOffsets);
                 break;
             case EndFW.TYPE_ID:
                 // accept reply stream is allowed to outlive accept stream, so ignore END
                 break;
             case AbortFW.TYPE_ID:
-                detach();
+                detach(false);
                 break;
             default:
                 doReset(applicationThrottle, applicationId);
@@ -860,7 +902,7 @@ public final class ClientStreamFactory implements StreamFactory
 
                 final KafkaBeginExFW beginEx = extension.get(beginExRO::wrap);
 
-                final String topicName = beginEx.topicName().asString();
+                topicName = beginEx.topicName().asString();
                 final ArrayFW<Varint64FW> fetchOffsets = beginEx.fetchOffsets();
 
                 this.fetchOffsets.clear();
@@ -894,34 +936,45 @@ public final class ClientStreamFactory implements StreamFactory
                         hashCode = hashCodesCount == 1 ? beginEx.fetchKeyHash().nextInt()
                                 : BufferUtil.defaultHashCode(fetchKey.buffer(), fetchKey.offset(), fetchKey.limit());
                     }
-                    networkPool.doAttach(topicName, this.fetchOffsets, hashCode, fetchKey, headers,
-                            this, this::writeableBytes, h -> progressHandler = h, this::onAttachPrepared, this::onMetadataError);
+                    networkAttachId = networkPool.doAttach(
+                            topicName, this.fetchOffsets, hashCode, fetchKey, headers,
+                            this, this::writeableBytes, h -> progressHandler = h, this::onAttachPrepared,
+                            this::onMetadataError);
+
                     this.streamState = this::afterBegin;
+
+                    // Start the response stream to the client
+                    final long newReplyId = supplyStreamId.getAsLong();
+                    final String replyName = applicationName;
+                    final MessageConsumer newReply = router.supplyTarget(replyName);
+
+                    doKafkaBegin(newReply, newReplyId, 0L, applicationCorrelationId, applicationBeginExtension);
+                    router.setThrottle(applicationName, newReplyId, this::handleThrottle);
+
+                    doWindow(applicationThrottle, applicationId, 0, 0, 0);
+                    this.applicationReply = newReply;
+                    this.applicationReplyId = newReplyId;
                 }
             }
         }
 
         private void onAttachPrepared(
-            Consumer<IntBooleanConsumer> attacher)
+            Consumer<Consumer<Boolean>> attacher)
         {
-            this.attacher = attacher;
-            final long newReplyId = supplyStreamId.getAsLong();
-            final String replyName = applicationName;
-            final MessageConsumer newReply = router.supplyTarget(replyName);
-
-            doKafkaBegin(newReply, newReplyId, 0L, applicationCorrelationId, applicationBeginExtension);
-            router.setThrottle(applicationName, newReplyId, this::handleThrottle);
-
-            doWindow(applicationThrottle, applicationId, 0, 0, 0);
-            this.applicationReply = newReply;
-            this.applicationReplyId = newReplyId;
+            if (budget.applicationReplyBudget() > 0)
+            {
+                attacher.accept(this::onAttached);
+                networkPool.doFlush();
+            }
+            else
+            {
+                this.attacher = attacher;
+            }
         }
 
         private void onAttached(
-            int newNetworkAttachId,
             boolean compacted)
         {
-            this.networkAttachId = newNetworkAttachId;
             this.compacted = compacted;
         }
 
@@ -1007,7 +1060,7 @@ public final class ClientStreamFactory implements StreamFactory
             doReset(applicationThrottle, applicationId);
             budget.leaveGroup();
             progressHandler = NOOP_PROGRESS_HANDLER;
-            networkPool.doDetach(networkAttachId, fetchOffsets);
+            networkPool.doDetach(topicName, networkAttachId, fetchOffsets);
             networkAttachId = UNATTACHED;
         }
 

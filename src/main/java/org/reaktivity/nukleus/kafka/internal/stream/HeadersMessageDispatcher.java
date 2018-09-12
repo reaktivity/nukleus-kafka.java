@@ -56,13 +56,14 @@ public class HeadersMessageDispatcher implements MessageDispatcher
     }
 
     @Override
-    public void detach()
+    public void detach(
+        boolean reattach)
     {
-        broadcast.detach();
+        broadcast.detach(reattach);
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
-            dispatcher.detach();
+            dispatcher.detach(reattach);
         }
     }
 
