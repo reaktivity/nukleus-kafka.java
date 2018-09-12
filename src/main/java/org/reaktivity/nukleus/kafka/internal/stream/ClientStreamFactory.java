@@ -629,8 +629,8 @@ public final class ClientStreamFactory implements StreamFactory
             DirectBuffer value)
         {
             System.out.format(
-                    "CAS dispatch: partition=%d, requestOffset=%d, messageStartOffset=%d, key=%s, value.capacity()=%d\n",
-                    partition, requestOffset, messageStartOffset, key, value.capacity());
+                    "CAS dispatch: partition=%d, requestOffset=%d, messageStartOffset=%d, key=%s, value=%s\n",
+                    partition, requestOffset, messageStartOffset, toString(key), toString(value));
             int result = MessageDispatcher.FLAGS_MATCHED;
             if (progressStartOffset == UNSET)
             {
@@ -756,7 +756,7 @@ public final class ClientStreamFactory implements StreamFactory
                 // Partially written message no longer exists, we cannot complete it.
                 // Abort the connection to force the client to re-attach.
                 System.out.format(
-                        "REQUIRED MESSAGE LOST detected in flush, detaching: " +
+                        "CAS: REQUIRED MESSAGE LOST detected in flush, detaching: " +
                         "partition=%d, requestOffset=%d, startOffset=%d, nextFetchOffset=%d, this=%s\n",
                         partition, requestOffset, startOffset, nextFetchOffset, this);
                 detach(false);
@@ -785,6 +785,15 @@ public final class ClientStreamFactory implements StreamFactory
                     ClientAcceptStream.this.applicationReplyId);
         }
 
+        private String toString(
+            DirectBuffer buffer)
+        {
+            return buffer == null ? "null" :
+                format("%s(capacity=%d)",
+                        buffer.getClass().getSimpleName() + "@" + Integer.toHexString(hashCode()),
+                        buffer.capacity());
+        }
+
         private void flushPreviousMessage(
                 int partition,
                 long nextFetchOffset)
@@ -798,8 +807,8 @@ public final class ClientStreamFactory implements StreamFactory
                 {
                     flags |= INIT;
                     this.fetchOffsets.put(partition, nextFetchOffset);
-                    System.out.format("CAS doKafkaData: partition=%d, nextFetchOffset=%d, key=%s, value.capacity()=%d\n",
-                            partition, nextFetchOffset, pendingMessageKey, pendingMessageValue.capacity());
+                    System.out.format("CAS doKafkaData: partition=%d, nextFetchOffset=%d, key=%s, value=%s\n",
+                            partition, nextFetchOffset, toString(pendingMessageKey), toString(pendingMessageValue));
                     doKafkaData(applicationReply, applicationReplyId, pendingMessageTraceId, applicationReplyPadding, flags,
                                 compacted ? pendingMessageKey : null,
                                 pendingMessageTimestamp, pendingMessageValue, pendingMessageValueLimit, fetchOffsets);
@@ -807,8 +816,8 @@ public final class ClientStreamFactory implements StreamFactory
                 else
                 {
                     System.out.format(
-                            "CAS doKafkaDataContinuation: partition=%d, nextFetchOffset=%d, key=%s, value.capacity()=%d\n",
-                            partition, nextFetchOffset, pendingMessageKey, pendingMessageValue.capacity());
+                            "CAS doKafkaDataContinuation: partition=%d, nextFetchOffset=%d, key=%s, value=%s\n",
+                            partition, nextFetchOffset, toString(pendingMessageKey), toString(pendingMessageValue));
                     doKafkaDataContinuation(applicationReply, applicationReplyId, pendingMessageTraceId,
                             applicationReplyPadding, flags, pendingMessageValue, pendingMessageValueOffset,
                             pendingMessageValueLimit);
@@ -1030,7 +1039,7 @@ public final class ClientStreamFactory implements StreamFactory
                 budget.incApplicationReplyBudget(window.credit());
             }
 
-            System.out.format("[networkPool.doFlush()] %s budget=%s\n", window, budget);
+            System.out.format("CAS: [networkPool.doFlush()] %s budget=%s\n", window, budget);
             networkPool.doFlush();
         }
 
@@ -1126,6 +1135,12 @@ public final class ClientStreamFactory implements StreamFactory
         public void leaveGroup()
         {
 
+        }
+
+        @Override
+        public String toString()
+        {
+            return String.format("(applicationReplyBudget=%d)", applicationReplyBudget());
         }
     }
 
@@ -1228,7 +1243,8 @@ public final class ClientStreamFactory implements StreamFactory
         @Override
         public String toString()
         {
-            return String.format("(groupId=%d, streamId=%d)", groupId, streamId);
+            return String.format("(groupId=%d, streamId=%d, applicationReplyBudget=%d)",
+                    groupId, streamId, applicationReplyBudget());
         }
     }
 }
