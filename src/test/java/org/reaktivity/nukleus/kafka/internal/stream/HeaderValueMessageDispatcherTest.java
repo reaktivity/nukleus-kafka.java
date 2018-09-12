@@ -120,11 +120,11 @@ public final class HeaderValueMessageDispatcherTest
         context.checking(new Expectations()
         {
             {
-                oneOf(child1).detach();
-                oneOf(child2).detach();
+                oneOf(child1).detach(true);
+                oneOf(child2).detach(true);
             }
         });
-        dispatcher.detach();
+        dispatcher.detach(true);
     }
 
     @Test

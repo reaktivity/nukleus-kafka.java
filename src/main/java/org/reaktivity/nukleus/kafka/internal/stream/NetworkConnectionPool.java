@@ -67,7 +67,6 @@ import org.reaktivity.nukleus.kafka.internal.cache.DefaultPartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
-import org.reaktivity.nukleus.kafka.internal.function.IntBooleanConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.IntLongConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
@@ -110,6 +109,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.TcpBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
+import org.reaktivity.nukleus.kafka.internal.util.DelayedTaskScheduler;
 
 public final class NetworkConnectionPool
 {
@@ -122,8 +122,8 @@ public final class NetworkConnectionPool
     private static final short DESCRIBE_CONFIGS_API_VERSION = 0;
     private static final short DESCRIBE_CONFIGS_API_KEY = 32;
 
-    private static final long NO_OFFSET = -1L;
     private static final long MAX_OFFSET = Long.MAX_VALUE;
+    private static final long NO_OFFSET = -1L;
 
     private static final byte RESOURCE_TYPE_TOPIC = 2;
     private static final String CLEANUP_POLICY = "cleanup.policy";
@@ -175,7 +175,8 @@ public final class NetworkConnectionPool
         }
 
         @Override
-        public void detach()
+        public void detach(
+            boolean reattach)
         {
         }
 
@@ -264,6 +265,7 @@ public final class NetworkConnectionPool
     private AbstractFetchConnection[] connections = new LiveFetchConnection[0];
     private HistoricalFetchConnection[] historicalConnections = new HistoricalFetchConnection[0];
     private MetadataConnection metadataConnection;
+    private final Backoff metadataBackoffMillis;
 
     private final Map<String, TopicMetadata> topicMetadataByName;
     private final Map<String, NetworkTopic> topicsByName;
@@ -303,9 +305,10 @@ public final class NetworkConnectionPool
         this.routeHeadersByTopic = new HashMap<>();
         this.detachersById = new Int2ObjectHashMap<>();
         this.readIdleTimeout = readIdleTimeout;
+        this.metadataBackoffMillis = new Backoff(10, 10_000);
     }
 
-    void doAttach(
+    int doAttach(
         String topicName,
         Long2LongHashMap fetchOffsets,
         int partitionHash,
@@ -314,11 +317,14 @@ public final class NetworkConnectionPool
         MessageDispatcher dispatcher,
         IntSupplier supplyWindow,
         Consumer<PartitionProgressHandler> progressHandlerConsumer,
-        Consumer<Consumer<IntBooleanConsumer>> finishAttachConsumer,
+        Consumer<Consumer<Consumer<Boolean>>> finishAttachConsumer,
         Consumer<KafkaError> onMetadataError)
     {
         final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
-        metadata.doAttach(m -> doAttach(topicName, fetchOffsets, partitionHash, fetchKey, headers,
+        final int newAttachId = nextAttachId++;
+        metadata.doAttach(
+                newAttachId,
+                m -> doAttach(topicName, fetchOffsets, partitionHash, fetchKey, headers, newAttachId,
                 dispatcher, supplyWindow, progressHandlerConsumer, finishAttachConsumer, onMetadataError, m));
 
         if (metadataConnection == null)
@@ -327,6 +333,7 @@ public final class NetworkConnectionPool
         }
 
         metadataConnection.doRequestIfNeeded();
+        return newAttachId;
     }
 
     private void doAttach(
@@ -335,10 +342,11 @@ public final class NetworkConnectionPool
         int partitionHash,
         OctetsFW fetchKey,
         ListFW<KafkaHeaderFW> headers,
+        int attachId,
         MessageDispatcher dispatcher,
         IntSupplier supplyWindow,
         Consumer<PartitionProgressHandler> progressHandlerConsumer,
-        Consumer<Consumer<IntBooleanConsumer>> finishAttachConsumer,
+        Consumer<Consumer<Consumer<Boolean>>> finishAttachConsumer,
         Consumer<KafkaError> onMetadataError,
         TopicMetadata topicMetadata)
     {
@@ -383,10 +391,9 @@ public final class NetworkConnectionPool
             {
                 progressHandlerConsumer.accept(
                         topic.doAttach(fetchOffsets, fetchKey, headers, dispatcher, supplyWindow));
-                final int newAttachId = nextAttachId++;
-                detachersById.put(newAttachId, f -> topic.doDetach(f, fetchKey, headers, dispatcher, supplyWindow));
+                detachersById.put(attachId, f -> topic.doDetach(f, fetchKey, headers, dispatcher, supplyWindow));
                 doConnections(topicMetadata);
-                attachDetailsConsumer.accept(newAttachId, topicMetadata.compacted);
+                attachDetailsConsumer.accept(topicMetadata.compacted);
             });
 
             break;
@@ -406,7 +413,10 @@ public final class NetworkConnectionPool
 
         if (proactive)
         {
-            metadata.doAttach(m -> addRoute(topicName, routeHeaders, proactive, onMetadataError, m));
+            int newAttachId = nextAttachId++;
+            metadata.doAttach(
+                    newAttachId,
+                    m -> addRoute(topicName, routeHeaders, proactive, onMetadataError, m));
             if (metadataConnection == null)
             {
                 metadataConnection = new MetadataConnection();
@@ -506,11 +516,24 @@ public final class NetworkConnectionPool
     }
 
     void doDetach(
+        String topicName,
         int attachId,
         Long2LongHashMap fetchOffsets)
     {
         final Consumer<Long2LongHashMap> detacher = detachersById.remove(attachId);
-        if (detacher != null)
+        if (detacher == null)
+        {
+            TopicMetadata metadata = topicMetadataByName.get(topicName);
+            if (metadata != null)
+            {
+                metadata.doDetach(attachId);
+                if (!metadata.hasConsumers())
+                {
+                    topicMetadataByName.remove(topicName);
+                }
+            }
+        }
+        else
         {
             detacher.accept(fetchOffsets);
         }
@@ -653,7 +676,7 @@ public final class NetworkConnectionPool
         {
             if (networkId != 0L)
             {
-                clientStreamFactory.doEnd(networkTarget, networkId);
+                clientStreamFactory.doEnd(networkTarget, networkId, null);
                 this.networkId = 0L;
                 this.streamState = this::afterClose;
             }
@@ -898,7 +921,7 @@ public final class NetworkConnectionPool
         {
             if (networkId != 0L)
             {
-                clientStreamFactory.doEnd(networkTarget, networkId);
+                clientStreamFactory.doEnd(networkTarget, networkId, null);
                 this.networkId = 0L;
             }
             doReinitialize();
@@ -1144,37 +1167,35 @@ public final class NetworkConnectionPool
 
             for (TopicMetadata topicMetadata : topicMetadataByName.values())
             {
-                if (topicMetadata.offsetsRequired(brokerId))
+                int partitionCount = topicMetadata.offsetsRequired(brokerId);
+                if (partitionCount > 0)
                 {
-                    int partitionCount = topicMetadata.partitionCount(brokerId);
-                    if (partitionCount > 0)
+                    topicCount++;
+                    ListOffsetsTopicFW listOffsetsTopic = listOffsetsTopicRW.wrap(
+                            NetworkConnectionPool.this.encodeBuffer, encodeLimit,
+                            NetworkConnectionPool.this.encodeBuffer.capacity())
+                            .name(topicMetadata.topicName)
+                            .partitionCount(partitionCount)
+                            .build();
+
+                    encodeLimit = listOffsetsTopic.limit();
+
+                    for (int partitionId=0; partitionId <  topicMetadata.nodeIdsByPartition.length; partitionId++)
                     {
-                        topicCount++;
-                        ListOffsetsTopicFW listOffsetsTopic = listOffsetsTopicRW.wrap(
-                                NetworkConnectionPool.this.encodeBuffer, encodeLimit,
-                                NetworkConnectionPool.this.encodeBuffer.capacity())
-                                .name(topicMetadata.topicName)
-                                .partitionCount(partitionCount)
-                                .build();
-
-                        encodeLimit = listOffsetsTopic.limit();
-
-                        for (int partitionId=0; partitionId <  topicMetadata.nodeIdsByPartition.length; partitionId++)
+                        if (topicMetadata.nodeIdsByPartition[partitionId] == brokerId &&
+                            topicMetadata.offsetsOutOfRangeByPartition[partitionId] != NO_OFFSET)
                         {
-                            if (topicMetadata.nodeIdsByPartition[partitionId] == brokerId)
-                            {
-                                long requestedTimestamp = topicMetadata.offsetsOutOfRangeByPartition[partitionId] == MAX_OFFSET
-                                        ? NEXT_OFFSET
-                                        : EARLIEST_AVAILABLE_OFFSET;
-                                ListOffsetsPartitionRequestFW listOffsetsPartitionRequest = listOffsetsPartitionRequestRW.wrap(
-                                        NetworkConnectionPool.this.encodeBuffer, encodeLimit,
-                                        NetworkConnectionPool.this.encodeBuffer.capacity())
-                                        .partitionId(partitionId)
-                                        .timestamp(requestedTimestamp)
-                                        .build();
+                            long requestedTimestamp = topicMetadata.offsetsOutOfRangeByPartition[partitionId] == MAX_OFFSET
+                                    ? NEXT_OFFSET
+                                    : EARLIEST_AVAILABLE_OFFSET;
+                            ListOffsetsPartitionRequestFW listOffsetsPartitionRequest = listOffsetsPartitionRequestRW.wrap(
+                                    NetworkConnectionPool.this.encodeBuffer, encodeLimit,
+                                    NetworkConnectionPool.this.encodeBuffer.capacity())
+                                    .partitionId(partitionId)
+                                    .timestamp(requestedTimestamp)
+                                    .build();
 
-                                encodeLimit = listOffsetsPartitionRequest.limit();
-                            }
+                            encodeLimit = listOffsetsPartitionRequest.limit();
                         }
                     }
                 }
@@ -1317,17 +1338,35 @@ public final class NetworkConnectionPool
                     final long offset = partition.firstOffset();
                     final int partitionId = partition.partitionId();
 
-                    if (topicMetadata.offsetsOutOfRangeByPartition[partitionId] == MAX_OFFSET)
+                    long outOfRangeOffset = topicMetadata.offsetsOutOfRangeByPartition[partitionId];
+                    if (offset > outOfRangeOffset)
                     {
-                        NetworkTopic networkTopic = topicsByName.get(topicName);
-                        networkTopic.dispatcher.adjustOffset(partitionId, MAX_OFFSET, offset);
-                        networkTopic.setLiveOffset(partitionId, offset);
-
-                        topicMetadata.offsetsOutOfRangeByPartition[partitionId] = NO_OFFSET;
+                        // offset was too low, adjust higher and leave offsetsOutOfRangeByPartition set
+                        // for use in ensureOffsetInRange
+                        topicMetadata.setFirstOffset(partitionId, offset);
                     }
                     else
                     {
-                        topicMetadata.setFirstOffset(partitionId, offset);
+                        NetworkTopic networkTopic = topicsByName.get(topicName);
+
+                        // networkTopic can be null if all clients have detached (e.g.
+                        // because we called detach while processing a previous partition response)
+                        if (networkTopic != null)
+                        {
+                            if (outOfRangeOffset == MAX_OFFSET)
+                            {
+                                // subscribed to streaming topic, offset is high watermark
+                                networkTopic.dispatcher.adjustOffset(partitionId, MAX_OFFSET, offset);
+                                networkTopic.setLiveOffset(partitionId, offset);
+                            }
+                            else
+                            {
+                                // first offset is now lower than client requested offset, topic was
+                                // recreated, force client(s) to re-attach at offset 0
+                                networkTopic.dispatcher.detach(true);
+                            }
+                            topicMetadata.offsetsOutOfRangeByPartition[partitionId] = NO_OFFSET;
+                        }
                     }
 
                     networkOffset = partition.limit();
@@ -1363,7 +1402,8 @@ public final class NetworkConnectionPool
             {
                 if (metadata.invalidateBroker(brokerId))
                 {
-                    metadata.doAttach(this::metadataUpdated);
+                    int newAttachId = nextAttachId++;
+                    metadata.doAttach(newAttachId, this::metadataUpdated);
                 }
             }
         }
@@ -1401,8 +1441,15 @@ public final class NetworkConnectionPool
             case UNKNOWN_TOPIC_OR_PARTITION:
             case LEADER_NOT_AVAILABLE:
             case NOT_LEADER_FOR_PARTITION:
-                topicMetadataByName.get(topicName).setComplete(false);
-                metadataConnection.doRequestIfNeeded();
+                TopicMetadata metadata = topicMetadataByName.get(topicName);
+                metadata.setErrorCode(errorCode);
+                metadata.scheduleRefresh(
+                        clientStreamFactory.scheduler,
+                        metadataBackoffMillis,
+                        metadataConnection);
+                System.out.format(
+                        "Fetch failed for topic \"%s\" partition %d due to Kafka error code %s, retrying...\n",
+                        topicName, partition, errorCode);
                 break;
             default:
                 // kafka error, trigger connection failed and reconnect
@@ -1875,8 +1922,11 @@ public final class NetworkConnectionPool
 
             if (error.isRecoverable())
             {
-                pendingTopicMetadata.invalidate();
-                doRequestIfNeeded();
+                pendingTopicMetadata.scheduleRefresh(
+                        clientStreamFactory.scheduler,
+                        metadataBackoffMillis,
+                        metadataConnection);
+                pendingTopicMetadata = null;
             }
             else if (error != NONE)
             {
@@ -1891,11 +1941,23 @@ public final class NetworkConnectionPool
                 {
                     TopicMetadata metadata = pendingTopicMetadata;
                     pendingTopicMetadata = null;
-                    metadata.setErrorCode(error);
                     metadata.setCompacted(compacted);
                     metadata.setDeleteRetentionMs(deleteRetentionMs);
-                    metadata.setComplete(true);
+                    KafkaError priorError = metadata.setComplete(error);
                     metadata.flush();
+                    switch (priorError)
+                    {
+                    case UNKNOWN_TOPIC_OR_PARTITION:
+                        // Topic was re-created, force clients to re-attach at offset zero
+                        NetworkTopic topic = topicsByName.get(metadata.topicName);
+                        if (topic != null)
+                        {
+                            topic.dispatcher.detach(true);
+                        }
+                        break;
+                    default:
+                        break;
+                    }
                 }
             }
         }
@@ -1913,18 +1975,37 @@ public final class NetworkConnectionPool
             switch(error)
             {
             case NONE:
-                pendingTopicMetadata.nextRequiredRequestType = MetadataRequestType.DESCRIBE_CONFIGS;
+                topicMetadata.nextRequiredRequestType = MetadataRequestType.DESCRIBE_CONFIGS;
+                if (topicMetadata.retries > 0)
+                {
+                    System.out.format(
+                            "Metadata for topic \"%s\" has now been found\n",
+                            topicMetadata.topicName);
+                }
                 break;
             case LEADER_NOT_AVAILABLE:
-                pendingTopicMetadata.invalidate();
-                doRequestIfNeeded();
-                break;
+            case TOPIC_AUTHORIZATION_FAILED:
             case UNKNOWN_TOPIC_OR_PARTITION:
+                if (topicMetadata.hasConsumers())
+                {
+                    if (topicMetadata.retries == 0)
+                    {
+                        System.out.format(
+                                "Unable to access metadata for topic \"%s\" due to Kafka error code %s, retrying...\n",
+                                topicMetadata.topicName, error);
+                    }
+                    topicMetadata.scheduleRefresh(
+                            clientStreamFactory.scheduler,
+                            metadataBackoffMillis,
+                            metadataConnection);
+                }
+                pendingTopicMetadata = null;
+                break;
             case INVALID_TOPIC_EXCEPTION:
             case PARTITION_COUNT_CHANGED:
                 String topicName = topicMetadata.topicName;
                 topicMetadataByName.remove(topicName);
-                detachSubscribers(topicName);
+                detachSubscribers(topicName, false);
                 topicsByName.remove(topicName);
                 pendingTopicMetadata = null;
                 topicMetadata.setErrorCode(error);
@@ -1932,7 +2013,7 @@ public final class NetworkConnectionPool
                 break;
             default:
                 // internal Kafka error, trigger connection failed and reconnect
-                pendingTopicMetadata.invalidate();
+                topicMetadata.invalidate();
                 abort();
                 break;
             }
@@ -2018,12 +2099,14 @@ public final class NetworkConnectionPool
             return error;
         }
 
-        private void detachSubscribers(String topicName)
+        private void detachSubscribers(
+            String topicName,
+            boolean reattach)
         {
             NetworkTopic topic = topicsByName.get(topicName);
             if (topic != null)
             {
-                topic.dispatcher.detach();
+                topic.dispatcher.detach(reattach);
             }
         }
 
@@ -2245,7 +2328,11 @@ public final class NetworkConnectionPool
             if (partitions.isEmpty()  && !compacted)
             {
                 topicsByName.remove(topicName);
-                topicMetadataByName.remove(topicName);
+                TopicMetadata metadata = topicMetadataByName.get(topicName);
+                if (metadata != null && metadata.complete && metadata.consumers.isEmpty())
+                {
+                    topicMetadataByName.remove(topicName);
+                }
             }
         }
 
@@ -2498,6 +2585,7 @@ public final class NetworkConnectionPool
 
             if (existing != null && existing.id == partitionId && existing.offset == offset)
             {
+                existing.refs++;
                 NetworkTopicPartition floor = partitions.floor(existing);
                 if (floor.id == partitionId && floor.offset != offset)
                 {
@@ -2622,7 +2710,7 @@ public final class NetworkConnectionPool
         private static final int UNKNOWN_BROKER = -1;
 
         private final String topicName;
-        private KafkaError errorCode;
+        private KafkaError errorCode = NONE;
         private boolean compacted;
         private int deleteRetentionMs;
         private boolean complete;
@@ -2631,8 +2719,10 @@ public final class NetworkConnectionPool
         private int[] nodeIdsByPartition;
         private long[] firstOffsetsByPartition;
         private long[] offsetsOutOfRangeByPartition;
-        private List<Consumer<TopicMetadata>> consumers = new ArrayList<>();
+        private Int2ObjectHashMap<Consumer<TopicMetadata>> consumers = new Int2ObjectHashMap<>();
         private MetadataRequestType nextRequiredRequestType = MetadataRequestType.METADATA;
+        private int retries;
+        private Timer retryTimer;
 
         TopicMetadata(String topicName)
         {
@@ -2644,19 +2734,44 @@ public final class NetworkConnectionPool
             return complete;
         }
 
-        void setComplete(boolean complete)
+        KafkaError setComplete(
+            KafkaError error)
         {
-            this.complete = complete;
-            if (!complete)
+            complete = true;
+            KafkaError priorError = errorCode;
+            errorCode = error;
+            if (retryTimer != null)
             {
-                nextRequiredRequestType = MetadataRequestType.METADATA;
-
-                // Prevent fetching for the topic
-                for (int i = 0; i < nodeIdsByPartition.length; i++)
-                {
-                    nodeIdsByPartition[i] = UNKNOWN_BROKER;
-                }
+                retryTimer.cancel();
             }
+            return priorError;
+        }
+
+        void scheduleRefresh(
+            DelayedTaskScheduler scheduler,
+            Backoff backoffMillis,
+            MetadataConnection connection)
+        {
+            if (complete)
+            {
+                invalidate();
+                retries = 0;
+            }
+
+            // disable metadata gets until timer expires
+            complete = true;
+
+            Timer timer = getOrCreateTimer(scheduler);
+            timer.cancel();
+            scheduler.rescheduleTimeout(backoffMillis.next(retries), timer, () -> doRefresh(connection));
+        }
+
+        void doRefresh(
+            MetadataConnection connection)
+        {
+            complete = false;
+            retries++;
+            connection.doRequestIfNeeded();
         }
 
         MetadataRequestType nextRequiredRequestType()
@@ -2707,7 +2822,7 @@ public final class NetworkConnectionPool
                         brokerRemoved = true;
                     }
                 }
-                if (brokerRemoved)
+                if (brokerRemoved  && nodeIdsByPartition != null)
                 {
                     nextRequiredRequestType = MetadataRequestType.METADATA;
                     for (int i = 0; i < nodeIdsByPartition.length; i++)
@@ -2724,9 +2839,6 @@ public final class NetworkConnectionPool
 
         void invalidate()
         {
-            errorCode = NONE;
-            compacted = false;
-            deleteRetentionMs = 0;
             complete = false;
             if (brokers != null)
             {
@@ -2781,10 +2893,10 @@ public final class NetworkConnectionPool
         }
 
 
-        boolean offsetsRequired(
+        int offsetsRequired(
             int nodeId)
         {
-            boolean result = false;
+            int result = 0;
             if (nodeIdsByPartition != null)
             {
                 for (int i=0; i < nodeIdsByPartition.length; i++)
@@ -2792,8 +2904,7 @@ public final class NetworkConnectionPool
                     if (nodeIdsByPartition[i] == nodeId &&
                             offsetsOutOfRangeByPartition[i] != NO_OFFSET)
                     {
-                        result = true;
-                        break;
+                        result++;
                     }
                 }
             }
@@ -2812,19 +2923,38 @@ public final class NetworkConnectionPool
             offsetsOutOfRangeByPartition[partition] = badOffset;
         }
 
+        @Override
+        public String toString()
+        {
+            return format(
+                "[TopicMetadata] topicName=%s, errorCode=%s, compacted=%b, complete=%b, brokers=%s, nodnodeIdsByPartition=%s",
+                topicName, errorCode, compacted, complete, brokers, nodeIdsByPartition);
+        }
+
         void doAttach(
+            int consumerId,
             Consumer<TopicMetadata> consumer)
         {
-            consumers.add(consumer);
+            consumers.put(consumerId, consumer);
             if (complete)
             {
                 flush();
             }
         }
 
+        void doDetach(
+            int consumerId)
+        {
+            consumers.remove(consumerId);
+            if (retryTimer != null && consumers.isEmpty())
+            {
+                retryTimer.cancel();
+            }
+        }
+
         void flush()
         {
-            for (Consumer<TopicMetadata> consumer: consumers)
+            for (Consumer<TopicMetadata> consumer: consumers.values())
             {
                 consumer.accept(this);
             }
@@ -2834,6 +2964,11 @@ public final class NetworkConnectionPool
         KafkaError errorCode()
         {
             return errorCode;
+        }
+
+        boolean hasConsumers()
+        {
+            return !consumers.isEmpty();
         }
 
         void visitBrokers(Consumer<BrokerMetadata> visitor)
@@ -2849,23 +2984,14 @@ public final class NetworkConnectionPool
             return nodeIdsByPartition.length;
         }
 
-        int partitionCount(int nodeId)
+        private Timer getOrCreateTimer(
+            DelayedTaskScheduler scheduler)
         {
-            int result = 0;
-            for (int i=0; i < nodeIdsByPartition.length; i++)
+            if (retryTimer == null)
             {
-                if (nodeIdsByPartition[i] == nodeId)
-                {
-                    result++;
-                }
+                retryTimer = scheduler.newBlankTimer();
             }
-            return result;
-        }
-
-        @Override
-        public String toString()
-        {
-            return String.format("[TopicMetadata] topicName=%s, complete=%s", topicName, complete);
+            return retryTimer;
         }
     }
 
@@ -2891,7 +3017,8 @@ public final class NetworkConnectionPool
         }
 
         @Override
-        public void detach()
+        public void detach(
+            boolean reattach)
         {
         }
 
