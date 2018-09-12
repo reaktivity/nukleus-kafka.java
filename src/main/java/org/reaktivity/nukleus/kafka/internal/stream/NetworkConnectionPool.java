@@ -1972,14 +1972,26 @@ public final class NetworkConnectionPool
             switch(error)
             {
             case NONE:
-                pendingTopicMetadata.nextRequiredRequestType = MetadataRequestType.DESCRIBE_CONFIGS;
+                topicMetadata.nextRequiredRequestType = MetadataRequestType.DESCRIBE_CONFIGS;
+                if (topicMetadata.retries > 0)
+                {
+                    System.out.format(
+                            "Metadata for topic \"%s\" has now been found\n",
+                            topicMetadata.topicName);
+                }
                 break;
             case LEADER_NOT_AVAILABLE:
             case TOPIC_AUTHORIZATION_FAILED:
             case UNKNOWN_TOPIC_OR_PARTITION:
-                if (pendingTopicMetadata.hasConsumers())
+                if (topicMetadata.hasConsumers())
                 {
-                    pendingTopicMetadata.scheduleRefresh(
+                    if (topicMetadata.retries == 0)
+                    {
+                        System.out.format(
+                                "Unable to access metadata for topic \"%s\" due to Kafka error code %s, retrying...\n",
+                                topicMetadata.topicName, error);
+                    }
+                    topicMetadata.scheduleRefresh(
                             clientStreamFactory.scheduler,
                             metadataBackoffMillis,
                             metadataConnection);
@@ -1998,7 +2010,7 @@ public final class NetworkConnectionPool
                 break;
             default:
                 // internal Kafka error, trigger connection failed and reconnect
-                pendingTopicMetadata.invalidate();
+                topicMetadata.invalidate();
                 abort();
                 break;
             }
