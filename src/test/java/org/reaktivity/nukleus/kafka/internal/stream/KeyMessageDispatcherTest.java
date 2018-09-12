@@ -88,11 +88,11 @@ public final class KeyMessageDispatcherTest
         context.checking(new Expectations()
         {
             {
-                oneOf(child1).detach();
-                oneOf(child2).detach();
+                oneOf(child1).detach(false);
+                oneOf(child2).detach(false);
             }
         });
-        dispatcher.detach();
+        dispatcher.detach(false);
     }
 
     @Test

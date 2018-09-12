@@ -45,7 +45,7 @@ public enum KafkaError
     @Override
     public String toString()
     {
-        return format("%s (%d)", name(), errorCode);
+        return format("%d (%s)", errorCode, name());
     }
 
     public static KafkaError asKafkaError(short errorCode)

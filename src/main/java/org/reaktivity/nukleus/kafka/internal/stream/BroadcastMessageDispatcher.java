@@ -41,13 +41,14 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
     }
 
     @Override
-    public void detach()
+    public void detach(
+        boolean reattach)
     {
         //  Avoid iterator allocation
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
-            dispatcher.detach();
+            dispatcher.detach(reattach);
         }
     }
 
