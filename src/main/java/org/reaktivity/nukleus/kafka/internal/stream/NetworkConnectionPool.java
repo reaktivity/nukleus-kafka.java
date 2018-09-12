@@ -1447,6 +1447,9 @@ public final class NetworkConnectionPool
                         clientStreamFactory.scheduler,
                         metadataBackoffMillis,
                         metadataConnection);
+                System.out.format(
+                        "Fetch failed for topic \"%s\" partition %d due to Kafka error code %s, retrying...\n",
+                        topicName, partition, errorCode);
                 break;
             default:
                 // kafka error, trigger connection failed and reconnect
@@ -2754,11 +2757,10 @@ public final class NetworkConnectionPool
                 invalidate();
                 retries = 0;
             }
-            else
-            {
-                retries++;
-            }
+
+            // disable metadata gets until timer expires
             complete = true;
+
             Timer timer = getOrCreateTimer(scheduler);
             timer.cancel();
             scheduler.rescheduleTimeout(backoffMillis.next(retries), timer, () -> doRefresh(connection));
@@ -2768,6 +2770,7 @@ public final class NetworkConnectionPool
             MetadataConnection connection)
         {
             complete = false;
+            retries++;
             connection.doRequestIfNeeded();
         }
 
