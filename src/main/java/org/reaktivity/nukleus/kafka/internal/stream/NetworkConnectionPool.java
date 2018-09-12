@@ -1341,7 +1341,8 @@ public final class NetworkConnectionPool
                     long outOfRangeOffset = topicMetadata.offsetsOutOfRangeByPartition[partitionId];
                     if (offset > outOfRangeOffset)
                     {
-                        // offset was too low, adjust higher
+                        // offset was too low, adjust higher and leave offsetsOutOfRangeByPartition set
+                        // for use in ensureOffsetInRange
                         topicMetadata.setFirstOffset(partitionId, offset);
                     }
                     else
@@ -1364,6 +1365,7 @@ public final class NetworkConnectionPool
                                 // recreated, force client(s) to re-attach at offset 0
                                 networkTopic.dispatcher.detach(true);
                             }
+                            topicMetadata.offsetsOutOfRangeByPartition[partitionId] = NO_OFFSET;
                         }
                     }
 
@@ -2430,6 +2432,8 @@ public final class NetworkConnectionPool
 
                 if (!partitionRequestNeeded)
                 {
+                    clientStreamFactory.counters.cacheHits.getAsLong();
+
                     if (!entries.hasNext())
                     {
                         //  End of the partition index reached, advance to latest offset
@@ -2443,6 +2447,8 @@ public final class NetworkConnectionPool
                 }
                 else
                 {
+                    clientStreamFactory.counters.cacheMisses.getAsLong();
+
                     // Update the partition request if needed
                     if (newOffset > fetchOffset)
                     {
@@ -2906,7 +2912,7 @@ public final class NetworkConnectionPool
         public String toString()
         {
             return format(
-                "Topic %s: errorCode=%s, compacted=%b, complete=%b, brokers=%s, nodnodeIdsByPartition=%s",
+                "[TopicMetadata] topicName=%s, errorCode=%s, compacted=%b, complete=%b, brokers=%s, nodnodeIdsByPartition=%s",
                 topicName, errorCode, compacted, complete, brokers, nodeIdsByPartition);
         }
 

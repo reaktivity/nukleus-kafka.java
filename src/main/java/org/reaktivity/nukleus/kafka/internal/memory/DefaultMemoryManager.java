@@ -25,6 +25,7 @@ import static org.reaktivity.nukleus.kafka.internal.memory.MemoryLayout.BTREE_OF
 
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.AtomicBuffer;
+import org.reaktivity.nukleus.kafka.internal.KafkaCounters;
 
 // NOTE, order 0 is largest in terms of size
 public class DefaultMemoryManager implements MemoryManager
@@ -39,10 +40,12 @@ public class DefaultMemoryManager implements MemoryManager
     private final int addressShift;
     private final long addressMask;
     private final AtomicBuffer metadataBuffer;
+    private final KafkaCounters counters;
 
 
     public DefaultMemoryManager(
-        MemoryLayout memoryLayout)
+        MemoryLayout memoryLayout,
+        KafkaCounters counters)
     {
         final long minimumBlockSize = memoryLayout.minimumBlockSize();
         final long capacity = memoryLayout.capacity();
@@ -55,6 +58,7 @@ public class DefaultMemoryManager implements MemoryManager
         maximumBlockSize = memoryBuffers[0].capacity();
         addressShift = Integer.numberOfTrailingZeros(maximumBlockSize);
         addressMask = maximumBlockSize - 1;
+        this.counters = counters;
     }
 
     @Override
@@ -135,6 +139,8 @@ public class DefaultMemoryManager implements MemoryManager
             }
         }
 
+        counters.cacheInUse.accept(allocationSize);
+
         return ((nodeIndex + 1) & ~highestOneBit(nodeIndex + 1)) << blockSizeShift << nodeOrder;
     }
 
@@ -165,6 +171,8 @@ public class DefaultMemoryManager implements MemoryManager
                  break;
             }
         }
+
+        counters.cacheInUse.accept(-allocationSize);
     }
 
     public boolean released()
