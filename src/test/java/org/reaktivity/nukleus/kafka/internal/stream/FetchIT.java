@@ -999,7 +999,7 @@ public class FetchIT
     @Specification({
         "${route}/client/controller",
         "${client}/zero.offset.message/client",
-        "${server}/zero.offset.message.topic.not.found.initially//server" })
+        "${server}/zero.offset.message.topic.not.found.initially/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldRequeryMetadataUntilFoundThenReceiveMessageAtZeroOffset() throws Exception
     {
