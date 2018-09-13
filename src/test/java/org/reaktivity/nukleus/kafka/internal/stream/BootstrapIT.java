@@ -231,6 +231,22 @@ public class BootstrapIT
         k3po.finish();
     }
 
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/zero.offset.message.connect.await/client",
+        "${server}/zero.offset.message.topic.not.found.initially/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldRequeryMetadataUntilFoundThenReceiveMessageAtZeroOffset() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("ROUTED_CLIENT");
+        k3po.awaitBarrier("FIRST_METADATA_RESPONSE_WRITTEN");
+        k3po.notifyBarrier("CONNECT_CLIENT");
+        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
     private void awaitWindowFromClient()
     {
         // Allow the reaktor process loop to process Window frame from client (and any other frames)

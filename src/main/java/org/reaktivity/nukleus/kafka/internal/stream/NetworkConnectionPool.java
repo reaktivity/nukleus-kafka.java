@@ -1717,7 +1717,7 @@ public final class NetworkConnectionPool
             {
                 if (pendingTopicMetadata == null &&
                     ((topicMetadata = topicMetadataByName.values().stream()
-                      .filter(m -> !m.isComplete()).findFirst()).isPresent()))
+                      .filter(m -> m.isGetRequired()).findFirst()).isPresent()))
                 {
                     pendingTopicMetadata = topicMetadata.get();
                 }
@@ -2376,7 +2376,7 @@ public final class NetworkConnectionPool
             {
                 topicsByName.remove(topicName);
                 TopicMetadata metadata = topicMetadataByName.get(topicName);
-                if (metadata != null && metadata.complete && metadata.consumers.isEmpty())
+                if (metadata != null && metadata.isComplete() && metadata.consumers.isEmpty())
                 {
                     topicMetadataByName.remove(topicName);
                 }
@@ -2772,7 +2772,13 @@ public final class NetworkConnectionPool
         private KafkaError errorCode = NONE;
         private boolean compacted;
         private int deleteRetentionMs;
-        private boolean complete;
+
+        private enum State
+        {
+            GET_REQUIRED, GET_SCHEDULED, COMPLETE
+        };
+        private State state = State.GET_REQUIRED;
+
         BrokerMetadata[] brokers;
         private int nextBrokerIndex;
         private int[] nodeIdsByPartition;
@@ -2790,13 +2796,18 @@ public final class NetworkConnectionPool
 
         boolean isComplete()
         {
-            return complete;
+            return state == State.COMPLETE;
+        }
+
+        boolean isGetRequired()
+        {
+            return state == State.GET_REQUIRED;
         }
 
         KafkaError setComplete(
             KafkaError error)
         {
-            complete = true;
+            state = State.COMPLETE;
             KafkaError priorError = errorCode;
             errorCode = error;
             if (retryTimer != null)
@@ -2811,14 +2822,14 @@ public final class NetworkConnectionPool
             Backoff backoffMillis,
             MetadataConnection connection)
         {
-            if (complete)
+            if (isComplete())
             {
                 invalidate();
                 retries = 0;
             }
 
             // disable metadata gets until timer expires
-            complete = true;
+            state = State.GET_SCHEDULED;
 
             Timer timer = getOrCreateTimer(scheduler);
             timer.cancel();
@@ -2828,7 +2839,7 @@ public final class NetworkConnectionPool
         void doRefresh(
             MetadataConnection connection)
         {
-            complete = false;
+            state = State.GET_REQUIRED;
             retries++;
             connection.doRequestIfNeeded();
         }
@@ -2877,7 +2888,7 @@ public final class NetworkConnectionPool
                     if (brokers[i] != null && brokers[i].nodeId == brokerId)
                     {
                         brokers[i] = null;
-                        complete = false;
+                        state = State.GET_REQUIRED;
                         brokerRemoved = true;
                     }
                 }
@@ -2898,7 +2909,7 @@ public final class NetworkConnectionPool
 
         void invalidate()
         {
-            complete = false;
+            state = State.GET_REQUIRED;
             if (brokers != null)
             {
                 Arrays.fill(brokers, null);
@@ -2986,8 +2997,8 @@ public final class NetworkConnectionPool
         public String toString()
         {
             return format(
-                "[TopicMetadata] topicName=%s, errorCode=%s, compacted=%b, complete=%b, brokers=%s, nodnodeIdsByPartition=%s",
-                topicName, errorCode, compacted, complete, brokers, nodeIdsByPartition);
+                "[TopicMetadata] topicName=%s, errorCode=%s, compacted=%b, state=%s, brokers=%s, nodnodeIdsByPartition=%s",
+                topicName, errorCode, compacted, state, brokers, nodeIdsByPartition);
         }
 
         void doAttach(
@@ -2995,7 +3006,7 @@ public final class NetworkConnectionPool
             Consumer<TopicMetadata> consumer)
         {
             consumers.put(consumerId, consumer);
-            if (complete)
+            if (state == State.COMPLETE)
             {
                 flush();
             }
