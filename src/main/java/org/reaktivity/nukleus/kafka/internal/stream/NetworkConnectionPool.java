@@ -551,6 +551,7 @@ public final class NetworkConnectionPool
 
     abstract class AbstractNetworkConnection
     {
+        boolean tempPostBegin;
         final MessageConsumer networkTarget;
         Timer timer;
 
@@ -627,6 +628,8 @@ public final class NetworkConnectionPool
 
                 this.networkId = newNetworkId;
                 this.networkCorrelationId = newCorrelationId;
+                System.out.println(format("%s: Begin issued", this));
+                tempPostBegin = true;
             }
         }
 
@@ -719,6 +722,7 @@ public final class NetworkConnectionPool
         private void handleReset(
             ResetFW reset)
         {
+            System.out.println(format("%s: handleReset", this));
             clientStreamFactory.correlations.remove(
                     networkCorrelationId, AbstractNetworkConnection.this);
             if (networkReplyId != 0L)
@@ -919,6 +923,7 @@ public final class NetworkConnectionPool
         private void handleEnd(
             EndFW end)
         {
+            System.out.println(format("%s: handleEnd", this));
             if (networkId != 0L)
             {
                 clientStreamFactory.doEnd(networkTarget, networkId, null);
@@ -932,6 +937,7 @@ public final class NetworkConnectionPool
         private void handleAbort(
             AbortFW abort)
         {
+            System.out.println(format("%s: handleAbort", this));
             if (networkId != 0L)
             {
                 clientStreamFactory.doAbort(networkTarget, networkId);
@@ -1005,6 +1011,11 @@ public final class NetworkConnectionPool
         @Override
         void doRequestIfNeeded()
         {
+            if (this instanceof HistoricalFetchConnection)
+            {
+                System.out.format("[doRequestIfNeeded()] %s\n", this);
+            }
+
             if (nextRequestId == nextResponseId)
             {
                 doBeginIfNotConnected((b, o, m) ->
@@ -1019,6 +1030,11 @@ public final class NetworkConnectionPool
 
                 if (networkRequestBudget > networkRequestPadding)
                 {
+                    if (this instanceof HistoricalFetchConnection)
+                    {
+                        System.out.println("[doRequestIfNeeded()] networkRequestBudget > networkRequestPadding");
+                    }
+
                     if (offsetsNeeded)
                     {
                         doListOffsetsRequest();
@@ -1095,6 +1111,8 @@ public final class NetworkConnectionPool
                 else
                 {
                     encodeLimit = originalEncodeLimit;
+                    System.out.println(format("%s: no fetch needed for topic %s",
+                            this, topicsByName.get(topicName)));
                 }
             }
 
@@ -1131,8 +1149,24 @@ public final class NetworkConnectionPool
                         networkRequestPadding, payload);
                 networkRequestBudget -= payload.sizeof() + networkRequestPadding;
 
+                if (tempPostBegin)
+                {
+                    System.out.println(format("%s: first request (fetch) issued", this));
+                    tempPostBegin = false;
+                }
                 timer.cancel();
                 clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer, this::fetchRequestIdle);
+            }
+            else if (topicCount > 0)
+            {
+                System.out.println(format("fetch request %d bytes BLOCKED, insufficient window %d, padding=%d",
+                        encodeLimit - encodeOffset, networkRequestBudget, networkRequestPadding));
+            }
+            else
+            {
+                System.out.println(format("%s: historical fetch request abandoned, no topics to fetch, topicCount=%d, topic=%s",
+                        this, topicCount,
+                        topicsByName.keySet().iterator().hasNext() ? topicsByName.values().iterator().next() : null));
             }
         }
 
@@ -1229,8 +1263,19 @@ public final class NetworkConnectionPool
                         networkRequestPadding, payload);
                 networkRequestBudget -= payload.sizeof() + networkRequestPadding;
 
+                if (tempPostBegin)
+                {
+                    System.out.println(format("%s: first request listOffsets issued", this));
+                    tempPostBegin = false;
+                }
+
                 timer.cancel();
                 clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer, this::listOffsetsRequestIdle);
+            }
+            else
+            {
+                System.out.println(format("%s: listOffsets request %d bytes BLOCKED, insufficient window %d, padding=%d",
+                        this, encodeLimit - encodeOffset, networkRequestBudget, networkRequestPadding));
             }
         }
 
@@ -1622,6 +1667,8 @@ public final class NetworkConnectionPool
                                 partition.offset = offset;
                                 partitionsWorkList.add(partition);
                             }
+                            System.out.println(format("%s addTopicToRequest: requestOffset=%d, topic=%s",
+                                    this, partition.offset, topic));
                             setRequestedOffset.accept(partition.id,  partition.offset);
                             encodeLimit = partitionRequest.limit();
                             partitionId = partition.id;
@@ -2420,6 +2467,8 @@ public final class NetworkConnectionPool
                     if (message == null)
                     {
                         partitionRequestNeeded = true;
+                        System.out.format("[satisfyPartitionRequestsFromCache()] cache miss for partition=%d offset=%d\n",
+                                partitionId, entry.offset());
                         break;
                     }
                     else
@@ -2440,6 +2489,9 @@ public final class NetworkConnectionPool
                         {
                             // TODO: this may be too conservative, other dispatchers which did not match this message
                             //       might still have available window to deliver later messages
+                            System.out.format(
+                                    "[satisfyPartitionRequestsFromCache()] blocked delivery on partition=%d offset=%d\n",
+                                    partitionId, newOffset);
                             break;
                         }
                     }
@@ -2481,16 +2533,22 @@ public final class NetworkConnectionPool
                 {
                     dispatcher.flush(partitionId, requestOffset, newOffset);
                     setRequestedOffset.accept(partitionId, newOffset);
+                    if (!needsHistorical(partitionId))
+                    {
+                        // caught up to live stream
+                        System.out.format("[satisfyPartitionRequestsFromCache()] caught up to live on partition=%d\n",
+                                partitionId);
+                    }
                 }
             } // end for each partition
 
             assert encodeLimit <= encodeLimit;
-
             if (newEncodeLimit < encodeLimit)
             {
                 setNewLimit.accept(newEncodeLimit);
             }
 
+            System.out.format("[satisfyPartitionRequestsFromCache()] newPartitionCount=%d\n", newPartitionCount);
             return newPartitionCount;
         }
 
@@ -2536,22 +2594,23 @@ public final class NetworkConnectionPool
             NetworkTopicPartition partition)
         {
             partitions.add(partition);
+//            System.out.println(format("After partitions.add(%s): %s", partition, partitions));
         }
 
         private void remove(
             NetworkTopicPartition partition)
         {
             partitions.remove(partition);
+//            System.out.println(format("After partitions.remove(%s): %s", partition, partitions));
             boolean needsHistorical = false;
             partition.offset = 0;
             NetworkTopicPartition lowest = partitions.ceiling(partition);
-
             if (lowest != null && lowest.id == partition.id)
             {
                 partition.offset = Long.MAX_VALUE;
                 NetworkTopicPartition highest = partitions.floor(partition);
-
-                if (highest != lowest && highest.id == partition.id)
+                // TODO: BUG must add && highest.id == partition.id
+                if (highest != lowest)
                 {
                     needsHistorical = true;
                 }

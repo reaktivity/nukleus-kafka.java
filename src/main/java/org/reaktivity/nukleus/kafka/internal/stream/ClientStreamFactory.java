@@ -558,11 +558,12 @@ public final class ClientStreamFactory implements StreamFactory
         private DirectBuffer pendingMessageValue;
         private int pendingMessageValueOffset;
         private int pendingMessageValueLimit;
-        private long pendingMessageOffset;
+        private long pendingMessageOffset = UNSET;
 
         int fragmentedMessageBytesWritten;
         long fragmentedMessageOffset = UNSET;
         long fragmentedMessagePartition = UNSET;
+        boolean fragmentedMessageDispatched;
 
         private long progressStartOffset = UNSET;
         private long progressEndOffset;
@@ -629,6 +630,9 @@ public final class ClientStreamFactory implements StreamFactory
             long traceId,
             DirectBuffer value)
         {
+            System.out.format(
+                    "CAS dispatch: partition=%d, requestOffset=%d, messageStartOffset=%d, key=%s, value=%s\n",
+                    partition, requestOffset, messageStartOffset, toString(key), toString(value));
             int result = MessageDispatcher.FLAGS_MATCHED;
             if (progressStartOffset == UNSET)
             {
@@ -651,14 +655,28 @@ public final class ClientStreamFactory implements StreamFactory
                 flushPreviousMessage(partition, messageStartOffset);
             }
 
-            if (fragmentedMessageOffset != UNSET
-                    && (fragmentedMessagePartition != partition || messageStartOffset != fragmentedMessageOffset))
+            boolean skipMessage = false;
+
+            if (fragmentedMessageOffset != UNSET)
             {
-                dispatchBlocked = true;
+               if (fragmentedMessagePartition != partition)
+               {
+                   dispatchBlocked = true;
+                   skipMessage = true;
+               }
+               else if (messageStartOffset < fragmentedMessageOffset)
+               {
+                   skipMessage = true;
+               }
+               else if (messageStartOffset == fragmentedMessageOffset)
+               {
+                   fragmentedMessageDispatched = true;
+               }
             }
+
             if (requestOffset <= progressStartOffset // avoid out of order delivery
                 && messageStartOffset >= progressStartOffset // avoid repeated delivery
-                && !dispatchBlocked)
+                && !skipMessage)
             {
                 final int payloadLength = value == null ? 0 : value.capacity() - fragmentedMessageBytesWritten;
                 int applicationReplyBudget = budget.applicationReplyBudget();
@@ -704,9 +722,21 @@ public final class ClientStreamFactory implements StreamFactory
             long requestOffset,
             long nextFetchOffset)
         {
+            if (progressStartOffset != UNSET && pendingMessageOffset > 0 &&
+                    nextFetchOffset > pendingMessageOffset + 1
+                    && !dispatchBlocked
+                    && (progressStartOffset == UNSET ||
+                            requestOffset <= progressStartOffset && !dispatchBlocked))
+            {
+                System.out.format(
+                    "CAS flush message skipped: " +
+                    "partition=%d, requestOffset=%d, nextFetchOffset=%d, pendingMessageOffset=%d\n",
+                    partition, requestOffset, nextFetchOffset, pendingMessageOffset);
+            }
             flushPreviousMessage(partition, nextFetchOffset);
             long startOffset = progressStartOffset;
             long endOffset = progressEndOffset;
+
             if (startOffset == UNSET)
             {
                 // dispatch was not called
@@ -718,13 +748,31 @@ public final class ClientStreamFactory implements StreamFactory
                 // We didn't skip or do partial write of any messages due to lack of window, advance to highest offset
                 endOffset = nextFetchOffset;
             }
+
+            if (fragmentedMessageOffset != UNSET &&
+                fragmentedMessagePartition == partition &&
+                !fragmentedMessageDispatched &&
+                startOffset <= fragmentedMessageOffset &&
+                nextFetchOffset > fragmentedMessageOffset)
+            {
+                // Partially written message no longer exists, we cannot complete it.
+                // Abort the connection to force the client to re-attach.
+                System.out.format(
+                        "CAS: REQUIRED MESSAGE LOST detected in flush, detaching: " +
+                        "partition=%d, requestOffset=%d, startOffset=%d, nextFetchOffset=%d, this=%s\n",
+                        partition, requestOffset, startOffset, nextFetchOffset, this);
+                detach(false);
+            }
+
             if (endOffset > startOffset && requestOffset <= startOffset)
             {
                 this.fetchOffsets.put(partition, endOffset);
                 progressHandler.handle(partition, startOffset, endOffset);
             }
             progressStartOffset = UNSET;
+            pendingMessageOffset = UNSET;
             dispatchBlocked = false;
+            fragmentedMessageDispatched = false;
         }
 
         @Override
@@ -734,8 +782,18 @@ public final class ClientStreamFactory implements StreamFactory
                                  "applicationId %x, applicationReplyId %x",
                     ClientAcceptStream.this.fetchOffsets,
                     ClientAcceptStream.this.fragmentedMessageOffset,
+                    ClientAcceptStream.this.fragmentedMessagePartition,
                     ClientAcceptStream.this.applicationId,
                     ClientAcceptStream.this.applicationReplyId);
+        }
+
+        private String toString(
+            DirectBuffer buffer)
+        {
+            return buffer == null ? "null" :
+                format("%s(capacity=%d)",
+                        buffer.getClass().getSimpleName() + "@" + Integer.toHexString(hashCode()),
+                        buffer.capacity());
         }
 
         private void flushPreviousMessage(
@@ -751,12 +809,17 @@ public final class ClientStreamFactory implements StreamFactory
                 {
                     flags |= INIT;
                     this.fetchOffsets.put(partition, nextFetchOffset);
+                    System.out.format("CAS doKafkaData: partition=%d, nextFetchOffset=%d, key=%s, value=%s\n",
+                            partition, nextFetchOffset, toString(pendingMessageKey), toString(pendingMessageValue));
                     doKafkaData(applicationReply, applicationReplyId, pendingMessageTraceId, applicationReplyPadding, flags,
                                 compacted ? pendingMessageKey : null,
                                 pendingMessageTimestamp, pendingMessageValue, pendingMessageValueLimit, fetchOffsets);
                 }
                 else
                 {
+                    System.out.format(
+                            "CAS doKafkaDataContinuation: partition=%d, nextFetchOffset=%d, key=%s, value=%s\n",
+                            partition, nextFetchOffset, toString(pendingMessageKey), toString(pendingMessageValue));
                     doKafkaDataContinuation(applicationReply, applicationReplyId, pendingMessageTraceId,
                             applicationReplyPadding, flags, pendingMessageValue, pendingMessageValueOffset,
                             pendingMessageValueLimit);
@@ -775,6 +838,7 @@ public final class ClientStreamFactory implements StreamFactory
                     fragmentedMessageBytesWritten += (pendingMessageValueLimit - pendingMessageValueOffset);
                     fragmentedMessageOffset = pendingMessageOffset;
                     fragmentedMessagePartition = partition;
+                    fragmentedMessageDispatched = true;
                     progressEndOffset = pendingMessageOffset;
                     this.fetchOffsets.put(partition, pendingMessageOffset);
                 }
@@ -977,6 +1041,7 @@ public final class ClientStreamFactory implements StreamFactory
                 budget.incApplicationReplyBudget(window.credit());
             }
 
+            System.out.format("CAS: [networkPool.doFlush()] %s budget=%s\n", window, budget);
             networkPool.doFlush();
         }
 
@@ -1072,6 +1137,12 @@ public final class ClientStreamFactory implements StreamFactory
         public void leaveGroup()
         {
 
+        }
+
+        @Override
+        public String toString()
+        {
+            return String.format("(applicationReplyBudget=%d)", applicationReplyBudget());
         }
     }
 
@@ -1174,7 +1245,8 @@ public final class ClientStreamFactory implements StreamFactory
         @Override
         public String toString()
         {
-            return String.format("(groupId=%d, streamId=%d)", groupId, streamId);
+            return String.format("(groupId=%d, streamId=%d, applicationReplyBudget=%d)",
+                    groupId, streamId, applicationReplyBudget());
         }
     }
 }
