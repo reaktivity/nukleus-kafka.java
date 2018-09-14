@@ -1427,32 +1427,42 @@ public final class NetworkConnectionPool
             int partition,
             KafkaError errorCode)
         {
+            TopicMetadata metadata = topicMetadataByName.get(topicName);
+
             switch(errorCode)
             {
             case OFFSET_OUT_OF_RANGE:
-                offsetsNeeded = true;
-                TopicMetadata topicMetadata = topicMetadataByName.get(topicName);
-                long badOffset = getRequestedOffset(topicName, partition);
+                // metadata may be null if all clients have detached
+                if (metadata != null)
+                {
+                    offsetsNeeded = true;
+                    long badOffset = getRequestedOffset(topicName, partition);
 
-                // logStartOffset is always -1 in this case so we can't use it
-                topicMetadata.setOffsetOutOfRange(partition, badOffset);
-
+                    // logStartOffset is always -1 in this case so we can't use it
+                    metadata.setOffsetOutOfRange(partition, badOffset);
+                }
                 break;
             case UNKNOWN_TOPIC_OR_PARTITION:
             case LEADER_NOT_AVAILABLE:
             case NOT_LEADER_FOR_PARTITION:
-                TopicMetadata metadata = topicMetadataByName.get(topicName);
-                metadata.setErrorCode(errorCode);
-                metadata.scheduleRefresh(
-                        clientStreamFactory.scheduler,
-                        metadataBackoffMillis,
-                        metadataConnection);
-                System.out.format(
-                        "Fetch failed for topic \"%s\" partition %d due to Kafka error code %s, retrying...\n",
-                        topicName, partition, errorCode);
+                // metadata may be null if all clients have detached
+                if (metadata != null)
+                {
+                    metadata.setErrorCode(errorCode);
+                    metadata.scheduleRefresh(
+                            clientStreamFactory.scheduler,
+                            metadataBackoffMillis,
+                            metadataConnection);
+                    System.out.format(
+                            "Fetch failed for topic \"%s\" partition %d due to Kafka error code %s, retrying...\n",
+                            topicName, partition, errorCode);
+                }
                 break;
             default:
                 // kafka error, trigger connection failed and reconnect
+                System.out.format(
+                        "Fetch failed for topic \"%s\" partition %d due to Kafka error code %s, re-establishing connection...\n",
+                        topicName, partition, errorCode);
                 abort();
                 break;
             }
@@ -1483,12 +1493,12 @@ public final class NetworkConnectionPool
         {
             final NetworkTopic topic = topicsByName.get(topicName);
             final int maxPartitionBytes = topic.maximumWritableBytes(true);
+            final TopicMetadata metadata = topicMetadataByName.get(topicName);
 
             int partitionCount = 0;
 
-            if (maxPartitionBytes > 0)
+            if (maxPartitionBytes > 0 && metadata != null)
             {
-                final TopicMetadata metadata = topicMetadataByName.get(topicName);
                 final int[] nodeIdsByPartition = metadata.nodeIdsByPartition;
 
                 // TODO: eliminate iterator allocation
@@ -1587,9 +1597,10 @@ public final class NetworkConnectionPool
             if (topic.needsHistorical())
             {
                 final int maxPartitionBytes = topic.maximumWritableBytes(false);
-                if (maxPartitionBytes > 0)
+                final TopicMetadata metadata = topicMetadataByName.get(topicName);
+
+                if (maxPartitionBytes > 0 && metadata != null)
                 {
-                    final TopicMetadata metadata = topicMetadataByName.get(topicName);
                     final int[] nodeIdsByPartition = metadata.nodeIdsByPartition;
 
                     int partitionId = -1;
@@ -2003,13 +2014,16 @@ public final class NetworkConnectionPool
                 break;
             case INVALID_TOPIC_EXCEPTION:
             case PARTITION_COUNT_CHANGED:
+                System.out.format(
+                    "Unable to access metadata for topic \"%s\" due to Kafka error code %s, detaching subscribers.\n",
+                    topicMetadata.topicName, error);
                 String topicName = topicMetadata.topicName;
-                topicMetadataByName.remove(topicName);
                 detachSubscribers(topicName, false);
-                topicsByName.remove(topicName);
-                pendingTopicMetadata = null;
                 topicMetadata.setErrorCode(error);
                 topicMetadata.flush();
+                topicsByName.remove(topicName);
+                topicMetadataByName.remove(topicName);
+                pendingTopicMetadata = null;
                 break;
             default:
                 // internal Kafka error, trigger connection failed and reconnect
