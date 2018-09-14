@@ -630,9 +630,6 @@ public final class ClientStreamFactory implements StreamFactory
             long traceId,
             DirectBuffer value)
         {
-            System.out.format(
-                    "CAS dispatch: partition=%d, requestOffset=%d, messageStartOffset=%d, key=%s, value=%s\n",
-                    partition, requestOffset, messageStartOffset, toString(key), toString(value));
             int result = MessageDispatcher.FLAGS_MATCHED;
             if (progressStartOffset == UNSET)
             {
@@ -722,21 +719,9 @@ public final class ClientStreamFactory implements StreamFactory
             long requestOffset,
             long nextFetchOffset)
         {
-            if (progressStartOffset != UNSET && pendingMessageOffset > 0 &&
-                    nextFetchOffset > pendingMessageOffset + 1
-                    && !dispatchBlocked
-                    && (progressStartOffset == UNSET ||
-                            requestOffset <= progressStartOffset && !dispatchBlocked))
-            {
-                System.out.format(
-                    "CAS flush message skipped: " +
-                    "partition=%d, requestOffset=%d, nextFetchOffset=%d, pendingMessageOffset=%d\n",
-                    partition, requestOffset, nextFetchOffset, pendingMessageOffset);
-            }
             flushPreviousMessage(partition, nextFetchOffset);
             long startOffset = progressStartOffset;
             long endOffset = progressEndOffset;
-
             if (startOffset == UNSET)
             {
                 // dispatch was not called
@@ -757,10 +742,6 @@ public final class ClientStreamFactory implements StreamFactory
             {
                 // Partially written message no longer exists, we cannot complete it.
                 // Abort the connection to force the client to re-attach.
-                System.out.format(
-                        "CAS: REQUIRED MESSAGE LOST detected in flush, detaching: " +
-                        "partition=%d, requestOffset=%d, startOffset=%d, nextFetchOffset=%d, this=%s\n",
-                        partition, requestOffset, startOffset, nextFetchOffset, this);
                 detach(false);
             }
 
@@ -809,17 +790,12 @@ public final class ClientStreamFactory implements StreamFactory
                 {
                     flags |= INIT;
                     this.fetchOffsets.put(partition, nextFetchOffset);
-                    System.out.format("CAS doKafkaData: partition=%d, nextFetchOffset=%d, key=%s, value=%s\n",
-                            partition, nextFetchOffset, toString(pendingMessageKey), toString(pendingMessageValue));
                     doKafkaData(applicationReply, applicationReplyId, pendingMessageTraceId, applicationReplyPadding, flags,
                                 compacted ? pendingMessageKey : null,
                                 pendingMessageTimestamp, pendingMessageValue, pendingMessageValueLimit, fetchOffsets);
                 }
                 else
                 {
-                    System.out.format(
-                            "CAS doKafkaDataContinuation: partition=%d, nextFetchOffset=%d, key=%s, value=%s\n",
-                            partition, nextFetchOffset, toString(pendingMessageKey), toString(pendingMessageValue));
                     doKafkaDataContinuation(applicationReply, applicationReplyId, pendingMessageTraceId,
                             applicationReplyPadding, flags, pendingMessageValue, pendingMessageValueOffset,
                             pendingMessageValueLimit);
@@ -1041,7 +1017,6 @@ public final class ClientStreamFactory implements StreamFactory
                 budget.incApplicationReplyBudget(window.credit());
             }
 
-            System.out.format("CAS: [networkPool.doFlush()] %s budget=%s\n", window, budget);
             networkPool.doFlush();
         }
 
