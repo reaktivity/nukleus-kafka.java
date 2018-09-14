@@ -93,7 +93,10 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         if (messageOffset + 1 == highWatermark)
         {
             // Caught up to live stream, enable pro-active message caching
-            cacheNewMessages[partition] = true;
+            if (!cacheNewMessages[partition])
+            {
+                cacheNewMessages[partition] = true;
+            }
         }
 
         if (MessageDispatcher.matched(result))
