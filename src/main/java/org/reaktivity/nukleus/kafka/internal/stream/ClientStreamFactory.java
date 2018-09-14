@@ -148,7 +148,9 @@ public final class ClientStreamFactory implements StreamFactory
         Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools,
         Consumer<BiFunction<String, Long, NetworkConnectionPool>> setConnectionPoolFactory,
         DelayedTaskScheduler scheduler,
-        KafkaCounters counters)
+        KafkaCounters counters,
+        Long2LongHashMap groupBudget,
+        Long2LongHashMap groupMembers)
     {
         this.fetchMaxBytes = config.fetchMaxBytes();
         this.fetchPartitionMaxBytes = config.fetchPartitionMaxBytes();
@@ -164,8 +166,8 @@ public final class ClientStreamFactory implements StreamFactory
         this.supplyCounter = requireNonNull(supplyCounter);
         this.correlations = requireNonNull(correlations);
         this.connectionPools = connectionPools;
-        groupBudget = new Long2LongHashMap(-1);
-        groupMembers = new Long2LongHashMap(-1);
+        this.groupBudget = groupBudget;
+        this.groupMembers = groupMembers;
         setConnectionPoolFactory.accept((networkName, ref) ->
             new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes, bufferPool,
                     messageCache, supplyCounter, forceProactiveMessageCache, readIdleTimeout));
@@ -602,10 +604,10 @@ public final class ClientStreamFactory implements StreamFactory
         public void detach(
             boolean reattach)
         {
-            budget.leaveGroup();
             progressHandler = NOOP_PROGRESS_HANDLER;
             networkPool.doDetach(topicName, networkAttachId, fetchOffsets);
             networkAttachId = UNATTACHED;
+            budget.leaveGroup();
             if (reattach)
             {
                 doEnd(applicationReply, applicationReplyId, ZERO_OFFSETS);
@@ -1002,10 +1004,10 @@ public final class ClientStreamFactory implements StreamFactory
             ResetFW reset)
         {
             doReset(applicationThrottle, applicationId);
-            budget.leaveGroup();
             progressHandler = NOOP_PROGRESS_HANDLER;
             networkPool.doDetach(topicName, networkAttachId, fetchOffsets);
             networkAttachId = UNATTACHED;
+            budget.leaveGroup();
         }
 
         private int writeableBytes()
