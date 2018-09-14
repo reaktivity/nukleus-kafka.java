@@ -2564,8 +2564,8 @@ public final class NetworkConnectionPool
             {
                 partition.offset = Long.MAX_VALUE;
                 NetworkTopicPartition highest = partitions.floor(partition);
-
-                if (highest != lowest && highest.id == partition.id)
+                // TODO: BUG must add && highest.id == partition.id
+                if (highest != lowest)
                 {
                     needsHistorical = true;
                 }
