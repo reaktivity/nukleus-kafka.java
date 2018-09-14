@@ -551,7 +551,6 @@ public final class NetworkConnectionPool
 
     abstract class AbstractNetworkConnection
     {
-        boolean tempPostBegin;
         final MessageConsumer networkTarget;
         Timer timer;
 
@@ -628,7 +627,6 @@ public final class NetworkConnectionPool
 
                 this.networkId = newNetworkId;
                 this.networkCorrelationId = newCorrelationId;
-                tempPostBegin = true;
             }
         }
 
@@ -1133,10 +1131,6 @@ public final class NetworkConnectionPool
                         networkRequestPadding, payload);
                 networkRequestBudget -= payload.sizeof() + networkRequestPadding;
 
-                if (tempPostBegin)
-                {
-                    tempPostBegin = false;
-                }
                 timer.cancel();
                 clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer, this::fetchRequestIdle);
             }
@@ -1234,11 +1228,6 @@ public final class NetworkConnectionPool
                 NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId,
                         networkRequestPadding, payload);
                 networkRequestBudget -= payload.sizeof() + networkRequestPadding;
-
-                if (tempPostBegin)
-                {
-                    tempPostBegin = false;
-                }
 
                 timer.cancel();
                 clientStreamFactory.scheduler.rescheduleTimeout(readIdleTimeout, timer, this::listOffsetsRequestIdle);
