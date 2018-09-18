@@ -3000,7 +3000,11 @@ public final class NetworkConnectionPool
         {
             for (BrokerMetadata broker : brokers)
             {
-                visitor.accept(broker);
+                // broker can be null if a broker connection just failed
+                if (broker != null)
+                {
+                    visitor.accept(broker);
+                }
             }
         }
 
