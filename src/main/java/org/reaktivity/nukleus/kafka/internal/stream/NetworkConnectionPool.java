@@ -530,6 +530,7 @@ public final class NetworkConnectionPool
                 if (!metadata.hasConsumers())
                 {
                     topicMetadataByName.remove(topicName);
+                    topicsByName.remove(topicName);
                 }
             }
         }
