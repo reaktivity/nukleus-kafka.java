@@ -1024,6 +1024,22 @@ public class FetchIT
 
     @Test
     @Specification({
+        "${routeAnyTopic}/client/controller",
+        "${client}/zero.offset.two.topics.one.reset/client",
+        "${server}/two.topics.single.partition.one.fetched/server" })
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\""
+    })
+    public void shouldHandleResetFromClientWithoutCausingNPEInDoFetchRequest() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("DESCRIBE_CONFIGS_REQUEST_RECEIVED");
+        k3po.notifyBarrier("DO_RESET");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
         "${route}/client/controller",
         "${client}/zero.offset.and.reset/client",
         "${server}/zero.offset.messages.multiple.partitions/server" })
@@ -1349,8 +1365,32 @@ public class FetchIT
     @Test
     @Specification({
         "${routeAnyTopic}/client/controller",
-        "${client}/zero.offset.message.two.topics.multiple.partitions/client",
+        "${client}/zero.offset.message.multiple.partitions/client",
         "${server}/live.fetch.connection.reset/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @Configure(name=KafkaConfiguration.READ_IDLE_TIMEOUT_PROPERTY, value="200000")
+    public void shouldAttachNewSubscribersWhenOneBrokerConnectionHasFailed()
+            throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
+        k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
+        k3po.awaitBarrier("READY_TO_FAIL_FETCH_CONNECTION_TWO");
+        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
+        k3po.notifyBarrier("FAIL_FETCH_CONNECTION_TWO");
+        k3po.awaitBarrier("METADATA_REFRESH_REQUEST_RECEIVED");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("WRITE_METADATA_REFRESH_RESPONSE");
+        k3po.awaitBarrier("FETCH_REQUEST_ON_RECONNECTED_CONNECTION_RECEIVED");
+        k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${routeAnyTopic}/client/controller",
+        "${client}/zero.offset.message.two.topics.multiple.partitions/client",
+        "${server}/live.fetch.connection.reset.two.topics/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReconnectRequeryPartitionMetadataAndContinueReceivingMessagesWhenLiveFetchConnectionIsReset()
             throws Exception
@@ -1361,6 +1401,8 @@ public class FetchIT
         k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
         awaitWindowFromClient();
         k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
+        k3po.awaitBarrier("FETCH_STREAM_ONE_REQUEST_THREE_RECEIVED");
+        k3po.notifyBarrier("WRITE_METADATA_REFRESH_RESPONSE");
         k3po.finish();
     }
 
