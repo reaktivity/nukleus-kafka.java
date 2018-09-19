@@ -405,6 +405,18 @@ public class FetchResponseDecoder implements ResponseDecoder
             skipBytesDecoderState.nextState = this::decodePartitionResponse;
             decoderState = skipBytesDecoderState;
         }
+        else if (isCompressed(recordBatch))
+        {
+            recordSetBytesRemaining -= recordBatch.sizeof();
+            assert recordSetBytesRemaining >= 0;
+
+            nextFetchAt = recordBatch.firstOffset() + recordBatch.lastOffsetDelta() + 1;
+
+            skipBytesDecoderState.bytesToSkip = recordBatch.sizeof();
+            skipBytesDecoderState.nextState =
+                    recordSetBytesRemaining == 0 ? this::decodePartitionResponse : this::decodeRecordBatch;
+            decoderState = skipBytesDecoderState;
+        }
         else
         {
             final int recordBatchActualSize =
@@ -623,5 +635,12 @@ public class FetchResponseDecoder implements ResponseDecoder
             }
             return newOffset;
         }
+    }
+
+    private static boolean isCompressed(RecordBatchFW recordBatch)
+    {
+        short attributes = recordBatch.attributes();
+        // 0 = NONE, 1 = GZIP, 2 = SNAPPY, 3 = LZ4
+        return (attributes & 0x07) != 0;
     }
 }
