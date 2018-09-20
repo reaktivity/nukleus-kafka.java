@@ -64,7 +64,7 @@ public class FetchLimitsIT
     @Specification({
         "${route}/client/controller",
         "${client}/compacted.large.message.subscribed.to.key/client",
-        "${server}/compacted.messages.first.exceeds.256.bytes/server"})
+        "${server}/compacted.messages.large.and.small/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveLargeCompactedMessageWhenSubscribedToKey() throws Exception
     {
@@ -75,7 +75,7 @@ public class FetchLimitsIT
     @Specification({
         "${route}/client/controller",
         "${client}/compacted.large.message.subscribed.to.key/client",
-        "${server}/compacted.messages.first.exceeds.256.bytes.repeated/server"})
+        "${server}/compacted.messages.large.and.small.repeated/server"})
     @ScriptProperty({
         "networkAccept \"nukleus://target/streams/kafka\"",
         "applicationConnectWindow \"200\""
@@ -88,8 +88,19 @@ public class FetchLimitsIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/zero.offset.partial.message.aborted/client",
+        "${server}/zero.offset.messages.large.and.small.then.large.missing/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldBeDettachedWhenPartiallyDeliveredMessageNoLongerAvailable() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/zero.offset.large.message/client",
-        "${server}/zero.offset.messages.first.exceeds.256.bytes/server"})
+        "${server}/zero.offset.messages.large.and.small/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveMessageExceedingBufferSlotCapacity() throws Exception
     {
@@ -100,7 +111,7 @@ public class FetchLimitsIT
     @Specification({
         "${route}/client/controller",
         "${client}/zero.offset.large.message/client",
-        "${server}/zero.offset.messages.first.exceeds.256.bytes.repeated/server"})
+        "${server}/zero.offset.messages.large.and.small.repeated/server"})
     @ScriptProperty({
         "networkAccept \"nukleus://target/streams/kafka\"",
         "applicationConnectWindow \"200\""
