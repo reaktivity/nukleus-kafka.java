@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.DisableOnDebug;
@@ -199,6 +200,7 @@ public class BootstrapIT
         k3po.finish();
     }
 
+    @Ignore("reaktivity/nukleus-kafka.java#122")
     @Test
     @Specification({
         "${route}/client/controller",

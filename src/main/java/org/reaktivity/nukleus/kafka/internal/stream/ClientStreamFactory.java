@@ -597,7 +597,8 @@ public final class ClientStreamFactory implements StreamFactory
             long offset = fetchOffsets.get(partition);
             if (offset == oldOffset)
             {
-                fetchOffsets.put(partition, newOffset);
+                final long oldFetchOffset = fetchOffsets.put(partition, newOffset);
+//                progressHandler.handle(partition, oldFetchOffset, newOffset);
             }
         }
 
@@ -747,8 +748,8 @@ public final class ClientStreamFactory implements StreamFactory
 
             if (endOffset > startOffset && requestOffset <= startOffset)
             {
-                this.fetchOffsets.put(partition, endOffset);
-                progressHandler.handle(partition, startOffset, endOffset);
+                final long oldFetchOffset = this.fetchOffsets.put(partition, endOffset);
+                progressHandler.handle(partition, oldFetchOffset, endOffset);
             }
             progressStartOffset = UNSET;
             pendingMessageOffset = UNSET;
@@ -789,10 +790,11 @@ public final class ClientStreamFactory implements StreamFactory
                 if (pendingMessageValueOffset == 0)
                 {
                     flags |= INIT;
-                    this.fetchOffsets.put(partition, nextFetchOffset);
+                    final long oldFetchOffset = this.fetchOffsets.put(partition, nextFetchOffset);
                     doKafkaData(applicationReply, applicationReplyId, pendingMessageTraceId, applicationReplyPadding, flags,
                                 compacted ? pendingMessageKey : null,
                                 pendingMessageTimestamp, pendingMessageValue, pendingMessageValueLimit, fetchOffsets);
+                    this.fetchOffsets.put(partition, oldFetchOffset);
                 }
                 else
                 {
@@ -808,6 +810,9 @@ public final class ClientStreamFactory implements StreamFactory
                     fragmentedMessageOffset = UNSET;
                     fragmentedMessagePartition = UNSET;
                     progressEndOffset = nextFetchOffset;
+
+                    final long oldFetchOffset = this.fetchOffsets.put(partition, nextFetchOffset);
+                    progressHandler.handle(partition, oldFetchOffset, nextFetchOffset);
                 }
                 else
                 {
@@ -816,7 +821,9 @@ public final class ClientStreamFactory implements StreamFactory
                     fragmentedMessagePartition = partition;
                     fragmentedMessageDispatched = true;
                     progressEndOffset = pendingMessageOffset;
-                    this.fetchOffsets.put(partition, pendingMessageOffset);
+
+                    final long oldFetchOffset = this.fetchOffsets.put(partition, pendingMessageOffset);
+                    progressHandler.handle(partition, oldFetchOffset, pendingMessageOffset);
                 }
             }
         }
