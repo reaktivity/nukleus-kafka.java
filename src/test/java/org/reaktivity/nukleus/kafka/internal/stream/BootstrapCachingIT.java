@@ -89,7 +89,7 @@ public class BootstrapCachingIT
     @Specification({
         "${route}/client/controller",
         "${client}/compacted.historical.large.message.and.small/client",
-        "${server}/compacted.messages.first.exceeds.256.bytes/server"})
+        "${server}/compacted.messages.large.and.small/server"})
     @ScriptProperty({
         "networkAccept \"nukleus://target/streams/kafka\"",
         "applicationConnectWindow1 \"2000\"",

@@ -73,6 +73,16 @@ public class BootstrapIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${server}/compacted.offset.too.low.message/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldBootstrapTopicStartingWithOffsetTooLow() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${server}/compacted.messages.multiple.nodes/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldBootstrapTopicWithMultiplePartitionsOnMultipleNodes() throws Exception

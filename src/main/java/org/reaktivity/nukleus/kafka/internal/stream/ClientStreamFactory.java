@@ -662,13 +662,13 @@ public final class ClientStreamFactory implements StreamFactory
                    dispatchBlocked = true;
                    skipMessage = true;
                }
-               else if (messageStartOffset < fragmentedMessageOffset)
-               {
-                   skipMessage = true;
-               }
-               else if (messageStartOffset == fragmentedMessageOffset)
+               else if  (messageStartOffset == fragmentedMessageOffset)
                {
                    fragmentedMessageDispatched = true;
+               }
+               else
+               {
+                   skipMessage = true;
                }
             }
 
