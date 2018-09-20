@@ -277,6 +277,7 @@ public final class NetworkConnectionPool
     private final KafkaRefCounters routeCounters;
 
     private int nextAttachId;
+    private int nestedDoFlushCalls = 0;
 
     NetworkConnectionPool(
         ClientStreamFactory clientStreamFactory,
@@ -505,13 +506,21 @@ public final class NetworkConnectionPool
 
     void doFlush()
     {
-        for (AbstractFetchConnection connection  : connections)
+        nestedDoFlushCalls++;
+
+        while (nestedDoFlushCalls == 1)
         {
-            connection.doRequestIfNeeded();
-        }
-        for (AbstractFetchConnection connection  : historicalConnections)
-        {
-            connection.doRequestIfNeeded();
+            for (AbstractFetchConnection connection  : connections)
+            {
+                connection.doRequestIfNeeded();
+            }
+            for (AbstractFetchConnection connection  : historicalConnections)
+            {
+                connection.doRequestIfNeeded();
+            }
+
+            // Repeat the loop once if there were any nested calls to this method
+            nestedDoFlushCalls = nestedDoFlushCalls > 1 ? 1 : 0;
         }
     }
 
@@ -2531,7 +2540,7 @@ public final class NetworkConnectionPool
             NetworkTopicPartition next = partitions.floor(candidate);
             if (next == null || next.offset != nextOffset)
             {
-                if (next !=  null && next != first)
+                if (next !=  null && (next != first || first.refs > 0))
                 {
                     needsHistoricalByPartition.set(partitionId);
                 }
