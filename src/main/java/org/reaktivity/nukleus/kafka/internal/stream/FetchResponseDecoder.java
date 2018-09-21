@@ -405,15 +405,19 @@ public class FetchResponseDecoder implements ResponseDecoder
             skipBytesDecoderState.nextState = this::decodePartitionResponse;
             decoderState = skipBytesDecoderState;
         }
-        else if (isCompressed(recordBatch))
+        else if (isCompressed(recordBatch) || isControlBatch(recordBatch))
         {
+            nextFetchAt = recordBatch.firstOffset() + recordBatch.lastOffsetDelta() + 1;
+            if (nextFetchAt > requestedOffset)
+            {
+                messageDispatcher.flush(partition, requestedOffset, nextFetchAt);
+            }
+
             final int recordBatchActualSize =
                     RecordBatchFW.FIELD_OFFSET_LENGTH + BitUtil.SIZE_OF_INT + recordBatch.length();
             int skip = Math.min(recordBatchActualSize, recordSetBytesRemaining);
 
             recordSetBytesRemaining -= skip;
-
-            nextFetchAt = recordBatch.firstOffset() + recordBatch.lastOffsetDelta() + 1;
 
             skipBytesDecoderState.bytesToSkip = skip;
             skipBytesDecoderState.nextState =
@@ -645,5 +649,12 @@ public class FetchResponseDecoder implements ResponseDecoder
         short attributes = recordBatch.attributes();
         // 0 = NONE, 1 = GZIP, 2 = SNAPPY, 3 = LZ4
         return (attributes & 0x07) != 0;
+    }
+
+    private static boolean isControlBatch(RecordBatchFW recordBatch)
+    {
+        short attributes = recordBatch.attributes();
+        // sixth lowest bit indicates whether the RecordBatch includes a control message
+        return (attributes & 0x20) != 0;
     }
 }
