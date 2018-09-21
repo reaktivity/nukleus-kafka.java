@@ -908,7 +908,8 @@ public class CachingFetchIT
     public void shouldHandleFetchResponseAfterUnsubscribe() throws Exception
     {
         k3po.start();
-        k3po.awaitBarrier("SUBSCRIBED");
+        k3po.awaitBarrier("FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("DO_CLIENT_RESET");
         k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
@@ -922,7 +923,8 @@ public class CachingFetchIT
     public void shouldHandleFetchResponseMultiplePartitionsAfterUnsubscribe() throws Exception
     {
         k3po.start();
-        k3po.awaitBarrier("SUBSCRIBED");
+        k3po.awaitBarrier("FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("DO_CLIENT_RESET");
         k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
