@@ -1338,6 +1338,12 @@ public final class NetworkConnectionPool
                         return;
                     }
 
+                    if (topicMetadata == null)
+                    {
+                        // all clients have detached, just skip through this topic's response, ignoreing it
+                        continue;
+                    }
+
                     errorCode = asKafkaError(partition.errorCode());
                     if (errorCode != NONE)
                     {
