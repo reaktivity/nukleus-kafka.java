@@ -998,6 +998,19 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/compressed.record.batch/client",
+        "${server}/compressed.record.batch/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldSkipCompressedRecordBatch() throws Exception
+    {
+        k3po.start();
+        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/zero.offset.message/client",
         "${server}/zero.offset.message.topic.not.found.initially/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")

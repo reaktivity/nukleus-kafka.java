@@ -407,12 +407,15 @@ public class FetchResponseDecoder implements ResponseDecoder
         }
         else if (isCompressed(recordBatch))
         {
-            recordSetBytesRemaining -= recordBatch.sizeof();
-            assert recordSetBytesRemaining >= 0;
+            final int recordBatchActualSize =
+                    RecordBatchFW.FIELD_OFFSET_LENGTH + BitUtil.SIZE_OF_INT + recordBatch.length();
+            int skip = Math.min(recordBatchActualSize, recordSetBytesRemaining);
+
+            recordSetBytesRemaining -= skip;
 
             nextFetchAt = recordBatch.firstOffset() + recordBatch.lastOffsetDelta() + 1;
 
-            skipBytesDecoderState.bytesToSkip = recordBatch.sizeof();
+            skipBytesDecoderState.bytesToSkip = skip;
             skipBytesDecoderState.nextState =
                     recordSetBytesRemaining == 0 ? this::decodePartitionResponse : this::decodeRecordBatch;
             decoderState = skipBytesDecoderState;
