@@ -1413,7 +1413,7 @@ public class FetchIT
         "${server}/live.fetch.connection.reset/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     @Configure(name=KafkaConfiguration.READ_IDLE_TIMEOUT_PROPERTY, value="200000")
-    public void shouldAttachNewSubscribersWhenOneBrokerConnectionHasFailed()
+    public void shouldRefreshAllConnectionsToABrokerWhichFails()
             throws Exception
     {
         k3po.start();
@@ -1421,6 +1421,7 @@ public class FetchIT
         k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
         k3po.awaitBarrier("READY_TO_FAIL_FETCH_CONNECTION_TWO");
         k3po.notifyBarrier("CONNECT_CLIENT_TWO");
+        k3po.awaitBarrier("HISTORICAL_TWO_FETCH_REQUEST_RECEIVED");
         k3po.notifyBarrier("FAIL_FETCH_CONNECTION_TWO");
         k3po.awaitBarrier("METADATA_REFRESH_REQUEST_RECEIVED");
         awaitWindowFromClient();
