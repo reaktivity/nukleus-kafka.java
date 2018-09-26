@@ -156,6 +156,17 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/compacted.historical.empty.message/client",
+        "${server}/compacted.empty.message/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveCompactedEmptyMessageFromCacheWhenSubscribedToKey() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/compacted.header.message.multiple.clients/client",
         "${server}/compacted.header.first.matches.repeated/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
