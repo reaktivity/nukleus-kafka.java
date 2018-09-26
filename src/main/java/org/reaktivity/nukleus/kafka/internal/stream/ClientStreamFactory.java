@@ -46,6 +46,7 @@ import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.Varint64FW;
@@ -57,15 +58,15 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.AbortFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.DataFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.FrameFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaEndExFW;
-import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
-import org.reaktivity.nukleus.kafka.internal.util.Flags;
 import org.reaktivity.nukleus.kafka.internal.util.DelayedTaskScheduler;
+import org.reaktivity.nukleus.kafka.internal.util.Flags;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 
@@ -84,6 +85,7 @@ public final class ClientStreamFactory implements StreamFactory
     private final UnsafeBuffer workBuffer2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
     private final RouteFW routeRO = new RouteFW();
+    final FrameFW frameRO = new FrameFW();
     final BeginFW beginRO = new BeginFW();
     final DataFW dataRO = new DataFW();
     final EndFW endRO = new EndFW();
