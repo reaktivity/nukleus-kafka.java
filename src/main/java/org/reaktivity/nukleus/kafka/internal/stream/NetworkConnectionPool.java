@@ -2645,7 +2645,15 @@ public final class NetworkConnectionPool
             DirectBuffer result = null;
             if (wrapped != null)
             {
-                wrapper.wrap(wrapped.buffer(), wrapped.offset(), wrapped.sizeof());
+                final int wrappedLength = wrapped.sizeof();
+                if (wrappedLength == 0)
+                {
+                    wrapper.wrap(EMPTY_BYTE_ARRAY);
+                }
+                else
+                {
+                    wrapper.wrap(wrapped.buffer(), wrapped.offset(), wrappedLength);
+                }
                 result = wrapper;
             }
             return result;
