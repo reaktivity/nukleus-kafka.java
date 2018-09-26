@@ -437,7 +437,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         public int compareTo(
             EntryImpl o)
         {
-            return (int) (this.offset - o.offset);
+            return Long.compare(this.offset, o.offset);
         }
 
         @Override
