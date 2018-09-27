@@ -30,6 +30,7 @@ import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaController;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleusFactorySpi;
 import org.reaktivity.reaktor.test.ReaktorRule;
+import org.reaktivity.reaktor.test.annotation.Configure;
 
 public class BootstrapCachingIT
 {
@@ -95,12 +96,53 @@ public class BootstrapCachingIT
         "applicationConnectWindow1 \"2000\"",
         "applicationConnectWindow2 \"200\""
     })
+    @Configure(name=KafkaConfiguration.READ_IDLE_TIMEOUT_PROPERTY, value="200000")
     public void shouldReceiveCompactedFragmentedMessageAndFollowingFromCacheWhenNotSubscribedToKey() throws Exception
     {
         k3po.start();
         k3po.awaitBarrier("ROUTED_CLIENT");
         k3po.awaitBarrier("BOOTSTRAP_COMPLETE");
         k3po.notifyBarrier("CONNECT_CLIENT_ONE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/compacted.partial.message.aborted/client",
+        "${server}/compacted.messages.large.then.small/server"})
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "secondMessageKey \"key1\""
+    })
+    public void shouldBeDetachedWhenPartiallyWrittenMessageIsReplacedWithNewValueInCache() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("ROUTED_CLIENT");
+        k3po.awaitBarrier("BOOTSTRAP_COMPLETE");
+        k3po.notifyBarrier("CONNECT_CLIENT");
+        k3po.awaitBarrier("CLIENT_RECEIVED_PARTIAL_MESSAGE");
+        k3po.notifyBarrier("WRITE_SECOND_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/compacted.partial.message.aborted/client",
+        "${server}/compacted.messages.large.then.tombstone/server"})
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "secondMessageKey \"key1\""
+    })
+    public void shouldBeDetachedWhenPartiallyWrittenMessageIsReplacedWithTombstone() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("ROUTED_CLIENT");
+        k3po.awaitBarrier("BOOTSTRAP_COMPLETE");
+        k3po.notifyBarrier("CONNECT_CLIENT");
+        k3po.awaitBarrier("CLIENT_RECEIVED_PARTIAL_MESSAGE");
+        k3po.notifyBarrier("WRITE_SECOND_FETCH_RESPONSE");
         k3po.finish();
     }
 
