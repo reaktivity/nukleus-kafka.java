@@ -550,6 +550,11 @@ public final class NetworkConnectionPool
         }
     }
 
+    KafkaRefCounters getRouteCounters()
+    {
+        return routeCounters;
+    }
+
     void removeConnection(LiveFetchConnection connection)
     {
         connections = ArrayUtil.remove(connections, connection);
