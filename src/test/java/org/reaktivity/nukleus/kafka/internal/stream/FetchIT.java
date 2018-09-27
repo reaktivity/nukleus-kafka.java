@@ -1076,8 +1076,10 @@ public class FetchIT
     public void shouldHandleResetFromClientWithoutCausingNPEInDoFetchRequest() throws Exception
     {
         k3po.start();
-        k3po.awaitBarrier("DESCRIBE_CONFIGS_REQUEST_RECEIVED");
+        k3po.awaitBarrier("KNOWN_TOPIC_METADATA_REQUEST_RECEIVED");
         k3po.notifyBarrier("DO_RESET");
+        k3po.awaitBarrier("CONNECT_CLIENT_TWO");
+        k3po.notifyBarrier("SEND_METADATA_RESPONSE");
         k3po.finish();
     }
 
