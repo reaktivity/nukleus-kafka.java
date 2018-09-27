@@ -31,11 +31,16 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public class HeaderValueMessageDispatcher implements MessageDispatcher
 {
+    static final HeaderValueMessageDispatcher NOOP = new HeaderValueMessageDispatcher(null);
+
     final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
     final DirectBuffer headerName;
     Map<DirectBuffer, HeadersMessageDispatcher> dispatchersByHeaderValue = new HashMap<>();
 
     private final List<HeadersMessageDispatcher> dispatchers = new ArrayList<>();
+
+    private boolean inIteration;
+    private boolean noopDispatchers;
 
     public HeaderValueMessageDispatcher(DirectBuffer headerKey)
     {
@@ -59,11 +64,15 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
     public void detach(
         boolean reattach)
     {
+        inIteration = true;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
             dispatcher.detach(reattach);
         }
+        inIteration = false;
+
+        removeNoopDispatchers();
     }
 
     @Override
@@ -78,6 +87,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
         DirectBuffer value)
     {
         int result = 0;
+        inIteration = true;
         Iterator<DirectBuffer> values = supplyHeader.apply(headerName);
         while (values.hasNext())
         {
@@ -90,6 +100,9 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
                                              key, supplyHeader, timestamp, traceId, value);
             }
         }
+        inIteration = false;
+
+        removeNoopDispatchers();
         return result;
     }
 
@@ -99,11 +112,15 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             long requestOffset,
             long lastOffset)
     {
+        inIteration = true;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
             dispatcher.flush(partition, requestOffset, lastOffset);
         }
+        inIteration = false;
+
+        removeNoopDispatchers();
     }
 
     public void add(
@@ -137,8 +154,20 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             result = headersDispatcher.remove(headers, dispatcher);
             if (headersDispatcher.isEmpty())
             {
-                dispatchersByHeaderValue.remove(buffer);
-                dispatchers.remove(headersDispatcher);
+                if (inIteration)
+                {
+                    dispatchersByHeaderValue.replace(buffer, HeadersMessageDispatcher.NOOP);
+                    int index = dispatchers.indexOf(headersDispatcher);
+                    if (index != -1)
+                    {
+                        dispatchers.set(index, HeadersMessageDispatcher.NOOP);
+                    }
+                }
+                else
+                {
+                    dispatchersByHeaderValue.remove(buffer);
+                    dispatchers.remove(headersDispatcher);
+                }
                 onRemoved(headersDispatcher);
             }
         }
@@ -156,6 +185,16 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
     {
         buffer.wrap(headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
         return dispatchersByHeaderValue.get(buffer);
+    }
+
+    private void removeNoopDispatchers()
+    {
+        if (noopDispatchers)
+        {
+            noopDispatchers = false;
+            dispatchersByHeaderValue.entrySet().removeIf(e -> e.getValue() == HeadersMessageDispatcher.NOOP);
+            dispatchers.removeIf(e -> e == HeadersMessageDispatcher.NOOP);
+        }
     }
 
     @Override

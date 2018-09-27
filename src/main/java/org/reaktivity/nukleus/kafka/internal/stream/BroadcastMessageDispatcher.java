@@ -22,9 +22,14 @@ import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
 
+import static org.reaktivity.nukleus.kafka.internal.stream.HeadersMessageDispatcher.NOOP;
+
 public class BroadcastMessageDispatcher implements MessageDispatcher
 {
     private final List<MessageDispatcher> dispatchers = new ArrayList<MessageDispatcher>();
+
+    private boolean inIteration;
+    private boolean noopDispatchers;
 
     @Override
     public void adjustOffset(
@@ -44,12 +49,16 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
     public void detach(
         boolean reattach)
     {
+        inIteration = true;
         //  Avoid iterator allocation
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
             dispatcher.detach(reattach);
         }
+        inIteration = false;
+
+        removeNoopDispatchers();
     }
 
     @Override
@@ -63,12 +72,16 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
                  long traceId,
                  DirectBuffer value)
     {
+        inIteration = true;
         int result = 0;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
             result |= dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
         }
+        inIteration = false;
+
+        removeNoopDispatchers();
         return result;
     }
 
@@ -78,11 +91,15 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
             long requestOffset,
             long lastOffset)
     {
+        inIteration = true;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
             dispatcher.flush(partition, requestOffset, lastOffset);
         }
+        inIteration = false;
+
+        removeNoopDispatchers();
     }
 
     public void add(MessageDispatcher dispatcher)
@@ -92,12 +109,34 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
 
     public boolean remove(MessageDispatcher dispatcher)
     {
-        return dispatchers.remove(dispatcher);
+        int index = dispatchers.indexOf(dispatcher);
+        if (index != -1)
+        {
+            if (inIteration)
+            {
+                dispatchers.set(index, NOOP);
+                noopDispatchers = true;
+            }
+            else
+            {
+                dispatchers.remove(index);
+            }
+        }
+        return index != -1;
     }
 
     public boolean isEmpty()
     {
         return dispatchers.isEmpty();
+    }
+
+    private void removeNoopDispatchers()
+    {
+        if (noopDispatchers)
+        {
+            noopDispatchers = false;
+            dispatchers.removeIf(e -> e == NOOP);
+        }
     }
 
     @Override
