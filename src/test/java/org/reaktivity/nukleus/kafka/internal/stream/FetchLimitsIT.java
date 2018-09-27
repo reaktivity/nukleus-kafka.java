@@ -91,7 +91,7 @@ public class FetchLimitsIT
         "${client}/zero.offset.partial.message.aborted/client",
         "${server}/zero.offset.messages.large.and.small.then.large.missing/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldBeDettachedWhenPartiallyDeliveredMessageNoLongerAvailable() throws Exception
+    public void shouldBeDetachedWhenPartiallyDeliveredMessageNoLongerAvailable() throws Exception
     {
         k3po.finish();
     }
