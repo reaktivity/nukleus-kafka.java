@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.Objects.requireNonNull;
+import static org.agrona.LangUtil.rethrowUnchecked;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.NONE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.asKafkaError;
 
@@ -539,51 +540,62 @@ public class FetchResponseDecoder implements ResponseDecoder
         if (record != null)
         {
             final long currentFetchAt = firstOffset + record.offsetDelta();
-            int headersOffset = record.limit();
-            int headersLimit = headersOffset;
-            final int headerCount = record.headerCount();
-            for (int i = 0; i < headerCount; i++)
+
+            try
             {
-                final HeaderFW header = headerRO.tryWrap(buffer, headersLimit, limit);
-                if (header == null)
+                int headersOffset = record.limit();
+                int headersLimit = headersOffset;
+                final int headerCount = record.headerCount();
+                for (int i = 0; i < headerCount; i++)
                 {
-                    return newOffset;
+                    final HeaderFW header = headerRO.tryWrap(buffer, headersLimit, limit);
+                    if (header == null)
+                    {
+                        return newOffset;
+                    }
+                    headersLimit = header.limit();
                 }
-                headersLimit = header.limit();
+
+                recordCount--;
+
+                if (currentFetchAt >= requestedOffset)
+                    // The only guarantee is the response will encompass the requested offset.
+                {
+                    nextFetchAt = currentFetchAt + 1;
+
+                    DirectBuffer key = null;
+                    final OctetsFW messageKey = record.key();
+                    if (messageKey != null)
+                    {
+                        keyBuffer.wrap(messageKey.buffer(), messageKey.offset(), messageKey.sizeof());
+                        key = keyBuffer;
+                    }
+
+                    final long timestamp = firstTimestamp + record.timestampDelta();
+
+                    DirectBuffer value = null;
+                    final OctetsFW messageValue = record.value();
+                    if (messageValue != null)
+                    {
+                        valueBuffer.wrap(messageValue.buffer(), messageValue.offset(), messageValue.sizeof());
+                        value = valueBuffer;
+                    }
+                    headers.wrap(buffer, headersOffset, headersLimit);
+                    messageDispatcher.dispatch(partition, requestedOffset, currentFetchAt, highWatermark,
+                            key, headers, timestamp, traceId, value);
+                }
+
+                newOffset = headersLimit;
+                decoderState = this::decodeRecordLength;
             }
-
-            recordCount--;
-
-            if (currentFetchAt >= requestedOffset)
-                // The only guarantee is the response will encompass the requested offset.
+            catch (Throwable ex)
             {
-                nextFetchAt = currentFetchAt + 1;
-
-                DirectBuffer key = null;
-                final OctetsFW messageKey = record.key();
-                if (messageKey != null)
-                {
-                    keyBuffer.wrap(messageKey.buffer(), messageKey.offset(), messageKey.sizeof());
-                    key = keyBuffer;
-                }
-
-                final long timestamp = firstTimestamp + record.timestampDelta();
-
-                DirectBuffer value = null;
-                final OctetsFW messageValue = record.value();
-                if (messageValue != null)
-                {
-                    valueBuffer.wrap(messageValue.buffer(), messageValue.offset(), messageValue.sizeof());
-                    value = valueBuffer;
-                }
-                headers.wrap(buffer, headersOffset, headersLimit);
-                messageDispatcher.dispatch(partition, requestedOffset, currentFetchAt, highWatermark,
-                        key, headers, timestamp, traceId, value);
+                ex.addSuppressed(new Exception(String.format("[kafka] Decoding fetch topic partition response %s[%d] @ offset %d",
+                        topicName, partition, currentFetchAt)));
+                rethrowUnchecked(ex);
             }
-
-            newOffset = headersLimit;
-            decoderState = this::decodeRecordLength;
         }
+
         return newOffset;
     }
 

@@ -59,6 +59,8 @@ public class KeyMessageDispatcher implements MessageDispatcher
     public void detach(
         boolean reattach)
     {
+        System.out.println("KeyMessageDispatcher#detach");
+
         inIteration = true;
         for (MessageDispatcher dispatcher: dispatchersByKey.values())
         {
@@ -80,6 +82,8 @@ public class KeyMessageDispatcher implements MessageDispatcher
         long traceId,
         DirectBuffer value)
     {
+        System.out.println("KeyMessageDispatcher#dispatch");
+
         buffer.wrap(key, 0, key.capacity());
         MessageDispatcher result = dispatchersByKey.get(buffer);
         return result == null ? 0 :
@@ -92,6 +96,8 @@ public class KeyMessageDispatcher implements MessageDispatcher
         long requestOffset,
         long lastOffset)
     {
+        System.out.println("KeyMessageDispatcher#flush");
+
         inIteration = true;
         for (MessageDispatcher dispatcher: dispatchersByKey.values())
         {
@@ -152,6 +158,8 @@ public class KeyMessageDispatcher implements MessageDispatcher
 
     public boolean remove(OctetsFW key, Iterator<KafkaHeaderFW> headers, MessageDispatcher dispatcher)
     {
+        System.out.println("KeyMessageDispatcher#remove");
+
         boolean result = false;
         buffer.wrap(key.buffer(), key.offset(), key.sizeof());
         HeadersMessageDispatcher headersDispatcher = dispatchersByKey.get(buffer);
@@ -183,6 +191,7 @@ public class KeyMessageDispatcher implements MessageDispatcher
     {
         if (noopDispatchers)
         {
+System.out.println("KeyMessageDispatcher#removeNoopDispatchers");
             noopDispatchers = false;
             dispatchersByKey.entrySet().removeIf(e -> e.getValue() == NOOP);
         }

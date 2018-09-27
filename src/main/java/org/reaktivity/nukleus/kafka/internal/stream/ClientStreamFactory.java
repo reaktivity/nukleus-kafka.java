@@ -15,7 +15,9 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static java.lang.Integer.toHexString;
 import static java.lang.String.format;
+import static java.lang.System.identityHashCode;
 import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.wrap;
@@ -80,6 +82,8 @@ public final class ClientStreamFactory implements StreamFactory
     {
 
     };
+
+    public static final long INTERNAL_ERRORS_TO_LOG = 100;
 
     private final UnsafeBuffer workBuffer1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     private final UnsafeBuffer workBuffer2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
@@ -563,6 +567,7 @@ public final class ClientStreamFactory implements StreamFactory
         private long pendingMessageOffset = UNSET;
 
         int fragmentedMessageBytesWritten;
+        int fragmentedMessageLength;
         long fragmentedMessageOffset = UNSET;
         long fragmentedMessagePartition = UNSET;
         boolean fragmentedMessageDispatched;
@@ -599,8 +604,7 @@ public final class ClientStreamFactory implements StreamFactory
             long offset = fetchOffsets.get(partition);
             if (offset == oldOffset)
             {
-                final long oldFetchOffset = fetchOffsets.put(partition, newOffset);
-//                progressHandler.handle(partition, oldFetchOffset, newOffset);
+                fetchOffsets.put(partition, newOffset);
             }
         }
 
@@ -667,6 +671,24 @@ public final class ClientStreamFactory implements StreamFactory
                else if  (messageStartOffset == fragmentedMessageOffset)
                {
                    fragmentedMessageDispatched = true;
+                   if (value.capacity() != fragmentedMessageLength)
+                   {
+                       long errors = networkPool.getRouteCounters().internalErrors.getAsLong();
+                       if (errors <= INTERNAL_ERRORS_TO_LOG)
+                       {
+                           System.out.format(
+                               "Internal Error: unexpected value length for partially delivered message, partition=%d, " +
+                               "requestOffset=%d, messageStartOffset=%d, key=%s, value=%s, %s\n",
+                               partition,
+                               requestOffset,
+                               messageStartOffset,
+                               toString(key),
+                               toString(value),
+                               this);
+                       }
+                       networkPool.getRouteCounters().forcedDetaches.getAsLong();
+                       detach(false);
+                   }
                }
                else
                {
@@ -679,6 +701,7 @@ public final class ClientStreamFactory implements StreamFactory
                 && !skipMessage)
             {
                 final int payloadLength = value == null ? 0 : value.capacity() - fragmentedMessageBytesWritten;
+
                 int applicationReplyBudget = budget.applicationReplyBudget();
                 int writeableBytes = applicationReplyBudget - applicationReplyPadding;
                 if (writeableBytes > 0)
@@ -740,11 +763,13 @@ public final class ClientStreamFactory implements StreamFactory
             if (fragmentedMessageOffset != UNSET &&
                 fragmentedMessagePartition == partition &&
                 !fragmentedMessageDispatched &&
+                requestOffset <= fragmentedMessageOffset &&
                 startOffset <= fragmentedMessageOffset &&
                 nextFetchOffset > fragmentedMessageOffset)
             {
                 // Partially written message no longer exists, we cannot complete it.
                 // Abort the connection to force the client to re-attach.
+                networkPool.getRouteCounters().forcedDetaches.getAsLong();
                 detach(false);
             }
 
@@ -762,11 +787,18 @@ public final class ClientStreamFactory implements StreamFactory
         @Override
         public String toString()
         {
-            return format("fetchOffsets %s, fragmentedMessageOffset %d, fragmentedMessagePartition %d, " +
-                                 "applicationId %x, applicationReplyId %x",
+            return format("%s@%s(topic=\"%s\", subscribedByKey=%b, fetchOffsets=%s, fragmentedMessageOffset=%d, " +
+                                 "fragmentedMessagePartition=%d, fragmentedMessageLength=%d, " +
+                                 "fragmentedMessageBytesWritten=%d, applicationId=%x, applicationReplyId=%x)",
+                    ClientAcceptStream.this.getClass().getSimpleName(),
+                    Integer.toHexString(System.identityHashCode(ClientAcceptStream.this)),
+                    ClientAcceptStream.this.topicName,
+                    ClientAcceptStream.this.subscribedByKey,
                     ClientAcceptStream.this.fetchOffsets,
                     ClientAcceptStream.this.fragmentedMessageOffset,
                     ClientAcceptStream.this.fragmentedMessagePartition,
+                    ClientAcceptStream.this.fragmentedMessageLength,
+                    ClientAcceptStream.this.fragmentedMessageBytesWritten,
                     ClientAcceptStream.this.applicationId,
                     ClientAcceptStream.this.applicationReplyId);
         }
@@ -776,7 +808,7 @@ public final class ClientStreamFactory implements StreamFactory
         {
             return buffer == null ? "null" :
                 format("%s(capacity=%d)",
-                        buffer.getClass().getSimpleName() + "@" + Integer.toHexString(hashCode()),
+                        buffer.getClass().getSimpleName() + "@" + toHexString(identityHashCode(buffer)),
                         buffer.capacity());
         }
 
@@ -811,6 +843,7 @@ public final class ClientStreamFactory implements StreamFactory
                     fragmentedMessageBytesWritten = 0;
                     fragmentedMessageOffset = UNSET;
                     fragmentedMessagePartition = UNSET;
+                    fragmentedMessageLength = 0;
                     progressEndOffset = nextFetchOffset;
 
                     final long oldFetchOffset = this.fetchOffsets.put(partition, nextFetchOffset);
@@ -818,6 +851,11 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 else
                 {
+                    if (fragmentedMessagePartition == UNSET)
+                    {
+                        // Store full message length to verify it remains consistent
+                        fragmentedMessageLength = pendingMessageValue.capacity();
+                    }
                     fragmentedMessageBytesWritten += (pendingMessageValueLimit - pendingMessageValueOffset);
                     fragmentedMessageOffset = pendingMessageOffset;
                     fragmentedMessagePartition = partition;
