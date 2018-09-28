@@ -34,7 +34,7 @@ public class KeyMessageDispatcher implements MessageDispatcher
 
     private Map<UnsafeBuffer, HeadersMessageDispatcher> dispatchersByKey = new HashMap<>();
 
-    private boolean inIteration;
+    boolean inIteration;
     private boolean noopDispatchers;
 
     public KeyMessageDispatcher(
