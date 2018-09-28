@@ -129,13 +129,13 @@ public class BootstrapCachingIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/compacted.partial.message.aborted.key/client",
+        "${client}/compacted.partial.message.aborted.with.key/client",
         "${server}/compacted.messages.large.then.small/server"})
     @ScriptProperty({
         "networkAccept \"nukleus://target/streams/kafka\"",
         "secondMessageKey \"key1\""
     })
-    public void shouldBeDetachedWhenPartiallyWrittenMessageIsReplacedWithNewValueInCacheKey() throws Exception
+    public void shouldNotThrowConcurrentModificationExceptionWhenDetached() throws Exception
     {
         k3po.start();
         k3po.awaitBarrier("ROUTED_CLIENT");

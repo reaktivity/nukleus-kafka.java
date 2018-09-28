@@ -152,7 +152,8 @@ public class HeadersMessageDispatcher implements MessageDispatcher
     public boolean isEmpty()
      {
 
-         return broadcast.isEmpty() && dispatchersByHeaderKey.isEmpty();
+         return broadcast.isEmpty() &&
+                 (dispatchers.isEmpty() || dispatchers.stream().allMatch(x -> x == HeaderValueMessageDispatcher.NOOP));
      }
 
     public boolean remove(

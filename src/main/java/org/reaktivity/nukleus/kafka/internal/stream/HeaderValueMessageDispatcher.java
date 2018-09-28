@@ -230,7 +230,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
 
     public boolean isEmpty()
     {
-         return dispatchersByHeaderValue.isEmpty();
+         return dispatchers.isEmpty() || dispatchers.stream().allMatch(x -> x == HeadersMessageDispatcher.NOOP);
     }
 
 }

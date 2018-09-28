@@ -127,7 +127,7 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
 
     public boolean isEmpty()
     {
-        return dispatchers.isEmpty();
+        return dispatchers.isEmpty() || dispatchers.stream().allMatch(x -> x == NOOP);
     }
 
     private void removeNoopDispatchers()
