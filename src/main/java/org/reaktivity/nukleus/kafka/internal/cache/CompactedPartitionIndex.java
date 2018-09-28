@@ -144,7 +144,7 @@ public class CompactedPartitionIndex implements PartitionIndex
                 }
             }
         }
-        else if (entry.offset == messageStartOffset && messageCache.get(entry.message, messageRO) == null)
+        else if (entry != null && entry.offset == messageStartOffset && messageCache.get(entry.message, messageRO) == null)
         {
             // We already saw this offset. Either we didn't cache the message or it was evicted due to lack of space.
             entry.message = messageCache.replace(entry.message, timestamp, traceId, key, headers, value);
