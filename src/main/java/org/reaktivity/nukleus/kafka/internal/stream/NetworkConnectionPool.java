@@ -617,7 +617,7 @@ public final class NetworkConnectionPool
         @Override
         public String toString()
         {
-            return format("%s [budget=%d, padding=%d, networkId=%d, networkReplyId=%d, nextRequestId %d, nextResponseId %d]",
+            return format("%s [budget=%d, padding=%d, networkId=%x, networkReplyId=%x, nextRequestId %d, nextResponseId %d]",
                     getClass().getSimpleName(), networkRequestBudget, networkRequestPadding,
                     networkId, networkReplyId, nextRequestId, nextResponseId);
         }
@@ -798,7 +798,7 @@ public final class NetworkConnectionPool
             if (frame.streamId() != networkReplyId)
             {
                 // reject deferred DATA / END / ABORT after idle ABORT without RESET
-                clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
+                clientStreamFactory.doReset(networkReplyThrottle, frame.streamId());
                 return;
             }
 
@@ -1006,6 +1006,7 @@ public final class NetworkConnectionPool
             networkReplyId = 0L;
             nextRequestId = 0;
             nextResponseId = 0;
+            streamState = this::beforeBegin;
         }
     }
 
@@ -1427,7 +1428,7 @@ public final class NetworkConnectionPool
         }
 
         @Override
-        void handleConnectionFailed()
+        final void handleConnectionFailed()
         {
             invalidateConnectionMetadata();
             doReinitialize();
@@ -1516,7 +1517,7 @@ public final class NetworkConnectionPool
         @Override
         public String toString()
         {
-            return format("%s [broker=%s, budget=%d, padding=%d, networkId=%d, networkReplyId=%d," +
+            return format("%s [broker=%s, budget=%d, padding=%d, networkId=%x, networkReplyId=%x," +
                           "nextRequestId=%d, nextResponseId=%d]",
                     getClass().getSimpleName(), broker, networkRequestBudget, networkRequestPadding,
                     networkId, networkReplyId, nextRequestId, nextResponseId);
