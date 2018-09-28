@@ -29,7 +29,37 @@ import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 
 public class HeadersMessageDispatcher implements MessageDispatcher
 {
-    static final HeadersMessageDispatcher NOOP = new HeadersMessageDispatcher(null);
+    static final HeadersMessageDispatcher NOOP = new HeadersMessageDispatcher(null)
+    {
+        @Override
+        public void adjustOffset(int partition, long oldOffset, long newOffset)
+        {
+        }
+
+        @Override
+        public void detach(boolean reattach)
+        {
+        }
+
+        @Override
+        public void flush(int partition, long requestOffset, long nextFetchOffset)
+        {
+        }
+
+        @Override
+        public int dispatch(
+            int partition,
+            long requestOffset,
+            long messageStartOffset,
+            DirectBuffer key,
+            Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
+            long timestamp,
+            long traceId,
+            DirectBuffer value)
+        {
+            return 0;
+        }
+    };
 
     private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
     private final Map<DirectBuffer, HeaderValueMessageDispatcher> dispatchersByHeaderKey = new HashMap<>();

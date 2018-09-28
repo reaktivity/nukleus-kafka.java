@@ -31,7 +31,37 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public class HeaderValueMessageDispatcher implements MessageDispatcher
 {
-    static final HeaderValueMessageDispatcher NOOP = new HeaderValueMessageDispatcher(null);
+    static final HeaderValueMessageDispatcher NOOP = new HeaderValueMessageDispatcher(null)
+    {
+        @Override
+        public void adjustOffset(int partition, long oldOffset, long newOffset)
+        {
+        }
+
+        @Override
+        public void detach(boolean reattach)
+        {
+        }
+
+        @Override
+        public void flush(int partition, long requestOffset, long nextFetchOffset)
+        {
+        }
+
+        @Override
+        public int dispatch(
+            int partition,
+            long requestOffset,
+            long messageStartOffset,
+            DirectBuffer key,
+            Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
+            long timestamp,
+            long traceId,
+            DirectBuffer value)
+        {
+            return 0;
+        }
+    };
 
     final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
     final DirectBuffer headerName;
