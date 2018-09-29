@@ -27,6 +27,7 @@ import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.function.KafkaErrorConsumer;
+import org.reaktivity.nukleus.kafka.internal.function.StringIntLongToLongFunction;
 import org.reaktivity.nukleus.kafka.internal.function.StringIntToLongFunction;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.Varint32FW;
@@ -75,6 +76,7 @@ public class FetchResponseDecoder implements ResponseDecoder
 
     private final Function<String, DecoderMessageDispatcher> getDispatcher;
     private final StringIntToLongFunction getRequestedOffsetForPartition;
+    private final StringIntLongToLongFunction updateStartOffsetForPartition;
     private final KafkaErrorConsumer errorHandler;
     private final int maxRecordBatchSize;
     private final MutableDirectBuffer buffer;
@@ -108,11 +110,13 @@ public class FetchResponseDecoder implements ResponseDecoder
     FetchResponseDecoder(
         Function<String, DecoderMessageDispatcher> getDispatcher,
         StringIntToLongFunction getRequestedOffsetForPartition,
+        StringIntLongToLongFunction updateStartOffsetForPartition,
         KafkaErrorConsumer errorHandler,
         MutableDirectBuffer decodingBuffer)
     {
         this.getDispatcher = getDispatcher;
         this.getRequestedOffsetForPartition = getRequestedOffsetForPartition;
+        this.updateStartOffsetForPartition = updateStartOffsetForPartition;
         this.errorHandler = errorHandler;
         this.buffer = requireNonNull(decodingBuffer);
         this.maxRecordBatchSize = buffer.capacity();
@@ -308,6 +312,14 @@ public class FetchResponseDecoder implements ResponseDecoder
                 requestedOffset = getRequestedOffsetForPartition.apply(topicName, partition);
                 nextFetchAt = requestedOffset;
                 decoderState = abortedTransactionCount > 0 ? this::decodeTransactionResponse : this::decodeRecordSet;
+
+                final long newStartOffset = response.logStartOffset();
+                final long oldStartOffset = updateStartOffsetForPartition.apply(topicName, partition, newStartOffset);
+                if (oldStartOffset < newStartOffset)
+                {
+                    messageDispatcher.startOffset(partition, newStartOffset);
+                }
+
                 if (errorCode != NONE.errorCode)
                 {
                     errorHandler.accept(topicName, partition, asKafkaError(errorCode));

@@ -13,29 +13,10 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.kafka.internal.stream;
+package org.reaktivity.nukleus.kafka.internal.function;
 
-import org.agrona.DirectBuffer;
-
-public interface DecoderMessageDispatcher
+@FunctionalInterface
+public interface StringIntLongToLongFunction
 {
-    void startOffset(
-        int partition,
-        long lowWatermark);
-
-    int dispatch(
-        int partition,
-        long requestOffset,
-        long messageOffset,
-        long highWatermark,
-        DirectBuffer key,
-        HeadersFW headers,
-        long timestamp,
-        long traceId,
-        DirectBuffer value);
-
-    void flush(
-        int partition,
-        long requestOffset,
-        long lastOffset);
+    long apply(String stringValue, int intValue, long longValue);
 }

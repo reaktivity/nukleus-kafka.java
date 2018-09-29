@@ -69,6 +69,12 @@ public class DefaultPartitionIndex implements PartitionIndex
         return 0L;
     }
 
+    @Override
+    public void startOffset(
+        long startOffset)
+    {
+    }
+
     private static final class NoMessageEntry implements Entry
     {
         private long offset;
