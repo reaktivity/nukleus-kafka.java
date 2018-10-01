@@ -192,13 +192,13 @@ public final class KeyMessageDispatcherTest
     }
 
     @Test
-    public void shouldRemoveNoopDispatchers()
+    public void shouldprocessDeferredUpdates()
     {
         MessageDispatcher child1 = context.mock(MessageDispatcher.class, "child1");
         MessageDispatcher child2 = context.mock(MessageDispatcher.class, "child2");
         dispatcher.add(asOctets("key1"), emptyHeaders, child1);
         dispatcher.add(asOctets("key1"), emptyHeaders, child2);
-        dispatcher.inIteration = true;
+        dispatcher.deferUpdates = true;
         assertTrue(dispatcher.remove(asOctets("key1"), emptyHeaders, child1));
         assertTrue(dispatcher.remove(asOctets("key1"), emptyHeaders, child2));
         // map contains NOOP dispatcher after the removals, but isEmpty() is computed as if they are not there

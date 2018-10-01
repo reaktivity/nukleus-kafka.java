@@ -28,8 +28,8 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
 {
     private final List<MessageDispatcher> dispatchers = new ArrayList<MessageDispatcher>();
 
-    private boolean inIteration;
-    private boolean noopDispatchers;
+    private boolean deferUpdates;
+    private boolean hasDeferredUpdates;
 
     @Override
     public void adjustOffset(
@@ -49,16 +49,16 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
     public void detach(
         boolean reattach)
     {
-        inIteration = true;
+        deferUpdates = true;
         //  Avoid iterator allocation
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
             dispatcher.detach(reattach);
         }
-        inIteration = false;
+        deferUpdates = false;
 
-        removeNoopDispatchers();
+        processDeferredUpdates();
     }
 
     @Override
@@ -72,16 +72,16 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
                  long traceId,
                  DirectBuffer value)
     {
-        inIteration = true;
+        deferUpdates = true;
         int result = 0;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
             result |= dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
         }
-        inIteration = false;
+        deferUpdates = false;
 
-        removeNoopDispatchers();
+        processDeferredUpdates();
         return result;
     }
 
@@ -91,15 +91,15 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
             long requestOffset,
             long lastOffset)
     {
-        inIteration = true;
+        deferUpdates = true;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
             dispatcher.flush(partition, requestOffset, lastOffset);
         }
-        inIteration = false;
+        deferUpdates = false;
 
-        removeNoopDispatchers();
+        processDeferredUpdates();
     }
 
     public void add(MessageDispatcher dispatcher)
@@ -112,10 +112,10 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
         int index = dispatchers.indexOf(dispatcher);
         if (index != -1)
         {
-            if (inIteration)
+            if (deferUpdates)
             {
                 dispatchers.set(index, NOOP);
-                noopDispatchers = true;
+                hasDeferredUpdates = true;
             }
             else
             {
@@ -130,11 +130,11 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
         return dispatchers.isEmpty() || dispatchers.stream().allMatch(x -> x == NOOP);
     }
 
-    private void removeNoopDispatchers()
+    private void processDeferredUpdates()
     {
-        if (noopDispatchers)
+        if (hasDeferredUpdates)
         {
-            noopDispatchers = false;
+            hasDeferredUpdates = false;
             dispatchers.removeIf(e -> e == NOOP);
         }
     }

@@ -67,8 +67,8 @@ public class HeadersMessageDispatcher implements MessageDispatcher
     private final BroadcastMessageDispatcher broadcast = new BroadcastMessageDispatcher();
     private final Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher;
 
-    private boolean inIteration;
-    private boolean noopDispatchers;
+    private boolean deferUpdates;
+    private boolean hasDeferredUpdates;
 
     HeadersMessageDispatcher(
         Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
@@ -95,15 +95,15 @@ public class HeadersMessageDispatcher implements MessageDispatcher
         boolean reattach)
     {
         broadcast.detach(reattach);
-        inIteration = true;
+        deferUpdates = true;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
             dispatcher.detach(reattach);
         }
-        inIteration = false;
+        deferUpdates = false;
 
-        removeNoopDispatchers();
+        processDeferredUpdates();
     }
 
     @Override
@@ -119,15 +119,15 @@ public class HeadersMessageDispatcher implements MessageDispatcher
     {
         int result = 0;
         result |=  broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
-        inIteration = true;
+        deferUpdates = true;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
             result |= dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
         }
-        inIteration = false;
+        deferUpdates = false;
 
-        removeNoopDispatchers();
+        processDeferredUpdates();
         return result;
     }
 
@@ -138,15 +138,15 @@ public class HeadersMessageDispatcher implements MessageDispatcher
             long lastOffset)
     {
         broadcast.flush(partition, requestOffset, lastOffset);
-        inIteration = true;
+        deferUpdates = true;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
             dispatcher.flush(partition, requestOffset, lastOffset);
         }
-        inIteration = false;
+        deferUpdates = false;
 
-        removeNoopDispatchers();
+        processDeferredUpdates();
     }
 
     public HeadersMessageDispatcher add(
@@ -208,7 +208,7 @@ public class HeadersMessageDispatcher implements MessageDispatcher
                 result = valueDispatcher.remove(header.value(), headers, dispatcher);
                 if (valueDispatcher.isEmpty())
                 {
-                    if (inIteration)
+                    if (deferUpdates)
                     {
                         dispatchersByHeaderKey.replace(buffer, HeaderValueMessageDispatcher.NOOP);
                         int index = dispatchers.indexOf(valueDispatcher);
@@ -228,11 +228,11 @@ public class HeadersMessageDispatcher implements MessageDispatcher
         return result;
     }
 
-    private void removeNoopDispatchers()
+    private void processDeferredUpdates()
     {
-        if (noopDispatchers)
+        if (hasDeferredUpdates)
         {
-            noopDispatchers = false;
+            hasDeferredUpdates = false;
             dispatchersByHeaderKey.entrySet().removeIf(e -> e.getValue() == HeaderValueMessageDispatcher.NOOP);
             dispatchers.removeIf(e -> e == HeaderValueMessageDispatcher.NOOP);
         }

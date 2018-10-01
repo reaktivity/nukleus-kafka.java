@@ -34,8 +34,8 @@ public class KeyMessageDispatcher implements MessageDispatcher
 
     private Map<UnsafeBuffer, HeadersMessageDispatcher> dispatchersByKey = new HashMap<>();
 
-    boolean inIteration;
-    private boolean noopDispatchers;
+    boolean deferUpdates;
+    private boolean hasDeferredUpdates;
 
     public KeyMessageDispatcher(
         Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
@@ -59,14 +59,14 @@ public class KeyMessageDispatcher implements MessageDispatcher
     public void detach(
         boolean reattach)
     {
-        inIteration = true;
+        deferUpdates = true;
         for (MessageDispatcher dispatcher: dispatchersByKey.values())
         {
             dispatcher.detach(reattach);
         }
-        inIteration = false;
+        deferUpdates = false;
 
-        removeNoopDispatchers();
+        processDeferredUpdates();
     }
 
     @Override
@@ -92,14 +92,14 @@ public class KeyMessageDispatcher implements MessageDispatcher
         long requestOffset,
         long lastOffset)
     {
-        inIteration = true;
+        deferUpdates = true;
         for (MessageDispatcher dispatcher: dispatchersByKey.values())
         {
             dispatcher.flush(partition, requestOffset, lastOffset);
         }
-        inIteration = false;
+        deferUpdates = false;
 
-        removeNoopDispatchers();
+        processDeferredUpdates();
     }
 
     public long latestOffset(
@@ -160,10 +160,10 @@ public class KeyMessageDispatcher implements MessageDispatcher
             result = headersDispatcher.remove(headers, dispatcher);
             if (headersDispatcher.isEmpty())
             {
-                if (inIteration)
+                if (deferUpdates)
                 {
                     dispatchersByKey.replace(buffer, NOOP);
-                    noopDispatchers = true;
+                    hasDeferredUpdates = true;
                 }
                 else
                 {
@@ -179,11 +179,11 @@ public class KeyMessageDispatcher implements MessageDispatcher
         return dispatchersByKey.isEmpty() || dispatchersByKey.values().stream().allMatch(x -> x == HeadersMessageDispatcher.NOOP);
     }
 
-    private void removeNoopDispatchers()
+    private void processDeferredUpdates()
     {
-        if (noopDispatchers)
+        if (hasDeferredUpdates)
         {
-            noopDispatchers = false;
+            hasDeferredUpdates = false;
             dispatchersByKey.entrySet().removeIf(e -> e.getValue() == NOOP);
         }
     }
