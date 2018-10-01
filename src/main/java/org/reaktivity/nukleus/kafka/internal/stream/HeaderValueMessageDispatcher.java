@@ -31,11 +31,46 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public class HeaderValueMessageDispatcher implements MessageDispatcher
 {
+    static final HeaderValueMessageDispatcher NOOP = new HeaderValueMessageDispatcher(null)
+    {
+        @Override
+        public void adjustOffset(int partition, long oldOffset, long newOffset)
+        {
+        }
+
+        @Override
+        public void detach(boolean reattach)
+        {
+        }
+
+        @Override
+        public void flush(int partition, long requestOffset, long nextFetchOffset)
+        {
+        }
+
+        @Override
+        public int dispatch(
+            int partition,
+            long requestOffset,
+            long messageStartOffset,
+            DirectBuffer key,
+            Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
+            long timestamp,
+            long traceId,
+            DirectBuffer value)
+        {
+            return 0;
+        }
+    };
+
     final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
     final DirectBuffer headerName;
     Map<DirectBuffer, HeadersMessageDispatcher> dispatchersByHeaderValue = new HashMap<>();
 
     private final List<HeadersMessageDispatcher> dispatchers = new ArrayList<>();
+
+    private boolean deferUpdates;
+    private boolean hasDeferredUpdates;
 
     public HeaderValueMessageDispatcher(DirectBuffer headerKey)
     {
@@ -59,11 +94,15 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
     public void detach(
         boolean reattach)
     {
+        deferUpdates = true;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
             dispatcher.detach(reattach);
         }
+        deferUpdates = false;
+
+        processDeferredUpdates();
     }
 
     @Override
@@ -78,6 +117,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
         DirectBuffer value)
     {
         int result = 0;
+        deferUpdates = true;
         Iterator<DirectBuffer> values = supplyHeader.apply(headerName);
         while (values.hasNext())
         {
@@ -90,6 +130,9 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
                                              key, supplyHeader, timestamp, traceId, value);
             }
         }
+        deferUpdates = false;
+
+        processDeferredUpdates();
         return result;
     }
 
@@ -99,11 +142,15 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             long requestOffset,
             long lastOffset)
     {
+        deferUpdates = true;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
             dispatcher.flush(partition, requestOffset, lastOffset);
         }
+        deferUpdates = false;
+
+        processDeferredUpdates();
     }
 
     public void add(
@@ -137,8 +184,20 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             result = headersDispatcher.remove(headers, dispatcher);
             if (headersDispatcher.isEmpty())
             {
-                dispatchersByHeaderValue.remove(buffer);
-                dispatchers.remove(headersDispatcher);
+                if (deferUpdates)
+                {
+                    dispatchersByHeaderValue.replace(buffer, HeadersMessageDispatcher.NOOP);
+                    int index = dispatchers.indexOf(headersDispatcher);
+                    if (index != -1)
+                    {
+                        dispatchers.set(index, HeadersMessageDispatcher.NOOP);
+                    }
+                }
+                else
+                {
+                    dispatchersByHeaderValue.remove(buffer);
+                    dispatchers.remove(headersDispatcher);
+                }
                 onRemoved(headersDispatcher);
             }
         }
@@ -156,6 +215,16 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
     {
         buffer.wrap(headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
         return dispatchersByHeaderValue.get(buffer);
+    }
+
+    private void processDeferredUpdates()
+    {
+        if (hasDeferredUpdates)
+        {
+            hasDeferredUpdates = false;
+            dispatchersByHeaderValue.entrySet().removeIf(e -> e.getValue() == HeadersMessageDispatcher.NOOP);
+            dispatchers.removeIf(e -> e == HeadersMessageDispatcher.NOOP);
+        }
     }
 
     @Override
@@ -191,7 +260,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
 
     public boolean isEmpty()
     {
-         return dispatchersByHeaderValue.isEmpty();
+         return dispatchers.isEmpty() || dispatchers.stream().allMatch(x -> x == HeadersMessageDispatcher.NOOP);
     }
 
 }
