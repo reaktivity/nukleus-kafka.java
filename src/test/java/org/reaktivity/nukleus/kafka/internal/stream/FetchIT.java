@@ -1412,23 +1412,24 @@ public class FetchIT
     @Specification({
         "${routeAnyTopic}/client/controller",
         "${client}/zero.offset.message.multiple.partitions/client",
-        "${server}/live.fetch.connection.reset/server" })
+        "${server}/live.fetch.connection.reset/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    @Configure(name=KafkaConfiguration.READ_IDLE_TIMEOUT_PROPERTY, value="200000")
-    public void shouldAttachNewSubscribersWhenOneBrokerConnectionHasFailed()
+    public void shouldRefreshAllConnectionsToABrokerWhichFails()
             throws Exception
     {
         k3po.start();
         k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
-        k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
-        k3po.awaitBarrier("READY_TO_FAIL_FETCH_CONNECTION_TWO");
+        k3po.awaitBarrier("LIVE_ONE_FETCH_REQUEST_RECEIVED");
+        k3po.awaitBarrier("READY_TO_FAIL_LIVE_TWO");
         k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.notifyBarrier("FAIL_FETCH_CONNECTION_TWO");
+        k3po.awaitBarrier("HISTORICAL_TWO_FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("FAIL_LIVE_TWO");
         k3po.awaitBarrier("METADATA_REFRESH_REQUEST_RECEIVED");
-        awaitWindowFromClient();
         k3po.notifyBarrier("WRITE_METADATA_REFRESH_RESPONSE");
-        k3po.awaitBarrier("FETCH_REQUEST_ON_RECONNECTED_CONNECTION_RECEIVED");
-        k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
+        k3po.awaitBarrier("RECONNECTED_LIVE_TWO_FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("WRITE_LIVE_ONE_FETCH_RESPONSE");
+        k3po.awaitBarrier("RECONNECTED_HISTORICAL_TWO_FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("WRITE_RECONNECTED_HISTORICAL_TWO_FETCH_RESPONSE");
         k3po.finish();
     }
 
