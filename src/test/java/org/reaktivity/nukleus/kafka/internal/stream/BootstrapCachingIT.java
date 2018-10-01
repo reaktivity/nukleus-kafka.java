@@ -129,6 +129,26 @@ public class BootstrapCachingIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/compacted.partial.message.aborted.with.key/client",
+        "${server}/compacted.messages.large.then.small/server"})
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "secondMessageKey \"key1\""
+    })
+    public void shouldNotThrowConcurrentModificationExceptionWhenDetached() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("ROUTED_CLIENT");
+        k3po.awaitBarrier("BOOTSTRAP_COMPLETE");
+        k3po.notifyBarrier("CONNECT_CLIENT");
+        k3po.awaitBarrier("CLIENT_RECEIVED_PARTIAL_MESSAGE");
+        k3po.notifyBarrier("WRITE_SECOND_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/compacted.partial.message.aborted/client",
         "${server}/compacted.messages.large.then.tombstone/server"})
     @ScriptProperty({
