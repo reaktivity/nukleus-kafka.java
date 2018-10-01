@@ -25,12 +25,17 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
+import static org.reaktivity.nukleus.kafka.internal.stream.HeadersMessageDispatcher.NOOP;
+
 public class KeyMessageDispatcher implements MessageDispatcher
 {
     protected final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
     private final Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher;
 
     private Map<UnsafeBuffer, HeadersMessageDispatcher> dispatchersByKey = new HashMap<>();
+
+    boolean deferUpdates;
+    private boolean hasDeferredUpdates;
 
     public KeyMessageDispatcher(
         Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
@@ -54,10 +59,14 @@ public class KeyMessageDispatcher implements MessageDispatcher
     public void detach(
         boolean reattach)
     {
+        deferUpdates = true;
         for (MessageDispatcher dispatcher: dispatchersByKey.values())
         {
             dispatcher.detach(reattach);
         }
+        deferUpdates = false;
+
+        processDeferredUpdates();
     }
 
     @Override
@@ -83,10 +92,14 @@ public class KeyMessageDispatcher implements MessageDispatcher
         long requestOffset,
         long lastOffset)
     {
+        deferUpdates = true;
         for (MessageDispatcher dispatcher: dispatchersByKey.values())
         {
             dispatcher.flush(partition, requestOffset, lastOffset);
         }
+        deferUpdates = false;
+
+        processDeferredUpdates();
     }
 
     public long latestOffset(
@@ -147,7 +160,15 @@ public class KeyMessageDispatcher implements MessageDispatcher
             result = headersDispatcher.remove(headers, dispatcher);
             if (headersDispatcher.isEmpty())
             {
-                dispatchersByKey.remove(buffer);
+                if (deferUpdates)
+                {
+                    dispatchersByKey.replace(buffer, NOOP);
+                    hasDeferredUpdates = true;
+                }
+                else
+                {
+                    dispatchersByKey.remove(buffer);
+                }
             }
         }
         return result;
@@ -155,7 +176,16 @@ public class KeyMessageDispatcher implements MessageDispatcher
 
     public boolean isEmpty()
     {
-        return dispatchersByKey.isEmpty();
+        return dispatchersByKey.isEmpty() || dispatchersByKey.values().stream().allMatch(x -> x == HeadersMessageDispatcher.NOOP);
+    }
+
+    private void processDeferredUpdates()
+    {
+        if (hasDeferredUpdates)
+        {
+            hasDeferredUpdates = false;
+            dispatchersByKey.entrySet().removeIf(e -> e.getValue() == NOOP);
+        }
     }
 
 }
