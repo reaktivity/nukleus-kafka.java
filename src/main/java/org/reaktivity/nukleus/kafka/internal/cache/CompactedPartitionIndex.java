@@ -37,6 +37,7 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 public class CompactedPartitionIndex implements PartitionIndex
 {
     private static final int NO_MESSAGE = MessageCache.NO_MESSAGE;
+    private static final long NO_OFFSET = -1L;
     private static final int NO_POSITION = -1;
     private static final long NO_EXPIRY_TIME = -1L;
 
@@ -45,7 +46,7 @@ public class CompactedPartitionIndex implements PartitionIndex
     private final MessageCache messageCache;
     private final MessageFW messageRO = new MessageFW();
     private final long tombstoneLifetimeMillis;
-    private final Map<UnsafeBuffer, EntryImpl> offsetsByKey;
+    private final Map<UnsafeBuffer, EntryImpl> entriesByKey;
     private final List<EntryImpl> entries;
 
     private final List<DirectBuffer> tombstoneKeys = new ArrayList<>(100);
@@ -66,7 +67,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         int tombstoneLifetimeMillis,
         MessageCache messageCache)
     {
-        this.offsetsByKey = new HashMap<>(initialCapacity);
+        this.entriesByKey = new HashMap<>(initialCapacity);
         this.entries = new ArrayList<EntryImpl>(initialCapacity);
         this.messageCache = messageCache;
         this.tombstoneLifetimeMillis = tombstoneLifetimeMillis;
@@ -89,7 +90,7 @@ public class CompactedPartitionIndex implements PartitionIndex
             invalidEntries = 0;
         }
         buffer.wrap(key, 0, key.capacity());
-        EntryImpl entry = offsetsByKey.get(buffer);
+        EntryImpl entry = entriesByKey.get(buffer);
 
         // Only cache if there are no gaps in observed offsets and we have not yet observed this offset
         if (requestOffset <= validToOffset && messageStartOffset >= validToOffset)
@@ -100,11 +101,11 @@ public class CompactedPartitionIndex implements PartitionIndex
                 UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[key.capacity()]);
                 keyCopy.putBytes(0,  key, 0, key.capacity());
                 entry = new EntryImpl(messageStartOffset, NO_MESSAGE, entries.size());
-                offsetsByKey.put(keyCopy, entry);
+                entriesByKey.put(keyCopy, entry);
             }
             else
             {
-                compactFrom = Math.min(compactFrom, entry.position);
+                compactFrom = Math.min(compactFrom, entry.position());
                 invalidEntries++;
                 entry.setPosition(entries.size());
                 entry.offset = messageStartOffset;
@@ -137,7 +138,7 @@ public class CompactedPartitionIndex implements PartitionIndex
                 UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[key.capacity()]);
                 keyCopy.putBytes(0,  key, 0, key.capacity());
                 entry = new EntryImpl(messageStartOffset, NO_MESSAGE, entries.size());
-                offsetsByKey.put(keyCopy, entry);
+                entriesByKey.put(keyCopy, entry);
                 if (cacheNewMessages)
                 {
                     cacheMessage(entry, timestamp, traceId, key, headers, value);
@@ -187,7 +188,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         OctetsFW key)
     {
         buffer.wrap(key.buffer(), key.offset(), key.sizeof());
-        Entry result = offsetsByKey.get(buffer);
+        Entry result = entriesByKey.get(buffer);
         if (result == null)
         {
             long offset = Math.max(requestOffset, validToOffset);
@@ -200,6 +201,35 @@ public class CompactedPartitionIndex implements PartitionIndex
     public long nextOffset()
     {
         return validToOffset;
+    }
+
+    @Override
+    public void startOffset(
+        long startOffset)
+    {
+        final long earliestOffset = earliestOffset();
+
+        if (earliestOffset != NO_OFFSET && earliestOffset < startOffset)
+        {
+            for (Iterator<Map.Entry<UnsafeBuffer, EntryImpl>> iter = entriesByKey.entrySet().iterator(); iter.hasNext(); )
+            {
+                final Map.Entry<UnsafeBuffer, EntryImpl> entry = iter.next();
+                final EntryImpl value = entry.getValue();
+                if (value.offset < startOffset)
+                {
+                    if (value.message != NO_MESSAGE)
+                    {
+                        messageCache.release(value.message);
+                        value.message = NO_MESSAGE;
+                    }
+
+                    value.position = NO_POSITION;
+                    iter.remove();
+                }
+            }
+
+            compact(0, startOffset);
+        }
     }
 
     int numberOfEntries()
@@ -244,37 +274,53 @@ public class CompactedPartitionIndex implements PartitionIndex
 
     private void compact()
     {
+        compact(0, Long.MAX_VALUE);
+        compactFrom = Integer.MAX_VALUE;
+    }
+
+    private void compact(
+        int startPosition,
+        long messageOffsetLimit)
+    {
         evictExpiredTombstones();
-        if (compactFrom < entries.size())
+
+        int invalidFrom = NO_POSITION;
+        for (int i=startPosition; i < entries.size(); i++)
         {
-            int invalidFrom = NO_POSITION;
-            for (int i=0; i < entries.size(); i++)
+            EntryImpl entry = entries.get(i);
+
+            if (entry.offset >= messageOffsetLimit)
             {
-                EntryImpl entry = entries.get(i);
-                if (entry.position() != i)
-                {
-                    if (invalidFrom == NO_POSITION)
-                    {
-                        invalidFrom = i;
-                    }
-                }
-                else if (invalidFrom != NO_POSITION)
-                {
-                    entry.setPosition(invalidFrom);
-                    entries.set(invalidFrom, entry);
-                    invalidFrom++;
-                }
+                break;
             }
 
-            if (invalidFrom != NO_POSITION)
+            if (entry.position() != i)
             {
-                for (int i=entries.size() - 1; i > invalidFrom - 1; i--)
+                if (invalidFrom == NO_POSITION)
                 {
-                    entries.remove(i);
+                    invalidFrom = i;
                 }
             }
-            compactFrom = Integer.MAX_VALUE;
+            else if (invalidFrom != NO_POSITION)
+            {
+                entry.setPosition(invalidFrom);
+                entries.set(invalidFrom, entry);
+                invalidFrom++;
+            }
         }
+
+        if (invalidFrom != NO_POSITION)
+        {
+            for (int i=entries.size() - 1; i > invalidFrom - 1; i--)
+            {
+                entries.remove(i);
+            }
+        }
+    }
+
+    private long earliestOffset()
+    {
+        return entries.isEmpty() ? NO_OFFSET : entries.get(0).offset;
     }
 
     private void evictExpiredTombstones()
@@ -291,7 +337,7 @@ public class CompactedPartitionIndex implements PartitionIndex
                     DirectBuffer key = tombstoneKeys.set(pos, null);
 
                     buffer.wrap(key, 0, key.capacity());
-                    EntryImpl entry = offsetsByKey.remove(buffer);
+                    EntryImpl entry = entriesByKey.remove(buffer);
 
                     if (entry != null)
                     {
@@ -300,7 +346,7 @@ public class CompactedPartitionIndex implements PartitionIndex
                             messageCache.release(entry.message);
                         }
 
-                        compactFrom = Math.min(entry.position, compactFrom);
+                        compactFrom = Math.min(entry.position(), compactFrom);
                         entry.position = NO_POSITION;
                     }
                 }

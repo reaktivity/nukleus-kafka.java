@@ -144,6 +144,13 @@ public final class NetworkConnectionPool
     private static final DecoderMessageDispatcher NOOP_DISPATCHER = new DecoderMessageDispatcher()
     {
         @Override
+        public void startOffset(
+            int partition,
+            long lowWatermark)
+        {
+        }
+
+        @Override
         public int dispatch(
             int partition,
             long requestOffset,
@@ -1033,6 +1040,7 @@ public final class NetworkConnectionPool
             fetchResponseDecoder = new FetchResponseDecoder(
                     this::getTopicDispatcher,
                     this::getRequestedOffset,
+                    this::updateStartOffset,
                     this::handlePartitionResponseError,
                     localDecodeBuffer);
         }
@@ -1418,6 +1426,15 @@ public final class NetworkConnectionPool
         final long getRequestedOffset(String topicName, int partitionId)
         {
             return requestedFetchOffsetsByTopic.get(topicName)[partitionId];
+        }
+
+        final long updateStartOffset(
+            String topicName,
+            int partitionId,
+            long startOffset)
+        {
+            final TopicMetadata topicMetadata = topicMetadataByName.get(topicName);
+            return topicMetadata != null ? topicMetadata.tryAdvanceFirstOffset(partitionId, startOffset) : 0L;
         }
 
         @Override
@@ -3008,6 +3025,16 @@ public final class NetworkConnectionPool
         void setFirstOffset(int partitionId, long offset)
         {
             firstOffsetsByPartition[partitionId] = offset;
+        }
+
+        long tryAdvanceFirstOffset(int partitionId, long startOffset)
+        {
+            final long earliestOffset = firstOffsetsByPartition[partitionId];
+            if (startOffset > earliestOffset)
+            {
+                firstOffsetsByPartition[partitionId] = startOffset;
+            }
+            return earliestOffset;
         }
 
         public void setOffsetOutOfRange(

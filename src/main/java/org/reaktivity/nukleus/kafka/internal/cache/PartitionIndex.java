@@ -55,4 +55,7 @@ public interface PartitionIndex
         long requestOffset,
         long lastOffset);
 
+    void startOffset(
+        long startOffset);
+
 }

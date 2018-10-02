@@ -583,4 +583,34 @@ public final class CompactedPartitionIndexTest
         assertTrue(entry.isTombstone());
     }
 
+
+    @Test
+    public void shouldEvictMessagesBeforeStartOffset()
+    {
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                will(returnValue(0));
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
+                will(returnValue(1));
+                oneOf(messageCache).release(0);
+            }
+        });
+
+        index.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
+        index.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
+
+        index.startOffset(1L);
+
+        Entry entry1 = index.getEntry(0L, asOctets("key1"));
+        Entry entry2 = index.getEntry(0L, asOctets("key2"));
+
+        assertEquals(2L, entry1.offset());
+        assertEquals(MessageCache.NO_MESSAGE, entry1.message());
+
+        assertEquals(1L, entry2.offset());
+        assertEquals(1, entry2.message());
+    }
+
 }
