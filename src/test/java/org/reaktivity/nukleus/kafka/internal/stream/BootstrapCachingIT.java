@@ -166,4 +166,19 @@ public class BootstrapCachingIT
         k3po.finish();
     }
 
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/compacted.messages.advance.log.start.offset/client",
+        "${server}/compacted.messages.advance.log.start.offset/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveCompactedMessagesAfterLogStartOffset() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("ROUTED_CLIENT");
+        k3po.awaitBarrier("LOG_START_OFFSET_UPDATED");
+        k3po.notifyBarrier("CONNECT_CLIENT_ONE");
+        k3po.finish();
+    }
+
 }
