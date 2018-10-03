@@ -701,6 +701,8 @@ public final class ClientStreamFactory implements StreamFactory
                 && !skipMessage)
             {
                 final int payloadLength = value == null ? 0 : value.capacity() - fragmentedMessageBytesWritten;
+                assert payloadLength >= 0 : format("fragmentedMessageBytesWritten = %d payloadLength = %d",
+                        fragmentedMessageBytesWritten, payloadLength);
 
                 int applicationReplyBudget = budget.applicationReplyBudget();
                 int writeableBytes = applicationReplyBudget - applicationReplyPadding;
@@ -1208,17 +1210,21 @@ public final class ClientStreamFactory implements StreamFactory
             applicationReplyBudget(budget - data);
 
             uncreditedBudget += data;
+            assert uncreditedBudget >= 0 : format("budget = %d data = %d uncreditedBudget = %d", budget, data, uncreditedBudget);
         }
 
         @Override
         public void incApplicationReplyBudget(int credit)
         {
             assert groupBudget.containsKey(groupId);
+            assert credit >= 0 : format("credit is %d", credit);
 
             int budget = applicationReplyBudget();
             applicationReplyBudget(budget + credit);
 
             uncreditedBudget -= credit;
+            assert uncreditedBudget >= 0 :
+                    format("budget = %d credit = %d uncreditedBudget = %d", budget, credit, uncreditedBudget);
         }
 
         @Override
