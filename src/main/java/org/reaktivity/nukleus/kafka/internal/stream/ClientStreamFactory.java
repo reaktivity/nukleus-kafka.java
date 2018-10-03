@@ -565,6 +565,7 @@ public final class ClientStreamFactory implements StreamFactory
         private int pendingMessageValueOffset;
         private int pendingMessageValueLimit;
         private long pendingMessageOffset = UNSET;
+        private int pendingBudget;
 
         int fragmentedMessageBytesWritten;
         int fragmentedMessageLength;
@@ -650,8 +651,7 @@ public final class ClientStreamFactory implements StreamFactory
                 {
                     messagePending = false;
                     dispatchBlocked = false;
-                    final int previousLength = pendingMessageValue == null ? 0 : pendingMessageValue.capacity();
-                    budget.incApplicationReplyBudget(previousLength + applicationReplyPadding);
+                    budget.incApplicationReplyBudget(pendingBudget);
                 }
             }
             else
@@ -709,7 +709,8 @@ public final class ClientStreamFactory implements StreamFactory
                 if (writeableBytes > 0)
                 {
                     int bytesToWrite = Math.min(payloadLength, writeableBytes);
-                    budget.decApplicationReplyBudget(bytesToWrite + applicationReplyPadding);
+                    pendingBudget = bytesToWrite + applicationReplyPadding;
+                    budget.decApplicationReplyBudget(pendingBudget);
                     assert budget.applicationReplyBudget() >= 0;
 
                     pendingMessageKey = wrap(pendingMessageKeyBuffer, key);
