@@ -3029,7 +3029,7 @@ public final class NetworkConnectionPool
 
         long tryAdvanceFirstOffset(int partitionId, long startOffset)
         {
-            final long earliestOffset = firstOffsetsByPartition[partitionId];
+            final long earliestOffset = firstOffsetsByPartition != null ? firstOffsetsByPartition[partitionId] : 0L;
             if (startOffset > earliestOffset)
             {
                 firstOffsetsByPartition[partitionId] = startOffset;
