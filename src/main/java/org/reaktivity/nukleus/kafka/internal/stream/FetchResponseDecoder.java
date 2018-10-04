@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static org.agrona.LangUtil.rethrowUnchecked;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.NONE;
@@ -159,7 +160,8 @@ public class FetchResponseDecoder implements ResponseDecoder
         responseBytesRemaining -= newOffset - offset;
         if (responseBytesRemaining == 0)
         {
-            assert newOffset == limit : "no pipelined requests";
+            assert newOffset == limit :
+                    format("no pipelined requests offset = %d limit = %d newOffset = %d", offset, limit, newOffset);
             reinitialize();
         }
         else if (newOffset == limit)
@@ -532,7 +534,7 @@ public class FetchResponseDecoder implements ResponseDecoder
                 decoderState = this::decodeRecord;
                 if (recordSetBytesRemaining < 0)
                 {
-                    System.out.println(String.format(
+                    System.out.println(format(
                             "W2: recordCount=%d, recordSize=%d, recordSetBytesRemaining=%d, recordBatchBytesRemaining=%d",
                             recordCount, recordSize, recordSetBytesRemaining, recordBatchBytesRemaining));
                 }
@@ -602,7 +604,7 @@ public class FetchResponseDecoder implements ResponseDecoder
             }
             catch (Throwable ex)
             {
-                ex.addSuppressed(new Exception(String.format("[kafka] Decoding fetch topic partition response %s[%d] @ offset %d",
+                ex.addSuppressed(new Exception(format("[kafka] Decoding fetch topic partition response %s[%d] @ offset %d",
                         topicName, partition, currentFetchAt)));
                 rethrowUnchecked(ex);
             }
