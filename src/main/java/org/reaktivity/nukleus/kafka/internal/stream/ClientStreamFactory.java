@@ -565,6 +565,7 @@ public final class ClientStreamFactory implements StreamFactory
         private int pendingMessageValueOffset;
         private int pendingMessageValueLimit;
         private long pendingMessageOffset = UNSET;
+        private int pendingBudget;
 
         int fragmentedMessageBytesWritten;
         int fragmentedMessageLength;
@@ -650,8 +651,7 @@ public final class ClientStreamFactory implements StreamFactory
                 {
                     messagePending = false;
                     dispatchBlocked = false;
-                    final int previousLength = pendingMessageValue == null ? 0 : pendingMessageValue.capacity();
-                    budget.incApplicationReplyBudget(previousLength + applicationReplyPadding);
+                    budget.incApplicationReplyBudget(pendingBudget);
                 }
             }
             else
@@ -701,13 +701,16 @@ public final class ClientStreamFactory implements StreamFactory
                 && !skipMessage)
             {
                 final int payloadLength = value == null ? 0 : value.capacity() - fragmentedMessageBytesWritten;
+                assert payloadLength >= 0 : format("fragmentedMessageBytesWritten = %d payloadLength = %d",
+                        fragmentedMessageBytesWritten, payloadLength);
 
                 int applicationReplyBudget = budget.applicationReplyBudget();
                 int writeableBytes = applicationReplyBudget - applicationReplyPadding;
                 if (writeableBytes > 0)
                 {
                     int bytesToWrite = Math.min(payloadLength, writeableBytes);
-                    budget.decApplicationReplyBudget(bytesToWrite + applicationReplyPadding);
+                    pendingBudget = bytesToWrite + applicationReplyPadding;
+                    budget.decApplicationReplyBudget(pendingBudget);
                     assert budget.applicationReplyBudget() >= 0;
 
                     pendingMessageKey = wrap(pendingMessageKeyBuffer, key);
@@ -1208,17 +1211,21 @@ public final class ClientStreamFactory implements StreamFactory
             applicationReplyBudget(budget - data);
 
             uncreditedBudget += data;
+            assert uncreditedBudget >= 0 : format("budget = %d data = %d uncreditedBudget = %d", budget, data, uncreditedBudget);
         }
 
         @Override
         public void incApplicationReplyBudget(int credit)
         {
             assert groupBudget.containsKey(groupId);
+            assert credit >= 0 : format("credit is %d", credit);
 
             int budget = applicationReplyBudget();
             applicationReplyBudget(budget + credit);
 
             uncreditedBudget -= credit;
+            assert uncreditedBudget >= 0 :
+                    format("budget = %d credit = %d uncreditedBudget = %d", budget, credit, uncreditedBudget);
         }
 
         @Override
