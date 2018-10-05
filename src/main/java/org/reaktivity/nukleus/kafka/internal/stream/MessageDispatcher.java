@@ -24,7 +24,6 @@ public interface MessageDispatcher
 {
     int FLAGS_MATCHED = 0x01;
     int FLAGS_DELIVERED = 0x02 | FLAGS_MATCHED;
-    int FLAGS_BLOCKED = 0x04 | FLAGS_MATCHED;
 
     static boolean matched(int result)
     {
@@ -34,11 +33,6 @@ public interface MessageDispatcher
     static boolean delivered(int result)
     {
         return (result & FLAGS_DELIVERED) == FLAGS_DELIVERED;
-    }
-
-    static boolean blocked(int result)
-    {
-        return (result & FLAGS_BLOCKED) == FLAGS_BLOCKED;
     }
 
     void adjustOffset(int partition, long oldOffset, long newOffset);

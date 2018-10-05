@@ -668,7 +668,7 @@ public final class ClientStreamFactory implements StreamFactory
                    dispatchBlocked = true;
                    skipMessage = true;
                }
-               else if  (messageStartOffset == fragmentedMessageOffset)
+               else if (messageStartOffset == fragmentedMessageOffset)
                {
                    fragmentedMessageDispatched = true;
                    if (value.capacity() != fragmentedMessageLength)
@@ -701,6 +701,7 @@ public final class ClientStreamFactory implements StreamFactory
                 && !skipMessage)
             {
                 final int payloadLength = value == null ? 0 : value.capacity() - fragmentedMessageBytesWritten;
+
                 assert payloadLength >= 0 : format("fragmentedMessageBytesWritten = %d payloadLength = %d",
                         fragmentedMessageBytesWritten, payloadLength);
 
@@ -734,10 +735,6 @@ public final class ClientStreamFactory implements StreamFactory
                 {
                     dispatchBlocked = true;
                 }
-            }
-            if (dispatchBlocked)
-            {
-                result |= MessageDispatcher.FLAGS_BLOCKED;
             }
             return result;
         }
