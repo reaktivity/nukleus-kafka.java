@@ -2471,13 +2471,14 @@ public final class NetworkConnectionPool
                 final long fetchOffset = request.fetchOffset();
                 long logStartOffset = request.logStartOffset();
                 int maxBytes = request.maxBytes();
+                int dispatchedBytes = 0;
                 long newOffset = fetchOffset;
                 Iterator<Entry> entries = dispatcher.entries(partitionId, fetchOffset);
                 boolean partitionRequestNeeded = false;
                 boolean flushNeeded = false;
                 final long requestOffset = getRequestedOffset.applyAsLong(partitionId);
 
-                while(entries.hasNext())
+                while(entries.hasNext() && dispatchedBytes < maxBytes)
                 {
                     Entry entry = entries.next();
                     newOffset = entry.offset();
@@ -2495,18 +2496,15 @@ public final class NetworkConnectionPool
                                 message.headers().limit());
 
                         // call the dispatch variant which does not attempt to re-cache the message
-                        int dispatched = dispatcher.dispatch(partitionId, requestOffset, newOffset, key, headers.headerSupplier(),
+                        dispatcher.dispatch(partitionId, requestOffset, newOffset, key, headers.headerSupplier(),
                                 message.timestamp(), message.traceId(), value);
 
+                        if (value != null)
+                        {
+                            dispatchedBytes += value.capacity();
+                        }
                         flushNeeded = true;
                         newOffset++;
-
-                        if (MessageDispatcher.blocked(dispatched) && !MessageDispatcher.delivered(dispatched))
-                        {
-                            // TODO: this may be too conservative, other dispatchers which did not match this message
-                            //       might still have available window to deliver later messages
-                            break;
-                        }
                     }
                 } // end for each partition index entry
 
