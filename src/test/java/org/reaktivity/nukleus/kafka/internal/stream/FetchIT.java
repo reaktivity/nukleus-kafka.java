@@ -853,6 +853,22 @@ public class FetchIT
 
     @Test
     @Specification({
+        "${routeAnyTopic}/client/controller",
+        "${client}/zero.offset.two.topics.one.reset/client",
+        "${server}/two.topics.one.offset.too.low/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldHandleMetadataGoneWhenReceiveListOffsetsResponse() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("LIST_OFFSETS_REQUEST_RECEIVED");
+        k3po.notifyBarrier("DO_RESET");
+        awaitWindowFromClient();
+        k3po.notifyBarrier("WRITE_LIST_OFFSETS_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
         "${route}/client/controller",
         "${client}/offset.too.low.message/client",
         "${server}/offset.too.low.message/server" })
@@ -998,6 +1014,32 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/gzip.compressed.record.batch/client",
+        "${server}/gzip.compressed.record.batch/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldSkipGzipCompressedRecordBatch() throws Exception
+    {
+        k3po.start();
+        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/snappy.compressed.record.batch/client",
+        "${server}/snappy.compressed.record.batch/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldSkipSnappyCompressedRecordBatch() throws Exception
+    {
+        k3po.start();
+        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/zero.offset.message/client",
         "${server}/zero.offset.message.topic.not.found.initially/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -1017,7 +1059,8 @@ public class FetchIT
     public void shouldHandleFetchResponseAfterUnsubscribe() throws Exception
     {
         k3po.start();
-        k3po.awaitBarrier("SUBSCRIBED");
+        k3po.awaitBarrier("FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("DO_CLIENT_RESET");
         k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
@@ -1033,8 +1076,10 @@ public class FetchIT
     public void shouldHandleResetFromClientWithoutCausingNPEInDoFetchRequest() throws Exception
     {
         k3po.start();
-        k3po.awaitBarrier("DESCRIBE_CONFIGS_REQUEST_RECEIVED");
+        k3po.awaitBarrier("KNOWN_TOPIC_METADATA_REQUEST_RECEIVED");
         k3po.notifyBarrier("DO_RESET");
+        k3po.awaitBarrier("CONNECT_CLIENT_TWO");
+        k3po.notifyBarrier("SEND_METADATA_RESPONSE");
         k3po.finish();
     }
 
@@ -1047,7 +1092,8 @@ public class FetchIT
     public void shouldHandleFetchResponseMultiplePartitionsAfterUnsubscribe() throws Exception
     {
         k3po.start();
-        k3po.awaitBarrier("SUBSCRIBED");
+        k3po.awaitBarrier("FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("DO_CLIENT_RESET");
         k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
@@ -1366,23 +1412,24 @@ public class FetchIT
     @Specification({
         "${routeAnyTopic}/client/controller",
         "${client}/zero.offset.message.multiple.partitions/client",
-        "${server}/live.fetch.connection.reset/server" })
+        "${server}/live.fetch.connection.reset/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    @Configure(name=KafkaConfiguration.READ_IDLE_TIMEOUT_PROPERTY, value="200000")
-    public void shouldAttachNewSubscribersWhenOneBrokerConnectionHasFailed()
+    public void shouldRefreshAllConnectionsToABrokerWhichFails()
             throws Exception
     {
         k3po.start();
         k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
-        k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
-        k3po.awaitBarrier("READY_TO_FAIL_FETCH_CONNECTION_TWO");
+        k3po.awaitBarrier("LIVE_ONE_FETCH_REQUEST_RECEIVED");
+        k3po.awaitBarrier("READY_TO_FAIL_LIVE_TWO");
         k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.notifyBarrier("FAIL_FETCH_CONNECTION_TWO");
+        k3po.awaitBarrier("HISTORICAL_TWO_FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("FAIL_LIVE_TWO");
         k3po.awaitBarrier("METADATA_REFRESH_REQUEST_RECEIVED");
-        awaitWindowFromClient();
         k3po.notifyBarrier("WRITE_METADATA_REFRESH_RESPONSE");
-        k3po.awaitBarrier("FETCH_REQUEST_ON_RECONNECTED_CONNECTION_RECEIVED");
-        k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
+        k3po.awaitBarrier("RECONNECTED_LIVE_TWO_FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("WRITE_LIVE_ONE_FETCH_RESPONSE");
+        k3po.awaitBarrier("RECONNECTED_HISTORICAL_TWO_FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("WRITE_RECONNECTED_HISTORICAL_TWO_FETCH_RESPONSE");
         k3po.finish();
     }
 

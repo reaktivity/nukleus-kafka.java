@@ -15,7 +15,9 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
+import static org.agrona.LangUtil.rethrowUnchecked;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.NONE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.asKafkaError;
 
@@ -26,6 +28,7 @@ import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.function.KafkaErrorConsumer;
+import org.reaktivity.nukleus.kafka.internal.function.StringIntLongToLongFunction;
 import org.reaktivity.nukleus.kafka.internal.function.StringIntToLongFunction;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.Varint32FW;
@@ -74,6 +77,7 @@ public class FetchResponseDecoder implements ResponseDecoder
 
     private final Function<String, DecoderMessageDispatcher> getDispatcher;
     private final StringIntToLongFunction getRequestedOffsetForPartition;
+    private final StringIntLongToLongFunction updateStartOffsetForPartition;
     private final KafkaErrorConsumer errorHandler;
     private final int maxRecordBatchSize;
     private final MutableDirectBuffer buffer;
@@ -107,11 +111,13 @@ public class FetchResponseDecoder implements ResponseDecoder
     FetchResponseDecoder(
         Function<String, DecoderMessageDispatcher> getDispatcher,
         StringIntToLongFunction getRequestedOffsetForPartition,
+        StringIntLongToLongFunction updateStartOffsetForPartition,
         KafkaErrorConsumer errorHandler,
         MutableDirectBuffer decodingBuffer)
     {
         this.getDispatcher = getDispatcher;
         this.getRequestedOffsetForPartition = getRequestedOffsetForPartition;
+        this.updateStartOffsetForPartition = updateStartOffsetForPartition;
         this.errorHandler = errorHandler;
         this.buffer = requireNonNull(decodingBuffer);
         this.maxRecordBatchSize = buffer.capacity();
@@ -154,7 +160,8 @@ public class FetchResponseDecoder implements ResponseDecoder
         responseBytesRemaining -= newOffset - offset;
         if (responseBytesRemaining == 0)
         {
-            assert newOffset == limit : "no pipelined requests";
+            assert newOffset == limit :
+                    format("no pipelined requests offset = %d limit = %d newOffset = %d", offset, limit, newOffset);
             reinitialize();
         }
         else if (newOffset == limit)
@@ -307,6 +314,14 @@ public class FetchResponseDecoder implements ResponseDecoder
                 requestedOffset = getRequestedOffsetForPartition.apply(topicName, partition);
                 nextFetchAt = requestedOffset;
                 decoderState = abortedTransactionCount > 0 ? this::decodeTransactionResponse : this::decodeRecordSet;
+
+                final long newStartOffset = response.logStartOffset();
+                final long oldStartOffset = updateStartOffsetForPartition.apply(topicName, partition, newStartOffset);
+                if (oldStartOffset < newStartOffset)
+                {
+                    messageDispatcher.startOffset(partition, newStartOffset);
+                }
+
                 if (errorCode != NONE.errorCode)
                 {
                     errorHandler.accept(topicName, partition, asKafkaError(errorCode));
@@ -405,6 +420,25 @@ public class FetchResponseDecoder implements ResponseDecoder
             skipBytesDecoderState.nextState = this::decodePartitionResponse;
             decoderState = skipBytesDecoderState;
         }
+        else if (isCompressed(recordBatch) || isControlBatch(recordBatch))
+        {
+            nextFetchAt = recordBatch.firstOffset() + recordBatch.lastOffsetDelta() + 1;
+            if (nextFetchAt > requestedOffset)
+            {
+                messageDispatcher.flush(partition, requestedOffset, nextFetchAt);
+            }
+
+            final int recordBatchActualSize =
+                    RecordBatchFW.FIELD_OFFSET_LENGTH + BitUtil.SIZE_OF_INT + recordBatch.length();
+            int skip = Math.min(recordBatchActualSize, recordSetBytesRemaining);
+
+            recordSetBytesRemaining -= skip;
+
+            skipBytesDecoderState.bytesToSkip = skip;
+            skipBytesDecoderState.nextState =
+                    recordSetBytesRemaining == 0 ? this::decodePartitionResponse : this::decodeRecordBatch;
+            decoderState = skipBytesDecoderState;
+        }
         else
         {
             final int recordBatchActualSize =
@@ -500,7 +534,7 @@ public class FetchResponseDecoder implements ResponseDecoder
                 decoderState = this::decodeRecord;
                 if (recordSetBytesRemaining < 0)
                 {
-                    System.out.println(String.format(
+                    System.out.println(format(
                             "W2: recordCount=%d, recordSize=%d, recordSetBytesRemaining=%d, recordBatchBytesRemaining=%d",
                             recordCount, recordSize, recordSetBytesRemaining, recordBatchBytesRemaining));
                 }
@@ -520,51 +554,62 @@ public class FetchResponseDecoder implements ResponseDecoder
         if (record != null)
         {
             final long currentFetchAt = firstOffset + record.offsetDelta();
-            int headersOffset = record.limit();
-            int headersLimit = headersOffset;
-            final int headerCount = record.headerCount();
-            for (int i = 0; i < headerCount; i++)
+
+            try
             {
-                final HeaderFW header = headerRO.tryWrap(buffer, headersLimit, limit);
-                if (header == null)
+                int headersOffset = record.limit();
+                int headersLimit = headersOffset;
+                final int headerCount = record.headerCount();
+                for (int i = 0; i < headerCount; i++)
                 {
-                    return newOffset;
+                    final HeaderFW header = headerRO.tryWrap(buffer, headersLimit, limit);
+                    if (header == null)
+                    {
+                        return newOffset;
+                    }
+                    headersLimit = header.limit();
                 }
-                headersLimit = header.limit();
+
+                recordCount--;
+
+                if (currentFetchAt >= requestedOffset)
+                    // The only guarantee is the response will encompass the requested offset.
+                {
+                    nextFetchAt = currentFetchAt + 1;
+
+                    DirectBuffer key = null;
+                    final OctetsFW messageKey = record.key();
+                    if (messageKey != null)
+                    {
+                        keyBuffer.wrap(messageKey.buffer(), messageKey.offset(), messageKey.sizeof());
+                        key = keyBuffer;
+                    }
+
+                    final long timestamp = firstTimestamp + record.timestampDelta();
+
+                    DirectBuffer value = null;
+                    final OctetsFW messageValue = record.value();
+                    if (messageValue != null)
+                    {
+                        valueBuffer.wrap(messageValue.buffer(), messageValue.offset(), messageValue.sizeof());
+                        value = valueBuffer;
+                    }
+                    headers.wrap(buffer, headersOffset, headersLimit);
+                    messageDispatcher.dispatch(partition, requestedOffset, currentFetchAt, highWatermark,
+                            key, headers, timestamp, traceId, value);
+                }
+
+                newOffset = headersLimit;
+                decoderState = this::decodeRecordLength;
             }
-
-            recordCount--;
-
-            if (currentFetchAt >= requestedOffset)
-                // The only guarantee is the response will encompass the requested offset.
+            catch (Throwable ex)
             {
-                nextFetchAt = currentFetchAt + 1;
-
-                DirectBuffer key = null;
-                final OctetsFW messageKey = record.key();
-                if (messageKey != null)
-                {
-                    keyBuffer.wrap(messageKey.buffer(), messageKey.offset(), messageKey.sizeof());
-                    key = keyBuffer;
-                }
-
-                final long timestamp = firstTimestamp + record.timestampDelta();
-
-                DirectBuffer value = null;
-                final OctetsFW messageValue = record.value();
-                if (messageValue != null)
-                {
-                    valueBuffer.wrap(messageValue.buffer(), messageValue.offset(), messageValue.sizeof());
-                    value = valueBuffer;
-                }
-                headers.wrap(buffer, headersOffset, headersLimit);
-                messageDispatcher.dispatch(partition, requestedOffset, currentFetchAt, highWatermark,
-                        key, headers, timestamp, traceId, value);
+                ex.addSuppressed(new Exception(format("[kafka] Decoding fetch topic partition response %s[%d] @ offset %d",
+                        topicName, partition, currentFetchAt)));
+                rethrowUnchecked(ex);
             }
-
-            newOffset = headersLimit;
-            decoderState = this::decodeRecordLength;
         }
+
         return newOffset;
     }
 
@@ -623,5 +668,19 @@ public class FetchResponseDecoder implements ResponseDecoder
             }
             return newOffset;
         }
+    }
+
+    private static boolean isCompressed(RecordBatchFW recordBatch)
+    {
+        short attributes = recordBatch.attributes();
+        // 0 = NONE, 1 = GZIP, 2 = SNAPPY, 3 = LZ4
+        return (attributes & 0x07) != 0;
+    }
+
+    private static boolean isControlBatch(RecordBatchFW recordBatch)
+    {
+        short attributes = recordBatch.attributes();
+        // sixth lowest bit indicates whether the RecordBatch includes a control message
+        return (attributes & 0x20) != 0;
     }
 }

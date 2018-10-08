@@ -50,6 +50,14 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
     }
 
     @Override
+    public void startOffset(
+        int partition,
+        long startOffset)
+    {
+        indexes[partition].startOffset(startOffset);
+    }
+
+    @Override
     public void adjustOffset(
         int partition,
         long oldOffset,

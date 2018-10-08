@@ -23,17 +23,6 @@ import org.junit.Test;
 public final class MessageDispatcherTest
 {
     @Test
-    public void shouldDetectFlagsBlocked()
-    {
-        assertFalse(MessageDispatcher.blocked(0x01));
-        assertFalse(MessageDispatcher.blocked(0x02));
-        assertFalse(MessageDispatcher.blocked(0x03));
-        assertFalse(MessageDispatcher.blocked(0x04));
-        assertTrue(MessageDispatcher.blocked(0x05));
-        assertFalse(MessageDispatcher.blocked(0x08));
-    }
-
-    @Test
     public void shouldDetectFlagsDelivered()
     {
         assertFalse(MessageDispatcher.delivered(0x01));

@@ -29,11 +29,46 @@ import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 
 public class HeadersMessageDispatcher implements MessageDispatcher
 {
+    static final HeadersMessageDispatcher NOOP = new HeadersMessageDispatcher(null)
+    {
+        @Override
+        public void adjustOffset(int partition, long oldOffset, long newOffset)
+        {
+        }
+
+        @Override
+        public void detach(boolean reattach)
+        {
+        }
+
+        @Override
+        public void flush(int partition, long requestOffset, long nextFetchOffset)
+        {
+        }
+
+        @Override
+        public int dispatch(
+            int partition,
+            long requestOffset,
+            long messageStartOffset,
+            DirectBuffer key,
+            Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
+            long timestamp,
+            long traceId,
+            DirectBuffer value)
+        {
+            return 0;
+        }
+    };
+
     private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
     private final Map<DirectBuffer, HeaderValueMessageDispatcher> dispatchersByHeaderKey = new HashMap<>();
     private final List<HeaderValueMessageDispatcher> dispatchers = new ArrayList<HeaderValueMessageDispatcher>();
     private final BroadcastMessageDispatcher broadcast = new BroadcastMessageDispatcher();
     private final Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher;
+
+    private boolean deferUpdates;
+    private boolean hasDeferredUpdates;
 
     HeadersMessageDispatcher(
         Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
@@ -60,11 +95,15 @@ public class HeadersMessageDispatcher implements MessageDispatcher
         boolean reattach)
     {
         broadcast.detach(reattach);
+        deferUpdates = true;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
             dispatcher.detach(reattach);
         }
+        deferUpdates = false;
+
+        processDeferredUpdates();
     }
 
     @Override
@@ -80,11 +119,15 @@ public class HeadersMessageDispatcher implements MessageDispatcher
     {
         int result = 0;
         result |=  broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
+        deferUpdates = true;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
             result |= dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
         }
+        deferUpdates = false;
+
+        processDeferredUpdates();
         return result;
     }
 
@@ -95,11 +138,15 @@ public class HeadersMessageDispatcher implements MessageDispatcher
             long lastOffset)
     {
         broadcast.flush(partition, requestOffset, lastOffset);
+        deferUpdates = true;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
             dispatcher.flush(partition, requestOffset, lastOffset);
         }
+        deferUpdates = false;
+
+        processDeferredUpdates();
     }
 
     public HeadersMessageDispatcher add(
@@ -135,7 +182,8 @@ public class HeadersMessageDispatcher implements MessageDispatcher
     public boolean isEmpty()
      {
 
-         return broadcast.isEmpty() && dispatchersByHeaderKey.isEmpty();
+         return broadcast.isEmpty() &&
+                 (dispatchers.isEmpty() || dispatchers.stream().allMatch(x -> x == HeaderValueMessageDispatcher.NOOP));
      }
 
     public boolean remove(
@@ -160,12 +208,34 @@ public class HeadersMessageDispatcher implements MessageDispatcher
                 result = valueDispatcher.remove(header.value(), headers, dispatcher);
                 if (valueDispatcher.isEmpty())
                 {
-                    dispatchersByHeaderKey.remove(buffer);
-                    dispatchers.remove(valueDispatcher);
+                    if (deferUpdates)
+                    {
+                        dispatchersByHeaderKey.replace(buffer, HeaderValueMessageDispatcher.NOOP);
+                        int index = dispatchers.indexOf(valueDispatcher);
+                        if (index != -1)
+                        {
+                            dispatchers.set(index, HeaderValueMessageDispatcher.NOOP);
+                        }
+                    }
+                    else
+                    {
+                        dispatchersByHeaderKey.remove(buffer);
+                        dispatchers.remove(valueDispatcher);
+                    }
                 }
             }
         }
         return result;
+    }
+
+    private void processDeferredUpdates()
+    {
+        if (hasDeferredUpdates)
+        {
+            hasDeferredUpdates = false;
+            dispatchersByHeaderKey.entrySet().removeIf(e -> e.getValue() == HeaderValueMessageDispatcher.NOOP);
+            dispatchers.removeIf(e -> e == HeaderValueMessageDispatcher.NOOP);
+        }
     }
 
     @Override

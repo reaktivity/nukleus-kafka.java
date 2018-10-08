@@ -15,7 +15,9 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static java.lang.Integer.toHexString;
 import static java.lang.String.format;
+import static java.lang.System.identityHashCode;
 import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.wrap;
@@ -46,6 +48,7 @@ import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.Varint64FW;
@@ -57,15 +60,15 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.AbortFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.DataFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.FrameFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaEndExFW;
-import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
-import org.reaktivity.nukleus.kafka.internal.util.Flags;
 import org.reaktivity.nukleus.kafka.internal.util.DelayedTaskScheduler;
+import org.reaktivity.nukleus.kafka.internal.util.Flags;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 
@@ -80,10 +83,13 @@ public final class ClientStreamFactory implements StreamFactory
 
     };
 
+    public static final long INTERNAL_ERRORS_TO_LOG = 100;
+
     private final UnsafeBuffer workBuffer1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     private final UnsafeBuffer workBuffer2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
     private final RouteFW routeRO = new RouteFW();
+    final FrameFW frameRO = new FrameFW();
     final BeginFW beginRO = new BeginFW();
     final DataFW dataRO = new DataFW();
     final EndFW endRO = new EndFW();
@@ -559,8 +565,10 @@ public final class ClientStreamFactory implements StreamFactory
         private int pendingMessageValueOffset;
         private int pendingMessageValueLimit;
         private long pendingMessageOffset = UNSET;
+        private int pendingBudget;
 
         int fragmentedMessageBytesWritten;
+        int fragmentedMessageLength;
         long fragmentedMessageOffset = UNSET;
         long fragmentedMessagePartition = UNSET;
         boolean fragmentedMessageDispatched;
@@ -597,8 +605,7 @@ public final class ClientStreamFactory implements StreamFactory
             long offset = fetchOffsets.get(partition);
             if (offset == oldOffset)
             {
-                final long oldFetchOffset = fetchOffsets.put(partition, newOffset);
-//                progressHandler.handle(partition, oldFetchOffset, newOffset);
+                fetchOffsets.put(partition, newOffset);
             }
         }
 
@@ -644,8 +651,7 @@ public final class ClientStreamFactory implements StreamFactory
                 {
                     messagePending = false;
                     dispatchBlocked = false;
-                    final int previousLength = pendingMessageValue == null ? 0 : pendingMessageValue.capacity();
-                    budget.incApplicationReplyBudget(previousLength + applicationReplyPadding);
+                    budget.incApplicationReplyBudget(pendingBudget);
                 }
             }
             else
@@ -662,9 +668,27 @@ public final class ClientStreamFactory implements StreamFactory
                    dispatchBlocked = true;
                    skipMessage = true;
                }
-               else if  (messageStartOffset == fragmentedMessageOffset)
+               else if (messageStartOffset == fragmentedMessageOffset)
                {
                    fragmentedMessageDispatched = true;
+                   if (value.capacity() != fragmentedMessageLength)
+                   {
+                       long errors = networkPool.getRouteCounters().internalErrors.getAsLong();
+                       if (errors <= INTERNAL_ERRORS_TO_LOG)
+                       {
+                           System.out.format(
+                               "Internal Error: unexpected value length for partially delivered message, partition=%d, " +
+                               "requestOffset=%d, messageStartOffset=%d, key=%s, value=%s, %s\n",
+                               partition,
+                               requestOffset,
+                               messageStartOffset,
+                               toString(key),
+                               toString(value),
+                               this);
+                       }
+                       networkPool.getRouteCounters().forcedDetaches.getAsLong();
+                       detach(false);
+                   }
                }
                else
                {
@@ -677,12 +701,17 @@ public final class ClientStreamFactory implements StreamFactory
                 && !skipMessage)
             {
                 final int payloadLength = value == null ? 0 : value.capacity() - fragmentedMessageBytesWritten;
+
+                assert payloadLength >= 0 : format("fragmentedMessageBytesWritten = %d payloadLength = %d",
+                        fragmentedMessageBytesWritten, payloadLength);
+
                 int applicationReplyBudget = budget.applicationReplyBudget();
                 int writeableBytes = applicationReplyBudget - applicationReplyPadding;
                 if (writeableBytes > 0)
                 {
                     int bytesToWrite = Math.min(payloadLength, writeableBytes);
-                    budget.decApplicationReplyBudget(bytesToWrite + applicationReplyPadding);
+                    pendingBudget = bytesToWrite + applicationReplyPadding;
+                    budget.decApplicationReplyBudget(pendingBudget);
                     assert budget.applicationReplyBudget() >= 0;
 
                     pendingMessageKey = wrap(pendingMessageKeyBuffer, key);
@@ -706,10 +735,6 @@ public final class ClientStreamFactory implements StreamFactory
                 {
                     dispatchBlocked = true;
                 }
-            }
-            if (dispatchBlocked)
-            {
-                result |= MessageDispatcher.FLAGS_BLOCKED;
             }
             return result;
         }
@@ -738,11 +763,13 @@ public final class ClientStreamFactory implements StreamFactory
             if (fragmentedMessageOffset != UNSET &&
                 fragmentedMessagePartition == partition &&
                 !fragmentedMessageDispatched &&
+                requestOffset <= fragmentedMessageOffset &&
                 startOffset <= fragmentedMessageOffset &&
                 nextFetchOffset > fragmentedMessageOffset)
             {
                 // Partially written message no longer exists, we cannot complete it.
                 // Abort the connection to force the client to re-attach.
+                networkPool.getRouteCounters().forcedDetaches.getAsLong();
                 detach(false);
             }
 
@@ -760,11 +787,18 @@ public final class ClientStreamFactory implements StreamFactory
         @Override
         public String toString()
         {
-            return format("fetchOffsets %s, fragmentedMessageOffset %d, fragmentedMessagePartition %d, " +
-                                 "applicationId %x, applicationReplyId %x",
+            return format("%s@%s(topic=\"%s\", subscribedByKey=%b, fetchOffsets=%s, fragmentedMessageOffset=%d, " +
+                                 "fragmentedMessagePartition=%d, fragmentedMessageLength=%d, " +
+                                 "fragmentedMessageBytesWritten=%d, applicationId=%x, applicationReplyId=%x)",
+                    ClientAcceptStream.this.getClass().getSimpleName(),
+                    Integer.toHexString(System.identityHashCode(ClientAcceptStream.this)),
+                    ClientAcceptStream.this.topicName,
+                    ClientAcceptStream.this.subscribedByKey,
                     ClientAcceptStream.this.fetchOffsets,
                     ClientAcceptStream.this.fragmentedMessageOffset,
                     ClientAcceptStream.this.fragmentedMessagePartition,
+                    ClientAcceptStream.this.fragmentedMessageLength,
+                    ClientAcceptStream.this.fragmentedMessageBytesWritten,
                     ClientAcceptStream.this.applicationId,
                     ClientAcceptStream.this.applicationReplyId);
         }
@@ -774,7 +808,7 @@ public final class ClientStreamFactory implements StreamFactory
         {
             return buffer == null ? "null" :
                 format("%s(capacity=%d)",
-                        buffer.getClass().getSimpleName() + "@" + Integer.toHexString(hashCode()),
+                        buffer.getClass().getSimpleName() + "@" + toHexString(identityHashCode(buffer)),
                         buffer.capacity());
         }
 
@@ -809,6 +843,7 @@ public final class ClientStreamFactory implements StreamFactory
                     fragmentedMessageBytesWritten = 0;
                     fragmentedMessageOffset = UNSET;
                     fragmentedMessagePartition = UNSET;
+                    fragmentedMessageLength = 0;
                     progressEndOffset = nextFetchOffset;
 
                     final long oldFetchOffset = this.fetchOffsets.put(partition, nextFetchOffset);
@@ -816,6 +851,11 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 else
                 {
+                    if (fragmentedMessagePartition == UNSET)
+                    {
+                        // Store full message length to verify it remains consistent
+                        fragmentedMessageLength = pendingMessageValue.capacity();
+                    }
                     fragmentedMessageBytesWritten += (pendingMessageValueLimit - pendingMessageValueOffset);
                     fragmentedMessageOffset = pendingMessageOffset;
                     fragmentedMessagePartition = partition;
@@ -1168,17 +1208,21 @@ public final class ClientStreamFactory implements StreamFactory
             applicationReplyBudget(budget - data);
 
             uncreditedBudget += data;
+            assert uncreditedBudget >= 0 : format("budget = %d data = %d uncreditedBudget = %d", budget, data, uncreditedBudget);
         }
 
         @Override
         public void incApplicationReplyBudget(int credit)
         {
             assert groupBudget.containsKey(groupId);
+            assert credit >= 0 : format("credit is %d", credit);
 
             int budget = applicationReplyBudget();
             applicationReplyBudget(budget + credit);
 
             uncreditedBudget -= credit;
+            assert uncreditedBudget >= 0 :
+                    format("budget = %d credit = %d uncreditedBudget = %d", budget, credit, uncreditedBudget);
         }
 
         @Override
