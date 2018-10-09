@@ -31,6 +31,7 @@ import org.reaktivity.nukleus.kafka.internal.KafkaController;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleusFactorySpi;
 import org.reaktivity.reaktor.test.ReaktorRule;
 import org.reaktivity.reaktor.test.annotation.Configure;
+import org.reaktivity.reaktor.test.annotation.Configures;
 
 public class BootstrapCachingIT
 {
@@ -178,6 +179,32 @@ public class BootstrapCachingIT
         k3po.awaitBarrier("ROUTED_CLIENT");
         k3po.awaitBarrier("LOG_START_OFFSET_UPDATED");
         k3po.notifyBarrier("CONNECT_CLIENT_ONE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/compacted.messages.multiple.nodes.historical/client",
+        "${server}/compacted.messages.multiple.nodes.historical/server"})
+    @ScriptProperty({
+        "networkAccept \"nukleus://target/streams/kafka\"",
+        "applicationConnectWindow1 \"13\"",
+        "applicationConnectWindow2 \"350\""
+    })
+    @Configures({
+        @Configure(name=KafkaConfiguration.MESSAGE_CACHE_PROACTIVE_PROPERTY, value="false"),
+        @Configure(name=KafkaConfiguration.READ_IDLE_TIMEOUT_PROPERTY, value="2000000")
+    })
+    public void shouldReceiveLargeHistoricalMessagesFromMultiplePartitions() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("BOOTSTRAP_COMPLETE_PARTITION_ZERO");
+        k3po.awaitBarrier("BOOTSTRAP_COMPLETE_PARTITION_ONE");
+        k3po.notifyBarrier("CONNECT_CLIENT_ONE");
+        k3po.awaitBarrier("CLIENT_ONE_DATA_RECEIVED");
+        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
+        k3po.notifyBarrier("WRITE_HISTORICAL_PARTITION_ONE_RESPONSE");
         k3po.finish();
     }
 
