@@ -1004,7 +1004,7 @@ public class FetchIT
         "${client}/zero.offset/client",
         "${server}/zero.offset.no.messages.fragmented/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldDecodeFragmentedFetchResponseHeaders() throws Exception
+    public void shouldDecodeFragmentedFetchResponseHeader() throws Exception
     {
         k3po.finish();
     }

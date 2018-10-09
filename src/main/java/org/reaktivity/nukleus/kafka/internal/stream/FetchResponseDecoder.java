@@ -58,6 +58,7 @@ import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
  */
 public class FetchResponseDecoder implements ResponseDecoder
 {
+    private static final int UNKNOWN = -1;
     private final ResponseHeaderFW responseRO = new ResponseHeaderFW();
     private final FetchResponseFW fetchResponseRO = new FetchResponseFW();
     private final TopicResponseFW topicResponseRO = new TopicResponseFW();
@@ -83,7 +84,7 @@ public class FetchResponseDecoder implements ResponseDecoder
     private final MutableDirectBuffer buffer;
 
     private DecoderState decoderState;
-    private int responseBytesRemaining;
+    private int responseBytesRemaining = UNKNOWN;
     private int slotOffset;
     private int slotLimit;
 
@@ -139,7 +140,15 @@ public class FetchResponseDecoder implements ResponseDecoder
             remaining = decodePayload(payload.buffer(), newOffset, payload.limit(), traceId);
         }
 
-        return responseBytesRemaining == 0 ? remaining : -responseBytesRemaining;
+        switch (responseBytesRemaining) {
+            case UNKNOWN :
+                return -slotLimit;
+            case 0 :
+                return remaining;
+            default:
+                return -responseBytesRemaining;
+        }
+
     }
 
     private int decodePayload(
@@ -157,12 +166,14 @@ public class FetchResponseDecoder implements ResponseDecoder
             limit = slotLimit;
         }
         int newOffset = decode(buffer, offset, limit, traceId);
-        responseBytesRemaining -= newOffset - offset;
+        if (responseBytesRemaining != UNKNOWN)
+        {
+            responseBytesRemaining -= newOffset - offset;
+        }
         if (responseBytesRemaining == 0)
         {
             assert newOffset == limit :
                     format("no pipelined requests offset = %d limit = %d newOffset = %d", offset, limit, newOffset);
-            reinitialize();
         }
         else if (newOffset == limit)
         {
@@ -186,7 +197,7 @@ public class FetchResponseDecoder implements ResponseDecoder
     {
         slotOffset = 0;
         slotLimit = 0;
-        responseBytesRemaining = 0;
+        responseBytesRemaining = UNKNOWN;
         topicCount = 0;
         partitionCount = 0;
         decoderState = this::decodeResponseHeader;
@@ -288,7 +299,7 @@ public class FetchResponseDecoder implements ResponseDecoder
         }
         else
         {
-            decoderState = this::decodeResponseHeader;
+            reinitialize();
         }
         return newOffset;
     }
