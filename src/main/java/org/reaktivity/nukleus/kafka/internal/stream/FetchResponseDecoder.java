@@ -140,7 +140,8 @@ public class FetchResponseDecoder implements ResponseDecoder
             remaining = decodePayload(payload.buffer(), newOffset, payload.limit(), traceId);
         }
 
-        switch (responseBytesRemaining) {
+        switch (responseBytesRemaining)
+        {
             case UNKNOWN :
                 return -slotLimit;
             case 0 :
