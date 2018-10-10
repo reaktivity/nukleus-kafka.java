@@ -1306,7 +1306,9 @@ public final class NetworkConnectionPool
                 if (excessBytes >= 0) // response complete
                 {
                     timer.cancel();
-                    assert excessBytes == 0 : "bytes remaining after fetch response, pipelined requests are not being used";
+                    assert excessBytes == 0 :
+                            format("%s: %d bytes remaining after fetch response, pipelined requests are not being used",
+                                    this, excessBytes);
                     nextResponseId++;
                     doRequestIfNeeded();
                 }

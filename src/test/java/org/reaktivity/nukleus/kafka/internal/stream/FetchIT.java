@@ -1001,6 +1001,17 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/zero.offset/client",
+        "${server}/zero.offset.no.messages.fragmented/server" })
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldDecodeFragmentedFetchResponseHeader() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/zero.offset.message/client",
         "${server}/zero.offset.message/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
