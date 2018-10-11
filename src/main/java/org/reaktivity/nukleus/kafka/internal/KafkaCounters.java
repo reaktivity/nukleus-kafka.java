@@ -34,6 +34,8 @@ public class KafkaCounters
     public final LongConsumer cacheInUse;
     public final LongSupplier cacheBufferAcquires;
     public final LongSupplier cacheBufferReleases;
+    public final LongSupplier dispatchNoWindow;
+    public final LongSupplier dispatchNeedOtherMessage;
 
 
     public KafkaCounters(
@@ -46,6 +48,8 @@ public class KafkaCounters
         this.cacheHits = supplyCounter.apply("cache.hits");
         this.cacheMisses = supplyCounter.apply("cache.misses");
         this.cacheInUse = supplyAccumulator.apply("cache.inuse");
+        this.dispatchNoWindow = supplyCounter.apply("dispatch.no.window");
+        this.dispatchNeedOtherMessage = supplyCounter.apply("dispatch.need.other.message");
         this.cacheBufferAcquires = supplyCounter.apply("message.cache.buffer.acquires");
         this.cacheBufferReleases = supplyCounter.apply("message.cache.buffer.releases");
     }
