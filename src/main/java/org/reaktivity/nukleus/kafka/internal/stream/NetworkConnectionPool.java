@@ -2446,11 +2446,15 @@ public final class NetworkConnectionPool
             else
             {
                 writableBytes = Integer.MAX_VALUE;
+
                 // TODO: eliminate iterator allocation
                 for (IntSupplier supplyWindow : windowSuppliers)
                 {
-                    writableBytes = Math.min(writableBytes, supplyWindow.getAsInt());
+                   // Get lowest non-zero value
+                   int lowest = Math.min(writableBytes, supplyWindow.getAsInt());
+                   writableBytes = lowest == 0 ? writableBytes : lowest;
                 }
+
                 writableBytes = writableBytes == Integer.MAX_VALUE ? 0 : writableBytes;
             }
             return writableBytes;
