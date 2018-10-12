@@ -667,6 +667,7 @@ public final class ClientStreamFactory implements StreamFactory
                {
                    dispatchBlocked = true;
                    skipMessage = true;
+                   counters.dispatchNeedOtherMessage.getAsLong();
                }
                else if (messageStartOffset == fragmentedMessageOffset)
                {
@@ -693,6 +694,7 @@ public final class ClientStreamFactory implements StreamFactory
                else
                {
                    skipMessage = true;
+                   counters.dispatchNeedOtherMessage.getAsLong();
                }
             }
 
@@ -734,6 +736,7 @@ public final class ClientStreamFactory implements StreamFactory
                 else
                 {
                     dispatchBlocked = true;
+                    counters.dispatchNoWindow.getAsLong();
                 }
             }
             return result;

@@ -1557,7 +1557,7 @@ public final class NetworkConnectionPool
             IntToLongFunction getRequestedOffset)
         {
             final NetworkTopic topic = topicsByName.get(topicName);
-            final int maxPartitionBytes = topic.maximumWritableBytes(true);
+            final int maxPartitionBytes = topic.writableBytes(true);
             final TopicMetadata metadata = topicMetadataByName.get(topicName);
 
             int partitionCount = 0;
@@ -1655,7 +1655,7 @@ public final class NetworkConnectionPool
             NetworkTopic topic = topicsByName.get(topicName);
             if (topic.needsHistorical())
             {
-                final int maxPartitionBytes = topic.maximumWritableBytes(false);
+                final int maxPartitionBytes = topic.writableBytes(false);
                 final TopicMetadata metadata = topicMetadataByName.get(topicName);
 
                 if (maxPartitionBytes > 0 && metadata != null)
@@ -2436,20 +2436,26 @@ public final class NetworkConnectionPool
             }
         }
 
-        int maximumWritableBytes(boolean live)
+        int writableBytes(boolean live)
         {
-            int writableBytes = 0;
+            int writableBytes;
             if (live && proactive)
             {
                 writableBytes = fetchPartitionMaxBytes;
             }
             else
             {
+                writableBytes = Integer.MAX_VALUE;
+
                 // TODO: eliminate iterator allocation
                 for (IntSupplier supplyWindow : windowSuppliers)
                 {
-                    writableBytes = Math.max(writableBytes, supplyWindow.getAsInt());
+                   // Get lowest non-zero value
+                   int lowest = Math.min(writableBytes, supplyWindow.getAsInt());
+                   writableBytes = lowest == 0 ? writableBytes : lowest;
                 }
+
+                writableBytes = writableBytes == Integer.MAX_VALUE ? 0 : writableBytes;
             }
             return writableBytes;
         }
