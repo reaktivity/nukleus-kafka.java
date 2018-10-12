@@ -68,6 +68,7 @@ import org.reaktivity.nukleus.kafka.internal.cache.DefaultPartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
+import org.reaktivity.nukleus.kafka.internal.function.Attachable;
 import org.reaktivity.nukleus.kafka.internal.function.IntLongConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
@@ -110,11 +111,12 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.FrameFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.TcpBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
-import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
 import org.reaktivity.nukleus.kafka.internal.util.DelayedTaskScheduler;
 
 public final class NetworkConnectionPool
 {
+    static final long MAX_OFFSET = Long.MAX_VALUE;
+
     private static final short FETCH_API_VERSION = 5;
     private static final short FETCH_API_KEY = 1;
     private static final short LIST_OFFSETS_API_KEY = 2;
@@ -124,7 +126,6 @@ public final class NetworkConnectionPool
     private static final short DESCRIBE_CONFIGS_API_VERSION = 0;
     private static final short DESCRIBE_CONFIGS_API_KEY = 32;
 
-    private static final long MAX_OFFSET = Long.MAX_VALUE;
     private static final long NO_OFFSET = -1L;
 
     private static final byte RESOURCE_TYPE_TOPIC = 2;
@@ -320,22 +321,14 @@ public final class NetworkConnectionPool
 
     int doAttach(
         String topicName,
-        Long2LongHashMap fetchOffsets,
-        int partitionHash,
-        OctetsFW fetchKey,
-        ListFW<KafkaHeaderFW> headers,
-        MessageDispatcher dispatcher,
-        IntSupplier supplyWindow,
-        Consumer<PartitionProgressHandler> progressHandlerConsumer,
-        Consumer<Consumer<Consumer<Boolean>>> finishAttachConsumer,
+        Attachable attachable,
         Consumer<KafkaError> onMetadataError)
     {
         final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
         final int newAttachId = nextAttachId++;
         metadata.doAttach(
                 newAttachId,
-                m -> doAttach(topicName, fetchOffsets, partitionHash, fetchKey, headers, newAttachId,
-                dispatcher, supplyWindow, progressHandlerConsumer, finishAttachConsumer, onMetadataError, m));
+                m -> doAttach(topicName, attachable, onMetadataError, m));
 
         if (metadataConnection == null)
         {
@@ -348,15 +341,7 @@ public final class NetworkConnectionPool
 
     private void doAttach(
         String topicName,
-        Long2LongHashMap fetchOffsets,
-        int partitionHash,
-        OctetsFW fetchKey,
-        ListFW<KafkaHeaderFW> headers,
-        int attachId,
-        MessageDispatcher dispatcher,
-        IntSupplier supplyWindow,
-        Consumer<PartitionProgressHandler> progressHandlerConsumer,
-        Consumer<Consumer<Consumer<Boolean>>> finishAttachConsumer,
+        Attachable attachable,
         Consumer<KafkaError> onMetadataError,
         TopicMetadata topicMetadata)
     {
@@ -368,44 +353,18 @@ public final class NetworkConnectionPool
             onMetadataError.accept(errorCode);
             break;
         case NONE:
-            // For streaming topics default to receiving only live (new) messages
-            final long defaultOffset = fetchOffsets.isEmpty() && !topicMetadata.compacted ? MAX_OFFSET : 0L;
-
-            if (fetchKey != null)
-            {
-                int partitionId = BufferUtil.partition(partitionHash, topicMetadata.partitionCount());
-                long offset = fetchOffsets.computeIfAbsent(0L, v -> defaultOffset);
-                long lowestOffset = topicMetadata.firstAvailableOffset(partitionId);
-                offset = Math.max(offset,  lowestOffset);
-                if (partitionId != 0)
-                {
-                    fetchOffsets.remove(0L);
-                }
-                fetchOffsets.put(partitionId, offset);
-            }
-            else
-            {
-                final int partitionCount = topicMetadata.partitionCount();
-                for (int partition=0; partition < partitionCount; partition++)
-                {
-                    long offset = fetchOffsets.computeIfAbsent(partition, v -> defaultOffset);
-                    long lowestOffset = topicMetadata.firstAvailableOffset(partition);
-                    offset = Math.max(offset,  lowestOffset);
-                    fetchOffsets.put(partition, offset);
-                }
-            }
             final NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
                     name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, false,
                             topicMetadata.deleteRetentionMs, false));
-            finishAttachConsumer.accept(attachDetailsConsumer ->
-            {
-                progressHandlerConsumer.accept(
-                        topic.doAttach(fetchOffsets, fetchKey, headers, dispatcher, supplyWindow));
-                detachersById.put(attachId, f -> topic.doDetach(f, fetchKey, headers, dispatcher, supplyWindow));
-                doConnections(topicMetadata);
-                attachDetailsConsumer.accept(topicMetadata.compacted);
-            });
-
+            doConnections(topicMetadata);
+            attachable.onAttachPrepared(
+                    topic::doAttach,
+                    topic::doDetach,
+                    topic::handleProgress,
+                    null, // TODO: MessageSource
+                    topicMetadata.partitionCount(),
+                    topicMetadata.compacted,
+                    topicMetadata::firstAvailableOffset);
             break;
         default:
             throw new RuntimeException(format("Unexpected errorCode %s from metadata query for topic %s",
@@ -550,26 +509,17 @@ public final class NetworkConnectionPool
 
     void doDetach(
         String topicName,
-        int attachId,
-        Long2LongHashMap fetchOffsets)
+        int attachId)
     {
-        final Consumer<Long2LongHashMap> detacher = detachersById.remove(attachId);
-        if (detacher == null)
+        TopicMetadata metadata = topicMetadataByName.get(topicName);
+        if (metadata != null)
         {
-            TopicMetadata metadata = topicMetadataByName.get(topicName);
-            if (metadata != null)
+            metadata.doDetach(attachId);
+            if (!metadata.hasConsumers())
             {
-                metadata.doDetach(attachId);
-                if (!metadata.hasConsumers())
-                {
-                    topicMetadataByName.remove(topicName);
-                    topicsByName.remove(topicName);
-                }
+                topicMetadataByName.remove(topicName);
+                topicsByName.remove(topicName);
             }
-        }
-        else
-        {
-            detacher.accept(fetchOffsets);
         }
     }
 
