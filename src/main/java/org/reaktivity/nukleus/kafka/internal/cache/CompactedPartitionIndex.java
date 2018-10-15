@@ -82,7 +82,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         DirectBuffer key,
         HeadersFW headers,
         DirectBuffer value,
-        boolean cacheNewMessages)
+        boolean cacheIfNew)
     {
         if (invalidEntries > MAX_INVALID_ENTRIES)
         {
@@ -124,7 +124,7 @@ public class CompactedPartitionIndex implements PartitionIndex
                 tombstoneExpiryTimes.add(timestamp + tombstoneLifetimeMillis);
                 entry.getAndSetIsTombstone(true);
             }
-            if (cacheNewMessages)
+            if (cacheIfNew)
             {
                 cacheMessage(entry, timestamp, traceId, key, headers, value);
             }
@@ -139,7 +139,7 @@ public class CompactedPartitionIndex implements PartitionIndex
                 keyCopy.putBytes(0,  key, 0, key.capacity());
                 entry = new EntryImpl(messageStartOffset, NO_MESSAGE, entries.size());
                 entriesByKey.put(keyCopy, entry);
-                if (cacheNewMessages)
+                if (cacheIfNew)
                 {
                     cacheMessage(entry, timestamp, traceId, key, headers, value);
                 }
@@ -147,7 +147,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         }
         else if (entry != null && entry.offset == messageStartOffset && messageCache.get(entry.message, messageRO) == null)
         {
-            // We already saw this offset. Either we didn't cache the message or it was evicted due to lack of space.
+            // Always attempt to cache historical messages
             entry.message = messageCache.replace(entry.message, timestamp, traceId, key, headers, value);
         }
     }

@@ -19,8 +19,9 @@ import java.util.Iterator;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
-import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex;
+import org.reaktivity.nukleus.kafka.internal.cache.MessageSource.Message;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
+import org.reaktivity.nukleus.kafka.internal.cache.TopicCache;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
@@ -29,24 +30,26 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
     private final KeyMessageDispatcher[] keys;
     private final HeadersMessageDispatcher headers;
     private final BroadcastMessageDispatcher broadcast = new BroadcastMessageDispatcher();
-    private final PartitionIndex[] indexes;
+    private final TopicCache cache;
 
     private final OctetsFW octetsRO = new OctetsFW();
 
     private final boolean[] cacheNewMessages;
 
     protected TopicMessageDispatcher(
-        PartitionIndex[] indexes,
+        TopicCache cache,
+        int partitionCount,
         Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
     {
-        this.indexes = indexes;
-        keys = new KeyMessageDispatcher[indexes.length];
-        cacheNewMessages = new boolean[indexes.length];
-        for (int partition = 0; partition < indexes.length; partition++)
+        this.cache = cache;
+        keys = new KeyMessageDispatcher[partitionCount];
+        cacheNewMessages = new boolean[partitionCount];
+        for (int partition = 0; partition < partitionCount; partition++)
         {
             keys[partition] = new KeyMessageDispatcher(createHeaderValueMessageDispatcher);
         }
         headers = new HeadersMessageDispatcher(createHeaderValueMessageDispatcher);
+
     }
 
     @Override
@@ -54,7 +57,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         int partition,
         long startOffset)
     {
-        indexes[partition].startOffset(startOffset);
+        cache.startOffset(partition, startOffset);
     }
 
     @Override
@@ -109,7 +112,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
 
         if (MessageDispatcher.matched(result))
         {
-            indexes[partition].add(requestOffset, messageOffset, timestamp, traceId, key, headers, value,
+            cache.add(partition, requestOffset, messageOffset, timestamp, traceId, key, headers, value,
                     cacheNewMessages[partition]);
         }
 
@@ -137,10 +140,10 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
                 result |= keyDispatcher.dispatch(partition, requestOffset, messageOffset,
                                                    key, supplyHeader, timestamp, traceId, value);
                 // detect historical message stream
-                long highestOffset = indexes[partition].nextOffset();
+                long highestOffset = cache.liveOffset(partition);
                 if (MessageDispatcher.delivered(result) && messageOffset < highestOffset)
                 {
-                    Entry entry = getEntry(partition, requestOffset, asOctets(key));
+                    Message entry = cache.getMessage(partition, asOctets(key));
 
                     // fast-forward to live stream after observing most recent cached offset for message key
                     if (entry != null  && entry.offset() == messageOffset)
@@ -163,7 +166,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         broadcast.flush(partition, requestOffset, lastOffset);
         keys[partition].flush(partition, requestOffset, lastOffset);
         headers.flush(partition, requestOffset, lastOffset);
-        indexes[partition].extendNextOffset(requestOffset, lastOffset);
+        cache.extendNextOffset(partition, requestOffset, lastOffset);
     }
 
     public void add(
@@ -218,27 +221,6 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         return empty && headers.isEmpty() && broadcast.isEmpty();
     }
 
-    public Entry getEntry(
-        int partition,
-        long requestOffset,
-        OctetsFW key)
-    {
-        return indexes[partition].getEntry(requestOffset, key);
-    }
-
-    public Iterator<Entry> entries(
-        int partition,
-        long requestOffset)
-    {
-        return indexes[partition].entries(requestOffset);
-    }
-
-    public long nextOffset(
-        int partition)
-    {
-        return indexes[partition].nextOffset();
-    }
-
     public void enableProactiveMessageCaching()
     {
         for (int i=0; i < cacheNewMessages.length; i++)
@@ -256,7 +238,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         boolean result = true;
         if (key != null)
         {
-            Entry entry = getEntry(partition, requestOffset, asOctets(key));
+            Entry entry = cache.getEntry(partition, requestOffset, asOctets(key));
             long expectedOffsetForKey = entry.offset();
             result = messageStartOffset >= expectedOffsetForKey;
         }

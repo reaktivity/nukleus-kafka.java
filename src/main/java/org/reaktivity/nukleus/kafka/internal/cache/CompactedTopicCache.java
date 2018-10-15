@@ -26,14 +26,22 @@ import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
-/**
- * A cache of messages for a topic
- */
-public final class DefaultTopicCache implements TopicCache
+public class CompactedTopicCache implements TopicCache
 {
-    public static final TopicCache INSTANCE = new DefaultTopicCache();
+    private final PartitionIndex[] indexes;
 
-    private final NoMessageEntry noMessageEntry = new NoMessageEntry();
+    public CompactedTopicCache(
+        int partitionCount,
+        int deleteRetentionMs,
+        MessageCache messageCache)
+    {
+        indexes = new PartitionIndex[partitionCount];
+        for (int i = 0; i < partitionCount; i++)
+        {
+            indexes[i] = new CompactedPartitionIndex(1000, deleteRetentionMs,
+                    messageCache);
+        }
+    }
 
     @Override
     public void add(
@@ -45,8 +53,10 @@ public final class DefaultTopicCache implements TopicCache
         DirectBuffer key,
         HeadersFW headers,
         DirectBuffer value,
-        boolean cacheNewMessages)
+        boolean cacheIfNew)
     {
+        indexes[partition].add(requestOffset, messageStartOffset, timestamp, traceId, key, headers, value,
+                cacheIfNew);
     }
 
     @Override
@@ -58,12 +68,20 @@ public final class DefaultTopicCache implements TopicCache
         return Collections.emptyIterator();
     }
 
+    public Iterator<Entry> entries(
+        int partition,
+        long requestOffset)
+    {
+        return indexes[partition].entries(requestOffset);
+    }
+
     @Override
     public void extendNextOffset(
         int partition,
         long requestOffset,
         long lastOffset)
     {
+        indexes[partition].extendNextOffset(requestOffset, lastOffset);
     }
 
     @Override
@@ -72,14 +90,14 @@ public final class DefaultTopicCache implements TopicCache
         long requestOffset,
         OctetsFW key)
     {
-        return noMessageEntry.offset(requestOffset);
+        return indexes[partition].getEntry(requestOffset, key);
     }
 
     @Override
     public long liveOffset(
         int partition)
     {
-        return 0L;
+        return indexes[partition].nextOffset();
     }
 
     @Override
@@ -87,28 +105,6 @@ public final class DefaultTopicCache implements TopicCache
         int partition,
         long startOffset)
     {
-    }
-
-    private static final class NoMessageEntry implements Entry
-    {
-        private long offset;
-
-        NoMessageEntry offset(long offset)
-        {
-            this.offset = offset;
-            return this;
-        }
-
-        @Override
-        public long offset()
-        {
-            return offset;
-        }
-
-        @Override
-        public int message()
-        {
-            return TopicCache.NO_MESSAGE;
-        }
+        indexes[partition].startOffset(startOffset);
     }
 }

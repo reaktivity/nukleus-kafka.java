@@ -17,12 +17,15 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 
 import org.agrona.DirectBuffer;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
+import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 /**
  * A cache of messages for a topic
  */
 public interface TopicCache extends MessageSource
 {
+    int NO_MESSAGE = -1;
+
     void add(
         int partition,
         long requestOffset,
@@ -33,4 +36,20 @@ public interface TopicCache extends MessageSource
         HeadersFW headers,
         DirectBuffer value,
         boolean cacheNewMessages);
+
+    void extendNextOffset(
+        int partition,
+        long requestOffset,
+        long lastOffset);
+
+    Message getMessage(
+        int partition,
+        OctetsFW key);
+
+    long liveOffset(
+        int partition);
+
+    void startOffset(
+        int partition,
+        long startOffset);
 }

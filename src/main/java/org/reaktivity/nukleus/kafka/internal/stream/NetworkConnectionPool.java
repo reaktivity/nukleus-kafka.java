@@ -64,10 +64,13 @@ import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaRefCounters;
 import org.reaktivity.nukleus.kafka.internal.cache.CompactedPartitionIndex;
+import org.reaktivity.nukleus.kafka.internal.cache.CompactedTopicCache;
 import org.reaktivity.nukleus.kafka.internal.cache.DefaultPartitionIndex;
+import org.reaktivity.nukleus.kafka.internal.cache.DefaultTopicCache;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
+import org.reaktivity.nukleus.kafka.internal.cache.TopicCache;
 import org.reaktivity.nukleus.kafka.internal.function.Attachable;
 import org.reaktivity.nukleus.kafka.internal.function.IntLongConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
@@ -2172,26 +2175,23 @@ public final class NetworkConnectionPool
             this.partitions = new TreeSet<>();
             this.candidate = new NetworkTopicPartition();
             this.progressHandler = this::handleProgress;
-            PartitionIndex[] partitionIndexes = new PartitionIndex[partitionCount];
+            TopicCache cache;
 
             if (compacted)
             {
-                for (int i = 0; i < partitionCount; i++)
-                {
-                    partitionIndexes[i] = new CompactedPartitionIndex(1000, deleteRetentionMs,
-                            messageCache);
-                }
+                cache = new CompactedTopicCache(
+                                partitionCount,
+                                deleteRetentionMs,
+                                messageCache);
             }
             else
             {
-                for (int i = 0; i < partitionCount; i++)
-                {
-                    partitionIndexes[i] = DEFAULT_PARTITION_INDEX;
-                }
+                cache = DefaultTopicCache.INSTANCE;
             }
 
             this.dispatcher = new TopicMessageDispatcher(
-                    partitionIndexes,
+                    cache,
+                    partitionCount,
                     compacted ? CompactedHeaderValueMessageDispatcher::new : HeaderValueMessageDispatcher::new);
 
             // Cache only messages matching route header conditions
@@ -2473,7 +2473,7 @@ public final class NetworkConnectionPool
                     if (!entries.hasNext())
                     {
                         //  End of the partition index reached, advance to latest offset
-                        newOffset = dispatcher.nextOffset(partitionId);
+                        newOffset = dispatcher.liveOffset(partitionId);
                     }
 
                     // Remove the partition request by shifting up the subsequent ones

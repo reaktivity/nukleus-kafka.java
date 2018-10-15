@@ -23,8 +23,6 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public interface PartitionIndex
 {
-    int NO_MESSAGE = -1;
-
     public interface Entry
     {
         long offset();
@@ -32,6 +30,11 @@ public interface PartitionIndex
         int message();
     }
 
+    /**
+     * Adds the message details to the index, and conditionally caches the whole message
+     * @param cacheIfNew   If true, the message is always cached.
+     *                     If false, the message is cached only if it is historical.
+     */
     void add(
         long requestOffset,
         long messageStartOffset,
@@ -40,7 +43,7 @@ public interface PartitionIndex
         DirectBuffer key,
         HeadersFW headers,
         DirectBuffer value,
-        boolean cacheNewMessages);
+        boolean cacheIfNew);
 
     Iterator<Entry> entries(
         long requestOffset);

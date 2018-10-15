@@ -31,12 +31,19 @@ public interface MessageSource
     public interface Message
     {
         /**
-         * @return the offset of the next matching message on the partition
+         * @return the offset of this message
          */
-        long nextOffset();
+        long offset();
 
         int partition();
 
+        /**
+         * @param message
+         * @return The message, wrapped using the given flyweight,
+         *         OR null if there are no more messages, in which
+         *         case nextOffset() should be used to fetch further
+         *         messages from Ka it'sfka.
+         */
         MessageFW message(MessageFW message);
     }
 
