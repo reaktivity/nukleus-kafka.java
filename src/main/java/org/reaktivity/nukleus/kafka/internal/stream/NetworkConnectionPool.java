@@ -2480,6 +2480,7 @@ public final class NetworkConnectionPool
                 long logStartOffset = request.logStartOffset();
                 int maxBytes = request.maxBytes();
                 int dispatchedBytes = 0;
+                boolean expectingWindow = false;
                 long newOffset = fetchOffset;
                 Iterator<Entry> entries = dispatcher.entries(partitionId, fetchOffset);
                 boolean partitionRequestNeeded = false;
@@ -2507,7 +2508,12 @@ public final class NetworkConnectionPool
                         int result = dispatcher.dispatch(partitionId, requestOffset, newOffset, key, headers.headerSupplier(),
                                 message.timestamp(), message.traceId(), value);
 
-                        if (value != null && MessageDispatcher.written(result))
+                        if (MessageDispatcher.expectingWindow(result))
+                        {
+                            expectingWindow = true;
+                        }
+
+                        if (value != null && expectingWindow)
                         {
                             dispatchedBytes += value.capacity();
                         }

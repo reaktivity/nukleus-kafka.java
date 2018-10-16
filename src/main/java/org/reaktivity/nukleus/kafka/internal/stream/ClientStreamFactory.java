@@ -727,10 +727,6 @@ public final class ClientStreamFactory implements StreamFactory
                     if (bytesToWrite < payloadLength)
                     {
                         dispatchBlocked = true;
-                        if (bytesToWrite > 0)
-                        {
-                            result |= MessageDispatcher.FLAGS_WRITTEN;
-                        }
                     }
                     else
                     {
@@ -742,6 +738,7 @@ public final class ClientStreamFactory implements StreamFactory
                     dispatchBlocked = true;
                     counters.dispatchNoWindow.getAsLong();
                 }
+                result |= MessageDispatcher.FLAGS_EXPECTING_WINDOW;
             }
             return result;
         }
