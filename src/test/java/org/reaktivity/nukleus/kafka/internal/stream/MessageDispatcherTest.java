@@ -25,9 +25,13 @@ public final class MessageDispatcherTest
     @Test
     public void shouldDetectFlagsDelivered()
     {
+        assertFalse(MessageDispatcher.expectingWindow(0x01));
         assertFalse(MessageDispatcher.delivered(0x01));
+        assertFalse(MessageDispatcher.expectingWindow(0x02));
         assertFalse(MessageDispatcher.delivered(0x02));
-        assertTrue(MessageDispatcher.delivered(0x03));
+        assertFalse(MessageDispatcher.delivered(0x03));
+        assertTrue(MessageDispatcher.expectingWindow(0x03));
+        assertFalse(MessageDispatcher.expectingWindow(0x05));
         assertFalse(MessageDispatcher.delivered(0x05));
         assertTrue(MessageDispatcher.delivered(0x07));
     }

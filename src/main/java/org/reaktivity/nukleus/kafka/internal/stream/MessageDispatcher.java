@@ -23,11 +23,17 @@ import org.agrona.DirectBuffer;
 public interface MessageDispatcher
 {
     int FLAGS_MATCHED = 0x01;
-    int FLAGS_DELIVERED = 0x02 | FLAGS_MATCHED;
+    int FLAGS_EXPECTING_WINDOW = 0x02 | FLAGS_MATCHED;
+    int FLAGS_DELIVERED = 0x04 | FLAGS_EXPECTING_WINDOW;
 
     static boolean matched(int result)
     {
         return (result & FLAGS_MATCHED) == FLAGS_MATCHED;
+    }
+
+    static boolean expectingWindow(int result)
+    {
+        return (result & FLAGS_EXPECTING_WINDOW) == FLAGS_EXPECTING_WINDOW;
     }
 
     static boolean delivered(int result)
