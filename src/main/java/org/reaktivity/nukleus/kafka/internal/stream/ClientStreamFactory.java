@@ -727,6 +727,10 @@ public final class ClientStreamFactory implements StreamFactory
                     if (bytesToWrite < payloadLength)
                     {
                         dispatchBlocked = true;
+                        if (bytesToWrite > 0)
+                        {
+                            result |= MessageDispatcher.FLAGS_WRITTEN;
+                        }
                     }
                     else
                     {

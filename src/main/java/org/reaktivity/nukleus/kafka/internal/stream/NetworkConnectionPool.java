@@ -2504,10 +2504,10 @@ public final class NetworkConnectionPool
                                 message.headers().limit());
 
                         // call the dispatch variant which does not attempt to re-cache the message
-                        dispatcher.dispatch(partitionId, requestOffset, newOffset, key, headers.headerSupplier(),
+                        int result = dispatcher.dispatch(partitionId, requestOffset, newOffset, key, headers.headerSupplier(),
                                 message.timestamp(), message.traceId(), value);
 
-                        if (value != null)
+                        if (value != null && MessageDispatcher.written(result))
                         {
                             dispatchedBytes += value.capacity();
                         }
