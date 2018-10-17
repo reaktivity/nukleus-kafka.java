@@ -1031,6 +1031,7 @@ public final class NetworkConnectionPool
         final ResponseDecoder fetchResponseDecoder;
 
         private final LongSupplier fetches;
+        private boolean inFetch;
 
         private AbstractFetchConnection(
             LongSupplier fetches)
@@ -1069,7 +1070,12 @@ public final class NetworkConnectionPool
                     }
                     else
                     {
-                        doFetchRequest();
+                        if (!inFetch)
+                        {
+                            inFetch = true;
+                            doFetchRequest();
+                        }
+                        inFetch = false;
                         if (offsetsNeeded)
                         {
                             // Make sure we continue if no fetch request was done because all needed high water mark offset
@@ -1153,6 +1159,8 @@ public final class NetworkConnectionPool
                     .topicCount(topicCount)
                     .build();
 
+                assert nextRequestId == nextResponseId :
+                        format("nextRequestId = %d nextResponseId = %d", nextRequestId, nextResponseId);
                 int newCorrelationId = nextRequestId++;
                 NetworkConnectionPool.this.requestRW
                     .wrap(NetworkConnectionPool.this.encodeBuffer, request.offset(), request.limit())
