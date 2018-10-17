@@ -2422,7 +2422,7 @@ public final class NetworkConnectionPool
                 {
                     Entry entry = entries.next();
                     newOffset = entry.offset();
-                    MessageFW message = messageCache.get(entry.message(), messageRO);
+                    MessageFW message = messageCache.get(entry.messageHandle(), messageRO);
                     if (message == null)
                     {
                         partitionRequestNeeded = true;
@@ -2460,7 +2460,7 @@ public final class NetworkConnectionPool
                     if (!entries.hasNext())
                     {
                         //  End of the partition index reached, advance to latest offset
-                        newOffset = dispatcher.liveOffset(partitionId);
+                        newOffset = dispatcher.nextOffset(partitionId);
                     }
 
                     // Remove the partition request by shifting up the subsequent ones

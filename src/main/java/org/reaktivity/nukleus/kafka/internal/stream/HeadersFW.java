@@ -22,8 +22,12 @@ import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.HeaderFW;
+import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
 
 public final class HeadersFW
 {
@@ -60,9 +64,10 @@ public final class HeadersFW
         return limit - offset;
     }
 
-    public HeadersFW wrap(DirectBuffer buffer,
-              int offset,
-              int limit)
+    public HeadersFW wrap(
+        DirectBuffer buffer,
+        int offset,
+        int limit)
     {
         this.buffer = buffer;
         this.offset = offset;
@@ -70,9 +75,31 @@ public final class HeadersFW
         return this;
     }
 
+    public HeadersFW wrap(
+        Flyweight headers)
+    {
+        return wrap(headers.buffer(), headers.offset(), headers.limit());
+    }
+
     public Function<DirectBuffer, Iterator<DirectBuffer>> headerSupplier()
     {
         return supplyHeader;
+    }
+
+    public boolean matches(
+        ListFW<KafkaHeaderFW> headerConditions)
+    {
+        // Find first non-matching header condition. If not found, all headerConditions are fulfilled.
+        return headerConditions == null || null != headerConditions.matchFirst(
+            h ->
+            {
+                boolean[] matchFound = new boolean[]{false};
+                headerSupplier().apply(BufferUtil.wrap(value1,  h.key())).forEachRemaining(
+                    v -> matchFound[0] = !matchFound[0]
+                            && BufferUtil.wrap(value1, v).equals(BufferUtil.wrap(value2, h.value())));
+                return !matchFound[0];
+            }
+        );
     }
 
     @Override
@@ -106,6 +133,8 @@ public final class HeadersFW
     private final class HeaderValueIterator implements Iterator<DirectBuffer>
     {
         private final DirectBuffer headerValue = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+        private final DirectBuffer compare1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+        private final DirectBuffer compare2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
         private DirectBuffer headerKey;
         private int position;
@@ -154,9 +183,9 @@ public final class HeadersFW
 
         private boolean matches(OctetsFW octets, DirectBuffer buffer)
         {
-            value1.wrap(octets.buffer(), octets.offset(), octets.sizeof());
-            value2.wrap(buffer);
-            return value1.equals(value2);
+            BufferUtil.wrap(compare1, octets);
+            compare2.wrap(buffer);
+            return compare1.equals(compare2);
         }
     }
 }

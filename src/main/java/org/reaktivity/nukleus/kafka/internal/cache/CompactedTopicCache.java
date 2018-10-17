@@ -15,12 +15,10 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import java.util.Collections;
 import java.util.Iterator;
 
 import org.agrona.DirectBuffer;
 import org.agrona.collections.Long2LongHashMap;
-import org.reaktivity.nukleus.kafka.internal.cache.MessageSource.Message;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
@@ -30,20 +28,26 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public class CompactedTopicCache implements TopicCache
 {
-    private final PartitionIndex[] indexes;
-    private final Message message = new MessageImpl();
+    private final MessageFW messageRO = new MessageFW();
+    private final HeadersFW headersRO = new HeadersFW();
+    private final MessageCache messageCache;
+    private final CompactedPartitionIndex[] indexes;
+    private final KeyedMessageIterator keyedMessageIterator = new KeyedMessageIterator();
+    private final MessageIterator messageIterator;
 
     public CompactedTopicCache(
         int partitionCount,
         int deleteRetentionMs,
         MessageCache messageCache)
     {
-        indexes = new PartitionIndex[partitionCount];
+        this.messageCache = messageCache;
+        indexes = new CompactedPartitionIndex[partitionCount];
         for (int i = 0; i < partitionCount; i++)
         {
             indexes[i] = new CompactedPartitionIndex(1000, deleteRetentionMs,
                     messageCache);
         }
+        messageIterator = new MessageIterator(partitionCount);
     }
 
     @Override
@@ -68,8 +72,14 @@ public class CompactedTopicCache implements TopicCache
         OctetsFW fetchKey,
         ListFW<KafkaHeaderFW> headers)
     {
-        // TODO: implement
-        return Collections.emptyIterator();
+        if (fetchKey != null)
+        {
+            return keyedMessageIterator.reset(fetchOffsets, fetchKey, headers);
+        }
+        else
+        {
+            return messageIterator.reset(fetchOffsets, headers);
+        }
     }
 
     @Override
@@ -90,7 +100,7 @@ public class CompactedTopicCache implements TopicCache
     }
 
     @Override
-    public long liveOffset(
+    public long nextOffset(
         int partition)
     {
         return indexes[partition].nextOffset();
@@ -104,26 +114,37 @@ public class CompactedTopicCache implements TopicCache
         indexes[partition].startOffset(startOffset);
     }
 
-    private static class MessageImpl implements Message
+    private class MessageImpl implements Message
     {
         private int partition;
-        private Entry entry;
-        private MessageCache messageCache;
+        private long offset;
+        private int messageHandle;
 
-        private void wrap(
+        private MessageImpl wrap(
             int partition,
-            Entry entry,
-            MessageCache messageCache)
+            long offset,
+            int messageHandle)
         {
             this.partition = partition;
-            this.entry = entry;
-            this.messageCache = messageCache;
+            this.offset = offset;
+            this.messageHandle = messageHandle;
+            return this;
+        }
+
+        private MessageImpl wrap(
+            int partition,
+            Entry entry)
+        {
+            this.partition = partition;
+            this.offset =  entry.offset();
+            this.messageHandle = entry.messageHandle();
+            return this;
         }
 
         @Override
         public long offset()
         {
-            return entry.offset();
+            return offset;
         }
 
         @Override
@@ -133,11 +154,128 @@ public class CompactedTopicCache implements TopicCache
         }
 
         @Override
-        public MessageFW message(
-            MessageFW message)
+        public MessageFW message()
         {
-            return messageCache.get(entry.message(), message);
+            return messageCache.get(messageHandle, messageRO);
         }
 
+    }
+
+    final class MessageIterator implements Iterator<Message>
+    {
+        private final Iterator<Entry>[]  iterators;
+        private ListFW<KafkaHeaderFW> headerConditions;
+        private int partition;
+        private MessageImpl message;
+
+        @SuppressWarnings("unchecked")
+        MessageIterator(
+            int partitionCount)
+        {
+            iterators = new Iterator[partitionCount];
+        }
+
+        Iterator<Message> reset(
+            Long2LongHashMap fetchOffsets,
+            ListFW<KafkaHeaderFW> headerConditions)
+        {
+            this.headerConditions = headerConditions;
+            assert fetchOffsets.size() == iterators.length;
+
+            for (int i=0; i < iterators.length; i++)
+            {
+                iterators[i] = indexes[i].entries(fetchOffsets.get(i), headerConditions);
+            }
+
+            this.partition = 0; // TODO: random?
+            return this;
+        }
+
+        @Override
+        public boolean hasNext()
+        {
+            boolean result = false;
+            rotate();
+            for (int i=0; i < iterators.length; i++)
+            {
+                result = iterators[partition].hasNext();
+                if (result)
+                {
+                    break;
+                }
+                else
+                {
+                    rotate();
+                }
+            }
+            return result;
+        }
+
+        @Override
+        public Message next()
+        {
+            return message.wrap(partition, iterators[partition].next());
+        }
+
+        private void rotate()
+        {
+            if (partition++ >= iterators.length)
+            {
+                partition =- iterators.length;
+            }
+        }
+    }
+
+    final class KeyedMessageIterator implements Iterator<Message>
+    {
+        private final MessageImpl message = new MessageImpl();
+        private final MessageImpl lastMessage = new MessageImpl();
+        private int remainingEntries;
+
+        Iterator<Message> reset(
+            Long2LongHashMap fetchOffsets,
+            OctetsFW fetchKey,
+            ListFW<KafkaHeaderFW> headerConditions)
+        {
+            int partition = fetchOffsets.keySet().iterator().next().intValue();
+            remainingEntries = 1;
+            lastMessage.wrap(partition, indexes[partition].nextOffset(), NO_MESSAGE);
+            Entry entry = indexes[partition].getEntry(fetchKey);
+            if (entry != null)
+            {
+                message.wrap(partition,  entry.offset(), entry.messageHandle());
+                MessageFW messageRO = message.message();
+                if (messageRO != null && headersRO.wrap(messageRO.headers()).matches(headerConditions))
+                {
+                    remainingEntries = 2;
+                }
+            }
+            return this;
+        }
+
+        @Override
+        public boolean hasNext()
+        {
+            return remainingEntries > 0;
+        }
+
+        @Override
+        public Message next()
+        {
+            Message result;
+            switch(remainingEntries)
+            {
+            case 2:
+                result = message;
+                break;
+            case 1:
+                result = lastMessage;
+                break;
+            default:
+                result = null;
+            }
+            remainingEntries--;
+            return result;
+        }
     }
 }

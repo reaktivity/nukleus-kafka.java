@@ -46,6 +46,7 @@ import org.reaktivity.nukleus.kafka.internal.KafkaCounters;
 import org.reaktivity.nukleus.kafka.internal.cache.DefaultMessageCache;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageSource;
+import org.reaktivity.nukleus.kafka.internal.cache.MessageSource.Message;
 import org.reaktivity.nukleus.kafka.internal.function.AttachDetailsConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
@@ -591,6 +592,7 @@ public final class ClientStreamFactory implements StreamFactory
         private AttachDetailsConsumer attacher;
         private AttachDetailsConsumer detacher;
         private MessageSource historicalCache;
+        private Runnable dispatchState;
 
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
@@ -1040,7 +1042,15 @@ public final class ClientStreamFactory implements StreamFactory
             this.partitionCount = partitionCount;
             this.detacher = detacher;
             this.progressHandler = progressHandler;
-            this.historicalCache = historicalCache;
+            if (historicalCache != null)
+            {
+                this.historicalCache = historicalCache;
+                dispatchState = this::dispatchMessagesFromCache;
+            }
+            else
+            {
+                dispatchState = this::dispatchMessages;
+            }
 
             // For streaming topics default to receiving only live (new) messages
             final long defaultOffset = fetchOffsets.isEmpty() && !compacted ? NetworkConnectionPool.MAX_OFFSET : 0L;
@@ -1133,28 +1143,41 @@ public final class ClientStreamFactory implements StreamFactory
                 budget.incApplicationReplyBudget(window.credit());
             }
 
-            dispatchMessages();
+            dispatchState.run();
+        }
+
+        private void dispatchMessagesFromCache()
+        {
+            // TODO: dispatch from cache until window is exhausted or no more messages in cache from requested offsets
+            // If cache exhausted:
+            // - if key != null update offset to last offsets (live offset) from cache
+            //   (should happen automatically from last Message from iterator)
+            // - historicalCache = null; dispatchMessages();
+
+            Iterator<Message> messages = historicalCache.getMessages(fetchOffsets, fetchKey, headers);
+
+            while (writeableBytes() > 0 && messages.hasNext())
+            {
+
+            }
+
+            // No more messages available in cache
+            dispatchState = this::dispatchMessages;
+
+            if (writeableBytes() > 0)
+            {
+                dispatchState.run();
+            }
         }
 
         private void dispatchMessages()
         {
-            if (historicalCache == null)
+            if (attacher != null)
             {
-                if (attacher != null)
-                {
-                    invoke(attacher);
-                    attacher = null;
-                }
-                networkPool.doFlush();
+                invoke(attacher);
+                attacher = null;
             }
-            else
-            {
-                // TODO: dispatch from cache until window is exhausted or no more messages in cache from requested offsets
-                // If cache exhausted:
-                // - if key != null update offset to last offsets (live offset) from cache
-                //   (should happen automatically from last Message from iterator)
-                // - historicalCache = null; dispatchMessages();
-            }
+            networkPool.doFlush();
         }
 
         private boolean equals(DirectBuffer buffer1, DirectBuffer buffer2)

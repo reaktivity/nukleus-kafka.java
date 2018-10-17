@@ -39,12 +39,12 @@ public interface MessageSource
 
         /**
          * @param message
-         * @return The message, wrapped using the given flyweight,
+         * @return The message,
          *         OR null if there are no more messages, in which
          *         case nextOffset() should be used to fetch further
          *         messages from Kafka.
          */
-        MessageFW message(MessageFW message);
+        MessageFW message();
     }
 
     Iterator<Message> getMessages(

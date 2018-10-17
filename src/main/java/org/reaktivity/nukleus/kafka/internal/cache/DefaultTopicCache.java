@@ -72,7 +72,7 @@ public final class DefaultTopicCache implements TopicCache
     }
 
     @Override
-    public long liveOffset(
+    public long nextOffset(
         int partition)
     {
         return 0L;

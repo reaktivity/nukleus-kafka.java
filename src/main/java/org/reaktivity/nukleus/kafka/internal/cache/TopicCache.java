@@ -47,7 +47,7 @@ public interface TopicCache extends MessageSource
         int partition,
         OctetsFW key);
 
-    long liveOffset(
+    long nextOffset(
         int partition);
 
     void startOffset(

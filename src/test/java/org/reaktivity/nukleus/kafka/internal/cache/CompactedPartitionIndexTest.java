@@ -224,7 +224,7 @@ public final class CompactedPartitionIndexTest
         Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L);
         Entry entry = iterator.next();
         assertEquals(2L, entry.offset());
-        assertEquals(0, entry.message());
+        assertEquals(0, entry.messageHandle());
         assertFalse(iterator.hasNext());
         long delayTillEntryHasExpired = timestamp1 + TOMBSTONE_LIFETIME_MILLIS - currentTimeMillis();
         Thread.sleep(delayTillEntryHasExpired);
@@ -232,7 +232,7 @@ public final class CompactedPartitionIndexTest
         entry = iterator.next();
 
         // Since the message now has a value again it should not be remove by expiry of the previous tombstone
-        assertEquals(0, entry.message());
+        assertEquals(0, entry.messageHandle());
 
         assertEquals(2L, entry.offset());
         assertFalse(iterator.hasNext());
@@ -243,7 +243,7 @@ public final class CompactedPartitionIndexTest
         iterator = index.entries(0L);
         entry = iterator.next();
         assertEquals(4L, entry.offset());
-        assertEquals(-1, entry.message());
+        assertEquals(-1, entry.messageHandle());
         assertFalse(iterator.hasNext());
     }
 
@@ -271,10 +271,10 @@ public final class CompactedPartitionIndexTest
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(100L, entry.offset());
-        assertEquals(1, entry.message());
+        assertEquals(1, entry.messageHandle());
         entry = iterator.next();
         assertEquals(101L, entry.offset());
-        assertEquals(3, entry.message());
+        assertEquals(3, entry.messageHandle());
         assertFalse(iterator.hasNext());
     }
 
@@ -294,10 +294,10 @@ public final class CompactedPartitionIndexTest
         index.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
         Entry entry = index.getEntry(0L, asOctets("key1"));
         assertEquals(0L, entry.offset());
-        assertEquals(0, entry.message());
+        assertEquals(0, entry.messageHandle());
         entry = index.getEntry(0L, asOctets("key2"));
         assertEquals(1L, entry.offset());
-        assertEquals(1, entry.message());
+        assertEquals(1, entry.messageHandle());
     }
 
     @Test
@@ -316,7 +316,7 @@ public final class CompactedPartitionIndexTest
         index.add(0L, 2L, 124, 457, asBuffer("key2"), headers, value, true);
         Entry entry = index.getEntry(1L, asOctets("unknownKey"));
         assertEquals(3L, entry.offset());
-        assertEquals(MessageCache.NO_MESSAGE, entry.message());
+        assertEquals(MessageCache.NO_MESSAGE, entry.messageHandle());
     }
 
     @Test
@@ -337,10 +337,10 @@ public final class CompactedPartitionIndexTest
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(0L, entry.offset());
-        assertEquals(0, entry.message());
+        assertEquals(0, entry.messageHandle());
         entry = iterator.next();
         assertEquals(1L, entry.offset());
-        assertEquals(1, entry.message());
+        assertEquals(1, entry.messageHandle());
         assertFalse(iterator.hasNext());
     }
 
@@ -386,7 +386,7 @@ public final class CompactedPartitionIndexTest
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(10L, entry.offset());
-        assertEquals(1, entry.message());
+        assertEquals(1, entry.messageHandle());
         assertFalse(iterator.hasNext());
     }
 
@@ -397,7 +397,7 @@ public final class CompactedPartitionIndexTest
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(100L, entry.offset());
-        assertEquals(MessageCache.NO_MESSAGE, entry.message());
+        assertEquals(MessageCache.NO_MESSAGE, entry.messageHandle());
         assertFalse(iterator.hasNext());
     }
 
@@ -408,7 +408,7 @@ public final class CompactedPartitionIndexTest
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(102L, entry.offset());
-        assertEquals(MessageCache.NO_MESSAGE, entry.message());
+        assertEquals(MessageCache.NO_MESSAGE, entry.messageHandle());
         assertFalse(iterator.hasNext());
         iterator.next();
     }
@@ -428,7 +428,7 @@ public final class CompactedPartitionIndexTest
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(102L, entry.offset());
-        assertEquals(MessageCache.NO_MESSAGE, entry.message());
+        assertEquals(MessageCache.NO_MESSAGE, entry.messageHandle());
         assertFalse(iterator.hasNext());
     }
 
@@ -532,10 +532,10 @@ public final class CompactedPartitionIndexTest
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(2L, entry.offset());
-        assertEquals(1, entry.message());
+        assertEquals(1, entry.messageHandle());
         entry = iterator.next();
         assertEquals(3L, entry.offset());
-        assertEquals(0, entry.message());
+        assertEquals(0, entry.messageHandle());
         assertFalse(iterator.hasNext());
     }
 
@@ -607,10 +607,10 @@ public final class CompactedPartitionIndexTest
         Entry entry2 = index.getEntry(0L, asOctets("key2"));
 
         assertEquals(2L, entry1.offset());
-        assertEquals(MessageCache.NO_MESSAGE, entry1.message());
+        assertEquals(MessageCache.NO_MESSAGE, entry1.messageHandle());
 
         assertEquals(1L, entry2.offset());
-        assertEquals(1, entry2.message());
+        assertEquals(1, entry2.messageHandle());
     }
 
 }

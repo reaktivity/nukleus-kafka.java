@@ -27,7 +27,7 @@ public interface PartitionIndex
     {
         long offset();
 
-        int message();
+        int messageHandle();
     }
 
     /**

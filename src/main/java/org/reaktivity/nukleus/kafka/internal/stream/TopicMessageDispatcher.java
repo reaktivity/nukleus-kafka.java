@@ -140,7 +140,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
                 result |= keyDispatcher.dispatch(partition, requestOffset, messageOffset,
                                                    key, supplyHeader, timestamp, traceId, value);
                 // detect historical message stream
-                long highestOffset = cache.liveOffset(partition);
+                long highestOffset = cache.nextOffset(partition);
                 if (MessageDispatcher.delivered(result) && messageOffset < highestOffset)
                 {
                     long offset = cache.getOffset(partition, asOctets(key));

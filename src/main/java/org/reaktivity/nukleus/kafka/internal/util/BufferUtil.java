@@ -155,9 +155,9 @@ public final class BufferUtil
         return result;
     }
 
-    public static void wrap(
+    public static DirectBuffer wrap(
         DirectBuffer wrapper,
-        OctetsFW wrapped)
+        Flyweight wrapped)
     {
         assert wrapped != null;
         if (wrapped.offset() == wrapped.buffer().capacity())
@@ -169,6 +169,7 @@ public final class BufferUtil
         {
             wrapper.wrap(wrapped.buffer(), wrapped.offset(), wrapped.sizeof());
         }
+        return wrapper;
     }
 
 }
