@@ -19,6 +19,8 @@ import java.util.Iterator;
 
 import org.agrona.DirectBuffer;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public interface PartitionIndex
@@ -46,7 +48,8 @@ public interface PartitionIndex
         boolean cacheIfNew);
 
     Iterator<Entry> entries(
-        long requestOffset);
+        long requestOffset,
+        ListFW<KafkaHeaderFW> headerConditions);
 
     long getOffset(
         OctetsFW key);
