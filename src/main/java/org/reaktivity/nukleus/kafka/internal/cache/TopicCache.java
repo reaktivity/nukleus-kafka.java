@@ -25,6 +25,7 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 public interface TopicCache extends MessageSource
 {
     int NO_MESSAGE = -1;
+    long NO_OFFSET = -1L;
 
     void add(
         int partition,
@@ -42,7 +43,7 @@ public interface TopicCache extends MessageSource
         long requestOffset,
         long lastOffset);
 
-    Message getMessage(
+    long getOffset(
         int partition,
         OctetsFW key);
 

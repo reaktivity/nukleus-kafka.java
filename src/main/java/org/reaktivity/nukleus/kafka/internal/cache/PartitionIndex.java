@@ -48,8 +48,7 @@ public interface PartitionIndex
     Iterator<Entry> entries(
         long requestOffset);
 
-    Entry getEntry(
-        long requestOffset,
+    long getOffset(
         OctetsFW key);
 
     long nextOffset();

@@ -1004,6 +1004,7 @@ public final class ClientStreamFactory implements StreamFactory
                         this.hashCode = hashCodesCount == 1 ? beginEx.fetchKeyHash().nextInt()
                                 : BufferUtil.defaultHashCode(fetchKey.buffer(), fetchKey.offset(), fetchKey.limit());
                     }
+
                     networkAttachId = networkPool.doAttach(
                             topicName,
                             this::onAttachPrepared,
@@ -1117,6 +1118,7 @@ public final class ClientStreamFactory implements StreamFactory
         {
             applicationReplyPadding = window.padding();
             groupId = window.groupId();
+
             if (firstWindow)
             {
                 if (groupId != 0)
@@ -1125,18 +1127,34 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 firstWindow = false;
                 budget.joinGroup(window.credit());
-                if (attacher != null)
-                {
-                    invoke(attacher);
-                    attacher = null;
-                }
             }
             else
             {
                 budget.incApplicationReplyBudget(window.credit());
             }
 
-            networkPool.doFlush();
+            dispatchMessages();
+        }
+
+        private void dispatchMessages()
+        {
+            if (historicalCache == null)
+            {
+                if (attacher != null)
+                {
+                    invoke(attacher);
+                    attacher = null;
+                }
+                networkPool.doFlush();
+            }
+            else
+            {
+                // TODO: dispatch from cache until window is exhausted or no more messages in cache from requested offsets
+                // If cache exhausted:
+                // - if key != null update offset to last offsets (live offset) from cache
+                //   (should happen automatically from last Message from iterator)
+                // - historicalCache = null; dispatchMessages();
+            }
         }
 
         private boolean equals(DirectBuffer buffer1, DirectBuffer buffer2)

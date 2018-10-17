@@ -63,12 +63,9 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaRefCounters;
-import org.reaktivity.nukleus.kafka.internal.cache.CompactedPartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.CompactedTopicCache;
-import org.reaktivity.nukleus.kafka.internal.cache.DefaultPartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.DefaultTopicCache;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
-import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.cache.TopicCache;
 import org.reaktivity.nukleus.kafka.internal.function.Attachable;
@@ -141,7 +138,6 @@ public final class NetworkConnectionPool
     private static final byte[] ANY_IP_ADDR = new byte[4];
 
     private static final int KAFKA_SERVER_DEFAULT_DELETE_RETENTION_MS = 86400000;
-    private static final PartitionIndex DEFAULT_PARTITION_INDEX = new DefaultPartitionIndex();
 
     private static final LongSupplier NO_COUNTER = Long.valueOf(0L)::longValue;
 
@@ -2250,12 +2246,6 @@ public final class NetworkConnectionPool
                 {
                     final int partitionId = (int) keys.nextValue();
                     long fetchOffset = fetchOffsets.get(partitionId);
-                    long cachedOffset = this.dispatcher.entries(partitionId, fetchOffset).next().offset();
-                    if (cachedOffset > fetchOffset)
-                    {
-                        fetchOffsets.put(partitionId, cachedOffset);
-                        fetchOffset = cachedOffset;
-                    }
                     attachToPartition(partitionId, fetchOffset, 1);
                 }
             }
@@ -2264,15 +2254,6 @@ public final class NetworkConnectionPool
                 int fetchKeyPartition = fetchOffsets.keySet().iterator().next().intValue();
                 this.dispatcher.add(fetchKey, fetchKeyPartition, headersIterator, dispatcher);
                 long fetchOffset = fetchOffsets.get(fetchKeyPartition);
-                if (compacted)
-                {
-                    long cachedOffset = this.dispatcher.getEntry(fetchKeyPartition, fetchOffset, fetchKey).offset();
-                    if (cachedOffset > fetchOffset)
-                    {
-                        fetchOffsets.put(fetchKeyPartition, cachedOffset);
-                        fetchOffset = cachedOffset;
-                    }
-                }
                 attachToPartition(fetchKeyPartition, fetchOffset, 1);
             }
 

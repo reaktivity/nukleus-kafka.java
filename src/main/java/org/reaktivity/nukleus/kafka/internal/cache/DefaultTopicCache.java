@@ -20,7 +20,6 @@ import java.util.Iterator;
 
 import org.agrona.DirectBuffer;
 import org.agrona.collections.Long2LongHashMap;
-import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
@@ -32,8 +31,6 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 public final class DefaultTopicCache implements TopicCache
 {
     public static final TopicCache INSTANCE = new DefaultTopicCache();
-
-    private final NoMessageEntry noMessageEntry = new NoMessageEntry();
 
     @Override
     public void add(
@@ -67,12 +64,11 @@ public final class DefaultTopicCache implements TopicCache
     }
 
     @Override
-    public Entry getEntry(
+    public long getOffset(
         int partition,
-        long requestOffset,
         OctetsFW key)
     {
-        return noMessageEntry.offset(requestOffset);
+        return NO_OFFSET;
     }
 
     @Override
@@ -87,28 +83,5 @@ public final class DefaultTopicCache implements TopicCache
         int partition,
         long startOffset)
     {
-    }
-
-    private static final class NoMessageEntry implements Entry
-    {
-        private long offset;
-
-        NoMessageEntry offset(long offset)
-        {
-            this.offset = offset;
-            return this;
-        }
-
-        @Override
-        public long offset()
-        {
-            return offset;
-        }
-
-        @Override
-        public int message()
-        {
-            return TopicCache.NO_MESSAGE;
-        }
     }
 }

@@ -15,12 +15,12 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static org.reaktivity.nukleus.kafka.internal.cache.TopicCache.NO_OFFSET;
+
 import java.util.Iterator;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
-import org.reaktivity.nukleus.kafka.internal.cache.MessageSource.Message;
-import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.cache.TopicCache;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
@@ -143,10 +143,10 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
                 long highestOffset = cache.liveOffset(partition);
                 if (MessageDispatcher.delivered(result) && messageOffset < highestOffset)
                 {
-                    Message entry = cache.getMessage(partition, asOctets(key));
+                    long offset = cache.getOffset(partition, asOctets(key));
 
                     // fast-forward to live stream after observing most recent cached offset for message key
-                    if (entry != null  && entry.offset() == messageOffset)
+                    if (offset != NO_OFFSET && offset == messageOffset)
                     {
                         keyDispatcher.flush(partition, requestOffset, highestOffset, key);
                     }
@@ -238,8 +238,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         boolean result = true;
         if (key != null)
         {
-            Entry entry = cache.getEntry(partition, requestOffset, asOctets(key));
-            long expectedOffsetForKey = entry.offset();
+            long expectedOffsetForKey = cache.getOffset(partition, asOctets(key));
             result = messageStartOffset >= expectedOffsetForKey;
         }
         return result;

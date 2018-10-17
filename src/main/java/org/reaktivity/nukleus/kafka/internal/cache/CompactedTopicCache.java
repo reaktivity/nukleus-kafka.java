@@ -20,15 +20,18 @@ import java.util.Iterator;
 
 import org.agrona.DirectBuffer;
 import org.agrona.collections.Long2LongHashMap;
+import org.reaktivity.nukleus.kafka.internal.cache.MessageSource.Message;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
+import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public class CompactedTopicCache implements TopicCache
 {
     private final PartitionIndex[] indexes;
+    private final Message message = new MessageImpl();
 
     public CompactedTopicCache(
         int partitionCount,
@@ -65,14 +68,8 @@ public class CompactedTopicCache implements TopicCache
         OctetsFW fetchKey,
         ListFW<KafkaHeaderFW> headers)
     {
+        // TODO: implement
         return Collections.emptyIterator();
-    }
-
-    public Iterator<Entry> entries(
-        int partition,
-        long requestOffset)
-    {
-        return indexes[partition].entries(requestOffset);
     }
 
     @Override
@@ -85,12 +82,11 @@ public class CompactedTopicCache implements TopicCache
     }
 
     @Override
-    public Entry getEntry(
+    public long getOffset(
         int partition,
-        long requestOffset,
         OctetsFW key)
     {
-        return indexes[partition].getEntry(requestOffset, key);
+        return indexes[partition].getOffset(key);
     }
 
     @Override
@@ -106,5 +102,42 @@ public class CompactedTopicCache implements TopicCache
         long startOffset)
     {
         indexes[partition].startOffset(startOffset);
+    }
+
+    private static class MessageImpl implements Message
+    {
+        private int partition;
+        private Entry entry;
+        private MessageCache messageCache;
+
+        private void wrap(
+            int partition,
+            Entry entry,
+            MessageCache messageCache)
+        {
+            this.partition = partition;
+            this.entry = entry;
+            this.messageCache = messageCache;
+        }
+
+        @Override
+        public long offset()
+        {
+            return entry.offset();
+        }
+
+        @Override
+        public int partition()
+        {
+            return partition;
+        }
+
+        @Override
+        public MessageFW message(
+            MessageFW message)
+        {
+            return messageCache.get(entry.message(), message);
+        }
+
     }
 }

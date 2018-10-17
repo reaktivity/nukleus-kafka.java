@@ -183,18 +183,12 @@ public class CompactedPartitionIndex implements PartitionIndex
     }
 
     @Override
-    public Entry getEntry(
-        long requestOffset,
+    public long getOffset(
         OctetsFW key)
     {
         buffer.wrap(key.buffer(), key.offset(), key.sizeof());
-        Entry result = entriesByKey.get(buffer);
-        if (result == null)
-        {
-            long offset = Math.max(requestOffset, validToOffset);
-            result = noMessagesIterator.reset(offset).next();
-        }
-        return result;
+        Entry entry = entriesByKey.get(buffer);
+        return entry == null ? NO_OFFSET : entry.offset();
     }
 
     @Override
