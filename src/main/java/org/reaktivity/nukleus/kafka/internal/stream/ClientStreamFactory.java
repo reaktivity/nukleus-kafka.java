@@ -755,6 +755,7 @@ public final class ClientStreamFactory implements StreamFactory
                     dispatchBlocked = true;
                     counters.dispatchNoWindow.getAsLong();
                 }
+                result |= MessageDispatcher.FLAGS_EXPECTING_WINDOW;
             }
             return result;
         }
