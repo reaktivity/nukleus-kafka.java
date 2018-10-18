@@ -410,6 +410,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         @Override
         public boolean hasNext()
         {
+            // TODO: Apply header conditions
             return position < entries.size();
         }
 

@@ -26,7 +26,7 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 /**
  * A source of messages for a topic
  */
-public interface MessageSource
+public interface ImmutableTopicCache
 {
     public interface Message
     {

@@ -45,8 +45,8 @@ import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaCounters;
 import org.reaktivity.nukleus.kafka.internal.cache.DefaultMessageCache;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
-import org.reaktivity.nukleus.kafka.internal.cache.MessageSource;
-import org.reaktivity.nukleus.kafka.internal.cache.MessageSource.Message;
+import org.reaktivity.nukleus.kafka.internal.cache.ImmutableTopicCache;
+import org.reaktivity.nukleus.kafka.internal.cache.ImmutableTopicCache.Message;
 import org.reaktivity.nukleus.kafka.internal.function.AttachDetailsConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
@@ -591,7 +591,7 @@ public final class ClientStreamFactory implements StreamFactory
         private int partitionCount;
         private AttachDetailsConsumer attacher;
         private AttachDetailsConsumer detacher;
-        private MessageSource historicalCache;
+        private ImmutableTopicCache historicalCache;
         private Runnable dispatchState;
 
         private ClientAcceptStream(
@@ -1033,7 +1033,7 @@ public final class ClientStreamFactory implements StreamFactory
             AttachDetailsConsumer attacher,
             AttachDetailsConsumer detacher,
             PartitionProgressHandler progressHandler,
-            MessageSource historicalCache,
+            ImmutableTopicCache historicalCache,
             int partitionCount,
             boolean compacted,
             IntToLongFunction firstAvailableOffset)

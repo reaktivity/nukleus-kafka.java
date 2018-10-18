@@ -22,7 +22,7 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 /**
  * A cache of messages for a topic
  */
-public interface TopicCache extends MessageSource
+public interface TopicCache extends ImmutableTopicCache
 {
     int NO_MESSAGE = -1;
     long NO_OFFSET = -1L;

@@ -17,7 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.function;
 
 import java.util.function.IntToLongFunction;
 
-import org.reaktivity.nukleus.kafka.internal.cache.MessageSource;
+import org.reaktivity.nukleus.kafka.internal.cache.ImmutableTopicCache;
 
 @FunctionalInterface
 public interface Attachable
@@ -26,7 +26,7 @@ public interface Attachable
         AttachDetailsConsumer attacher,
         AttachDetailsConsumer detacher,
         PartitionProgressHandler progressHandler,
-        MessageSource historicalCache,
+        ImmutableTopicCache historicalCache,
         int partitionCount,
         boolean compacted,
         IntToLongFunction firstAvailableOffset);
