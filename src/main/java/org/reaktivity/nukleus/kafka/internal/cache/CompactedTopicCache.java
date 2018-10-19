@@ -169,6 +169,59 @@ public class CompactedTopicCache implements TopicCache
         }
     }
 
+    final class KeyedMessageIterator implements Iterator<Message>
+    {
+        private final MessageImpl message = new MessageImpl();
+        private final MessageImpl lastMessage = new MessageImpl();
+        private int remainingEntries;
+
+        Iterator<Message> reset(
+            Long2LongHashMap fetchOffsets,
+            OctetsFW fetchKey,
+            ListFW<KafkaHeaderFW> headerConditions)
+        {
+            int partition = fetchOffsets.keySet().iterator().next().intValue();
+            remainingEntries = 1;
+            lastMessage.wrap(partition, indexes[partition].nextOffset(), NO_MESSAGE);
+            Entry entry = indexes[partition].getEntry(fetchKey);
+            if (entry != null)
+            {
+                message.wrap(partition,  entry.offset(), entry.messageHandle());
+                MessageFW messageRO = message.message();
+                if (messageRO != null && headersRO.wrap(messageRO.headers()).matches(headerConditions))
+                {
+                    remainingEntries = 2;
+                }
+            }
+            return this;
+        }
+
+        @Override
+        public boolean hasNext()
+        {
+            return remainingEntries > 0;
+        }
+
+        @Override
+        public Message next()
+        {
+            Message result;
+            switch(remainingEntries)
+            {
+            case 2:
+                result = message;
+                break;
+            case 1:
+                result = lastMessage;
+                break;
+            default:
+                result = null;
+            }
+            remainingEntries--;
+            return result;
+        }
+    }
+
     final class MessageIterator implements Iterator<Message>
     {
         private final Iterator<Entry>[]  iterators;
@@ -226,59 +279,6 @@ public class CompactedTopicCache implements TopicCache
         {
             int result = ++partition;
             result = result == iterators.length ? 0 : result;
-            return result;
-        }
-    }
-
-    final class KeyedMessageIterator implements Iterator<Message>
-    {
-        private final MessageImpl message = new MessageImpl();
-        private final MessageImpl lastMessage = new MessageImpl();
-        private int remainingEntries;
-
-        Iterator<Message> reset(
-            Long2LongHashMap fetchOffsets,
-            OctetsFW fetchKey,
-            ListFW<KafkaHeaderFW> headerConditions)
-        {
-            int partition = fetchOffsets.keySet().iterator().next().intValue();
-            remainingEntries = 1;
-            lastMessage.wrap(partition, indexes[partition].nextOffset(), NO_MESSAGE);
-            Entry entry = indexes[partition].getEntry(fetchKey);
-            if (entry != null)
-            {
-                message.wrap(partition,  entry.offset(), entry.messageHandle());
-                MessageFW messageRO = message.message();
-                if (messageRO != null && headersRO.wrap(messageRO.headers()).matches(headerConditions))
-                {
-                    remainingEntries = 2;
-                }
-            }
-            return this;
-        }
-
-        @Override
-        public boolean hasNext()
-        {
-            return remainingEntries > 0;
-        }
-
-        @Override
-        public Message next()
-        {
-            Message result;
-            switch(remainingEntries)
-            {
-            case 2:
-                result = message;
-                break;
-            case 1:
-                result = lastMessage;
-                break;
-            default:
-                result = null;
-            }
-            remainingEntries--;
             return result;
         }
     }

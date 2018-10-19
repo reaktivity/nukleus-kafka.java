@@ -15,6 +15,9 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.reaktivity.nukleus.kafka.internal.cache.TopicCache.NO_MESSAGE;
 import static org.reaktivity.nukleus.kafka.internal.cache.TopicCache.NO_OFFSET;
@@ -33,6 +36,7 @@ import org.junit.Test;
 import org.reaktivity.nukleus.kafka.internal.cache.ImmutableTopicCache.Message;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
+import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 
 public final class CompactedTopicCacheTest
 {
@@ -51,7 +55,7 @@ public final class CompactedTopicCacheTest
     private DirectBuffer headersBuffer = new UnsafeBuffer(new byte[0]);
     private HeadersFW headers = new HeadersFW().wrap(headersBuffer, 0, 0);
     private DirectBuffer value = asBuffer("value");
-
+    private MessageFW messageRO = new MessageFW();
 
 
     @SuppressWarnings("unchecked")
@@ -106,7 +110,9 @@ public final class CompactedTopicCacheTest
                 oneOf(iterator0).hasNext(); will(returnValue(true));
                 oneOf(iterator0).next(); will(returnValue(entry0));
                 oneOf(entry0).offset();
-                oneOf(entry0).messageHandle(); will(returnValue(NO_MESSAGE));
+                oneOf(entry0).messageHandle(); will(returnValue(111));
+                oneOf(messageCache).get(with(111), with(any(MessageFW.class)));
+                will(returnValue(messageRO));
 
                 oneOf(iterator1).hasNext(); will(returnValue(true));
                 oneOf(iterator1).next(); will(returnValue(entry1));
@@ -122,18 +128,32 @@ public final class CompactedTopicCacheTest
                 oneOf(iterator0).next(); will(returnValue(entry0));
                 oneOf(entry0).offset();
                 oneOf(entry0).messageHandle(); will(returnValue(NO_MESSAGE));
+
+                oneOf(iterator1).hasNext(); will(returnValue(false)); inSequence(order);
+                oneOf(iterator2).hasNext(); will(returnValue(false)); inSequence(order);
+                oneOf(iterator0).hasNext(); will(returnValue(false)); inSequence(order);
             }
         });
         Long2LongHashMap fetchOffsets = new Long2LongHashMap(NO_OFFSET);
         fetchOffsets.put(0,  10L);
         fetchOffsets.put(1,  11L);
         fetchOffsets.put(2,  12L);
+
         Iterator<Message> messages = cache.getMessages(fetchOffsets, null, null);
-        for (int i=0; i < 4; i++)
+
+        // First message is found in cache from partition 0
+        assertTrue(messages.hasNext());
+        Message message = messages.next();
+        assertSame(messageRO, message.message());
+
+        // cycle through partitions 1,2 and back to 0, no more messages are available in cache
+        for (int i=0; i < 3; i++)
         {
             assertTrue(messages.hasNext());
-            messages.next();
+            message = messages.next();
+            assertNotNull(message);
         }
+        assertFalse(messages.hasNext());
     }
 
     @Test
@@ -151,9 +171,23 @@ public final class CompactedTopicCacheTest
 
                 oneOf(iterator0).hasNext(); will(returnValue(true)); inSequence(order);
                 oneOf(iterator0).next(); will(returnValue(entry0)); inSequence(order);
+                oneOf(entry0).offset();
+                oneOf(entry0).messageHandle(); will(returnValue(NO_MESSAGE));
+
                 oneOf(iterator1).hasNext(); will(returnValue(true)); inSequence(order);
+                oneOf(iterator1).next(); will(returnValue(entry1)); inSequence(order);
+                oneOf(entry1).offset();
+                oneOf(entry1).messageHandle(); will(returnValue(NO_MESSAGE));
+
                 oneOf(iterator2).hasNext(); will(returnValue(true)); inSequence(order);
+                oneOf(iterator2).next(); will(returnValue(entry2)); inSequence(order);
+                oneOf(entry2).offset();
+                oneOf(entry2).messageHandle(); will(returnValue(NO_MESSAGE));
+
                 oneOf(iterator0).hasNext(); will(returnValue(true)); inSequence(order);
+                oneOf(iterator0).next(); will(returnValue(entry0)); inSequence(order);
+                oneOf(entry0).offset();
+                oneOf(entry0).messageHandle(); will(returnValue(NO_MESSAGE));
             }
         });
 
