@@ -351,7 +351,7 @@ public final class NetworkConnectionPool
                     topic::doAttach,
                     topic::doDetach,
                     topic::handleProgress,
-                    null, // TODO: MessageSource
+                    topic.cache,
                     topicMetadata.partitionCount(),
                     topicMetadata.compacted,
                     topicMetadata::firstAvailableOffset);
@@ -2132,6 +2132,7 @@ public final class NetworkConnectionPool
         private final Set<IntSupplier> windowSuppliers;
         final NavigableSet<NetworkTopicPartition> partitions;
         private final NetworkTopicPartition candidate;
+        private final TopicCache cache;
         private final TopicMessageDispatcher dispatcher;
         private final PartitionProgressHandler progressHandler;
 
@@ -2161,7 +2162,6 @@ public final class NetworkConnectionPool
             this.partitions = new TreeSet<>();
             this.candidate = new NetworkTopicPartition();
             this.progressHandler = this::handleProgress;
-            TopicCache cache;
 
             if (compacted)
             {

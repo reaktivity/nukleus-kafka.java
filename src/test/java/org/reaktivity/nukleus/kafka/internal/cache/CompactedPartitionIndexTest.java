@@ -388,7 +388,7 @@ public final class CompactedPartitionIndexTest
     }
 
     @Test
-    public void shouldHighestVisitedOffsetForNonExistingKey()
+    public void shouldReportNullFromGetEntryForNonExistingKey()
     {
         context.checking(new Expectations()
         {
@@ -431,6 +431,8 @@ public final class CompactedPartitionIndexTest
         entry = iterator.next();
         assertEquals(1L, entry.offset());
         assertEquals(1, entry.messageHandle());
+
+        // Final entry should report end of series (no message) and the latest known offset
         entry = iterator.next();
         assertEquals(2L, entry.offset());
         assertEquals(NO_MESSAGE, entry.messageHandle());

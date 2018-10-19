@@ -558,7 +558,8 @@ public final class ClientStreamFactory implements StreamFactory
 
         private int networkAttachId = UNATTACHED;
         private boolean compacted;
-        private PartitionProgressHandler progressHandler;
+        private PartitionProgressHandler progressHandler = NOOP_PROGRESS_HANDLER;
+        private PartitionProgressHandler savedProgressHandler;
 
         private MessageConsumer streamState;
 
@@ -596,7 +597,8 @@ public final class ClientStreamFactory implements StreamFactory
         private AttachDetailsConsumer attacher;
         private AttachDetailsConsumer detacher;
         private ImmutableTopicCache historicalCache;
-        private Runnable dispatchState;
+        private Runnable dispatchState = () ->
+        { };
 
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
@@ -1043,16 +1045,18 @@ public final class ClientStreamFactory implements StreamFactory
             IntToLongFunction firstAvailableOffset)
         {
             this.compacted = compacted;
+            this.attacher = attacher;
             this.detacher = detacher;
-            this.progressHandler = progressHandler;
             if (historicalCache != null)
             {
                 this.historicalCache = historicalCache;
+                this.savedProgressHandler = progressHandler;
                 dispatchState = this::dispatchMessagesFromCache;
             }
             else
             {
                 dispatchState = this::dispatchMessages;
+                this.progressHandler = progressHandler;
             }
 
             // For streaming topics default to receiving only live (new) messages
@@ -1083,12 +1087,7 @@ public final class ClientStreamFactory implements StreamFactory
 
             if (budget.applicationReplyBudget() > 0)
             {
-                invoke(attacher);
-                networkPool.doFlush();
-            }
-            else
-            {
-                this.attacher = attacher;
+                dispatchState.run();
             }
         }
 
@@ -1179,6 +1178,8 @@ public final class ClientStreamFactory implements StreamFactory
             {
                 // No more messages available in cache
                 dispatchState = this::dispatchMessages;
+                progressHandler = savedProgressHandler;
+                savedProgressHandler = null;
                 historicalCache = null;
 
                 if (writeableBytes() > 0)
