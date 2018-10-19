@@ -31,10 +31,13 @@ import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
 
 public final class HeadersFW
 {
+    private final DirectBuffer emptyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+
     private final HeaderFW headerRO = new HeaderFW();
 
     private final HeaderValueIterator iterator = new HeaderValueIterator();
 
+    private final DirectBuffer key = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     private final DirectBuffer value1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     private final DirectBuffer value2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
@@ -64,6 +67,10 @@ public final class HeadersFW
         return limit - offset;
     }
 
+    /**
+     * Wraps a contiguous series of fetch message headers in Kafka fetch response format
+     * (varint32 keyLength, octets key, varint32 valueLength, octects value)
+     */
     public HeadersFW wrap(
         DirectBuffer buffer,
         int offset,
@@ -78,7 +85,9 @@ public final class HeadersFW
     public HeadersFW wrap(
         Flyweight headers)
     {
-        return wrap(headers.buffer(), headers.offset(), headers.limit());
+        return headers == null ?
+                wrap(emptyBuffer, 0, 0) :
+                wrap(headers.buffer(), headers.offset(), headers.limit());
     }
 
     public Function<DirectBuffer, Iterator<DirectBuffer>> headerSupplier()
@@ -94,10 +103,10 @@ public final class HeadersFW
             h ->
             {
                 boolean[] matchFound = new boolean[]{false};
-                headerSupplier().apply(BufferUtil.wrap(value1,  h.key())).forEachRemaining(
-                    v -> matchFound[0] = !matchFound[0]
-                            && BufferUtil.wrap(value1, v).equals(BufferUtil.wrap(value2, h.value())));
-                return !matchFound[0];
+                headerSupplier().apply(BufferUtil.wrap(key,  h.key())).forEachRemaining(
+                    v -> matchFound[0] = matchFound[0] ||
+                             BufferUtil.wrap(value1, v).equals(BufferUtil.wrap(value2, h.value())));
+                return matchFound[0];
             }
         );
     }

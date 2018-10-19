@@ -47,6 +47,7 @@ public class CompactedPartitionIndex implements PartitionIndex
 
     private final MessageCache messageCache;
     private final MessageFW messageRO = new MessageFW();
+    private final HeadersFW headersRO = new HeadersFW();
     private final long tombstoneLifetimeMillis;
     private final Map<UnsafeBuffer, EntryImpl> entriesByKey;
     private final List<EntryImpl> entries;
@@ -56,6 +57,7 @@ public class CompactedPartitionIndex implements PartitionIndex
 
     private final EntryIterator iterator = new EntryIterator();
     private final NoMessagesIterator noMessagesIterator = new NoMessagesIterator();
+    private final EntryImpl noMessageEntry = new EntryImpl(0L, NO_MESSAGE, NO_POSITION);
     private final UnsafeBuffer buffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     private final UnsafeBuffer buffer2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     private final EntryImpl candidate = new EntryImpl(0L, NO_MESSAGE, NO_POSITION);
@@ -168,9 +170,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         }
         else
         {
-            iterator.position = position;
-            iterator.headerConditions = headerConditions;
-            result = iterator;
+            result = iterator.reset(headerConditions, position);
         }
         return result;
     }
@@ -184,6 +184,14 @@ public class CompactedPartitionIndex implements PartitionIndex
         {
             validToOffset = Math.max(lastOffset,  validToOffset);
         }
+    }
+
+    @Override
+    public Entry getEntry(
+        OctetsFW key)
+    {
+        buffer.wrap(key.buffer(), key.offset(), key.sizeof());
+        return entriesByKey.get(buffer);
     }
 
     @Override
@@ -227,13 +235,6 @@ public class CompactedPartitionIndex implements PartitionIndex
 
             compact(0, startOffset);
         }
-    }
-
-    Entry getEntry(
-        OctetsFW key)
-    {
-        buffer.wrap(key.buffer(), key.offset(), key.sizeof());
-        return entriesByKey.get(buffer);
     }
 
     int numberOfEntries()
@@ -404,21 +405,55 @@ public class CompactedPartitionIndex implements PartitionIndex
 
     final class EntryIterator implements Iterator<Entry>
     {
+        private final MessageFW messageRO = new MessageFW();
+
         private int position;
+        private boolean hasNext;
         private ListFW<KafkaHeaderFW> headerConditions;
 
         @Override
         public boolean hasNext()
         {
-            // TODO: Apply header conditions
-            return position < entries.size();
+            return hasNext;
         }
 
         @Override
         public Entry next()
         {
-            // For efficiency reasons we don't guard for position < entries.size()
-            return entries.get(position++);
+            EntryImpl entry = null;
+            while (position < entries.size())
+            {
+                entry = entries.get(position);
+                MessageFW message = messageCache.get(entry.messageHandle(), messageRO);
+                if (message == null)
+                {
+                    hasNext = false;
+                    break;
+                }
+                else if (headersRO.wrap(message.headers()).matches(headerConditions))
+                {
+                    break;
+                }
+                position++;
+            }
+            if (entry == null)
+            {
+                entry = noMessageEntry;
+                entry.offset = nextOffset();
+                hasNext = false;
+            }
+            position++;
+            return entry;
+        }
+
+        Iterator<Entry> reset(
+            ListFW<KafkaHeaderFW> headerConditions,
+            int position)
+        {
+            this.headerConditions = headerConditions;
+            this.position = position;
+            this.hasNext = true;
+            return this;
         }
     }
 

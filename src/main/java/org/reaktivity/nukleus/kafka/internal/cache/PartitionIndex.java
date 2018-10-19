@@ -51,6 +51,9 @@ public interface PartitionIndex
         long requestOffset,
         ListFW<KafkaHeaderFW> headerConditions);
 
+    Entry getEntry(
+        OctetsFW key);
+
     long getOffset(
         OctetsFW key);
 

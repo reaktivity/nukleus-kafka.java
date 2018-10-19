@@ -54,6 +54,7 @@ import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
+import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.Varint64FW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.PartitionResponseFW;
@@ -89,8 +90,10 @@ public final class ClientStreamFactory implements StreamFactory
 
     public static final long INTERNAL_ERRORS_TO_LOG = 100;
 
-    private final UnsafeBuffer workBuffer1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-    private final UnsafeBuffer workBuffer2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    private final UnsafeBuffer compareBuffer1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    private final UnsafeBuffer compareBuffer2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    private final UnsafeBuffer keyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    private final UnsafeBuffer valueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
     private final RouteFW routeRO = new RouteFW();
     final FrameFW frameRO = new FrameFW();
@@ -121,6 +124,8 @@ public final class ClientStreamFactory implements StreamFactory
 
     private final OctetsFW messageKeyRO = new OctetsFW();
     private final OctetsFW messageValueRO = new OctetsFW();
+
+    private final HeadersFW headersRO = new HeadersFW();
 
     final RouteManager router;
     final LongSupplier supplyStreamId;
@@ -588,7 +593,6 @@ public final class ClientStreamFactory implements StreamFactory
         private OctetsFW fetchKey;
         private int hashCode;
 
-        private int partitionCount;
         private AttachDetailsConsumer attacher;
         private AttachDetailsConsumer detacher;
         private ImmutableTopicCache historicalCache;
@@ -1039,7 +1043,6 @@ public final class ClientStreamFactory implements StreamFactory
             IntToLongFunction firstAvailableOffset)
         {
             this.compacted = compacted;
-            this.partitionCount = partitionCount;
             this.detacher = detacher;
             this.progressHandler = progressHandler;
             if (historicalCache != null)
@@ -1148,25 +1151,40 @@ public final class ClientStreamFactory implements StreamFactory
 
         private void dispatchMessagesFromCache()
         {
-            // TODO: dispatch from cache until window is exhausted or no more messages in cache from requested offsets
-            // If cache exhausted:
-            // - if key != null update offset to last offsets (live offset) from cache
-            //   (should happen automatically from last Message from iterator)
-            // - historicalCache = null; dispatchMessages();
-
             Iterator<Message> messages = historicalCache.getMessages(fetchOffsets, fetchKey, headers);
 
             while (writeableBytes() > 0 && messages.hasNext())
             {
-
+                Message entry = messages.next();
+                MessageFW message = entry.message();
+                if (message == null)
+                {
+                    flush(entry.partition(), fetchOffsets.get(entry.partition()), entry.offset());
+                }
+                else
+                {
+                    dispatch(
+                        entry.partition(),
+                        fetchOffsets.get(entry.partition()),
+                        entry.offset(),
+                        wrap(keyBuffer, message.key()),
+                        headersRO.wrap(message.headers()).headerSupplier(),
+                        message.timestamp(),
+                        message.traceId(),
+                        wrap(valueBuffer, message.value()));
+                }
             }
 
-            // No more messages available in cache
-            dispatchState = this::dispatchMessages;
-
-            if (writeableBytes() > 0)
+            if (!messages.hasNext())
             {
-                dispatchState.run();
+                // No more messages available in cache
+                dispatchState = this::dispatchMessages;
+                historicalCache = null;
+
+                if (writeableBytes() > 0)
+                {
+                    dispatchState.run();
+                }
             }
         }
 
@@ -1193,9 +1211,9 @@ public final class ClientStreamFactory implements StreamFactory
             }
             else
             {
-                workBuffer1.wrap(buffer1);
-                workBuffer2.wrap(buffer2);
-                result = workBuffer1.equals(workBuffer2);
+                compareBuffer1.wrap(buffer1);
+                compareBuffer2.wrap(buffer2);
+                result = compareBuffer1.equals(compareBuffer2);
             }
             return result;
         }

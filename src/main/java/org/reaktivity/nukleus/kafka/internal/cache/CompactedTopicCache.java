@@ -31,7 +31,7 @@ public class CompactedTopicCache implements TopicCache
     private final MessageFW messageRO = new MessageFW();
     private final HeadersFW headersRO = new HeadersFW();
     private final MessageCache messageCache;
-    private final CompactedPartitionIndex[] indexes;
+    private final PartitionIndex[] indexes;
     private final KeyedMessageIterator keyedMessageIterator = new KeyedMessageIterator();
     private final MessageIterator messageIterator;
 
@@ -44,10 +44,19 @@ public class CompactedTopicCache implements TopicCache
         indexes = new CompactedPartitionIndex[partitionCount];
         for (int i = 0; i < partitionCount; i++)
         {
-            indexes[i] = new CompactedPartitionIndex(1000, deleteRetentionMs,
-                    messageCache);
+            indexes[i] = new CompactedPartitionIndex(1000, deleteRetentionMs, messageCache);
         }
         messageIterator = new MessageIterator(partitionCount);
+    }
+
+    // For unit tests
+    CompactedTopicCache(
+        PartitionIndex[] indexes,
+        MessageCache messageCache)
+    {
+        this.indexes = indexes;
+        this.messageCache = messageCache;
+        messageIterator = new MessageIterator(indexes.length);
     }
 
     @Override
@@ -158,15 +167,13 @@ public class CompactedTopicCache implements TopicCache
         {
             return messageCache.get(messageHandle, messageRO);
         }
-
     }
 
     final class MessageIterator implements Iterator<Message>
     {
         private final Iterator<Entry>[]  iterators;
-        private ListFW<KafkaHeaderFW> headerConditions;
-        private int partition;
-        private MessageImpl message;
+        private int partition = -1;
+        private final MessageImpl message = new MessageImpl();
 
         @SuppressWarnings("unchecked")
         MessageIterator(
@@ -179,7 +186,6 @@ public class CompactedTopicCache implements TopicCache
             Long2LongHashMap fetchOffsets,
             ListFW<KafkaHeaderFW> headerConditions)
         {
-            this.headerConditions = headerConditions;
             assert fetchOffsets.size() == iterators.length;
 
             for (int i=0; i < iterators.length; i++)
@@ -187,7 +193,6 @@ public class CompactedTopicCache implements TopicCache
                 iterators[i] = indexes[i].entries(fetchOffsets.get(i), headerConditions);
             }
 
-            this.partition = 0; // TODO: random?
             return this;
         }
 
@@ -195,7 +200,7 @@ public class CompactedTopicCache implements TopicCache
         public boolean hasNext()
         {
             boolean result = false;
-            rotate();
+            partition = nextPartition(partition);
             for (int i=0; i < iterators.length; i++)
             {
                 result = iterators[partition].hasNext();
@@ -205,7 +210,7 @@ public class CompactedTopicCache implements TopicCache
                 }
                 else
                 {
-                    rotate();
+                    partition = nextPartition(partition);
                 }
             }
             return result;
@@ -217,12 +222,11 @@ public class CompactedTopicCache implements TopicCache
             return message.wrap(partition, iterators[partition].next());
         }
 
-        private void rotate()
+        private int nextPartition(int partition)
         {
-            if (partition++ >= iterators.length)
-            {
-                partition =- iterators.length;
-            }
+            int result = ++partition;
+            result = result == iterators.length ? 0 : result;
+            return result;
         }
     }
 

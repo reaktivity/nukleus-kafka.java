@@ -44,7 +44,6 @@ import java.util.TreeSet;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 import java.util.function.IntToLongFunction;
 import java.util.function.LongSupplier;
@@ -66,7 +65,6 @@ import org.reaktivity.nukleus.kafka.internal.KafkaRefCounters;
 import org.reaktivity.nukleus.kafka.internal.cache.CompactedTopicCache;
 import org.reaktivity.nukleus.kafka.internal.cache.DefaultTopicCache;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
-import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.cache.TopicCache;
 import org.reaktivity.nukleus.kafka.internal.function.Attachable;
 import org.reaktivity.nukleus.kafka.internal.function.IntLongConsumer;
@@ -74,7 +72,6 @@ import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
-import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.RequestHeaderFW;
@@ -265,10 +262,6 @@ public final class NetworkConnectionPool
 
     private final MessageCache messageCache;
     private final boolean forceProactiveMessageCache;
-    private final UnsafeBuffer keyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-    private final UnsafeBuffer valueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-    private final MessageFW messageRO = new MessageFW();
-    private final HeadersFW headersRO = new HeadersFW();
     private final KafkaHeadersIterator headersIterator = new KafkaHeadersIterator();
 
     private AbstractFetchConnection[] connections = new LiveFetchConnection[0];
@@ -279,7 +272,6 @@ public final class NetworkConnectionPool
     private final Map<String, TopicMetadata> topicMetadataByName;
     private final Map<String, NetworkTopic> topicsByName;
     private final Map<String, List<ListFW<KafkaHeaderFW>>> routeHeadersByTopic;
-    private final Int2ObjectHashMap<Consumer<Long2LongHashMap>> detachersById;
 
     private final List<NetworkTopicPartition> partitionsWorkList = new ArrayList<NetworkTopicPartition>();
     private final LongArrayList offsetsWorkList = new LongArrayList();
@@ -313,7 +305,6 @@ public final class NetworkConnectionPool
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
         this.routeHeadersByTopic = new HashMap<>();
-        this.detachersById = new Int2ObjectHashMap<>();
         this.readIdleTimeout = readIdleTimeout;
         this.metadataBackoffMillis = new Backoff(10, 10_000);
     }
@@ -1661,15 +1652,6 @@ public final class NetworkConnectionPool
                         topic.partitions.addAll(partitionsWorkList);
                         partitionsWorkList.clear();
                     }
-
-                    partitionCount = topic.satisfyPartitionRequestsFromCache(
-                            partitionCount,
-                            getRequestedOffset,
-                            setRequestedOffset,
-                            NetworkConnectionPool.this.encodeBuffer,
-                            originalEncodeLimit,
-                            encodeLimit,
-                            l -> encodeLimit = l);
                 }
 
             }
@@ -2397,117 +2379,6 @@ public final class NetworkConnectionPool
                 writableBytes = writableBytes == Integer.MAX_VALUE ? 0 : writableBytes;
             }
             return writableBytes;
-        }
-
-        int satisfyPartitionRequestsFromCache(
-            final int partitionCount,
-            IntToLongFunction getRequestedOffset,
-            IntLongConsumer setRequestedOffset,
-            MutableDirectBuffer encodeBuffer,
-            int encodeOffset,
-            final int encodeLimit,
-            IntConsumer setNewLimit)
-        {
-            int newPartitionCount = partitionCount;
-            int newEncodeLimit = encodeLimit;
-            for (int i=0; i < partitionCount; i++)
-            {
-                PartitionRequestFW request = partitionRequestRO.wrap(encodeBuffer, encodeOffset, encodeLimit);
-                assert request.limit() <= encodeLimit;
-                int partitionId = request.partitionId();
-                final long fetchOffset = request.fetchOffset();
-                long logStartOffset = request.logStartOffset();
-                int maxBytes = request.maxBytes();
-                int dispatchedBytes = 0;
-                boolean expectingWindow = false;
-                long newOffset = fetchOffset;
-                Iterator<Entry> entries = dispatcher.entries(partitionId, fetchOffset);
-                boolean partitionRequestNeeded = false;
-                boolean flushNeeded = false;
-                final long requestOffset = getRequestedOffset.applyAsLong(partitionId);
-
-                while(entries.hasNext() && dispatchedBytes < maxBytes)
-                {
-                    Entry entry = entries.next();
-                    newOffset = entry.offset();
-                    MessageFW message = messageCache.get(entry.messageHandle(), messageRO);
-                    if (message == null)
-                    {
-                        partitionRequestNeeded = true;
-                        break;
-                    }
-                    else
-                    {
-                        DirectBuffer key = wrap(keyBuffer, message.key());
-                        DirectBuffer value = wrap(valueBuffer,  message.value());
-                        HeadersFW headers = headersRO.wrap(message.headers().buffer(),  message.headers().offset(),
-                                message.headers().limit());
-
-                        // call the dispatch variant which does not attempt to re-cache the message
-                        int result = dispatcher.dispatch(partitionId, requestOffset, newOffset, key, headers.headerSupplier(),
-                                message.timestamp(), message.traceId(), value);
-
-                        if (MessageDispatcher.expectingWindow(result))
-                        {
-                            expectingWindow = true;
-                        }
-
-                        if (value != null && expectingWindow)
-                        {
-                            dispatchedBytes += value.capacity();
-                        }
-                        flushNeeded = true;
-                        newOffset++;
-                    }
-                } // end for each partition index entry
-
-                if (!partitionRequestNeeded)
-                {
-                    clientStreamFactory.counters.cacheHits.getAsLong();
-
-                    if (!entries.hasNext())
-                    {
-                        //  End of the partition index reached, advance to latest offset
-                        newOffset = dispatcher.nextOffset(partitionId);
-                    }
-
-                    // Remove the partition request by shifting up the subsequent ones
-                    encodeBuffer.putBytes(encodeOffset,  encodeBuffer, request.limit(), encodeLimit);
-                    newEncodeLimit -= request.sizeof();
-                    newPartitionCount--;
-                }
-                else
-                {
-                    clientStreamFactory.counters.cacheMisses.getAsLong();
-
-                    // Update the partition request if needed
-                    if (newOffset > fetchOffset)
-                    {
-                        request = partitionRequestRW.wrap(encodeBuffer, encodeOffset, newEncodeLimit)
-                            .partitionId(partitionId)
-                            .fetchOffset(newOffset)
-                            .logStartOffset(logStartOffset)
-                            .maxBytes(maxBytes)
-                            .build();
-                    }
-                    encodeOffset = request.limit();
-                }
-
-                if (flushNeeded || newOffset > fetchOffset)
-                {
-                    dispatcher.flush(partitionId, requestOffset, newOffset);
-                    setRequestedOffset.accept(partitionId, newOffset);
-                }
-            } // end for each partition
-
-            assert encodeLimit <= encodeLimit;
-
-            if (newEncodeLimit < encodeLimit)
-            {
-                setNewLimit.accept(newEncodeLimit);
-            }
-
-            return newPartitionCount;
         }
 
         private void handleProgress(

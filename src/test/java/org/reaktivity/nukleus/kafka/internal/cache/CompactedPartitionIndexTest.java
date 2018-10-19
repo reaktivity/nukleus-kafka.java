@@ -19,6 +19,7 @@ import static java.lang.System.currentTimeMillis;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.reaktivity.nukleus.kafka.internal.cache.MessageCache.NO_MESSAGE;
 import static org.reaktivity.nukleus.kafka.internal.test.TestUtil.asBuffer;
@@ -28,6 +29,7 @@ import java.util.Iterator;
 import java.util.NoSuchElementException;
 
 import org.agrona.DirectBuffer;
+import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.jmock.Expectations;
 import org.jmock.integration.junit4.JUnitRuleMockery;
@@ -36,7 +38,10 @@ import org.junit.Test;
 import org.reaktivity.nukleus.kafka.internal.cache.CompactedPartitionIndex.EntryImpl;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.HeaderFW;
 
 public final class CompactedPartitionIndexTest
 {
@@ -45,8 +50,58 @@ public final class CompactedPartitionIndexTest
     private MessageCache messageCache;
 
     private DirectBuffer key = asBuffer("key");
-    private DirectBuffer headersBuffer = new UnsafeBuffer(new byte[0]);
-    private HeadersFW headers = new HeadersFW().wrap(headersBuffer, 0, 0);
+
+    private DirectBuffer emptyHeadersBuffer = new UnsafeBuffer(new byte[0]);
+    private HeadersFW emptyHeaders = new HeadersFW().wrap(emptyHeadersBuffer, 0, 0);
+
+    private MessageFW anyMessage = new MessageFW.Builder().wrap(new UnsafeBuffer(new byte[100]), 0, 100)
+            .timestamp(123L)
+            .traceId(567L)
+            .key(asOctets("key2"))
+            .value(asOctets("value"))
+            .build();
+
+    private MessageFW matchMessage = new MessageFW.Builder().wrap(new UnsafeBuffer(new byte[100]), 0, 100)
+            .timestamp(123L)
+            .traceId(567L)
+            .key(asOctets("key2"))
+            .headers(builder -> builder.set(
+                 (b, offset, limit) ->
+                 new HeaderFW.Builder().wrap(b, offset, limit)
+                 .keyLen("header1".length())
+                 .key(asOctets("header1"))
+                 .valueLen("match".length())
+                 .value(asOctets("match"))
+                 .build()
+                 .sizeof()))
+            .value(asOctets("value"))
+            .build();
+    private HeadersFW matchHeaders = new HeadersFW().wrap(matchMessage.headers());
+
+    private MessageFW noMatchMessage = new MessageFW.Builder().wrap(new UnsafeBuffer(new byte[100]), 0, 100)
+            .timestamp(123L)
+            .traceId(567L)
+            .key(asOctets("key1"))
+            .headers(builder -> builder.set(
+                 (b, offset, limit) ->
+                 new HeaderFW.Builder().wrap(b, offset, limit)
+                 .keyLen("header1".length())
+                 .key(asOctets("header1"))
+                 .valueLen("nomatch".length())
+                 .value(asOctets("nomatch"))
+                 .build()
+                 .sizeof()))
+            .value(asOctets("value"))
+            .build();
+    private HeadersFW noMatchHeaders = new HeadersFW().wrap(noMatchMessage.headers());
+
+    private MutableDirectBuffer matchHeaderConditionBuffer = new UnsafeBuffer(new byte[100]);
+    private ListFW<KafkaHeaderFW> matchHeaderCondition =
+        new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+            .wrap(matchHeaderConditionBuffer, 0, matchHeaderConditionBuffer.capacity())
+            .item(b -> b.key("header1").value(asOctets("match")))
+            .build();
+
     private DirectBuffer value = asBuffer("value");
     private final MessageFW messageRO = new MessageFW();
 
@@ -58,7 +113,7 @@ public final class CompactedPartitionIndexTest
         }
     };
 
-    private PartitionIndex index = new CompactedPartitionIndex(5, TOMBSTONE_LIFETIME_MILLIS, messageCache);
+    private CompactedPartitionIndex index = new CompactedPartitionIndex(5, TOMBSTONE_LIFETIME_MILLIS, messageCache);
 
     @Test
     public void shouldAddAndCacheNewMessage()
@@ -66,17 +121,17 @@ public final class CompactedPartitionIndexTest
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(123, 456, key, headers, value);
+                oneOf(messageCache).put(123, 456, key, emptyHeaders, value);
                 will(returnValue(0));
             }
         });
-        index.add(0L, 1L, 123, 456, key, headers, value, true);
+        index.add(0L, 1L, 123, 456, key, emptyHeaders, value, true);
     }
 
     @Test
     public void shouldAddAndNotCacheNewMessage()
     {
-        index.add(0L, 1L, 123, 456, key, headers, value, false);
+        index.add(0L, 1L, 123, 456, key, emptyHeaders, value, false);
     }
 
     @Test
@@ -86,13 +141,13 @@ public final class CompactedPartitionIndexTest
 
         for (int i=0; i <= CompactedPartitionIndex.MAX_INVALID_ENTRIES + 1; i++)
         {
-            index.add(0L, offset++, 123L, 456L, key, headers, value, false);
+            index.add(0L, offset++, 123L, 456L, key, emptyHeaders, value, false);
         }
 
-        assertEquals(CompactedPartitionIndex.MAX_INVALID_ENTRIES + 2, ((CompactedPartitionIndex) index).numberOfEntries());
+        assertEquals(CompactedPartitionIndex.MAX_INVALID_ENTRIES + 2, index.numberOfEntries());
 
-        index.add(0L, offset++, 123L, 456L, key, headers, value, false);
-        assertEquals(2, ((CompactedPartitionIndex) index).numberOfEntries());
+        index.add(0L, offset++, 123L, 456L, key, emptyHeaders, value, false);
+        assertEquals(2, index.numberOfEntries());
     }
 
 
@@ -104,18 +159,20 @@ public final class CompactedPartitionIndexTest
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(future, 456, key, headers, null);
+                oneOf(messageCache).put(future, 456, key, emptyHeaders, null);
                 will(returnValue(0));
+                oneOf(messageCache).get(with(0), with(any(MessageFW.class)));
+                will(returnValue(anyMessage));
                 oneOf(messageCache).release(0);
             }
         });
-        index.add(0L, 1L, future, 456, key, headers, null, true);
-        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L);
+        index.add(0L, 1L, future, 456, key, emptyHeaders, null, true);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L, null);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(1L, entry.offset());
         Thread.sleep(future - currentTimeMillis() + TOMBSTONE_LIFETIME_MILLIS);
-        iterator = index.entries(0L);
+        iterator = index.entries(0L, null);
         assertEquals(2L, iterator.next().offset());
     }
 
@@ -129,38 +186,47 @@ public final class CompactedPartitionIndexTest
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(timestamp1, 456, asBuffer("key1"), headers, value);
+                oneOf(messageCache).put(timestamp1, 456, asBuffer("key1"), emptyHeaders, value);
                 will(returnValue(0));
-                oneOf(messageCache).put(timestamp1, 457, asBuffer("key2"), headers, value);
+                oneOf(messageCache).put(timestamp1, 457, asBuffer("key2"), emptyHeaders, value);
                 will(returnValue(1));
-                oneOf(messageCache).replace(0, timestamp1, 458, asBuffer("key1"), headers, null);
+                oneOf(messageCache).get(with(0), with(any(MessageFW.class)));
+                will(returnValue(anyMessage));
+                oneOf(messageCache).get(with(1), with(any(MessageFW.class)));
+                will(returnValue(anyMessage));
+                oneOf(messageCache).replace(0, timestamp1, 458, asBuffer("key1"), emptyHeaders, null);
                 will(returnValue(0));
                 oneOf(messageCache).release(0);
-                oneOf(messageCache).replace(1, timestamp2, 459, asBuffer("key2"), headers, null);
+                oneOf(messageCache).get(with(1), with(any(MessageFW.class)));
+                will(returnValue(anyMessage));
+                oneOf(messageCache).replace(1, timestamp2, 459, asBuffer("key2"), emptyHeaders, null);
                 will(returnValue(1));
                 oneOf(messageCache).release(1);
             }
         });
-        index.add(0L, 0L, timestamp1, 456, asBuffer("key1"), headers, value, true);
-        index.add(0L, 1L, timestamp1, 457, asBuffer("key2"), headers, value, true);
-        index.add(0L, 2L, timestamp1, 458, asBuffer("key1"), headers, null, true);
+        index.add(0L, 0L, timestamp1, 456, asBuffer("key1"), emptyHeaders, value, true);
+        index.add(0L, 1L, timestamp1, 457, asBuffer("key2"), emptyHeaders, value, true);
+        index.add(0L, 2L, timestamp1, 458, asBuffer("key1"), emptyHeaders, null, true);
         assert currentTimeMillis() < timestamp1 : "test failed due to unexpected execution delay";
-        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L, null);
         Entry entry = iterator.next();
         assertEquals(1L, entry.offset());
         entry = iterator.next();
         assertEquals(2L, entry.offset());
         long delayTillAllEntriesAreExpired = timestamp1 + TOMBSTONE_LIFETIME_MILLIS - currentTimeMillis();
         Thread.sleep(delayTillAllEntriesAreExpired);
-        index.add(2L, 3L, timestamp2, 459, asBuffer("key2"), headers, null, true);
+        index.add(2L, 3L, timestamp2, 459, asBuffer("key2"), emptyHeaders, null, true);
         assert currentTimeMillis() < timestamp2 : "test failed due to unexpected execution delay";
-        iterator = index.entries(0L);
+        iterator = index.entries(0L, null);
         entry = iterator.next();
         assertEquals(3L, entry.offset());
+        entry = iterator.next();
+        assertEquals(4L, entry.offset());
+        assertEquals(NO_MESSAGE, entry.messageHandle());
         assertFalse(iterator.hasNext());
         delayTillAllEntriesAreExpired = timestamp2 + TOMBSTONE_LIFETIME_MILLIS - currentTimeMillis();
         Thread.sleep(delayTillAllEntriesAreExpired);
-        iterator = index.entries(0L);
+        iterator = index.entries(0L, null);
         assertEquals(4L, iterator.next().offset());
         assertFalse(iterator.hasNext());
     }
@@ -172,26 +238,34 @@ public final class CompactedPartitionIndexTest
         final long timestamp1 = currentTimeMillis() + aLongTime;
         final long timestamp2 = timestamp1 + aLongTime;
 
-        index.add(0L, 0L, timestamp1, 456, asBuffer("key1"), headers, value, false);
-        index.add(0L, 1L, timestamp1, 457, asBuffer("key2"), headers, value, false);
-        index.add(0L, 2L, timestamp1, 458, asBuffer("key1"), headers, null, false);
+        context.checking(new Expectations()
+        {
+            {
+                allowing(messageCache).get(with(NO_MESSAGE), with(any(MessageFW.class)));
+                will(returnValue(null));
+            }
+        });
+
+        index.add(0L, 0L, timestamp1, 456, asBuffer("key1"), emptyHeaders, value, false);
+        index.add(0L, 1L, timestamp1, 457, asBuffer("key2"), emptyHeaders, value, false);
+        index.add(0L, 2L, timestamp1, 458, asBuffer("key1"), emptyHeaders, null, false);
         assert currentTimeMillis() < timestamp1 : "test failed due to unexpected execution delay";
-        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L, null);
         Entry entry = iterator.next();
         assertEquals(1L, entry.offset());
         entry = iterator.next();
         assertEquals(2L, entry.offset());
         long delayTillAllEntriesAreExpired = timestamp1 + TOMBSTONE_LIFETIME_MILLIS - currentTimeMillis();
         Thread.sleep(delayTillAllEntriesAreExpired);
-        index.add(2L, 3L, timestamp2, 459, asBuffer("key2"), headers, null, false);
+        index.add(2L, 3L, timestamp2, 459, asBuffer("key2"), emptyHeaders, null, false);
         assert currentTimeMillis() < timestamp2 : "test failed due to unexpected execution delay";
-        iterator = index.entries(0L);
+        iterator = index.entries(0L, null);
         entry = iterator.next();
         assertEquals(3L, entry.offset());
         assertFalse(iterator.hasNext());
         delayTillAllEntriesAreExpired = timestamp2 + TOMBSTONE_LIFETIME_MILLIS - currentTimeMillis();
         Thread.sleep(delayTillAllEntriesAreExpired);
-        iterator = index.entries(0L);
+        iterator = index.entries(0L, null);
         assertEquals(4L, iterator.next().offset());
         assertFalse(iterator.hasNext());
     }
@@ -206,44 +280,54 @@ public final class CompactedPartitionIndexTest
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(timestamp1, 456, asBuffer("key1"), headers, value);
+                oneOf(messageCache).put(timestamp1, 456, asBuffer("key1"), emptyHeaders, value);
                 will(returnValue(0));
-                oneOf(messageCache).replace(0, timestamp1, 457, asBuffer("key1"), headers, null);
+                oneOf(messageCache).get(with(0), with(any(MessageFW.class)));
+                will(returnValue(anyMessage));
+                oneOf(messageCache).replace(0, timestamp1, 457, asBuffer("key1"), emptyHeaders, null);
                 will(returnValue(0));
-                oneOf(messageCache).replace(0, timestamp1, 458, asBuffer("key1"), headers, value);
+                oneOf(messageCache).replace(0, timestamp1, 458, asBuffer("key1"), emptyHeaders, value);
                 will(returnValue(0));
-                oneOf(messageCache).replace(0, timestamp2, 459, asBuffer("key1"), headers, null);
+                oneOf(messageCache).replace(0, timestamp2, 459, asBuffer("key1"), emptyHeaders, null);
                 will(returnValue(0));
+                oneOf(messageCache).get(with(0), with(any(MessageFW.class)));
+                will(returnValue(anyMessage));
                 oneOf(messageCache).release(0);
             }
         });
-        index.add(0L, 0L, timestamp1, 456, asBuffer("key1"), headers, value, true);
-        index.add(1L, 1L, timestamp1, 457, asBuffer("key1"), headers, null, true);
-        index.add(2L, 2L, timestamp1, 458, asBuffer("key1"), headers, value, true);
+        index.add(0L, 0L, timestamp1, 456, asBuffer("key1"), emptyHeaders, value, true);
+        index.add(1L, 1L, timestamp1, 457, asBuffer("key1"), emptyHeaders, null, true);
+        index.add(2L, 2L, timestamp1, 458, asBuffer("key1"), emptyHeaders, value, true);
         assert currentTimeMillis() < timestamp1 : "test failed due to unexpected execution delay";
-        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L, null);
         Entry entry = iterator.next();
         assertEquals(2L, entry.offset());
         assertEquals(0, entry.messageHandle());
+        entry = iterator.next();
+        assertEquals(3L, entry.offset());
+        assertEquals(NO_MESSAGE, entry.messageHandle());
         assertFalse(iterator.hasNext());
         long delayTillEntryHasExpired = timestamp1 + TOMBSTONE_LIFETIME_MILLIS - currentTimeMillis();
         Thread.sleep(delayTillEntryHasExpired);
-        iterator = index.entries(0L);
+        iterator = index.entries(0L, null);
         entry = iterator.next();
 
         // Since the message now has a value again it should not be remove by expiry of the previous tombstone
         assertEquals(0, entry.messageHandle());
 
         assertEquals(2L, entry.offset());
+        entry = iterator.next();
+        assertEquals(3L, entry.offset());
+        assertEquals(NO_MESSAGE, entry.messageHandle());
         assertFalse(iterator.hasNext());
 
-        index.add(3L, 3L, timestamp2, 459, asBuffer("key1"), headers, null, true);
+        index.add(3L, 3L, timestamp2, 459, asBuffer("key1"), emptyHeaders, null, true);
         delayTillEntryHasExpired = timestamp2 + TOMBSTONE_LIFETIME_MILLIS - currentTimeMillis();
         Thread.sleep(delayTillEntryHasExpired);
-        iterator = index.entries(0L);
+        iterator = index.entries(0L, null);
         entry = iterator.next();
         assertEquals(4L, entry.offset());
-        assertEquals(-1, entry.messageHandle());
+        assertEquals(NO_MESSAGE, entry.messageHandle());
         assertFalse(iterator.hasNext());
     }
 
@@ -253,21 +337,25 @@ public final class CompactedPartitionIndexTest
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), emptyHeaders, value);
                 will(returnValue(0));
-                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), emptyHeaders, value);
                 will(returnValue(1));
-                oneOf(messageCache).put(125, 458, asBuffer("key3"), headers, value);
+                oneOf(messageCache).put(125, 458, asBuffer("key3"), emptyHeaders, value);
                 will(returnValue(2));
-                oneOf(messageCache).put(126, 459, asBuffer("key4"), headers, value);
+                oneOf(messageCache).put(126, 459, asBuffer("key4"), emptyHeaders, value);
                 will(returnValue(3));
+                oneOf(messageCache).get(with(1), with(any(MessageFW.class)));
+                will(returnValue(anyMessage));
+                oneOf(messageCache).get(with(3), with(any(MessageFW.class)));
+                will(returnValue(anyMessage));
             }
         });
-        index.add(101L, 110L, 123, 456, asBuffer("key1"), headers, value, true);
-        index.add(0L, 100L, 124, 457, asBuffer("key2"), headers, value, true);
-        index.add(102L, 110L, 125, 458, asBuffer("key3"), headers, value, true);
-        index.add(101L, 101L, 126, 459, asBuffer("key4"), headers, value, true);
-        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(100L);
+        index.add(101L, 110L, 123, 456, asBuffer("key1"), emptyHeaders, value, true);
+        index.add(0L, 100L, 124, 457, asBuffer("key2"), emptyHeaders, value, true);
+        index.add(102L, 110L, 125, 458, asBuffer("key3"), emptyHeaders, value, true);
+        index.add(101L, 101L, 126, 459, asBuffer("key4"), emptyHeaders, value, true);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(100L, null);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(100L, entry.offset());
@@ -275,7 +363,6 @@ public final class CompactedPartitionIndexTest
         entry = iterator.next();
         assertEquals(101L, entry.offset());
         assertEquals(3, entry.messageHandle());
-        assertFalse(iterator.hasNext());
     }
 
     @Test
@@ -284,18 +371,18 @@ public final class CompactedPartitionIndexTest
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), emptyHeaders, value);
                 will(returnValue(0));
-                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), emptyHeaders, value);
                 will(returnValue(1));
             }
         });
-        index.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
-        index.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
-        Entry entry = index.getEntry(0L, asOctets("key1"));
+        index.add(0L, 0L, 123, 456, asBuffer("key1"), emptyHeaders, value, true);
+        index.add(0L, 1L, 124, 457, asBuffer("key2"), emptyHeaders, value, true);
+        Entry entry = index.getEntry(asOctets("key1"));
         assertEquals(0L, entry.offset());
         assertEquals(0, entry.messageHandle());
-        entry = index.getEntry(0L, asOctets("key2"));
+        entry = index.getEntry(asOctets("key2"));
         assertEquals(1L, entry.offset());
         assertEquals(1, entry.messageHandle());
     }
@@ -306,34 +393,37 @@ public final class CompactedPartitionIndexTest
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), emptyHeaders, value);
                 will(returnValue(0));
-                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), emptyHeaders, value);
                 will(returnValue(1));
             }
         });
-        index.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value, true);
-        index.add(0L, 2L, 124, 457, asBuffer("key2"), headers, value, true);
-        Entry entry = index.getEntry(1L, asOctets("unknownKey"));
-        assertEquals(3L, entry.offset());
-        assertEquals(MessageCache.NO_MESSAGE, entry.messageHandle());
+        index.add(0L, 1L, 123, 456, asBuffer("key1"), emptyHeaders, value, true);
+        index.add(0L, 2L, 124, 457, asBuffer("key2"), emptyHeaders, value, true);
+        Entry entry = index.getEntry(asOctets("unknownKey"));
+        assertNull(entry);
     }
 
     @Test
-    public void shouldIterate()
+    public void shouldIterateOverAllKeys()
     {
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), matchHeaders, value);
                 will(returnValue(0));
-                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), emptyHeaders, value);
                 will(returnValue(1));
+                oneOf(messageCache).get(with(0), with(any(MessageFW.class)));
+                will(returnValue(matchMessage));
+                oneOf(messageCache).get(with(1), with(any(MessageFW.class)));
+                will(returnValue(anyMessage));
             }
         });
-        index.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
-        index.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
-        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L);
+        index.add(0L, 0L, 123, 456, asBuffer("key1"), matchHeaders, value, true);
+        index.add(0L, 1L, 124, 457, asBuffer("key2"), emptyHeaders, value, true);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L, null);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(0L, entry.offset());
@@ -341,25 +431,61 @@ public final class CompactedPartitionIndexTest
         entry = iterator.next();
         assertEquals(1L, entry.offset());
         assertEquals(1, entry.messageHandle());
+        entry = iterator.next();
+        assertEquals(2L, entry.offset());
+        assertEquals(NO_MESSAGE, entry.messageHandle());
         assertFalse(iterator.hasNext());
     }
 
-    @Test(expected=IndexOutOfBoundsException.class)
-    public void shouldThrowExceptionFromIteratorWhenNoMoreElements()
+    @Test
+    public void shouldIterateOverAllKeysApplyingHeaderConditions()
     {
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), noMatchHeaders, value);
                 will(returnValue(0));
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), matchHeaders, value);
+                will(returnValue(1));
+                oneOf(messageCache).get(with(0), with(any(MessageFW.class)));
+                will(returnValue(noMatchMessage));
+                oneOf(messageCache).get(with(1), with(any(MessageFW.class)));
+                will(returnValue(matchMessage));
             }
         });
-        index.add(0L, 1L, 123, 456, asBuffer("key1"), headers, value, true);
-        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L);
+        index.add(0L, 0L, 123, 456, asBuffer("key1"), noMatchHeaders, value, true);
+        index.add(0L, 1L, 124, 457, asBuffer("key2"), matchHeaders, value, true);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L, matchHeaderCondition);
+        assertTrue(iterator.hasNext());
+        Entry entry = iterator.next();
+        assertEquals(1L, entry.offset());
+        assertEquals(1, entry.messageHandle());
+        assertTrue(iterator.hasNext());
+        entry = iterator.next();
+        assertEquals(2L, entry.offset());
+        assertEquals(NO_MESSAGE, entry.messageHandle());
+        assertFalse(iterator.hasNext());
+    }
+
+    @Test
+    public void shouldBehaveSensiblyWhenNoMoreElements()
+    {
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), emptyHeaders, value);
+                will(returnValue(0));
+                oneOf(messageCache).get(with(0), with(any(MessageFW.class)));
+                will(returnValue(anyMessage));
+            }
+        });
+        index.add(0L, 1L, 123, 456, asBuffer("key1"), emptyHeaders, value, true);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L, null);
         assertTrue(iterator.hasNext());
         assertNotNull(iterator.next());
+        assertNotNull(iterator.next());
         assertFalse(iterator.hasNext());
-        iterator.next();
+        iterator.next(); // this now just silently returns the terminating element with NO_MESSAGE
     }
 
     @Test
@@ -368,32 +494,33 @@ public final class CompactedPartitionIndexTest
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), emptyHeaders, value);
                 will(returnValue(0));
-                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), emptyHeaders, value);
                 will(returnValue(1));
-                oneOf(messageCache).put(125, 458, asBuffer("key3"), headers, value);
-                will(returnValue(1));
-                oneOf(messageCache).replace(1, 126, 459, asBuffer("key2"), headers, value);
-                will(returnValue(1));
+                oneOf(messageCache).put(125, 458, asBuffer("key3"), emptyHeaders, value);
+                will(returnValue(2));
+                oneOf(messageCache).replace(1, 126, 459, asBuffer("key2"), emptyHeaders, value);
+                will(returnValue(3));
+                oneOf(messageCache).get(with(3), with(any(MessageFW.class)));
+                will(returnValue(anyMessage));
             }
         });
-        index.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
-        index.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
-        index.add(0L, 2L, 125, 458, asBuffer("key3"), headers, value, true);
-        index.add(0L, 10L, 126, 459, asBuffer("key2"), headers, value, true);
-        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(5L);
+        index.add(0L, 0L, 123, 456, asBuffer("key1"), emptyHeaders, value, true);
+        index.add(0L, 1L, 124, 457, asBuffer("key2"), emptyHeaders, value, true);
+        index.add(0L, 2L, 125, 458, asBuffer("key3"), emptyHeaders, value, true);
+        index.add(0L, 10L, 126, 459, asBuffer("key2"), emptyHeaders, value, true);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(5L, null);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(10L, entry.offset());
-        assertEquals(1, entry.messageHandle());
-        assertFalse(iterator.hasNext());
+        assertEquals(3, entry.messageHandle());
     }
 
     @Test
     public void shouldReturnIteratorWithRequestedOffsetAndNoMessageWhenCacheIsEmpty()
     {
-        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(100L);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(100L, null);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(100L, entry.offset());
@@ -404,7 +531,7 @@ public final class CompactedPartitionIndexTest
     @Test(expected=NoSuchElementException.class)
     public void shouldThrowExceptionFromNoMessageIteratorNextWhenNoMoreElements()
     {
-        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(102L);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(102L, null);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(102L, entry.offset());
@@ -419,12 +546,12 @@ public final class CompactedPartitionIndexTest
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), emptyHeaders, value);
                 will(returnValue(0));
             }
         });
-        index.add(0L, 101L, 123, 456, asBuffer("key1"), headers, value, true);
-        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(102L);
+        index.add(0L, 101L, 123, 456, asBuffer("key1"), emptyHeaders, value, true);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(102L, null);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(102L, entry.offset());
@@ -438,22 +565,22 @@ public final class CompactedPartitionIndexTest
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), emptyHeaders, value);
                 will(returnValue(0));
-                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), emptyHeaders, value);
                 will(returnValue(1));
-                oneOf(messageCache).put(125, 458, asBuffer("key3"), headers, value);
+                oneOf(messageCache).put(125, 458, asBuffer("key3"), emptyHeaders, value);
                 will(returnValue(2));
                 oneOf(messageCache).get(with(1), with(any(MessageFW.class)));
                 will(returnValue(null));
-                oneOf(messageCache).replace(1, 124, 457, asBuffer("key2"), headers, value);
+                oneOf(messageCache).replace(1, 124, 457, asBuffer("key2"), emptyHeaders, value);
                 will(returnValue(1));
             }
         });
-        index.add(0L, 101L, 123, 456, asBuffer("key1"), headers, value, true);
-        index.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value, true);
-        index.add(100L, 103L, 125, 458, asBuffer("key3"), headers, value, true);
-        index.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value, true);
+        index.add(0L, 101L, 123, 456, asBuffer("key1"), emptyHeaders, value, true);
+        index.add(100L, 102L, 124, 457, asBuffer("key2"), emptyHeaders, value, true);
+        index.add(100L, 103L, 125, 458, asBuffer("key3"), emptyHeaders, value, true);
+        index.add(100L, 102L, 124, 457, asBuffer("key2"), emptyHeaders, value, true);
     }
 
     @Test
@@ -462,20 +589,20 @@ public final class CompactedPartitionIndexTest
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), emptyHeaders, value);
                 will(returnValue(0));
-                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), emptyHeaders, value);
                 will(returnValue(1));
-                oneOf(messageCache).put(125, 458, asBuffer("key3"), headers, value);
+                oneOf(messageCache).put(125, 458, asBuffer("key3"), emptyHeaders, value);
                 will(returnValue(2));
                 oneOf(messageCache).get(with(1), with(any(MessageFW.class)));
                 will(returnValue(messageRO));
             }
         });
-        index.add(0L, 101L, 123, 456, asBuffer("key1"), headers, value, true);
-        index.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value, true);
-        index.add(100L, 103L, 125, 458, asBuffer("key3"), headers, value, true);
-        index.add(100L, 102L, 124, 457, asBuffer("key2"), headers, value, true);
+        index.add(0L, 101L, 123, 456, asBuffer("key1"), emptyHeaders, value, true);
+        index.add(100L, 102L, 124, 457, asBuffer("key2"), emptyHeaders, value, true);
+        index.add(100L, 103L, 125, 458, asBuffer("key3"), emptyHeaders, value, true);
+        index.add(100L, 102L, 124, 457, asBuffer("key2"), emptyHeaders, value, true);
     }
 
     @Test
@@ -484,12 +611,12 @@ public final class CompactedPartitionIndexTest
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), emptyHeaders, value);
                 will(returnValue(0));
             }
         });
-        index.add(0L, 110L, 123, 456, asBuffer("key1"), headers, value, true);
-        index.add(112L, 113L, 124, 457, asBuffer("key1"), headers, value, true);
+        index.add(0L, 110L, 123, 456, asBuffer("key1"), emptyHeaders, value, true);
+        index.add(112L, 113L, 124, 457, asBuffer("key1"), emptyHeaders, value, true);
     }
 
     @Test
@@ -498,14 +625,14 @@ public final class CompactedPartitionIndexTest
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), emptyHeaders, value);
                 will(returnValue(0));
-                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), emptyHeaders, value);
                 will(returnValue(1));
             }
         });
-        index.add(0L, 110L, 123, 456, asBuffer("key1"), headers, value, true);
-        index.add(112L, 113L, 124, 457, asBuffer("key2"), headers, value, true);
+        index.add(0L, 110L, 123, 456, asBuffer("key1"), emptyHeaders, value, true);
+        index.add(112L, 113L, 124, 457, asBuffer("key2"), emptyHeaders, value, true);
     }
 
     @Test
@@ -514,21 +641,25 @@ public final class CompactedPartitionIndexTest
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), emptyHeaders, value);
                 will(returnValue(0));
-                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), emptyHeaders, value);
                 will(returnValue(1));
-                oneOf(messageCache).replace(1, 125, 458, asBuffer("key2"), headers, value);
+                oneOf(messageCache).replace(1, 125, 458, asBuffer("key2"), emptyHeaders, value);
                 will(returnValue(1));
-                oneOf(messageCache).replace(0, 126, 459, asBuffer("key1"), headers, value);
+                oneOf(messageCache).replace(0, 126, 459, asBuffer("key1"), emptyHeaders, value);
                 will(returnValue(0));
+                oneOf(messageCache).get(with(0), with(any(MessageFW.class)));
+                will(returnValue(anyMessage));
+                oneOf(messageCache).get(with(1), with(any(MessageFW.class)));
+                will(returnValue(anyMessage));
             }
         });
-        index.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
-        index.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
-        index.add(0L, 2L, 125, 458, asBuffer("key2"), headers, value, true);
-        index.add(0L, 3L, 126, 459, asBuffer("key1"), headers, value, true);
-        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L);
+        index.add(0L, 0L, 123, 456, asBuffer("key1"), emptyHeaders, value, true);
+        index.add(0L, 1L, 124, 457, asBuffer("key2"), emptyHeaders, value, true);
+        index.add(0L, 2L, 125, 458, asBuffer("key2"), emptyHeaders, value, true);
+        index.add(0L, 3L, 126, 459, asBuffer("key1"), emptyHeaders, value, true);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L, null);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
         assertEquals(2L, entry.offset());
@@ -536,6 +667,9 @@ public final class CompactedPartitionIndexTest
         entry = iterator.next();
         assertEquals(3L, entry.offset());
         assertEquals(0, entry.messageHandle());
+        entry = iterator.next();
+        assertEquals(4L, entry.offset());
+        assertEquals(NO_MESSAGE, entry.messageHandle());
         assertFalse(iterator.hasNext());
     }
 
@@ -545,12 +679,14 @@ public final class CompactedPartitionIndexTest
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), emptyHeaders, value);
                 will(returnValue(77));
+                oneOf(messageCache).get(with(77), with(any(MessageFW.class)));
+                will(returnValue(anyMessage));
             }
         });
-        index.add(0L, 100L, 123, 456, asBuffer("key1"), headers, value, true);
-        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L);
+        index.add(0L, 100L, 123, 456, asBuffer("key1"), emptyHeaders, value, true);
+        Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(0L, null);
         Entry entry = iterator.next();
         String result = entry.toString();
         assertTrue(result.contains("100"));
@@ -590,24 +726,23 @@ public final class CompactedPartitionIndexTest
         context.checking(new Expectations()
         {
             {
-                oneOf(messageCache).put(123, 456, asBuffer("key1"), headers, value);
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), emptyHeaders, value);
                 will(returnValue(0));
-                oneOf(messageCache).put(124, 457, asBuffer("key2"), headers, value);
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), emptyHeaders, value);
                 will(returnValue(1));
                 oneOf(messageCache).release(0);
             }
         });
 
-        index.add(0L, 0L, 123, 456, asBuffer("key1"), headers, value, true);
-        index.add(0L, 1L, 124, 457, asBuffer("key2"), headers, value, true);
+        index.add(0L, 0L, 123, 456, asBuffer("key1"), emptyHeaders, value, true);
+        index.add(0L, 1L, 124, 457, asBuffer("key2"), emptyHeaders, value, true);
 
         index.startOffset(1L);
 
-        Entry entry1 = index.getEntry(0L, asOctets("key1"));
-        Entry entry2 = index.getEntry(0L, asOctets("key2"));
+        Entry entry1 = index.getEntry(asOctets("key1"));
+        Entry entry2 = index.getEntry(asOctets("key2"));
 
-        assertEquals(2L, entry1.offset());
-        assertEquals(MessageCache.NO_MESSAGE, entry1.messageHandle());
+        assertNull(entry1);
 
         assertEquals(1L, entry2.offset());
         assertEquals(1, entry2.messageHandle());

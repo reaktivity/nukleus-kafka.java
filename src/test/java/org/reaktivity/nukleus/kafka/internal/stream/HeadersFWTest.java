@@ -28,6 +28,8 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.Test;
 import org.reaktivity.nukleus.kafka.internal.test.TestUtil;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.HeaderFW;
 
 public final class HeadersFWTest
@@ -79,6 +81,85 @@ public final class HeadersFWTest
         assertMatches("value1", header.next());
         assertMatches("value2", header.next());
         assertFalse(header.hasNext());
+    }
+
+    @Test
+    public void shouldMatchSingleHeaderConditionOnMultiplyOccuringHeader()
+    {
+        headersRO.wrap(buffer,  offset, position);
+        MutableDirectBuffer buffer = new UnsafeBuffer(new byte[100]);
+        ListFW<KafkaHeaderFW> headerConditions =
+            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+                .wrap(buffer, 0, buffer.capacity())
+                .item(b -> b.key("header1").value(asOctets("value1")))
+                .build();
+        assertTrue(headersRO.matches(headerConditions));
+    }
+
+    @Test
+    public void shouldMatchSingleHeaderConditionOnSinglelyOccuringHeader()
+    {
+        headersRO.wrap(buffer,  offset, position);
+        ListFW<KafkaHeaderFW> headerConditions =
+            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+                .wrap(new UnsafeBuffer(new byte[100]), 0, 100)
+                .item(b -> b.key("header2").value(asOctets("value1")))
+                .build();
+        assertTrue(headersRO.matches(headerConditions));
+    }
+
+    @Test
+    public void shouldMatchMultipleHeaderConditions()
+    {
+        headersRO.wrap(buffer,  offset, position);
+        MutableDirectBuffer buffer = new UnsafeBuffer(new byte[100]);
+        ListFW<KafkaHeaderFW> headerConditions =
+            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+                .wrap(buffer, 0, buffer.capacity())
+                .item(b -> b.key("header1").value(asOctets("value2")))
+                .item(b -> b.key("header2").value(asOctets("value1")))
+                .build();
+        assertTrue(headersRO.matches(headerConditions));
+    }
+
+    @Test
+    public void shouldMatchMultipleHeaderConditionsOnMultiplyOccuringHeader()
+    {
+        headersRO.wrap(buffer,  offset, position);
+        MutableDirectBuffer buffer = new UnsafeBuffer(new byte[100]);
+        ListFW<KafkaHeaderFW> headerConditions =
+            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+                .wrap(buffer, 0, buffer.capacity())
+                .item(b -> b.key("header1").value(asOctets("value1")))
+                .item(b -> b.key("header1").value(asOctets("value2")))
+                .build();
+        assertTrue(headersRO.matches(headerConditions));
+    }
+
+    @Test
+    public void shouldNotMatchSingleHeaderConditionOnMultiplyOccuringHeader()
+    {
+        headersRO.wrap(buffer,  offset, position);
+        MutableDirectBuffer buffer = new UnsafeBuffer(new byte[100]);
+        ListFW<KafkaHeaderFW> headerConditions =
+            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+                .wrap(buffer, 0, buffer.capacity())
+                .item(b -> b.key("header1").value(asOctets("nope")))
+                .build();
+        assertFalse(headersRO.matches(headerConditions));
+    }
+
+    @Test
+    public void shouldNotMatchSingleHeaderConditionOnSinglelyOccuringHeader()
+    {
+        headersRO.wrap(buffer,  offset, position);
+        MutableDirectBuffer buffer = new UnsafeBuffer(new byte[100]);
+        ListFW<KafkaHeaderFW> headerConditions =
+            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+                .wrap(buffer, 0, buffer.capacity())
+                .item(b -> b.key("header2").value(asOctets("nope")))
+                .build();
+        assertFalse(headersRO.matches(headerConditions));
     }
 
     private void assertMatches(
