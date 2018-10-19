@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
@@ -22,6 +23,7 @@ import static org.junit.Assert.assertTrue;
 import static org.reaktivity.nukleus.kafka.internal.cache.TopicCache.NO_MESSAGE;
 import static org.reaktivity.nukleus.kafka.internal.cache.TopicCache.NO_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.test.TestUtil.asBuffer;
+import static org.reaktivity.nukleus.kafka.internal.test.TestUtil.asOctets;
 
 import java.util.Iterator;
 
@@ -37,6 +39,8 @@ import org.reaktivity.nukleus.kafka.internal.cache.ImmutableTopicCache.Message;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
+import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
+import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
 
 public final class CompactedTopicCacheTest
 {
@@ -204,6 +208,71 @@ public final class CompactedTopicCacheTest
             assertTrue(messages.hasNext());
             messages.next();
         }
+    }
+
+    @Test
+    public void shouldGetMessagesWithKnownKeyMessageNotCached()
+    {
+        OctetsFW key = asOctets("key");
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(index1).getEntry(key); will(returnValue(entry1));
+                oneOf(entry1).offset(); will(returnValue(21L));
+                oneOf(entry1).messageHandle(); will(returnValue(NO_MESSAGE));
+                oneOf(messageCache).get(with(-1), with(any(MessageFW.class))); will(returnValue(null));
+            }
+        });
+
+        Long2LongHashMap fetchOffsets = new Long2LongHashMap(NO_OFFSET);
+        fetchOffsets.put(1, 11L);
+
+        Iterator<Message> messages = cache.getMessages(fetchOffsets, key, null);
+        assertTrue(messages.hasNext());
+        Message message = messages.next();
+        assertEquals(21L, message.offset());
+    }
+
+    @Test
+    public void shouldGetMessagesWithUnknownKeyAtLiveOffset()
+    {
+        OctetsFW key = asOctets("key");
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(index1).getEntry(key); will(returnValue(null));
+                oneOf(index1).nextOffset(); will(returnValue(4L));
+            }
+        });
+
+        Long2LongHashMap fetchOffsets = new Long2LongHashMap(NO_OFFSET);
+        fetchOffsets.put(1, 3L);
+
+        Iterator<Message> messages = cache.getMessages(fetchOffsets, key, null);
+        assertTrue(messages.hasNext());
+        Message message = messages.next();
+        assertEquals(4L, message.offset());
+    }
+
+    @Test
+    public void shouldGetMessagesWithUnknownKeyAtRequestedOffsetWhenHigherThanLiveOffset()
+    {
+        OctetsFW key = asOctets("key");
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(index1).getEntry(key); will(returnValue(null));
+                oneOf(index1).nextOffset(); will(returnValue(4L));
+            }
+        });
+
+        Long2LongHashMap fetchOffsets = new Long2LongHashMap(NO_OFFSET);
+        fetchOffsets.put(1, 11L);
+
+        Iterator<Message> messages = cache.getMessages(fetchOffsets, key, null);
+        assertTrue(messages.hasNext());
+        Message message = messages.next();
+        assertEquals(11L, message.offset());
     }
 
 }

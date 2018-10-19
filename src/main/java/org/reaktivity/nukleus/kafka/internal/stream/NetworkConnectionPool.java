@@ -1598,7 +1598,6 @@ public final class NetworkConnectionPool
             IntToLongFunction getRequestedOffset)
         {
             int partitionCount = 0;
-            int originalEncodeLimit = encodeLimit;
 
             NetworkTopic topic = topicsByName.get(topicName);
             if (topic.needsHistorical())

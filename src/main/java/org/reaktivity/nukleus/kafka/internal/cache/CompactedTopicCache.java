@@ -144,10 +144,14 @@ public class CompactedTopicCache implements TopicCache
             int partition,
             Entry entry)
         {
-            this.partition = partition;
-            this.offset =  entry.offset();
-            this.messageHandle = entry.messageHandle();
+            wrap(partition, entry.offset(), entry.messageHandle());
             return this;
+        }
+
+        private void wrap(
+            MessageImpl message)
+        {
+            wrap(message.partition, message.offset, message.messageHandle);
         }
 
         @Override
@@ -181,17 +185,26 @@ public class CompactedTopicCache implements TopicCache
             ListFW<KafkaHeaderFW> headerConditions)
         {
             int partition = fetchOffsets.keySet().iterator().next().intValue();
+            long requestedOffset = fetchOffsets.get(partition);
             remainingEntries = 1;
-            lastMessage.wrap(partition, indexes[partition].nextOffset(), NO_MESSAGE);
             Entry entry = indexes[partition].getEntry(fetchKey);
             if (entry != null)
             {
-                message.wrap(partition,  entry.offset(), entry.messageHandle());
+                message.wrap(partition, entry);
                 MessageFW messageRO = message.message();
                 if (messageRO != null && headersRO.wrap(messageRO.headers()).matches(headerConditions))
                 {
                     remainingEntries = 2;
+                    lastMessage.wrap(partition, Math.max(requestedOffset, indexes[partition].nextOffset()), NO_MESSAGE);
                 }
+                else
+                {
+                    lastMessage.wrap(message);
+                }
+            }
+            else
+            {
+                lastMessage.wrap(partition, Math.max(requestedOffset, indexes[partition].nextOffset()), NO_MESSAGE);
             }
             return this;
         }

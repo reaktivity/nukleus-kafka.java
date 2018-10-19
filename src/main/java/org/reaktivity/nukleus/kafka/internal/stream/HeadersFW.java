@@ -99,7 +99,9 @@ public final class HeadersFW
         ListFW<KafkaHeaderFW> headerConditions)
     {
         // Find first non-matching header condition. If not found, all headerConditions are fulfilled.
-        return headerConditions == null || null != headerConditions.matchFirst(
+        return headerConditions == null ||
+               headerConditions.isEmpty() ||
+               null != headerConditions.matchFirst(
             h ->
             {
                 boolean[] matchFound = new boolean[]{false};
