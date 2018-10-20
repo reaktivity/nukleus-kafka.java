@@ -279,7 +279,7 @@ public class CachingFetchIT
     @Specification({
         "${route}/client/controller",
         "${client}/compacted.historical.uses.cached.key.then.zero.offset/client",
-        "${server}/compacted.historical.uses.cached.key.then.zero.offset/server"})
+        "${server}/compacted.historical.uses.zero.offset/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveCompactedMessagesWithUncachedKeyUsingZeroOffset() throws Exception
     {

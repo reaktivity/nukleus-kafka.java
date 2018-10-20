@@ -188,23 +188,28 @@ public class CompactedTopicCache implements TopicCache
             long requestedOffset = fetchOffsets.get(partition);
             remainingEntries = 1;
             Entry entry = indexes[partition].getEntry(fetchKey);
-            if (entry != null)
+
+            if (entry == null || entry.offset() < requestedOffset)
+            {
+                lastMessage.wrap(partition, Math.max(requestedOffset, indexes[partition].nextOffset()), NO_MESSAGE);
+            }
+            else
             {
                 message.wrap(partition, entry);
                 MessageFW messageRO = message.message();
-                if (messageRO != null && headersRO.wrap(messageRO.headers()).matches(headerConditions))
+
+                if (messageRO != null &&
+                    headersRO.wrap(messageRO.headers()).matches(headerConditions))
                 {
                     remainingEntries = 2;
-                    lastMessage.wrap(partition, Math.max(requestedOffset, indexes[partition].nextOffset()), NO_MESSAGE);
+                    lastMessage.wrap(partition,
+                                     Math.max(message.offset() + 1, indexes[partition].nextOffset()),
+                                     NO_MESSAGE);
                 }
                 else
                 {
                     lastMessage.wrap(message);
                 }
-            }
-            else
-            {
-                lastMessage.wrap(partition, Math.max(requestedOffset, indexes[partition].nextOffset()), NO_MESSAGE);
             }
             return this;
         }

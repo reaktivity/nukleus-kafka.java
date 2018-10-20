@@ -41,7 +41,7 @@ public interface ImmutableTopicCache
          * @param message
          * @return The message,
          *         OR null if there are no more messages, in which
-         *         case nextOffset() should be used to fetch further
+         *         case offset() should be used to fetch further
          *         messages from Kafka.
          */
         MessageFW message();
