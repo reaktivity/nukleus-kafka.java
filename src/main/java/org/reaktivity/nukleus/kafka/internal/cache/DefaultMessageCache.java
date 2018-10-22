@@ -19,6 +19,7 @@ import static org.reaktivity.nukleus.kafka.internal.memory.MemoryManager.OUT_OF_
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 
 import java.util.Arrays;
+import java.util.function.LongSupplier;
 
 import org.agrona.DirectBuffer;
 import org.agrona.collections.LongArrayList;
@@ -39,6 +40,8 @@ public class DefaultMessageCache implements MessageCache
     private final OctetsFW valueRO = new OctetsFW();
 
     private final MemoryManager memoryManager;
+    private final LongSupplier cacheHits;
+    private final LongSupplier cacheMisses;
     private final UnsafeBuffer buffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     private final LongArrayList addresses = new LongArrayList(1024, NO_ADDRESS);
     private final LongArrayList accessTimes = new LongArrayList(1024, NO_ADDRESS);
@@ -51,9 +54,14 @@ public class DefaultMessageCache implements MessageCache
     private long time = 0;
     private int entries = 0;
 
-    public DefaultMessageCache(MemoryManager memoryManager)
+    public DefaultMessageCache(
+        MemoryManager memoryManager,
+        LongSupplier cacheHits,
+        LongSupplier cacheMisses)
     {
         this.memoryManager = memoryManager;
+        this.cacheHits = cacheHits;
+        this.cacheMisses = cacheMisses;
         lruHandles = new int[LRU_SCAN_SIZE];
         lruTimes = new long[lruHandles.length];
         lruPosition = lruHandles.length;
@@ -65,19 +73,22 @@ public class DefaultMessageCache implements MessageCache
         MessageFW message)
     {
         MessageFW result = null;
-        if (messageHandle != NO_MESSAGE)
+        long address;
+        if (messageHandle != NO_MESSAGE &&
+            (address = addresses.getLong(messageHandle)) >= 0L)
         {
-            long address = addresses.getLong(messageHandle);
-            if (address >= 0L)
-            {
-                long memoryAddress = memoryManager.resolve(address);
-                buffer.wrap(memoryAddress, Integer.BYTES);
-                int size = buffer.getInt(0) + Integer.BYTES;
-                buffer.wrap(memoryAddress, size);
-                accessTimes.setLong(messageHandle,  time++);
-                clearLruEntries();
-                result =  message.wrap(buffer, Integer.BYTES, size);
-            }
+            long memoryAddress = memoryManager.resolve(address);
+            buffer.wrap(memoryAddress, Integer.BYTES);
+            int size = buffer.getInt(0) + Integer.BYTES;
+            buffer.wrap(memoryAddress, size);
+            accessTimes.setLong(messageHandle,  time++);
+            clearLruEntries();
+            result =  message.wrap(buffer, Integer.BYTES, size);
+            cacheHits.getAsLong();
+        }
+        else
+        {
+            cacheMisses.getAsLong();
         }
         return result;
     }

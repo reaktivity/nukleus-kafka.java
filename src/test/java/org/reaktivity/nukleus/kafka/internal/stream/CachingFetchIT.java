@@ -173,8 +173,8 @@ public class CachingFetchIT
     public void shouldReceiveHistoricalMessageMatchingHeaderFirstFromCache() throws Exception
     {
         k3po.finish();
-        assertEquals(1, counters.cacheMisses());
-        assertEquals(1, counters.cacheHits());
+        assertEquals(4, counters.cacheHits()); // 2
+        assertEquals(5, counters.cacheMisses()); // 2
     }
 
     @Test
@@ -230,7 +230,7 @@ public class CachingFetchIT
         awaitWindowFromClient();
         k3po.notifyBarrier("DELIVER_SECOND_LIVE_RESPONSE");
         k3po.finish();
-        assertEquals(1, counters.cacheHits());
+        assertEquals(2, counters.cacheHits());
     }
 
     // No historical fetch with message cache active
@@ -284,7 +284,7 @@ public class CachingFetchIT
     public void shouldReceiveCompactedMessagesWithUncachedKeyUsingZeroOffset() throws Exception
     {
         k3po.finish();
-        assertEquals(2, counters.cacheMisses());
+        assertEquals(3, counters.cacheMisses());
     }
 
     @Test
@@ -372,7 +372,7 @@ public class CachingFetchIT
     public void shouldReceiveCompactedHistoricalMessagesFromCacheWhenOriginallyReceivedAsLiveMessages() throws Exception
     {
         k3po.finish();
-        assertEquals(1, counters.cacheHits());
+        assertEquals(4, counters.cacheHits()); // 2
     }
 
     @Test

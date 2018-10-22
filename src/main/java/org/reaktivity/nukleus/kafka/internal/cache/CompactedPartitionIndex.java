@@ -434,6 +434,10 @@ public class CompactedPartitionIndex implements PartitionIndex
                 {
                     break;
                 }
+                else
+                {
+                    entry = null;
+                }
                 position++;
             }
             if (entry == null)

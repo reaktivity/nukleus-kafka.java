@@ -174,7 +174,10 @@ public final class ClientStreamFactory implements StreamFactory
         this.router = requireNonNull(router);
         this.writeBuffer = requireNonNull(writeBuffer);
         this.bufferPool = requireNonNull(bufferPool);
-        this.messageCache = new DefaultMessageCache(requireNonNull(memoryManager));
+        this.messageCache = new DefaultMessageCache(
+                requireNonNull(memoryManager),
+                counters.cacheHits,
+                counters.cacheMisses);
         this.supplyStreamId = requireNonNull(supplyStreamId);
         this.supplyTrace = requireNonNull(supplyTrace);
         this.supplyCorrelationId = supplyCorrelationId;

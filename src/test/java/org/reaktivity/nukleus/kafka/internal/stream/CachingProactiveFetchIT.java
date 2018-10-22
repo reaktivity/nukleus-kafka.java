@@ -30,6 +30,7 @@ import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.test.KafkaCountersRule;
 import org.reaktivity.reaktor.test.ReaktorRule;
+import org.reaktivity.reaktor.test.annotation.Configure;
 
 public class CachingProactiveFetchIT
 {
@@ -70,7 +71,7 @@ public class CachingProactiveFetchIT
     public void shouldReceiveCompactedHistoricalMessagesFromCacheWhenProactiveMessageCachingIsEnabled() throws Exception
     {
         k3po.finish();
-        assertEquals(1, counters.cacheHits());
+        assertEquals(4, counters.cacheHits()); // 2
     }
 
     @Test
@@ -79,10 +80,11 @@ public class CachingProactiveFetchIT
         "${client}/compacted.header.message.multiple.clients/client",
         "${server}/compacted.header.first.matches/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @Configure(name=KafkaConfiguration.READ_IDLE_TIMEOUT_PROPERTY, value="200000")
     public void shouldReceiveHistoricalMessageMatchingHeaderFromCache() throws Exception
     {
         k3po.finish();
-        assertEquals(2, counters.cacheHits());
+        assertEquals(6, counters.cacheHits()); // 4
     }
 
 }
