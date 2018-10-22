@@ -159,17 +159,21 @@ public final class BufferUtil
         DirectBuffer wrapper,
         OctetsFW wrapped)
     {
-        assert wrapped != null;
-        if (wrapped.offset() == wrapped.buffer().capacity())
+        DirectBuffer result = null;
+        if (wrapped != null)
         {
-            // Agrona bounds check would fail
-            wrapper.wrap(EMPTY_BYTE_ARRAY);
+            result = wrapper;
+            if (wrapped.offset() == wrapped.buffer().capacity())
+            {
+                // Agrona bounds check would fail
+                wrapper.wrap(EMPTY_BYTE_ARRAY);
+            }
+            else
+            {
+                wrapper.wrap(wrapped.buffer(), wrapped.offset(), wrapped.sizeof());
+            }
         }
-        else
-        {
-            wrapper.wrap(wrapped.buffer(), wrapped.offset(), wrapped.sizeof());
-        }
-        return wrapper;
+        return result;
     }
 
     public static DirectBuffer wrap(
