@@ -20,10 +20,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
-import static org.reaktivity.nukleus.kafka.internal.cache.DefaultMessageCache.NO_MESSAGE;
+import static org.reaktivity.nukleus.kafka.internal.cache.MessageCache.NO_MESSAGE;
 import static org.reaktivity.nukleus.kafka.internal.memory.MemoryManager.OUT_OF_MEMORY;
 
-import java.lang.annotation.Annotation;
 import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -34,8 +33,6 @@ import org.jmock.Expectations;
 import org.jmock.integration.junit4.JUnitRuleMockery;
 import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.TestRule;
-import org.junit.runner.Description;
 import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.Statement;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;

@@ -40,7 +40,6 @@ import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
-import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
 
 public final class CompactedTopicCacheTest
 {
@@ -218,9 +217,10 @@ public final class CompactedTopicCacheTest
         {
             {
                 oneOf(index1).getEntry(key); will(returnValue(entry1));
-                oneOf(entry1).offset(); will(returnValue(21L));
+                exactly(2).of(entry1).offset(); will(returnValue(21L));
                 oneOf(entry1).messageHandle(); will(returnValue(NO_MESSAGE));
-                oneOf(messageCache).get(with(-1), with(any(MessageFW.class))); will(returnValue(null));
+                oneOf(messageCache).get(with(NO_MESSAGE), with(any(MessageFW.class)));
+                will(returnValue(null));
             }
         });
 

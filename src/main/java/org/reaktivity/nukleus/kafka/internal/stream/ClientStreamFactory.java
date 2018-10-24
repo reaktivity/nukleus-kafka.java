@@ -19,6 +19,7 @@ import static java.lang.Integer.toHexString;
 import static java.lang.String.format;
 import static java.lang.System.identityHashCode;
 import static java.util.Objects.requireNonNull;
+import static org.reaktivity.nukleus.kafka.internal.cache.TopicCache.NO_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.wrap;
 import static org.reaktivity.nukleus.kafka.internal.util.Flags.FIN;
@@ -542,6 +543,8 @@ public final class ClientStreamFactory implements StreamFactory
 
     private final class ClientAcceptStream implements MessageDispatcher
     {
+        private static final int NO_PARTITION = -1;
+
         private static final int UNATTACHED = -1;
 
         private final MessageConsumer applicationThrottle;
@@ -634,7 +637,7 @@ public final class ClientStreamFactory implements StreamFactory
             boolean reattach)
         {
             progressHandler = NOOP_PROGRESS_HANDLER;
-            if (detacher != null)
+            if (detacher != null && attacher == null)
             {
                 invoke(detacher);
                 detacher = null;
@@ -1155,25 +1158,44 @@ public final class ClientStreamFactory implements StreamFactory
         {
             Iterator<Message> messages = historicalCache.getMessages(fetchOffsets, fetchKey, headers);
 
+            int previousPartition = NO_PARTITION;
+            long previousOffset = NO_OFFSET;
+            long requestOffset = NO_OFFSET;
             while (writeableBytes() > 0 && messages.hasNext())
             {
                 Message entry = messages.next();
                 MessageFW message = entry.message();
-                if (message == null)
+                final int partition = entry.partition();
+                long offset = entry.offset();
+                if (requestOffset == NO_OFFSET)
                 {
-                    flush(entry.partition(), fetchOffsets.get(entry.partition()), entry.offset());
+                    requestOffset = fetchOffsets.get(offset);
                 }
-                else
+                if (message != null)
                 {
+                    // End of a series of messages dispatched for a partition
+                    if (previousPartition != NO_PARTITION && entry.partition() != previousPartition)
+                    {
+                        flush(previousPartition, fetchOffsets.get(previousPartition), previousOffset + 1);
+                        requestOffset = NO_OFFSET;
+                    }
                     dispatch(
-                        entry.partition(),
-                        fetchOffsets.get(entry.partition()),
-                        entry.offset(),
+                        partition,
+                        requestOffset,
+                        offset,
                         wrap(keyBuffer, message.key()),
                         headersRO.wrap(message.headers()).headerSupplier(),
                         message.timestamp(),
                         message.traceId(),
                         wrap(valueBuffer, message.value()));
+                    previousPartition = partition;
+                    previousOffset = offset;
+                    offset++;
+                }
+                if (message == null
+                    || writeableBytes() == 0)
+                {
+                    flush(partition, fetchOffsets.get(partition), offset);
                 }
             }
 
