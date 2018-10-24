@@ -581,6 +581,7 @@ public final class ClientStreamFactory implements StreamFactory
         private int pendingMessageValueOffset;
         private int pendingMessageValueLimit;
         private long pendingMessageOffset = UNSET;
+        private int pendingMessagePartition = NO_PARTITION;
         private int pendingBudget;
 
         int fragmentedMessageBytesWritten;
@@ -754,6 +755,7 @@ public final class ClientStreamFactory implements StreamFactory
                     pendingMessageValueOffset = fragmentedMessageBytesWritten;
                     pendingMessageValueLimit = pendingMessageValueOffset + bytesToWrite;
                     pendingMessageOffset = messageStartOffset;
+                    pendingMessagePartition = partition;
                     messagePending = true;
                     if (bytesToWrite < payloadLength)
                     {
@@ -843,6 +845,7 @@ public final class ClientStreamFactory implements StreamFactory
             if (detacher != null)
             {
                 invoke(detacher);
+                detacher = null;
             }
             else
             {
@@ -866,6 +869,15 @@ public final class ClientStreamFactory implements StreamFactory
         {
             if (messagePending)
             {
+                assert partition == pendingMessagePartition :
+                        format(
+                            "Internal Error: pendingMessagePartition=%d differs from partition=%d, " +
+                            "nextFetchOffset=%d, stream=%s\n",
+                            pendingMessagePartition,
+                            partition,
+                            nextFetchOffset,
+                            this);
+
                 byte flags = pendingMessageValue == null || pendingMessageValue.capacity() == pendingMessageValueLimit
                         ? FIN : 0;
 
@@ -1169,16 +1181,16 @@ public final class ClientStreamFactory implements StreamFactory
                 long offset = entry.offset();
                 if (requestOffset == NO_OFFSET)
                 {
-                    requestOffset = fetchOffsets.get(offset);
+                    requestOffset = fetchOffsets.get(partition);
+                }
+                if (previousPartition != NO_PARTITION && entry.partition() != previousPartition)
+                {
+                    flush(previousPartition, requestOffset, previousOffset + 1);
+                    requestOffset = fetchOffsets.get(partition);
                 }
                 if (message != null)
                 {
                     // End of a series of messages dispatched for a partition
-                    if (previousPartition != NO_PARTITION && entry.partition() != previousPartition)
-                    {
-                        flush(previousPartition, fetchOffsets.get(previousPartition), previousOffset + 1);
-                        requestOffset = NO_OFFSET;
-                    }
                     dispatch(
                         partition,
                         requestOffset,
@@ -1195,7 +1207,7 @@ public final class ClientStreamFactory implements StreamFactory
                 if (message == null
                     || writeableBytes() == 0)
                 {
-                    flush(partition, fetchOffsets.get(partition), offset);
+                    flush(partition, requestOffset, offset);
                 }
             }
 
@@ -1256,7 +1268,7 @@ public final class ClientStreamFactory implements StreamFactory
 
         private int writeableBytes()
         {
-            return budget.applicationReplyBudget() - applicationReplyPadding;
+            return Math.max(0, budget.applicationReplyBudget() - applicationReplyPadding);
         }
 
     }
