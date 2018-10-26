@@ -141,8 +141,7 @@ public final class ClientStreamFactory implements StreamFactory
 
     final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
 
-    private final Long2LongHashMap groupBudget;
-    private final Long2LongHashMap groupMembers;
+    private final Long2ObjectHashMap<GroupBudget> groupBudgets;
 
     private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools;
     private final int fetchMaxBytes;
@@ -185,8 +184,7 @@ public final class ClientStreamFactory implements StreamFactory
         this.supplyCounter = requireNonNull(supplyCounter);
         this.correlations = requireNonNull(correlations);
         this.connectionPools = connectionPools;
-        this.groupBudget = groupBudget;
-        this.groupMembers = groupMembers;
+        this.groupBudgets = new Long2ObjectHashMap<>();
         setConnectionPoolFactory.accept((networkName, ref) ->
             new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes, bufferPool,
                     messageCache, supplyCounter, forceProactiveMessageCache, readIdleTimeout));
@@ -648,7 +646,7 @@ public final class ClientStreamFactory implements StreamFactory
                 networkPool.doDetach(topicName, networkAttachId);
             }
             networkAttachId = UNATTACHED;
-            budget.leaveGroup();
+            budget.leaveGroup(applicationReplyId);
             if (reattach)
             {
                 doEnd(applicationReply, applicationReplyId, ZERO_OFFSETS);
@@ -825,33 +823,114 @@ public final class ClientStreamFactory implements StreamFactory
         public String toString()
         {
             return format("%s@%s(topic=\"%s\", subscribedByKey=%b, fetchOffsets=%s, fragmentedMessageOffset=%d, " +
-                                 "fragmentedMessagePartition=%d, fragmentedMessageLength=%d, " +
-                                 "fragmentedMessageBytesWritten=%d, applicationId=%x, applicationReplyId=%x)",
-                    ClientAcceptStream.this.getClass().getSimpleName(),
-                    Integer.toHexString(System.identityHashCode(ClientAcceptStream.this)),
-                    ClientAcceptStream.this.topicName,
-                    ClientAcceptStream.this.subscribedByKey,
-                    ClientAcceptStream.this.fetchOffsets,
-                    ClientAcceptStream.this.fragmentedMessageOffset,
-                    ClientAcceptStream.this.fragmentedMessagePartition,
-                    ClientAcceptStream.this.fragmentedMessageLength,
-                    ClientAcceptStream.this.fragmentedMessageBytesWritten,
-                    ClientAcceptStream.this.applicationId,
-                    ClientAcceptStream.this.applicationReplyId);
+                       "fragmentedMessagePartition=%d, fragmentedMessageLength=%d, fragmentedMessageBytesWritten=%d, " +
+                       "applicationId=%x, applicationReplyId=%x, budget=%s)",
+                getClass().getSimpleName(),
+                Integer.toHexString(System.identityHashCode(ClientAcceptStream.this)),
+                topicName,
+                subscribedByKey,
+                fetchOffsets,
+                fragmentedMessageOffset,
+                fragmentedMessagePartition,
+                fragmentedMessageLength,
+                fragmentedMessageBytesWritten,
+                applicationId,
+                applicationReplyId,
+                budget);
         }
 
         private void detachFromNetworkPool()
         {
-            if (detacher != null)
+            if (detacher != null && attacher == null)
             {
                 invoke(detacher);
                 detacher = null;
+                attacher = null;
             }
             else
             {
                 networkPool.doDetach(topicName, networkAttachId);
             }
             networkAttachId = UNATTACHED;
+        }
+
+        private void dispatchMessages()
+        {
+            dispatchState.run();
+        }
+
+        private void dispatchMessagesFromCache()
+        {
+            Iterator<Message> messages = historicalCache.getMessages(fetchOffsets, fetchKey, headers);
+
+            int previousPartition = NO_PARTITION;
+            long previousOffset = NO_OFFSET;
+            long requestOffset = NO_OFFSET;
+
+            System.out.println(format("dispatchMessagesFromCache, hasNext=%b, stream=%s", messages.hasNext(), this));
+
+            while (writeableBytes() > 0 && messages.hasNext())
+            {
+                Message entry = messages.next();
+                MessageFW message = entry.message();
+                final int partition = entry.partition();
+                long offset = entry.offset();
+                if (requestOffset == NO_OFFSET)
+                {
+                    requestOffset = fetchOffsets.get(partition);
+                }
+                if (previousPartition != NO_PARTITION && entry.partition() != previousPartition)
+                {
+                    flush(previousPartition, requestOffset, previousOffset + 1);
+                    requestOffset = fetchOffsets.get(partition);
+                }
+                if (message != null)
+                {
+                    // End of a series of messages dispatched for a partition
+                    dispatch(
+                        partition,
+                        requestOffset,
+                        offset,
+                        wrap(keyBuffer, message.key()),
+                        headersRO.wrap(message.headers()).headerSupplier(),
+                        message.timestamp(),
+                        message.traceId(),
+                        wrap(valueBuffer, message.value()));
+                    previousPartition = partition;
+                    previousOffset = offset;
+                    offset++;
+                }
+                if (message == null
+                    || writeableBytes() == 0)
+                {
+                    flush(partition, requestOffset, offset);
+                    requestOffset = NO_OFFSET;
+                }
+            }
+
+            if (!messages.hasNext())
+            {
+                // No more messages available in cache
+                dispatchState = this::dispatchMessagesFromPool;
+                progressHandler = savedProgressHandler;
+                savedProgressHandler = null;
+                historicalCache = null;
+
+                if (writeableBytes() > 0)
+                {
+                    dispatchMessages();
+                }
+            }
+        }
+
+        private void dispatchMessagesFromPool()
+        {
+            if (attacher != null)
+            {
+                invoke(attacher);
+                attacher = null;
+            }
+            networkPool.doFlush();
         }
 
         private String toString(
@@ -1073,7 +1152,7 @@ public final class ClientStreamFactory implements StreamFactory
             }
             else
             {
-                dispatchState = this::dispatchMessages;
+                dispatchState = this::dispatchMessagesFromPool;
                 this.progressHandler = progressHandler;
             }
 
@@ -1102,7 +1181,7 @@ public final class ClientStreamFactory implements StreamFactory
                     fetchOffsets.put(partition, offset);
                 }
             }
-
+            System.out.println(format("onAttachPrepared, stream=%s", this));
             if (budget.applicationReplyBudget() > 0)
             {
                 dispatchState.run();
@@ -1151,89 +1230,23 @@ public final class ClientStreamFactory implements StreamFactory
 
             if (firstWindow)
             {
+                System.out.println(format("handleWindow, firstWindow: window.credit()=%d, stream=%s",
+                        window.credit(), this));
                 if (groupId != 0)
                 {
-                    budget = new GroupBudget(groupId, window.streamId(), networkPool);
+                    budget = groupBudgets.computeIfAbsent(
+                                groupId, g -> new GroupBudget(groupId, window.streamId()));
                 }
                 firstWindow = false;
-                budget.joinGroup(window.credit());
+                budget.joinGroup(window.credit(), applicationReplyId, this::dispatchMessages);
+                System.out.println(format("handleWindow, joined group, window.credit()=%d, stream=%s",
+                        window.credit(), this));
             }
             else
             {
                 budget.incApplicationReplyBudget(window.credit());
             }
-
-            dispatchState.run();
-        }
-
-        private void dispatchMessagesFromCache()
-        {
-            Iterator<Message> messages = historicalCache.getMessages(fetchOffsets, fetchKey, headers);
-
-            int previousPartition = NO_PARTITION;
-            long previousOffset = NO_OFFSET;
-            long requestOffset = NO_OFFSET;
-            while (writeableBytes() > 0 && messages.hasNext())
-            {
-                Message entry = messages.next();
-                MessageFW message = entry.message();
-                final int partition = entry.partition();
-                long offset = entry.offset();
-                if (requestOffset == NO_OFFSET)
-                {
-                    requestOffset = fetchOffsets.get(partition);
-                }
-                if (previousPartition != NO_PARTITION && entry.partition() != previousPartition)
-                {
-                    flush(previousPartition, requestOffset, previousOffset + 1);
-                    requestOffset = fetchOffsets.get(partition);
-                }
-                if (message != null)
-                {
-                    // End of a series of messages dispatched for a partition
-                    dispatch(
-                        partition,
-                        requestOffset,
-                        offset,
-                        wrap(keyBuffer, message.key()),
-                        headersRO.wrap(message.headers()).headerSupplier(),
-                        message.timestamp(),
-                        message.traceId(),
-                        wrap(valueBuffer, message.value()));
-                    previousPartition = partition;
-                    previousOffset = offset;
-                    offset++;
-                }
-                if (message == null
-                    || writeableBytes() == 0)
-                {
-                    flush(partition, requestOffset, offset);
-                }
-            }
-
-            if (!messages.hasNext())
-            {
-                // No more messages available in cache
-                dispatchState = this::dispatchMessages;
-                progressHandler = savedProgressHandler;
-                savedProgressHandler = null;
-                historicalCache = null;
-
-                if (writeableBytes() > 0)
-                {
-                    dispatchState.run();
-                }
-            }
-        }
-
-        private void dispatchMessages()
-        {
-            if (attacher != null)
-            {
-                invoke(attacher);
-                attacher = null;
-            }
-            networkPool.doFlush();
+            System.out.println(format("handleWindow, stream=%s", this));
         }
 
         private boolean equals(DirectBuffer buffer1, DirectBuffer buffer2)
@@ -1263,7 +1276,7 @@ public final class ClientStreamFactory implements StreamFactory
             progressHandler = NOOP_PROGRESS_HANDLER;
             detachFromNetworkPool();
             networkAttachId = UNATTACHED;
-            budget.leaveGroup();
+            budget.leaveGroup(applicationReplyId);
         }
 
         private int writeableBytes()
@@ -1278,31 +1291,28 @@ public final class ClientStreamFactory implements StreamFactory
     {
         int applicationReplyBudget();
 
-        void applicationReplyBudget(int budget);
-
         void decApplicationReplyBudget(int data);
 
         void incApplicationReplyBudget(int data);
 
-        void joinGroup(int credit);
+        void joinGroup(int credit, long streamId, Runnable budgetListener);
 
-        void leaveGroup();
+        void leaveGroup(long streamId);
+
+        Runnable NO_LISTENER = () ->
+        {
+        };
     }
 
     private final class StreamBudget implements Budget
     {
         int applicationReplyBudget;
+        Runnable budgetListener;
 
         @Override
         public int applicationReplyBudget()
         {
             return applicationReplyBudget;
-        }
-
-        @Override
-        public void applicationReplyBudget(int budget)
-        {
-            applicationReplyBudget = budget;
         }
 
         @Override
@@ -1315,19 +1325,22 @@ public final class ClientStreamFactory implements StreamFactory
         @Override
         public void incApplicationReplyBudget(int credit)
         {
+            assert credit >= 0;
             applicationReplyBudget += credit;
+            budgetListener.run();
         }
 
         @Override
-        public void joinGroup(int credit)
+        public void joinGroup(int credit, long streamId, Runnable budgetListener)
         {
-            applicationReplyBudget += credit;
+            this.budgetListener = budgetListener;
+            incApplicationReplyBudget(credit);
         }
 
         @Override
-        public void leaveGroup()
+        public void leaveGroup(long streamId)
         {
-
+            budgetListener = NO_LISTENER;
         }
 
         @Override
@@ -1340,41 +1353,31 @@ public final class ClientStreamFactory implements StreamFactory
     private final class GroupBudget implements Budget
     {
         private final long groupId;
-        private final long streamId;
-        private final NetworkConnectionPool networkPool;
+        private final long leadStreamId;
+        private int budget;
+        private int memberCount;
         private int uncreditedBudget;
+        private int startPosition = -1;
+        final Long2ObjectHashMap<Runnable> budgetListenerByStreamId;
 
-        GroupBudget(long groupId, long streamId, NetworkConnectionPool networkPool)
+        GroupBudget(long groupId, long leadStreamId)
         {
             this.groupId = groupId;
-            this.streamId = streamId;
-            this.networkPool = networkPool;
+            this.leadStreamId = leadStreamId;
+            this.budgetListenerByStreamId = new Long2ObjectHashMap<>();
         }
 
         @Override
         public int applicationReplyBudget()
         {
-            long budget = groupBudget.get(groupId);
-            return budget == -1 ? 0 : (int) budget;
-        }
-
-        @Override
-        public void applicationReplyBudget(int budget)
-        {
-            assert groupBudget.containsKey(groupId);
-            assert budget >= 0;
-
-            groupBudget.put(groupId, budget);
+            return budget;
         }
 
         @Override
         public void decApplicationReplyBudget(int data)
         {
-            assert groupBudget.containsKey(groupId);
-
-            int budget = applicationReplyBudget();
             assert budget - data >= 0;
-            applicationReplyBudget(budget - data);
+            budget -= data;
 
             uncreditedBudget += data;
             assert uncreditedBudget >= 0 : format("budget = %d data = %d uncreditedBudget = %d", budget, data, uncreditedBudget);
@@ -1383,65 +1386,91 @@ public final class ClientStreamFactory implements StreamFactory
         @Override
         public void incApplicationReplyBudget(int credit)
         {
-            assert groupBudget.containsKey(groupId);
             assert credit >= 0 : format("credit is %d", credit);
 
-            int budget = applicationReplyBudget();
-            applicationReplyBudget(budget + credit);
+            budget += credit;
 
             uncreditedBudget -= credit;
             assert uncreditedBudget >= 0 :
                     format("budget = %d credit = %d uncreditedBudget = %d", budget, credit, uncreditedBudget);
+
+            moreBudget();
         }
 
         @Override
-        public void joinGroup(int credit)
+        public void joinGroup(
+            int credit,
+            long streamId,
+            Runnable budgetListener)
         {
-            long memberCount = groupMembers.get(groupId);
-            memberCount = (memberCount == -1) ? 1 : memberCount + 1;
-            groupMembers.put(groupId, memberCount);
+            memberCount++;
+            budgetListenerByStreamId.put(streamId, budgetListener);
 
             if (memberCount == 1)
             {
-                assert !groupBudget.containsKey(groupId);
-                groupBudget.put(groupId, credit);
+                budget = credit;
             }
+            moreBudget();
         }
 
         @Override
-        public void leaveGroup()
+        public void leaveGroup(long streamId)
         {
-            long memberCount = groupMembers.get(groupId);
-            if (memberCount != -1)
+            memberCount--;
+            assert memberCount >= 0;
+            budgetListenerByStreamId.remove(streamId);
+
+            if (memberCount > 0)
             {
-                memberCount--;
-                assert memberCount >= 0;
+                budget += uncreditedBudget;
+                uncreditedBudget = 0;
 
-                if (memberCount == 0)
+                // more (from uncredited) group budget available, some messages can be sent
+                moreBudget();
+            }
+            else
+            {
+                groupBudgets.remove(groupId);
+            }
+        }
+
+        private void moreBudget()
+        {
+            // For fairness iterate from a moving startPosition to end, then 0 to startPosition
+            startPosition = ++startPosition >= budgetListenerByStreamId.size() ?
+                    0 : startPosition;
+
+            int pos = 0;
+            for (Runnable listener : budgetListenerByStreamId.values())
+            {
+                if (pos >= startPosition)
                 {
-                    groupMembers.remove(groupId);
-                    groupBudget.remove(groupId);
+                    listener.run();
                 }
-                else
+                if (budget <= 0)
                 {
-                    groupMembers.put(groupId, memberCount);
-
-                    assert groupBudget.containsKey(groupId);
-                    int budget = applicationReplyBudget();
-                    applicationReplyBudget(budget + uncreditedBudget);
-                    uncreditedBudget = 0;
-
-                    // more (from uncredited) group budget available, some messages can be sent
-                    networkPool.doFlush();
+                    break;
                 }
+                pos++;
+            }
+
+            pos = 0;
+            for (Runnable listener : budgetListenerByStreamId.values())
+            {
+                if (pos >= startPosition || budget <= 0)
+                {
+                    break;
+                }
+                listener.run();
+                pos++;
             }
         }
 
         @Override
         public String toString()
         {
-            return String.format("(groupId=%d, streamId=%d, applicationReplyBudget=%d)",
-                    groupId, streamId, applicationReplyBudget());
+            return String.format("(groupId=%d, leadStreamId=%d, applicationReplyBudget=%d, startPosition=%d)",
+                    groupId, leadStreamId, applicationReplyBudget(), startPosition);
         }
     }
 }
