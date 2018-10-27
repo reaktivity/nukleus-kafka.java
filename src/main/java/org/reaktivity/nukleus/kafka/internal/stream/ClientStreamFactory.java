@@ -80,8 +80,6 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class ClientStreamFactory implements StreamFactory
 {
-    private static final long UNSET = -1;
-
     private static final long[] ZERO_OFFSETS = new long[] {0L};
 
     private static final PartitionProgressHandler NOOP_PROGRESS_HANDLER = (p, f, n) ->
@@ -578,17 +576,17 @@ public final class ClientStreamFactory implements StreamFactory
         private DirectBuffer pendingMessageValue;
         private int pendingMessageValueOffset;
         private int pendingMessageValueLimit;
-        private long pendingMessageOffset = UNSET;
+        private long pendingMessageOffset = NO_OFFSET;
         private int pendingMessagePartition = NO_PARTITION;
         private int pendingBudget;
 
         int fragmentedMessageBytesWritten;
         int fragmentedMessageLength;
-        long fragmentedMessageOffset = UNSET;
-        long fragmentedMessagePartition = UNSET;
+        long fragmentedMessageOffset = NO_OFFSET;
+        int fragmentedMessagePartition = NO_PARTITION;
         boolean fragmentedMessageDispatched;
 
-        private long progressStartOffset = UNSET;
+        private long progressStartOffset = NO_OFFSET;
         private long progressEndOffset;
         private boolean firstWindow = true;
         private long groupId;
@@ -682,7 +680,7 @@ public final class ClientStreamFactory implements StreamFactory
             lastDispatchedPartition = partition;
 
             int result = MessageDispatcher.FLAGS_MATCHED;
-            if (progressStartOffset == UNSET)
+            if (progressStartOffset == NO_OFFSET)
             {
                 progressStartOffset = fetchOffsets.get(partition);
                 progressEndOffset = progressStartOffset;
@@ -704,7 +702,7 @@ public final class ClientStreamFactory implements StreamFactory
 
             boolean skipMessage = false;
 
-            if (fragmentedMessageOffset != UNSET)
+            if (fragmentedMessageOffset != NO_OFFSET)
             {
                if (fragmentedMessagePartition != partition)
                {
@@ -805,7 +803,7 @@ public final class ClientStreamFactory implements StreamFactory
             flushPreviousMessage(partition, nextFetchOffset);
             long startOffset = progressStartOffset;
             long endOffset = progressEndOffset;
-            if (startOffset == UNSET)
+            if (startOffset == NO_OFFSET)
             {
                 // dispatch was not called
                 startOffset = fetchOffsets.get(partition);
@@ -817,7 +815,7 @@ public final class ClientStreamFactory implements StreamFactory
                 endOffset = nextFetchOffset;
             }
 
-            if (fragmentedMessageOffset != UNSET &&
+            if (fragmentedMessageOffset != NO_OFFSET &&
                 fragmentedMessagePartition == partition &&
                 !fragmentedMessageDispatched &&
                 requestOffset <= fragmentedMessageOffset &&
@@ -835,8 +833,8 @@ public final class ClientStreamFactory implements StreamFactory
                 final long oldFetchOffset = this.fetchOffsets.put(partition, endOffset);
                 progressHandler.handle(partition, oldFetchOffset, endOffset);
             }
-            progressStartOffset = UNSET;
-            pendingMessageOffset = UNSET;
+            progressStartOffset = NO_OFFSET;
+            pendingMessageOffset = NO_OFFSET;
             dispatchBlocked = false;
             fragmentedMessageDispatched = false;
         }
@@ -890,26 +888,27 @@ public final class ClientStreamFactory implements StreamFactory
             long flushToOffset = NO_OFFSET;
             long requestOffset = NO_OFFSET;
 
-            System.out.println(format("dispatchMessagesFromCache, hasNext=%b, stream=%s", messages.hasNext(), this));
-
             while (writeableBytes() > 0 && messages.hasNext())
             {
                 Message entry = messages.next();
                 MessageFW message = entry.message();
                 final int partition = entry.partition();
                 long offset = entry.offset();
+
                 if (requestOffset == NO_OFFSET)
                 {
                     requestOffset = fetchOffsets.get(partition);
                 }
+
                 if (previousPartition != NO_PARTITION && entry.partition() != previousPartition)
                 {
+                    // End of a series of messages dispatched for a partition
                     flush(previousPartition, requestOffset, flushToOffset);
                     requestOffset = fetchOffsets.get(partition);
                 }
+
                 if (message != null)
                 {
-                    // End of a series of messages dispatched for a partition
                     dispatch(
                         partition,
                         requestOffset,
@@ -919,19 +918,22 @@ public final class ClientStreamFactory implements StreamFactory
                         message.timestamp(),
                         message.traceId(),
                         wrap(valueBuffer, message.value()));
+
                     previousPartition = partition;
-                    if (messagePending && pendingMessageValueOffset == 0)
-                    {
-                            offset++;
-                    }
+                    offset++;
                     flushToOffset = offset;
                 }
-                if (message == null
-                    || writeableBytes() == 0)
+
+                if (message == null || writeableBytes() == 0)
                 {
                     flush(partition, requestOffset, offset);
                     requestOffset = NO_OFFSET;
                 }
+            }
+
+            if (fragmentedMessageOffset != NO_OFFSET)
+            {
+                dispatchState = this::dispatchFragmentedMessageFromCache;
             }
 
             if (!messages.hasNext())
@@ -945,6 +947,51 @@ public final class ClientStreamFactory implements StreamFactory
                 if (writeableBytes() > 0)
                 {
                     dispatchMessages();
+                }
+            }
+        }
+
+        private void dispatchFragmentedMessageFromCache()
+        {
+            assert fragmentedMessageOffset != NO_OFFSET;
+            assert fragmentedMessagePartition != NO_PARTITION;
+
+            Message entry = historicalCache.getMessage(fragmentedMessagePartition, fragmentedMessageOffset);
+
+            MessageFW message = entry.message();
+            final int partition = entry.partition();
+            long offset = entry.offset();
+
+            if (message == null)
+            {
+                // no longer available in cache
+                dispatchState = this::dispatchMessagesFromPool;
+                dispatchMessages();
+            }
+            else
+            {
+                long requestOffset = fetchOffsets.get(partition);
+
+                dispatch(
+                    partition,
+                    requestOffset,
+                    offset,
+                    wrap(keyBuffer, message.key()),
+                    headersRO.wrap(message.headers()).headerSupplier(),
+                    message.timestamp(),
+                    message.traceId(),
+                    wrap(valueBuffer, message.value()));
+
+                flush(partition, requestOffset, offset + 1);
+
+                if (fragmentedMessageOffset == NO_OFFSET)
+                {
+                    dispatchState = this::dispatchMessagesFromCache;
+
+                    if (writeableBytes() > 0)
+                    {
+                        dispatchMessages();
+                    }
                 }
             }
         }
@@ -1037,8 +1084,8 @@ public final class ClientStreamFactory implements StreamFactory
                 if (Flags.fin(flags))
                 {
                     fragmentedMessageBytesWritten = 0;
-                    fragmentedMessageOffset = UNSET;
-                    fragmentedMessagePartition = UNSET;
+                    fragmentedMessageOffset = NO_OFFSET;
+                    fragmentedMessagePartition = NO_PARTITION;
                     fragmentedMessageLength = 0;
                     progressEndOffset = nextFetchOffset;
 
@@ -1047,7 +1094,7 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 else
                 {
-                    if (fragmentedMessagePartition == UNSET)
+                    if (fragmentedMessagePartition == NO_PARTITION)
                     {
                         // Store full message length to verify it remains consistent
                         fragmentedMessageLength = pendingMessageValue.capacity();
@@ -1238,7 +1285,7 @@ public final class ClientStreamFactory implements StreamFactory
                     fetchOffsets.put(partition, offset);
                 }
             }
-            System.out.println(format("onAttachPrepared, stream=%s", this));
+
             if (budget.applicationReplyBudget() > 0)
             {
                 dispatchState.run();
@@ -1287,8 +1334,6 @@ public final class ClientStreamFactory implements StreamFactory
 
             if (firstWindow)
             {
-                System.out.println(format("handleWindow, firstWindow: window.credit()=%d, stream=%s",
-                        window.credit(), this));
                 if (groupId != 0)
                 {
                     budget = groupBudgets.computeIfAbsent(
@@ -1296,14 +1341,11 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 firstWindow = false;
                 budget.joinGroup(window.credit(), applicationReplyId, this::dispatchMessages);
-                System.out.println(format("handleWindow, joined group, window.credit()=%d, stream=%s",
-                        window.credit(), this));
             }
             else
             {
                 budget.incApplicationReplyBudget(window.credit());
             }
-            System.out.println(format("handleWindow, stream=%s", this));
         }
 
         private boolean equals(DirectBuffer buffer1, DirectBuffer buffer2)

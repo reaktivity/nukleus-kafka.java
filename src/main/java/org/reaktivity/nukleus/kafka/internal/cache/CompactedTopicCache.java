@@ -34,6 +34,7 @@ public class CompactedTopicCache implements TopicCache
     private final PartitionIndex[] indexes;
     private final KeyedMessageIterator keyedMessageIterator = new KeyedMessageIterator();
     private final MessageIterator messageIterator;
+    private final MessageImpl message = new MessageImpl();
 
     public CompactedTopicCache(
         int partitionCount,
@@ -89,6 +90,18 @@ public class CompactedTopicCache implements TopicCache
         {
             return messageIterator.reset(fetchOffsets, headers);
         }
+    }
+
+    @Override
+    public Message getMessage(
+        int partition,
+        long offset)
+    {
+        Entry entry = indexes[partition].entries(offset, null).next();
+
+        return entry.offset() == offset ?
+                message.wrap(partition, entry) :
+                message.wrap(partition, offset, NO_MESSAGE);
     }
 
     @Override

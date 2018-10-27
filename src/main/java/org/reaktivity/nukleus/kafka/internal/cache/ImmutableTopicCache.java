@@ -51,4 +51,8 @@ public interface ImmutableTopicCache
         Long2LongHashMap fetchOffsets,
         OctetsFW fetchKey,
         ListFW<KafkaHeaderFW> headers);
+
+    Message getMessage(
+        int partition,
+        long offset);
 }

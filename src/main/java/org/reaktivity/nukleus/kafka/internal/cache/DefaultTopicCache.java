@@ -23,6 +23,7 @@ import org.agrona.collections.Long2LongHashMap;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
+import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 /**
@@ -31,6 +32,41 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 public final class DefaultTopicCache implements TopicCache
 {
     public static final TopicCache INSTANCE = new DefaultTopicCache();
+
+    public final NoMessage noMessage = new NoMessage();
+
+    private static class NoMessage implements Message
+    {
+        private int partition;
+        private long offset;
+
+        @Override
+        public long offset()
+        {
+            return offset;
+        }
+
+        @Override
+        public int partition()
+        {
+            return partition;
+        }
+
+        @Override
+        public MessageFW message()
+        {
+            return null;
+        }
+
+        private Message wrap(
+            int partition,
+            long offset)
+        {
+            this.partition = partition;
+            this.offset = offset;
+            return this;
+        }
+    }
 
     @Override
     public void add(
@@ -53,6 +89,14 @@ public final class DefaultTopicCache implements TopicCache
         ListFW<KafkaHeaderFW> headers)
     {
         return Collections.emptyIterator();
+    }
+
+    @Override
+    public Message getMessage(
+        int partition,
+        long offset)
+    {
+        return noMessage.wrap(partition, offset);
     }
 
     @Override
