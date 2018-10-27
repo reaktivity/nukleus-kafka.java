@@ -605,6 +605,10 @@ public final class ClientStreamFactory implements StreamFactory
         private Runnable dispatchState = () ->
         { };
 
+        private final Long2LongHashMap lastWrittenOffsetByPartition = new Long2LongHashMap(NO_OFFSET);
+        private int lastDispatchedPartition = NO_PARTITION;
+        private int writtenMessageCount;
+
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
             long applicationId,
@@ -668,6 +672,15 @@ public final class ClientStreamFactory implements StreamFactory
             long traceId,
             DirectBuffer value)
         {
+            if (lastDispatchedPartition != NO_PARTITION &&
+                lastDispatchedPartition != partition)
+            {
+                System.out.println(
+                   format("ERROR dispatch: partition=%d, lastDispatchedPartition=%d, stream=%s",
+                          partition, lastDispatchedPartition, this));
+            }
+            lastDispatchedPartition = partition;
+
             int result = MessageDispatcher.FLAGS_MATCHED;
             if (progressStartOffset == UNSET)
             {
@@ -780,6 +793,15 @@ public final class ClientStreamFactory implements StreamFactory
             long requestOffset,
             long nextFetchOffset)
         {
+            if (lastDispatchedPartition != NO_PARTITION &&
+                    lastDispatchedPartition != partition)
+            {
+                System.out.println(
+                   format("ERROR flush: partition=%d, lastDispatchedPartition=%d, stream=%s",
+                          partition, lastDispatchedPartition, this));
+            }
+            lastDispatchedPartition = NO_PARTITION;
+
             flushPreviousMessage(partition, nextFetchOffset);
             long startOffset = progressStartOffset;
             long endOffset = progressEndOffset;
@@ -824,7 +846,7 @@ public final class ClientStreamFactory implements StreamFactory
         {
             return format("%s@%s(topic=\"%s\", subscribedByKey=%b, fetchOffsets=%s, fragmentedMessageOffset=%d, " +
                        "fragmentedMessagePartition=%d, fragmentedMessageLength=%d, fragmentedMessageBytesWritten=%d, " +
-                       "applicationId=%x, applicationReplyId=%x, budget=%s)",
+                       "applicationId=%x, applicationReplyId=%x, writtenMessageCount=%d, budget=%s)",
                 getClass().getSimpleName(),
                 Integer.toHexString(System.identityHashCode(ClientAcceptStream.this)),
                 topicName,
@@ -836,6 +858,7 @@ public final class ClientStreamFactory implements StreamFactory
                 fragmentedMessageBytesWritten,
                 applicationId,
                 applicationReplyId,
+                writtenMessageCount,
                 budget);
         }
 
@@ -864,7 +887,7 @@ public final class ClientStreamFactory implements StreamFactory
             Iterator<Message> messages = historicalCache.getMessages(fetchOffsets, fetchKey, headers);
 
             int previousPartition = NO_PARTITION;
-            long previousOffset = NO_OFFSET;
+            long flushToOffset = NO_OFFSET;
             long requestOffset = NO_OFFSET;
 
             System.out.println(format("dispatchMessagesFromCache, hasNext=%b, stream=%s", messages.hasNext(), this));
@@ -881,7 +904,7 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 if (previousPartition != NO_PARTITION && entry.partition() != previousPartition)
                 {
-                    flush(previousPartition, requestOffset, previousOffset + 1);
+                    flush(previousPartition, requestOffset, flushToOffset);
                     requestOffset = fetchOffsets.get(partition);
                 }
                 if (message != null)
@@ -897,8 +920,11 @@ public final class ClientStreamFactory implements StreamFactory
                         message.traceId(),
                         wrap(valueBuffer, message.value()));
                     previousPartition = partition;
-                    previousOffset = offset;
-                    offset++;
+                    if (messagePending && pendingMessageValueOffset == 0)
+                    {
+                            offset++;
+                    }
+                    flushToOffset = offset;
                 }
                 if (message == null
                     || writeableBytes() == 0)
@@ -963,6 +989,37 @@ public final class ClientStreamFactory implements StreamFactory
                 if (pendingMessageValueOffset == 0)
                 {
                     flags |= INIT;
+
+                    // Check written message offsets have no gaps for each partition
+                    long previouslyWrittenOffset = lastWrittenOffsetByPartition.get(partition);
+                    previouslyWrittenOffset = previouslyWrittenOffset == NO_OFFSET ? 0L : previouslyWrittenOffset;
+                    if (nextFetchOffset != previouslyWrittenOffset + 1)
+                    {
+                        System.out.println(
+                           format("ERROR flushPreviousMessage: partition=%d, nextFetchOffset=%d, " +
+                                  "previouslyWrittenOffset=%d, stream=%s",
+                                  partition, nextFetchOffset, previouslyWrittenOffset, this));
+                    }
+                    lastWrittenOffsetByPartition.put(partition, nextFetchOffset);
+                    writtenMessageCount++;
+
+                    // Check total of all current offsets == total number of messages written so far
+                    int[] totalMessages = new int[] {0};
+                    lastWrittenOffsetByPartition.values().forEach(v ->
+                    {
+                           totalMessages[0] += v;
+                    });
+                    if (totalMessages[0] != writtenMessageCount)
+                    {
+                        System.out.println(
+                                format("ERROR flushPreviousMessage: writtenMessageCount=%d != totalMessages[0]=%d, " +
+                                        "partition=%d, nextFetchOffset=%d,  " +
+                                        "lastWrittenOffsetByPartition=%s, stream=%s",
+                                        writtenMessageCount, totalMessages[0],
+                                        partition, nextFetchOffset,
+                                        lastWrittenOffsetByPartition, this));
+                    }
+
                     final long oldFetchOffset = this.fetchOffsets.put(partition, nextFetchOffset);
                     doKafkaData(applicationReply, applicationReplyId, pendingMessageTraceId, applicationReplyPadding, flags,
                                 compacted ? pendingMessageKey : null,
