@@ -871,7 +871,7 @@ public final class ClientStreamFactory implements StreamFactory
                 detacher = null;
                 attacher = null;
             }
-            else
+            else if (detacher == null)
             {
                 networkPool.doDetach(topicName, networkAttachId);
             }
@@ -1354,7 +1354,7 @@ public final class ClientStreamFactory implements StreamFactory
 
             budget.incBudget(applicationReplyId, window.credit(), this::dispatchMessages);
 
-            if (deferredDetach != null)
+            if (deferredDetach != null && !budget.hasUnackedBudget(applicationReplyId))
             {
                 deferredDetach.run();
             }

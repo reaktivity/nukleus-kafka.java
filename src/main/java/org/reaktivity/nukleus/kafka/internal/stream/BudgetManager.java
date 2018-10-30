@@ -142,17 +142,20 @@ public class BudgetManager
         @Override
         public void incBudget(long streamId, int credit, Runnable budgetAvailable)
         {
-            boolean gotBudget = false;
-            if (initialBudget == -1)
-            {
-                // very first stream
-                initialBudget = credit;
-                gotBudget = true;
-            }
             GroupStreamBudget streamBudget = streamMap.get(streamId);
+
             if (streamBudget == null)
             {
                 // Ignore initial window of a stream (except the very first stream)
+                if (initialBudget == -1)
+                {
+                    // very first stream
+                    initialBudget = credit;
+                }
+                else
+                {
+                    credit = 0;
+                }
                 streamBudget = new GroupStreamBudget(streamId, budgetAvailable);
                 streamMap.put(streamId, streamBudget);
             }
@@ -160,13 +163,9 @@ public class BudgetManager
             {
                 streamBudget.unackedBudget -= credit;
                 assert streamBudget.unackedBudget >= 0;
-                gotBudget = true;
             }
 
-            if (gotBudget && credit > 0)
-            {
-                moreBudget(credit);
-            }
+            moreBudget(credit);
         }
 
         @Override
