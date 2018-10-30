@@ -59,7 +59,7 @@ public final class TopicMessageDispatcherTest
     PartitionIndex[] partitionIndexes = {partitionIndex1, partitionIndex2};
 
     private TopicMessageDispatcher dispatcher =
-            new TopicMessageDispatcher(partitionIndexes, HeaderValueMessageDispatcher::new);
+            new TopicMessageDispatcher(partitionIndexes, false, HeaderValueMessageDispatcher::new);
 
     @Test
     public void shouldAddDispatcherWithEmptyHeadersAndNullKey()
