@@ -73,6 +73,15 @@ public final class BudgetManagerTest
 
         Budget budget1 = budgetManager.createBudget(1L);
         budget1.incBudget(1L, 100, stream1);
+        context.assertIsSatisfied();
+
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(stream1).run();
+                oneOf(stream2).run();
+            }
+        });
 
         Budget budget2 = budgetManager.createBudget(1L);
         budget2.incBudget(2L, 200, stream2);
@@ -87,7 +96,8 @@ public final class BudgetManagerTest
         context.checking(new Expectations()
         {
             {
-                oneOf(stream1).run();
+                exactly(2).of(stream1).run();
+                oneOf(stream2).run();
             }
         });
 
