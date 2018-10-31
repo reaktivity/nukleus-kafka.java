@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2017 The Reaktivity Project
+ * Copyright 2016-2018 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -35,11 +35,15 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
 
     private final boolean[] cacheNewMessages;
 
+    private final boolean compacted;
+
     protected TopicMessageDispatcher(
         PartitionIndex[] indexes,
+        boolean compacted,
         Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
     {
         this.indexes = indexes;
+        this.compacted = compacted;
         keys = new KeyMessageDispatcher[indexes.length];
         cacheNewMessages = new boolean[indexes.length];
         for (int partition = 0; partition < indexes.length; partition++)
@@ -95,6 +99,10 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         long traceId,
         DirectBuffer value)
     {
+        if (compacted && key == null)
+        {
+            return 0;
+        }
         int result = dispatch(partition, requestOffset, messageOffset, key, headers.headerSupplier(), timestamp,
                 traceId, value);
 
