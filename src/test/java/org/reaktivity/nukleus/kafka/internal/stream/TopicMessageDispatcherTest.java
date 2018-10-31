@@ -56,7 +56,7 @@ public final class TopicMessageDispatcherTest
     private TopicCache topicCache = context.mock(TopicCache.class, "topicCache");
 
     private TopicMessageDispatcher dispatcher =
-            new TopicMessageDispatcher(topicCache, 3, HeaderValueMessageDispatcher::new);
+            new TopicMessageDispatcher(topicCache, 3, false, HeaderValueMessageDispatcher::new);
 
     @Test
     public void shouldAddDispatcherWithEmptyHeadersAndNullKey()

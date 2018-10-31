@@ -36,12 +36,16 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
 
     private final boolean[] cacheNewMessages;
 
+    private final boolean compacted;
+
     protected TopicMessageDispatcher(
         TopicCache cache,
         int partitionCount,
+        boolean compacted,
         Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
     {
         this.cache = cache;
+        this.compacted = compacted;
         keys = new KeyMessageDispatcher[partitionCount];
         cacheNewMessages = new boolean[partitionCount];
         for (int partition = 0; partition < partitionCount; partition++)
@@ -49,7 +53,6 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
             keys[partition] = new KeyMessageDispatcher(createHeaderValueMessageDispatcher);
         }
         headers = new HeadersMessageDispatcher(createHeaderValueMessageDispatcher);
-
     }
 
     @Override
@@ -98,6 +101,10 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         long traceId,
         DirectBuffer value)
     {
+        if (compacted && key == null)
+        {
+            return 0;
+        }
         int result = dispatch(partition, requestOffset, messageOffset, key, headers.headerSupplier(), timestamp,
                 traceId, value);
 
