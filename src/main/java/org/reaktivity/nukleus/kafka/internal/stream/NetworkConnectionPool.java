@@ -2167,7 +2167,9 @@ public final class NetworkConnectionPool
                 cache = new CompactedTopicCache(
                                 partitionCount,
                                 deleteRetentionMs,
-                                messageCache);
+                                messageCache,
+                                clientStreamFactory.counters.cacheHits,
+                                clientStreamFactory.counters.cacheMisses);
             }
             else
             {

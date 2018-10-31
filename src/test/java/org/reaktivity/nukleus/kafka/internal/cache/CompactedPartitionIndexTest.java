@@ -27,6 +27,7 @@ import static org.reaktivity.nukleus.kafka.internal.test.TestUtil.asOctets;
 
 import java.util.Iterator;
 import java.util.NoSuchElementException;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
@@ -35,6 +36,8 @@ import org.jmock.Expectations;
 import org.jmock.integration.junit4.JUnitRuleMockery;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.runners.model.FrameworkMethod;
+import org.junit.runners.model.Statement;
 import org.reaktivity.nukleus.kafka.internal.cache.CompactedPartitionIndex.EntryImpl;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
@@ -103,7 +106,9 @@ public final class CompactedPartitionIndexTest
             .build();
 
     private DirectBuffer value = asBuffer("value");
-    private final MessageFW messageRO = new MessageFW();
+
+    private AtomicLong cacheHits = new AtomicLong();
+    private AtomicLong cacheMisses = new AtomicLong();
 
     @Rule
     public JUnitRuleMockery context = new JUnitRuleMockery()
@@ -111,9 +116,25 @@ public final class CompactedPartitionIndexTest
         {
             messageCache = mock(MessageCache.class);
         }
+
+        @Override
+        public Statement apply(
+            Statement base,
+            FrameworkMethod method,
+            Object target)
+        {
+            cacheHits.set(0L);
+            cacheMisses.set(0L);
+            return super.apply(base, method, target);
+        }
     };
 
-    private CompactedPartitionIndex index = new CompactedPartitionIndex(5, TOMBSTONE_LIFETIME_MILLIS, messageCache);
+    private CompactedPartitionIndex index = new CompactedPartitionIndex(
+                                                5,
+                                                TOMBSTONE_LIFETIME_MILLIS,
+                                                messageCache,
+                                                cacheHits::incrementAndGet,
+                                                cacheMisses::incrementAndGet);
 
     @Test
     public void shouldAddAndCacheNewMessage()
@@ -174,6 +195,8 @@ public final class CompactedPartitionIndexTest
         Thread.sleep(future - currentTimeMillis() + TOMBSTONE_LIFETIME_MILLIS);
         iterator = index.entries(0L, null);
         assertEquals(2L, iterator.next().offset());
+        assertEquals(1, cacheHits.get());
+        assertEquals(0, cacheMisses.get());
     }
 
     @Test
@@ -375,6 +398,10 @@ public final class CompactedPartitionIndexTest
                 will(returnValue(0));
                 oneOf(messageCache).put(124, 457, asBuffer("key2"), emptyHeaders, value);
                 will(returnValue(1));
+                oneOf(messageCache).get(with(0), with(any(MessageFW.class)));
+                will(returnValue(anyMessage));
+                oneOf(messageCache).get(with(1), with(any(MessageFW.class)));
+                will(returnValue(null));
             }
         });
         index.add(0L, 0L, 123, 456, asBuffer("key1"), emptyHeaders, value, true);
@@ -385,6 +412,31 @@ public final class CompactedPartitionIndexTest
         entry = index.getEntry(asOctets("key2"));
         assertEquals(1L, entry.offset());
         assertEquals(1, entry.messageHandle());
+        assertEquals(1, cacheHits.get());
+        assertEquals(1, cacheMisses.get());
+    }
+
+    @Test
+    public void shouldGetOffsetsForExistingKeysWithoutIncrementingCacheHitsMisses()
+    {
+        context.checking(new Expectations()
+        {
+            {
+                oneOf(messageCache).put(123, 456, asBuffer("key1"), emptyHeaders, value);
+                will(returnValue(0));
+                oneOf(messageCache).put(124, 457, asBuffer("key2"), emptyHeaders, value);
+                will(returnValue(1));
+            }
+        });
+        index.add(0L, 0L, 123, 456, asBuffer("key1"), emptyHeaders, value, true);
+        index.add(0L, 1L, 124, 457, asBuffer("key2"), emptyHeaders, value, true);
+        long offset = index.getOffset(asOctets("key1"));
+        assertEquals(0L, offset);
+        offset = index.getOffset(asOctets("key2"));
+        assertEquals(1L, offset);
+
+        assertEquals(0, cacheHits.get());
+        assertEquals(0, cacheMisses.get());
     }
 
     @Test
@@ -598,7 +650,7 @@ public final class CompactedPartitionIndexTest
                 oneOf(messageCache).put(125, 458, asBuffer("key3"), emptyHeaders, value);
                 will(returnValue(2));
                 oneOf(messageCache).get(with(1), with(any(MessageFW.class)));
-                will(returnValue(messageRO));
+                will(returnValue(anyMessage));
             }
         });
         index.add(0L, 101L, 123, 456, asBuffer("key1"), emptyHeaders, value, true);
@@ -733,6 +785,8 @@ public final class CompactedPartitionIndexTest
                 oneOf(messageCache).put(124, 457, asBuffer("key2"), emptyHeaders, value);
                 will(returnValue(1));
                 oneOf(messageCache).release(0);
+                oneOf(messageCache).get(with(1), with(any(MessageFW.class)));
+                will(returnValue(anyMessage));
             }
         });
 

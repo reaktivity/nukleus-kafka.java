@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.function.LongSupplier;
 
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
@@ -46,6 +47,8 @@ public class CompactedPartitionIndex implements PartitionIndex
     static final int MAX_INVALID_ENTRIES = 10000;
 
     private final MessageCache messageCache;
+    private final LongSupplier cacheHits;
+    private final LongSupplier cacheMisses;
     private final MessageFW messageRO = new MessageFW();
     private final HeadersFW headersRO = new HeadersFW();
     private final long tombstoneLifetimeMillis;
@@ -69,11 +72,15 @@ public class CompactedPartitionIndex implements PartitionIndex
     public CompactedPartitionIndex(
         int initialCapacity,
         int tombstoneLifetimeMillis,
-        MessageCache messageCache)
+        MessageCache messageCache,
+        LongSupplier cacheHits,
+        LongSupplier cacheMisses)
     {
         this.entriesByKey = new HashMap<>(initialCapacity);
         this.entries = new ArrayList<EntryImpl>(initialCapacity);
         this.messageCache = messageCache;
+        this.cacheHits = cacheHits;
+        this.cacheMisses = cacheMisses;
         this.tombstoneLifetimeMillis = tombstoneLifetimeMillis;
     }
 
@@ -191,14 +198,28 @@ public class CompactedPartitionIndex implements PartitionIndex
         OctetsFW key)
     {
         buffer.wrap(key.buffer(), key.offset(), key.sizeof());
-        return entriesByKey.get(buffer);
+        Entry result = entriesByKey.get(buffer);
+        if (result != null)
+        {
+            MessageFW message = messageCache.get(result.messageHandle(), messageRO);
+            if (message != null)
+            {
+                cacheHits.getAsLong();
+            }
+            else
+            {
+                cacheMisses.getAsLong();
+            }
+        }
+        return result;
     }
 
     @Override
     public long getOffset(
         OctetsFW key)
     {
-        Entry entry = getEntry(key);
+        buffer.wrap(key.buffer(), key.offset(), key.sizeof());
+        Entry entry = entriesByKey.get(buffer);
         return entry == null ? NO_OFFSET : entry.offset();
     }
 
@@ -428,10 +449,12 @@ public class CompactedPartitionIndex implements PartitionIndex
                 if (message == null)
                 {
                     hasNext = false;
+                    cacheMisses.getAsLong();
                     break;
                 }
                 else if (headersRO.wrap(message.headers()).matches(headerConditions))
                 {
+                    cacheHits.getAsLong();
                     break;
                 }
                 else

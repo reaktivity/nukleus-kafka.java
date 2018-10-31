@@ -24,7 +24,6 @@ import static org.reaktivity.nukleus.kafka.internal.cache.MessageCache.NO_MESSAG
 import static org.reaktivity.nukleus.kafka.internal.memory.MemoryManager.OUT_OF_MEMORY;
 
 import java.nio.ByteBuffer;
-import java.util.concurrent.atomic.AtomicLong;
 
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
@@ -33,8 +32,6 @@ import org.jmock.Expectations;
 import org.jmock.integration.junit4.JUnitRuleMockery;
 import org.junit.Rule;
 import org.junit.Test;
-import org.junit.runners.model.FrameworkMethod;
-import org.junit.runners.model.Statement;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
@@ -63,32 +60,15 @@ public final class DefaultMessageCacheTest
             .value(value, 0, value.capacity())
             .build();
 
-    private AtomicLong cacheHits = new AtomicLong();
-    private AtomicLong cacheMisses = new AtomicLong();
-
     @Rule
     public JUnitRuleMockery context = new JUnitRuleMockery()
     {
         {
             memoryManager = mock(MemoryManager.class);
         }
-
-        @Override
-        public Statement apply(
-            Statement base,
-            FrameworkMethod method,
-            Object target)
-        {
-            cacheHits.set(0L);
-            cacheMisses.set(0L);
-            return super.apply(base, method, target);
-        }
     };
 
-    private MessageCache cache = new DefaultMessageCache(
-            memoryManager,
-            cacheHits::incrementAndGet,
-            cacheMisses::incrementAndGet);
+    private MessageCache cache = new DefaultMessageCache(memoryManager);
 
     @Test
     public void shouldNotPutMessageWhenExceedsCacheSize()
@@ -175,14 +155,12 @@ public final class DefaultMessageCacheTest
         MessageFW message = cache.get(handle, messageRO);
         assertEquals(123, message.timestamp());
         assertEquals(456, message.traceId());
-        assertEquals(1, cacheHits.get());
     }
 
     @Test
     public void shouldReturnNullFromGetWithNoMessageHandle()
     {
         assertNull(cache.get(NO_MESSAGE, messageRO));
-        assertEquals(1, cacheMisses.get());
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
@@ -365,8 +343,6 @@ public final class DefaultMessageCacheTest
         cache.release(handle2);
         int handle5 = cache.put(127, 460, key, headers, value);
         assertEquals(handle2, handle5);
-        assertEquals(5, cacheHits.get());
-        assertEquals(2, cacheMisses.get());
     }
 
     @Test

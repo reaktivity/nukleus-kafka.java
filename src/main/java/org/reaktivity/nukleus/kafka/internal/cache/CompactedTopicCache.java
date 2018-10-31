@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.cache;
 
 import java.util.Iterator;
+import java.util.function.LongSupplier;
 
 import org.agrona.DirectBuffer;
 import org.agrona.collections.Long2LongHashMap;
@@ -39,13 +40,16 @@ public class CompactedTopicCache implements TopicCache
     public CompactedTopicCache(
         int partitionCount,
         int deleteRetentionMs,
-        MessageCache messageCache)
+        MessageCache messageCache,
+        LongSupplier cacheHits,
+        LongSupplier cacheMisses
+        )
     {
         this.messageCache = messageCache;
         indexes = new CompactedPartitionIndex[partitionCount];
         for (int i = 0; i < partitionCount; i++)
         {
-            indexes[i] = new CompactedPartitionIndex(1000, deleteRetentionMs, messageCache);
+            indexes[i] = new CompactedPartitionIndex(1000, deleteRetentionMs, messageCache, cacheHits, cacheMisses);
         }
         messageIterator = new MessageIterator(partitionCount);
     }

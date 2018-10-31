@@ -71,7 +71,7 @@ public class CachingProactiveFetchIT
     public void shouldReceiveCompactedHistoricalMessagesFromCacheWhenProactiveMessageCachingIsEnabled() throws Exception
     {
         k3po.finish();
-        assertEquals(4, counters.cacheHits()); // 2
+        assertEquals(2, counters.cacheHits());
     }
 
     @Test
@@ -84,7 +84,7 @@ public class CachingProactiveFetchIT
     public void shouldReceiveHistoricalMessageMatchingHeaderFromCache() throws Exception
     {
         k3po.finish();
-        assertEquals(6, counters.cacheHits()); // 4
+        assertEquals(2, counters.cacheHits());
     }
 
 }
