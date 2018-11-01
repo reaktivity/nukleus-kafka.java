@@ -161,7 +161,7 @@ public class FetchLimitsIT
     @ScriptProperty({
         "networkAccept \"nukleus://target/streams/kafka\"",
         "applicationConnectWindow \"355\"",
-        "messageOffset \"2\""
+        "messageOffset \"3\""
     })
     public void shouldSkipRecordBatchExceedingMaxPartitionBytes() throws Exception
     {

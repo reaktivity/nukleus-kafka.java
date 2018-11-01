@@ -77,6 +77,37 @@ public class CachingProactiveFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/compacted.delivers.compacted.messages/client",
+        "${server}/compacted.delivers.compacted.messages/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveCompactedMessages() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_ONE_UNSUBSCRIBED");
+        k3po.awaitBarrier("SECOND_LIVE_FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/compacted.delivers.deleted.messages/client",
+        "${server}/compacted.delivers.deleted.messages/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveCompactedDeletedMessagesFromCache() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_ONE_UNSUBSCRIBED");
+        k3po.awaitBarrier("SECOND_LIVE_FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
+        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/compacted.header.message.multiple.clients/client",
         "${server}/compacted.header.first.matches/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -85,6 +116,17 @@ public class CachingProactiveFetchIT
     {
         k3po.finish();
         assertEquals(2, counters.cacheHits());
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/compacted.message.subscribed.to.key/client",
+        "${server}/compacted.messages/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveLastMatchingMessageOnlyFromCacheWhenSubscribedByKey() throws Exception
+    {
+        k3po.finish();
     }
 
 }

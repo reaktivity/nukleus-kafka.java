@@ -127,40 +127,6 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/compacted.delivers.deleted.messages/client",
-        "${server}/compacted.delivers.deleted.messages/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCompactedDeletedMessages() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_ONE_UNSUBSCRIBED");
-        k3po.awaitBarrier("SECOND_LIVE_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        k3po.notifyBarrier("DELIVER_SECOND_LIVE_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.delivers.compacted.messages/client",
-        "${server}/compacted.delivers.compacted.messages/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCompactedMessages() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_ONE_UNSUBSCRIBED");
-        k3po.awaitBarrier("SECOND_LIVE_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        k3po.notifyBarrier("DELIVER_SECOND_LIVE_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
         "${client}/compacted.header.messages.and.tombstone/client",
         "${server}/compacted.header.matches.removed.in.subsequent.response/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -309,17 +275,6 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/compacted.messages/client",
-        "${server}/compacted.messages/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCompactedAdjacentMessages() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
         "${client}/compacted.messages.with.null.key/client",
         "${server}/compacted.messages.with.null.key/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -341,30 +296,6 @@ public class FetchIT
         k3po.awaitBarrier("ROUTED_CLIENT");
         k3po.awaitBarrier("RECEIVED_NEXT_FETCH_REQUEST");
         k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.message.subscribed.to.key/client",
-        "${server}/compacted.messages/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveLastMatchingMessageOnlyWhenSubscribedByKey() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.message.subscribed.to.key/client",
-        "${server}/compacted.messages/server"})
-    @ScriptProperty({"networkAccept \"nukleus://target/streams/kafka\"",
-                     "applicationConnectWindow 25",
-                     "applicationConnectPadding 10"})
-    public void shouldReceiveLastMatchingMessageSkippingMessageLargerThanWindow() throws Exception
-    {
         k3po.finish();
     }
 
@@ -938,7 +869,7 @@ public class FetchIT
         "${client}/record.batch.ends.with.deleted.record/client",
         "${server}/record.batch.ends.with.deleted.record/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldUseLastOffsetFromRecordBatch() throws Exception
+    public void shouldDeliverFromRecordBatchEndingWithDeletedRecord() throws Exception
     {
         k3po.finish();
     }
