@@ -4,7 +4,7 @@ before_install:
   - rm ~/.m2/settings.xml
   - git clone https://github.com/cmebarrow/nukleus-kafka.spec
   - cd nukleus-kafka.spec
-  - git checkout cpu_cache_hits_2
+  - git checkout cpu_cache_hits_3_immediate_dispatch
   - mvn clean install -DskipTests
   - cd ..
 jdk:
