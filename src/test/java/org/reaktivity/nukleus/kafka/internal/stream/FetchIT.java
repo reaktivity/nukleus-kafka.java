@@ -320,6 +320,17 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/compacted.messages.with.null.key/client",
+        "${server}/compacted.messages.with.null.key/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveCompactedMessagesWithNullKey() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/compacted.messages.tombstone.repeated/client",
         "${server}/compacted.messages.tombstone.repeated/server"})
     @ScriptProperty({ "networkAccept \"nukleus://target/streams/kafka\"",

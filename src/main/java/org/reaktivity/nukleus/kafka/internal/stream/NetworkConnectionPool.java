@@ -2250,6 +2250,7 @@ public final class NetworkConnectionPool
 
             this.dispatcher = new TopicMessageDispatcher(
                     partitionIndexes,
+                    compacted,
                     compacted ? CompactedHeaderValueMessageDispatcher::new : HeaderValueMessageDispatcher::new);
 
             // Cache only messages matching route header conditions
