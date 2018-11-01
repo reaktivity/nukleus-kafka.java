@@ -95,8 +95,6 @@ public final class ClientStreamFactory implements StreamFactory
 
     public static final long INTERNAL_ERRORS_TO_LOG = 100;
 
-    private final UnsafeBuffer compareBuffer1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-    private final UnsafeBuffer compareBuffer2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     private final UnsafeBuffer keyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
     private final UnsafeBuffer valueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
@@ -568,20 +566,7 @@ public final class ClientStreamFactory implements StreamFactory
 
         private MessageConsumer streamState;
 
-        private final DirectBuffer pendingMessageKeyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-        private final DirectBuffer pendingMessageValueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-
-        private boolean messagePending;
         private boolean dispatchBlocked;
-        private DirectBuffer pendingMessageKey;
-        private long pendingMessageTimestamp;
-        private long pendingMessageTraceId;
-        private DirectBuffer pendingMessageValue;
-        private int pendingMessageValueOffset;
-        private int pendingMessageValueLimit;
-        private long pendingMessageOffset = NO_OFFSET;
-        private int pendingMessagePartition = NO_PARTITION;
-        private int pendingBudget;
 
         int fragmentedMessageBytesWritten;
         int fragmentedMessageLength;
@@ -644,7 +629,7 @@ public final class ClientStreamFactory implements StreamFactory
                 networkPool.doDetach(topicName, networkAttachId);
             }
             networkAttachId = UNATTACHED;
-            budget.closing(applicationReplyId, pendingBudget);
+            budget.closing(applicationReplyId, 0);
             Runnable detach = reattach ? this::doDeferredDetachWithReattach : this::doDeferredDetach;
             if (budget.hasUnackedBudget(applicationReplyId))
             {
@@ -672,20 +657,6 @@ public final class ClientStreamFactory implements StreamFactory
             {
                 progressStartOffset = fetchOffsets.get(partition);
                 progressEndOffset = progressStartOffset;
-            }
-            if (compacted && (subscribedByKey || equals(key, pendingMessageKey)))
-            {
-                // This message replaces the last one
-                if (messagePending && fragmentedMessageBytesWritten == 0)
-                {
-                    messagePending = false;
-                    dispatchBlocked = false;
-                    budget.incBudget(applicationReplyId, pendingBudget, NOOP);
-                }
-            }
-            else
-            {
-                flushPreviousMessage(partition, messageStartOffset);
             }
 
             boolean skipMessage = false;
@@ -741,18 +712,9 @@ public final class ClientStreamFactory implements StreamFactory
                 if (writeableBytes > 0)
                 {
                     int bytesToWrite = Math.min(payloadLength, writeableBytes);
-                    pendingBudget = bytesToWrite + applicationReplyPadding;
-                    budget.decBudget(applicationReplyId, pendingBudget);
+                    int requiredBudget = bytesToWrite + applicationReplyPadding;
+                    budget.decBudget(applicationReplyId, requiredBudget);
 
-                    pendingMessageKey = wrap(pendingMessageKeyBuffer, key);
-                    pendingMessageTimestamp = timestamp;
-                    pendingMessageTraceId = traceId;
-                    pendingMessageValue = wrap(pendingMessageValueBuffer, value);
-                    pendingMessageValueOffset = fragmentedMessageBytesWritten;
-                    pendingMessageValueLimit = pendingMessageValueOffset + bytesToWrite;
-                    pendingMessageOffset = messageStartOffset;
-                    pendingMessagePartition = partition;
-                    messagePending = true;
                     if (bytesToWrite < payloadLength)
                     {
                         dispatchBlocked = true;
@@ -761,6 +723,16 @@ public final class ClientStreamFactory implements StreamFactory
                     {
                         result |= MessageDispatcher.FLAGS_DELIVERED;
                     }
+
+                    writeMessage(
+                        partition,
+                        messageStartOffset,
+                        traceId,
+                        key,
+                        timestamp,
+                        value,
+                        fragmentedMessageBytesWritten,
+                        fragmentedMessageBytesWritten + bytesToWrite);
                 }
                 else
                 {
@@ -778,9 +750,9 @@ public final class ClientStreamFactory implements StreamFactory
             long requestOffset,
             long nextFetchOffset)
         {
-            flushPreviousMessage(partition, nextFetchOffset);
             long startOffset = progressStartOffset;
             long endOffset = progressEndOffset;
+
             if (startOffset == NO_OFFSET)
             {
                 // dispatch was not called
@@ -812,7 +784,6 @@ public final class ClientStreamFactory implements StreamFactory
                 progressHandler.handle(partition, oldFetchOffset, endOffset);
             }
             progressStartOffset = NO_OFFSET;
-            pendingMessageOffset = NO_OFFSET;
             dispatchBlocked = false;
             fragmentedMessageDispatched = false;
         }
@@ -1004,69 +975,61 @@ public final class ClientStreamFactory implements StreamFactory
                         buffer.capacity());
         }
 
-        private void flushPreviousMessage(
+        private void writeMessage(
                 int partition,
-                long nextFetchOffset)
+                long messageStartOffset,
+                long traceId,
+                DirectBuffer key,
+                long timestamp,
+                DirectBuffer value,
+                int valueOffset,
+                int valueLimit)
         {
-            if (messagePending)
+            byte flags = value == null || value.capacity() == valueLimit
+                    ? FIN : 0;
+
+            long nextOffset = messageStartOffset + 1;
+
+            if (valueOffset == 0)
             {
-                assert partition == pendingMessagePartition :
-                        format(
-                            "Internal Error: pendingMessagePartition=%d differs from partition=%d, " +
-                            "nextFetchOffset=%d, stream=%s\n",
-                            pendingMessagePartition,
-                            partition,
-                            nextFetchOffset,
-                            this);
+                flags |= INIT;
 
-                byte flags = pendingMessageValue == null || pendingMessageValue.capacity() == pendingMessageValueLimit
-                        ? FIN : 0;
+                final long oldFetchOffset = this.fetchOffsets.put(partition, nextOffset);
+                doKafkaData(applicationReply, applicationReplyId, traceId, applicationReplyPadding, flags,
+                            compacted ? key : null,
+                            timestamp, value, valueLimit, fetchOffsets);
+                this.fetchOffsets.put(partition, oldFetchOffset);
+            }
+            else
+            {
+                doKafkaDataContinuation(applicationReply, applicationReplyId, traceId,
+                        applicationReplyPadding, flags, value, valueOffset,
+                        valueLimit);
+            }
 
-                if (pendingMessageValueOffset == 0)
+            if (Flags.fin(flags))
+            {
+                fragmentedMessageBytesWritten = 0;
+                fragmentedMessageOffset = NO_OFFSET;
+                fragmentedMessagePartition = NO_PARTITION;
+                fragmentedMessageLength = 0;
+                progressEndOffset = nextOffset;
+
+                final long oldFetchOffset = this.fetchOffsets.put(partition, nextOffset);
+                progressHandler.handle(partition, oldFetchOffset, nextOffset);
+            }
+            else
+            {
+                if (fragmentedMessagePartition == NO_PARTITION)
                 {
-                    flags |= INIT;
-
-                    final long oldFetchOffset = this.fetchOffsets.put(partition, nextFetchOffset);
-                    doKafkaData(applicationReply, applicationReplyId, pendingMessageTraceId, applicationReplyPadding, flags,
-                                compacted ? pendingMessageKey : null,
-                                pendingMessageTimestamp, pendingMessageValue, pendingMessageValueLimit, fetchOffsets);
-                    this.fetchOffsets.put(partition, oldFetchOffset);
+                    // Store full message length to verify it remains consistent
+                    fragmentedMessageLength = value.capacity();
                 }
-                else
-                {
-                    doKafkaDataContinuation(applicationReply, applicationReplyId, pendingMessageTraceId,
-                            applicationReplyPadding, flags, pendingMessageValue, pendingMessageValueOffset,
-                            pendingMessageValueLimit);
-                }
-
-                messagePending = false;
-                if (Flags.fin(flags))
-                {
-                    fragmentedMessageBytesWritten = 0;
-                    fragmentedMessageOffset = NO_OFFSET;
-                    fragmentedMessagePartition = NO_PARTITION;
-                    fragmentedMessageLength = 0;
-                    progressEndOffset = nextFetchOffset;
-
-                    final long oldFetchOffset = this.fetchOffsets.put(partition, nextFetchOffset);
-                    progressHandler.handle(partition, oldFetchOffset, nextFetchOffset);
-                }
-                else
-                {
-                    if (fragmentedMessagePartition == NO_PARTITION)
-                    {
-                        // Store full message length to verify it remains consistent
-                        fragmentedMessageLength = pendingMessageValue.capacity();
-                    }
-                    fragmentedMessageBytesWritten += (pendingMessageValueLimit - pendingMessageValueOffset);
-                    fragmentedMessageOffset = pendingMessageOffset;
-                    fragmentedMessagePartition = partition;
-                    fragmentedMessageDispatched = true;
-                    progressEndOffset = pendingMessageOffset;
-
-                    final long oldFetchOffset = this.fetchOffsets.put(partition, pendingMessageOffset);
-                    progressHandler.handle(partition, oldFetchOffset, pendingMessageOffset);
-                }
+                fragmentedMessageBytesWritten += (valueLimit - valueOffset);
+                fragmentedMessageOffset = messageStartOffset;
+                fragmentedMessagePartition = partition;
+                fragmentedMessageDispatched = true;
+                progressEndOffset = messageStartOffset;
             }
         }
 
@@ -1302,26 +1265,6 @@ public final class ClientStreamFactory implements StreamFactory
             {
                 deferredDetach.run();
             }
-        }
-
-        private boolean equals(DirectBuffer buffer1, DirectBuffer buffer2)
-        {
-            boolean result = false;
-            if (buffer1 == buffer2)
-            {
-                result = true;
-            }
-            else if (buffer1 == null || buffer2 == null)
-            {
-                result = false;
-            }
-            else
-            {
-                compareBuffer1.wrap(buffer1);
-                compareBuffer2.wrap(buffer2);
-                result = compareBuffer1.equals(compareBuffer2);
-            }
-            return result;
         }
 
         private void handleReset(
