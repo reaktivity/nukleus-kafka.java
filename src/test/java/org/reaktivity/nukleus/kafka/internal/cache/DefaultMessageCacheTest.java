@@ -20,7 +20,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
-import static org.reaktivity.nukleus.kafka.internal.cache.DefaultMessageCache.NO_MESSAGE;
+import static org.reaktivity.nukleus.kafka.internal.cache.MessageCache.NO_MESSAGE;
 import static org.reaktivity.nukleus.kafka.internal.memory.MemoryManager.OUT_OF_MEMORY;
 
 import java.nio.ByteBuffer;

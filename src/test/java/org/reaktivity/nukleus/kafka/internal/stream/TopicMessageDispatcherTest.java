@@ -38,7 +38,7 @@ import org.jmock.Expectations;
 import org.jmock.integration.junit4.JUnitRuleMockery;
 import org.junit.Rule;
 import org.junit.Test;
-import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex;
+import org.reaktivity.nukleus.kafka.internal.cache.TopicCache;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 
@@ -48,18 +48,27 @@ public final class TopicMessageDispatcherTest
 
     private final ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW> headersRW =
             new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW());
-       private final MutableDirectBuffer headersBuffer = new UnsafeBuffer(new byte[1000]);
+    private final MutableDirectBuffer headersBuffer = new UnsafeBuffer(new byte[1000]);
+
+    private TopicCache topicCache;
 
     @Rule
-    public JUnitRuleMockery context = new JUnitRuleMockery();
+    public JUnitRuleMockery context = new JUnitRuleMockery()
+    {
+        {
+            topicCache = mock(TopicCache.class, "topicCache");
 
-    private PartitionIndex partitionIndex1 = context.mock(PartitionIndex.class, "partitionIndex1");
-    private PartitionIndex partitionIndex2 = context.mock(PartitionIndex.class, "partitionIndex2");
+            checking(new Expectations()
+            {
+                {
+                    allowing(topicCache).compacted();
+                }
+            });
+        }
+    };
 
-    PartitionIndex[] partitionIndexes = {partitionIndex1, partitionIndex2};
-
-    private TopicMessageDispatcher dispatcher =
-            new TopicMessageDispatcher(partitionIndexes, false, HeaderValueMessageDispatcher::new);
+    private final TopicMessageDispatcher dispatcher =
+            new TopicMessageDispatcher(topicCache, 3);
 
     @Test
     public void shouldAddDispatcherWithEmptyHeadersAndNullKey()
@@ -140,7 +149,7 @@ public final class TopicMessageDispatcherTest
                 oneOf(child2).dispatch(with(1), with(10L), with(12L), with((DirectBuffer) null),
                         with(headers.headerSupplier()), with(timestamp), with(traceId), with((DirectBuffer) null));
                 will(returnValue(FLAGS_DELIVERED));
-                oneOf(partitionIndex2).add(with(10L), with(12L), with(timestamp), with(traceId),
+                oneOf(topicCache).add(with(1), with(10L), with(12L), with(timestamp), with(traceId),
                         with((DirectBuffer) null), with(headers), with((DirectBuffer) null), with(false));
             }
         });
@@ -172,19 +181,19 @@ public final class TopicMessageDispatcherTest
                 will(returnValue(FLAGS_DELIVERED));
                 oneOf(child2).dispatch(with(0), with(10L), with(12L), with(bufferMatching("key1")),
                         with(headers.headerSupplier()), with(timestamp1), with(traceId), with((DirectBuffer) null));
-                oneOf(partitionIndex1).getEntry(with(10L), with(asOctets("key1")));
-                oneOf(partitionIndex1).nextOffset();
+                oneOf(topicCache).getOffset(with(0), with(asOctets("key1")));
+                oneOf(topicCache).nextOffset(0);
                 will(returnValue(0L));
-                oneOf(partitionIndex1).add(with(10L), with(12L), with(timestamp1), with(traceId),
+                oneOf(topicCache).add(with(0), with(10L), with(12L), with(timestamp1), with(traceId),
                         with(bufferMatching("key1")), with(headers), with((DirectBuffer) null), with(false));
 
                 oneOf(child3).dispatch(with(1), with(10L), with(13L), with(bufferMatching("key2")),
                         with(headers.headerSupplier()), with(timestamp2), with(traceId), with((DirectBuffer) null));
                 will(returnValue(FLAGS_DELIVERED));
-                oneOf(partitionIndex2).getEntry(with(10L), with(asOctets("key2")));
-                oneOf(partitionIndex2).nextOffset();
+                oneOf(topicCache).getOffset(with(1), with(asOctets("key2")));
+                oneOf(topicCache).nextOffset(1);
                 will(returnValue(0L));
-                oneOf(partitionIndex2).add(with(10L), with(13L), with(timestamp1), with(traceId),
+                oneOf(topicCache).add(with(1), with(10L), with(13L), with(timestamp1), with(traceId),
                         with(bufferMatching("key2")), with(headers), with((DirectBuffer) null), with(false));
             }
         });
@@ -211,13 +220,13 @@ public final class TopicMessageDispatcherTest
         context.checking(new Expectations()
         {
             {
-                oneOf(partitionIndex2).getEntry(with(10L), with(asOctets("key2")));
-                oneOf(partitionIndex2).nextOffset();
+                oneOf(topicCache).getOffset(with(1), with(asOctets("key2")));
+                oneOf(topicCache).nextOffset(with(1));
                 will(returnValue(0L));
                 oneOf(routeMatcher).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key2")),
                         with(headers.headerSupplier()), with(timestamp), with(0L), with((DirectBuffer) null));
                 will(returnValue(MessageDispatcher.FLAGS_MATCHED));
-                oneOf(partitionIndex2).add(with(10L), with(12L), with(timestamp), with(0L),
+                oneOf(topicCache).add(with(1), with(10L), with(12L), with(timestamp), with(0L),
                         with(bufferMatching("key2")), with(headers), with((DirectBuffer) null), with(false));
             }
         });
@@ -242,13 +251,13 @@ public final class TopicMessageDispatcherTest
         context.checking(new Expectations()
         {
             {
-                oneOf(partitionIndex2).getEntry(with(10L), with(asOctets("key2")));
-                oneOf(partitionIndex2).nextOffset();
+                oneOf(topicCache).getOffset(with(1), with(asOctets("key2")));
+                oneOf(topicCache).nextOffset(with(1));
                 will(returnValue(0L));
                 oneOf(routeMatcher).dispatch(with(1), with(10L), with(12L), with(bufferMatching("key2")),
                         with(headers.headerSupplier()), with(timestamp), with(0L), with((DirectBuffer) null));
                 will(returnValue(MessageDispatcher.FLAGS_MATCHED));
-                oneOf(partitionIndex2).add(with(10L), with(12L), with(timestamp), with(0L),
+                oneOf(topicCache).add(with(1), with(10L), with(12L), with(timestamp), with(0L),
                         with(bufferMatching("key2")), with(headers), with((DirectBuffer) null), with(true));
             }
         });
@@ -274,13 +283,13 @@ public final class TopicMessageDispatcherTest
         context.checking(new Expectations()
         {
             {
-                oneOf(partitionIndex2).getEntry(with(10L), with(asOctets("key2")));
-                oneOf(partitionIndex2).nextOffset();
+                oneOf(topicCache).getOffset(with(1), with(asOctets("key2")));
+                oneOf(topicCache).nextOffset(with(1));
                 will(returnValue(0L));
                 oneOf(routeMatcher).dispatch(with(1), with(10L), with(11L), with(bufferMatching("key2")),
                         with(headers.headerSupplier()), with(timestamp), with(0L), with((DirectBuffer) null));
                 will(returnValue(MessageDispatcher.FLAGS_MATCHED));
-                oneOf(partitionIndex2).add(with(10L), with(11L), with(timestamp), with(0L),
+                oneOf(topicCache).add(with(1), with(10L), with(11L), with(timestamp), with(0L),
                         with(bufferMatching("key2")), with(headers), with((DirectBuffer) null), with(true));
             }
         });
@@ -300,7 +309,7 @@ public final class TopicMessageDispatcherTest
             {
                 oneOf(child1).flush(1, 10L, 12L);
                 oneOf(child2).flush(1, 10L, 12L);
-                oneOf(partitionIndex2).extendNextOffset(10L, 12L);
+                oneOf(topicCache).extendNextOffset(1, 10L, 12L);
             }
         });
         dispatcher.flush(1, 10L, 12L);

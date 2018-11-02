@@ -15,29 +15,20 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import java.util.Iterator;
-
 import org.agrona.DirectBuffer;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
-import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
-public interface PartitionIndex
+/**
+ * A cache of messages for a topic
+ */
+public interface TopicCache extends ImmutableTopicCache
 {
-    public interface Entry
-    {
-        long offset();
+    int NO_MESSAGE = -1;
+    long NO_OFFSET = -1L;
 
-        int messageHandle();
-    }
-
-    /*
-     * Adds the message details to the index, and conditionally caches the whole message
-     * @param cacheIfNew   If true, the message is always cached.
-     *                     If false, the message is cached only if it is historical.
-     */
     void add(
+        int partition,
         long requestOffset,
         long messageStartOffset,
         long timestamp,
@@ -47,23 +38,21 @@ public interface PartitionIndex
         DirectBuffer value,
         boolean cacheIfNew);
 
-    Iterator<Entry> entries(
-        long requestOffset,
-        ListFW<KafkaHeaderFW> headerConditions);
-
-    Entry getEntry(
-        OctetsFW key);
-
-    long getOffset(
-        OctetsFW key);
-
-    long nextOffset();
-
     void extendNextOffset(
+        int partition,
         long requestOffset,
         long lastOffset);
 
-    void startOffset(
-        long startOffset);
+    long getOffset(
+        int partition,
+        OctetsFW key);
 
+    boolean compacted();
+
+    long nextOffset(
+        int partition);
+
+    void startOffset(
+        int partition,
+        long startOffset);
 }

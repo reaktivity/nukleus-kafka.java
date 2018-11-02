@@ -122,40 +122,6 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/compacted.delivers.deleted.messages/client",
-        "${server}/compacted.delivers.deleted.messages/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCompactedDeletedMessages() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_ONE_UNSUBSCRIBED");
-        k3po.awaitBarrier("SECOND_LIVE_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        k3po.notifyBarrier("DELIVER_SECOND_LIVE_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.delivers.compacted.messages/client",
-        "${server}/compacted.delivers.compacted.messages/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCompactedMessages() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_ONE_UNSUBSCRIBED");
-        k3po.awaitBarrier("SECOND_LIVE_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        k3po.notifyBarrier("DELIVER_SECOND_LIVE_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
         "${client}/compacted.historical.empty.message/client",
         "${server}/compacted.empty.message/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -173,8 +139,8 @@ public class CachingFetchIT
     public void shouldReceiveHistoricalMessageMatchingHeaderFirstFromCache() throws Exception
     {
         k3po.finish();
-        assertEquals(1, counters.cacheMisses());
         assertEquals(1, counters.cacheHits());
+        assertEquals(1, counters.cacheMisses());
     }
 
     @Test
@@ -279,12 +245,13 @@ public class CachingFetchIT
     @Specification({
         "${route}/client/controller",
         "${client}/compacted.historical.uses.cached.key.then.zero.offset/client",
-        "${server}/compacted.historical.uses.cached.key.then.zero.offset/server"})
+        "${server}/compacted.historical.uses.zero.offset/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveCompactedMessagesWithUncachedKeyUsingZeroOffset() throws Exception
     {
         k3po.finish();
-        assertEquals(2, counters.cacheMisses());
+        assertEquals(1, counters.cacheHits());
+        assertEquals(0, counters.cacheMisses());
     }
 
     @Test
@@ -319,41 +286,6 @@ public class CachingFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/compacted.messages/client",
-        "${server}/compacted.messages/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveCompactedAdjacentMessages() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.message.subscribed.to.key/client",
-        "${server}/compacted.messages/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveLastMatchingMessageOnlyWhenSubscribedByKey() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.message.subscribed.to.key/client",
-        "${server}/compacted.messages/server"})
-    @ScriptProperty({"networkAccept \"nukleus://target/streams/kafka\"",
-                     "applicationConnectWindow 25",
-                     "applicationConnectPadding 10"})
-    public void shouldReceiveLastMatchingMessageSkippingMessageLargerThanWindow() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
         "${client}/compacted.messages.header/client",
         "${server}/compacted.messages.header/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
@@ -372,7 +304,7 @@ public class CachingFetchIT
     public void shouldReceiveCompactedHistoricalMessagesFromCacheWhenOriginallyReceivedAsLiveMessages() throws Exception
     {
         k3po.finish();
-        assertEquals(1, counters.cacheHits());
+        assertEquals(2, counters.cacheHits());
     }
 
     @Test

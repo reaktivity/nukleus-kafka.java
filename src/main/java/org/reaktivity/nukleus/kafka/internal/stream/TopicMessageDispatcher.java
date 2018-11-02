@@ -15,12 +15,13 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static org.reaktivity.nukleus.kafka.internal.cache.TopicCache.NO_OFFSET;
+
 import java.util.Iterator;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
-import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex;
-import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
+import org.reaktivity.nukleus.kafka.internal.cache.TopicCache;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
@@ -29,24 +30,22 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
     private final KeyMessageDispatcher[] keys;
     private final HeadersMessageDispatcher headers;
     private final BroadcastMessageDispatcher broadcast = new BroadcastMessageDispatcher();
-    private final PartitionIndex[] indexes;
+    private final TopicCache cache;
 
     private final OctetsFW octetsRO = new OctetsFW();
 
     private final boolean[] cacheNewMessages;
 
-    private final boolean compacted;
-
     protected TopicMessageDispatcher(
-        PartitionIndex[] indexes,
-        boolean compacted,
-        Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
+        TopicCache cache,
+        int partitionCount)
     {
-        this.indexes = indexes;
-        this.compacted = compacted;
-        keys = new KeyMessageDispatcher[indexes.length];
-        cacheNewMessages = new boolean[indexes.length];
-        for (int partition = 0; partition < indexes.length; partition++)
+        this.cache = cache;
+        keys = new KeyMessageDispatcher[partitionCount];
+        cacheNewMessages = new boolean[partitionCount];
+        Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher =
+                cache.compacted() ? CompactedHeaderValueMessageDispatcher::new : HeaderValueMessageDispatcher::new;
+        for (int partition = 0; partition < partitionCount; partition++)
         {
             keys[partition] = new KeyMessageDispatcher(createHeaderValueMessageDispatcher);
         }
@@ -58,7 +57,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         int partition,
         long startOffset)
     {
-        indexes[partition].startOffset(startOffset);
+        cache.startOffset(partition, startOffset);
     }
 
     @Override
@@ -99,7 +98,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         long traceId,
         DirectBuffer value)
     {
-        if (compacted && key == null)
+        if (cache.compacted() && key == null)
         {
             return 0;
         }
@@ -117,7 +116,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
 
         if (MessageDispatcher.matched(result))
         {
-            indexes[partition].add(requestOffset, messageOffset, timestamp, traceId, key, headers, value,
+            cache.add(partition, requestOffset, messageOffset, timestamp, traceId, key, headers, value,
                     cacheNewMessages[partition]);
         }
 
@@ -145,13 +144,13 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
                 result |= keyDispatcher.dispatch(partition, requestOffset, messageOffset,
                                                    key, supplyHeader, timestamp, traceId, value);
                 // detect historical message stream
-                long highestOffset = indexes[partition].nextOffset();
+                long highestOffset = cache.nextOffset(partition);
                 if (MessageDispatcher.delivered(result) && messageOffset < highestOffset)
                 {
-                    Entry entry = getEntry(partition, requestOffset, asOctets(key));
+                    long offset = cache.getOffset(partition, asOctets(key));
 
                     // fast-forward to live stream after observing most recent cached offset for message key
-                    if (entry != null  && entry.offset() == messageOffset)
+                    if (offset != NO_OFFSET && offset == messageOffset)
                     {
                         keyDispatcher.flush(partition, requestOffset, highestOffset, key);
                     }
@@ -171,7 +170,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         broadcast.flush(partition, requestOffset, lastOffset);
         keys[partition].flush(partition, requestOffset, lastOffset);
         headers.flush(partition, requestOffset, lastOffset);
-        indexes[partition].extendNextOffset(requestOffset, lastOffset);
+        cache.extendNextOffset(partition, requestOffset, lastOffset);
     }
 
     public void add(
@@ -226,27 +225,6 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         return empty && headers.isEmpty() && broadcast.isEmpty();
     }
 
-    public Entry getEntry(
-        int partition,
-        long requestOffset,
-        OctetsFW key)
-    {
-        return indexes[partition].getEntry(requestOffset, key);
-    }
-
-    public Iterator<Entry> entries(
-        int partition,
-        long requestOffset)
-    {
-        return indexes[partition].entries(requestOffset);
-    }
-
-    public long nextOffset(
-        int partition)
-    {
-        return indexes[partition].nextOffset();
-    }
-
     public void enableProactiveMessageCaching()
     {
         for (int i=0; i < cacheNewMessages.length; i++)
@@ -264,8 +242,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         boolean result = true;
         if (key != null)
         {
-            Entry entry = getEntry(partition, requestOffset, asOctets(key));
-            long expectedOffsetForKey = entry.offset();
+            long expectedOffsetForKey = cache.getOffset(partition, asOctets(key));
             result = messageStartOffset >= expectedOffsetForKey;
         }
         return result;

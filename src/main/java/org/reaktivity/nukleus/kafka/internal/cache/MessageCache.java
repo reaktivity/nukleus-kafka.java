@@ -21,7 +21,7 @@ import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 
 public interface MessageCache
 {
-    int NO_MESSAGE = PartitionIndex.NO_MESSAGE;
+    int NO_MESSAGE = -1;
 
     MessageFW get(
         int messageHandle,
