@@ -2350,6 +2350,7 @@ public final class NetworkConnectionPool
                 if (isLiveByPartition.get(partitionId))
                 {
                     // If we just removed the highest offset then we are no longer on live stream
+                    candidate.offset = MAX_OFFSET;
                     partition = partitions.floor(candidate);
                     if (partition != null && partition.id == partitionId && partition.offset < fetchOffset)
                     {
@@ -2462,31 +2463,33 @@ public final class NetworkConnectionPool
             int partitionId,
             long offset)
         {
-            assert isLiveByPartition.get(partitionId);
-            candidate.id = partitionId;
-            candidate.offset = MAX_OFFSET;
-            NetworkTopicPartition maxOffset = partitions.floor(candidate);
-            assert maxOffset.id == partitionId;
-            assert maxOffset.offset == MAX_OFFSET;
-            partitions.remove(maxOffset);
-
-            NetworkTopicPartition existing = partitions.floor(candidate);
-
-            if (existing != null && existing.id == partitionId && existing.offset == offset)
+            if (isLiveByPartition.get(partitionId))
             {
-                existing.refs++;
-                NetworkTopicPartition floor = partitions.floor(existing);
-                if (floor.id == partitionId && floor.offset != offset)
+                candidate.id = partitionId;
+                candidate.offset = MAX_OFFSET;
+                NetworkTopicPartition maxOffset = partitions.floor(candidate);
+                assert maxOffset.id == partitionId;
+                assert maxOffset.offset == MAX_OFFSET;
+                partitions.remove(maxOffset);
+
+                NetworkTopicPartition existing = partitions.floor(candidate);
+
+                if (existing != null && existing.id == partitionId && existing.offset == offset)
                 {
-                    needsHistoricalByPartition.set(partitionId, true);
+                    existing.refs++;
+                    NetworkTopicPartition floor = partitions.floor(existing);
+                    if (floor.id == partitionId && floor.offset != offset)
+                    {
+                        needsHistoricalByPartition.set(partitionId, true);
+                    }
                 }
-            }
-            else
-            {
-                NetworkTopicPartition partition = maxOffset.clone();
-                partition.offset = offset;
-                partitions.add(partition);
-                needsHistoricalByPartition.set(partition.id, true);
+                else
+                {
+                    NetworkTopicPartition partition = maxOffset.clone();
+                    partition.offset = offset;
+                    partitions.add(partition);
+                    needsHistoricalByPartition.set(partition.id, true);
+                }
             }
         }
 

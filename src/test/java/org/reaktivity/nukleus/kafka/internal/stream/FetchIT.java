@@ -1129,6 +1129,22 @@ public class FetchIT
 
     @Test
     @Specification({
+            "${route}/client/controller",
+            "${client}/unspecified.offset.detached/client",
+            "${server}/high.water.mark.offset.detached/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldFetchFromHighWaterMarkOffsetForStreamingTopicDetached() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("SERVER_DETACH_NOW");
+        k3po.notifyBarrier("CLIENT_DETACH_NOW");
+        k3po.awaitBarrier("CLIENT_START_LIST_OFFSETS_RESPONSE");
+        k3po.notifyBarrier("SERVER_START_LIST_OFFSETS_RESPONSE");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
         "${route}/client/controller",
         "${client}/unspecified.offset.fanout.messages/client",
         "${server}/high.water.mark.offset.messages/server"})
