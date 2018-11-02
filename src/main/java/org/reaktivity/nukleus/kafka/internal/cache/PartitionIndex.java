@@ -32,7 +32,7 @@ public interface PartitionIndex
         int messageHandle();
     }
 
-    /**
+    /*
      * Adds the message details to the index, and conditionally caches the whole message
      * @param cacheIfNew   If true, the message is always cached.
      *                     If false, the message is cached only if it is historical.
