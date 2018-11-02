@@ -48,15 +48,27 @@ public final class TopicMessageDispatcherTest
 
     private final ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW> headersRW =
             new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW());
-       private final MutableDirectBuffer headersBuffer = new UnsafeBuffer(new byte[1000]);
+    private final MutableDirectBuffer headersBuffer = new UnsafeBuffer(new byte[1000]);
+
+    private TopicCache topicCache;
 
     @Rule
-    public JUnitRuleMockery context = new JUnitRuleMockery();
+    public JUnitRuleMockery context = new JUnitRuleMockery()
+    {
+        {
+            topicCache = mock(TopicCache.class, "topicCache");
 
-    private TopicCache topicCache = context.mock(TopicCache.class, "topicCache");
+            checking(new Expectations()
+            {
+                {
+                    allowing(topicCache).compacted();
+                }
+            });
+        }
+    };
 
-    private TopicMessageDispatcher dispatcher =
-            new TopicMessageDispatcher(topicCache, 3, false, HeaderValueMessageDispatcher::new);
+    private final TopicMessageDispatcher dispatcher =
+            new TopicMessageDispatcher(topicCache, 3);
 
     @Test
     public void shouldAddDispatcherWithEmptyHeadersAndNullKey()

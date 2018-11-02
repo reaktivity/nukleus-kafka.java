@@ -48,7 +48,7 @@ import org.reaktivity.nukleus.kafka.internal.KafkaCounters;
 import org.reaktivity.nukleus.kafka.internal.cache.DefaultMessageCache;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
 import org.reaktivity.nukleus.kafka.internal.cache.ImmutableTopicCache;
-import org.reaktivity.nukleus.kafka.internal.cache.ImmutableTopicCache.Message;
+import org.reaktivity.nukleus.kafka.internal.cache.ImmutableTopicCache.MessageRef;
 import org.reaktivity.nukleus.kafka.internal.function.AttachDetailsConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
@@ -830,7 +830,7 @@ public final class ClientStreamFactory implements StreamFactory
 
         private void dispatchMessagesFromCache()
         {
-            Iterator<Message> messages = historicalCache.getMessages(fetchOffsets, fetchKey, headers);
+            Iterator<MessageRef> messages = historicalCache.getMessages(fetchOffsets, fetchKey, headers);
 
             int previousPartition = NO_PARTITION;
             long flushToOffset = NO_OFFSET;
@@ -838,7 +838,7 @@ public final class ClientStreamFactory implements StreamFactory
 
             while (writeableBytes() > 0 && messages.hasNext())
             {
-                Message entry = messages.next();
+                MessageRef entry = messages.next();
                 MessageFW message = entry.message();
                 final int partition = entry.partition();
                 long offset = entry.offset();
@@ -904,7 +904,7 @@ public final class ClientStreamFactory implements StreamFactory
             assert fragmentedMessageOffset != NO_OFFSET;
             assert fragmentedMessagePartition != NO_PARTITION;
 
-            Message entry = historicalCache.getMessage(fragmentedMessagePartition, fragmentedMessageOffset);
+            MessageRef entry = historicalCache.getMessage(fragmentedMessagePartition, fragmentedMessageOffset);
 
             MessageFW message = entry.message();
             final int partition = entry.partition();

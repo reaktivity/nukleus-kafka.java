@@ -28,7 +28,7 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
  */
 public interface ImmutableTopicCache
 {
-    public interface Message
+    public interface MessageRef
     {
         /**
          * @return the offset of this message
@@ -40,19 +40,19 @@ public interface ImmutableTopicCache
         /**
          * @param message
          * @return The message,
-         *         OR null if there are no more messages, in which
-         *         case offset() should be used to fetch further
+         *         OR null if there are no more messages (we are at live offset) or this message is not
+         *         available in the cache; in both cases offset() should be used to fetch further
          *         messages from Kafka.
          */
         MessageFW message();
     }
 
-    Iterator<Message> getMessages(
+    Iterator<MessageRef> getMessages(
         Long2LongHashMap fetchOffsets,
         OctetsFW fetchKey,
         ListFW<KafkaHeaderFW> headers);
 
-    Message getMessage(
+    MessageRef getMessage(
         int partition,
         long offset);
 }

@@ -106,7 +106,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         // Only cache if there are no gaps in observed offsets and we have not yet observed this offset
         if (requestOffset <= validToOffset && messageStartOffset >= validToOffset)
         {
-            validToOffset = Math.max(validToOffset,  messageStartOffset + 1);
+            validToOffset = messageStartOffset + 1;
             if (entry == null)
             {
                 UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[key.capacity()]);

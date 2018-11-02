@@ -29,15 +29,16 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 /**
  * A cache of messages for a topic
  */
-public final class DefaultTopicCache implements TopicCache
+public final class StreamingTopicCache implements TopicCache
 {
-    public static final TopicCache INSTANCE = new DefaultTopicCache();
+    private static final Iterator<MessageRef> EMPTY_ITERATOR = Collections.emptyIterator();
+
+    public static final TopicCache INSTANCE = new StreamingTopicCache();
 
     public final NoMessage noMessage = new NoMessage();
 
-    private static class NoMessage implements Message
+    private static class NoMessage implements MessageRef
     {
-        private int partition;
         private long offset;
 
         @Override
@@ -49,7 +50,8 @@ public final class DefaultTopicCache implements TopicCache
         @Override
         public int partition()
         {
-            return partition;
+            // TODO Auto-generated method stub
+            return 0;
         }
 
         @Override
@@ -58,11 +60,10 @@ public final class DefaultTopicCache implements TopicCache
             return null;
         }
 
-        private Message wrap(
+        private MessageRef wrap(
             int partition,
             long offset)
         {
-            this.partition = partition;
             this.offset = offset;
             return this;
         }
@@ -78,21 +79,27 @@ public final class DefaultTopicCache implements TopicCache
         DirectBuffer key,
         HeadersFW headers,
         DirectBuffer value,
-        boolean cacheNewMessages)
+        boolean cacheIfNew)
     {
     }
 
     @Override
-    public Iterator<Message> getMessages(
+    public boolean compacted()
+    {
+        return false;
+    }
+
+    @Override
+    public Iterator<MessageRef> getMessages(
         Long2LongHashMap fetchOffsets,
         OctetsFW fetchKey,
         ListFW<KafkaHeaderFW> headers)
     {
-        return Collections.emptyIterator();
+        return EMPTY_ITERATOR;
     }
 
     @Override
-    public Message getMessage(
+    public MessageRef getMessage(
         int partition,
         long offset)
     {

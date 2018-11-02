@@ -36,18 +36,15 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
 
     private final boolean[] cacheNewMessages;
 
-    private final boolean compacted;
-
     protected TopicMessageDispatcher(
         TopicCache cache,
-        int partitionCount,
-        boolean compacted,
-        Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
+        int partitionCount)
     {
         this.cache = cache;
-        this.compacted = compacted;
         keys = new KeyMessageDispatcher[partitionCount];
         cacheNewMessages = new boolean[partitionCount];
+        Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher =
+                cache.compacted() ? CompactedHeaderValueMessageDispatcher::new : HeaderValueMessageDispatcher::new;
         for (int partition = 0; partition < partitionCount; partition++)
         {
             keys[partition] = new KeyMessageDispatcher(createHeaderValueMessageDispatcher);
@@ -101,7 +98,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         long traceId,
         DirectBuffer value)
     {
-        if (compacted && key == null)
+        if (cache.compacted() && key == null)
         {
             return 0;
         }

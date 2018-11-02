@@ -36,7 +36,7 @@ public interface TopicCache extends ImmutableTopicCache
         DirectBuffer key,
         HeadersFW headers,
         DirectBuffer value,
-        boolean cacheNewMessages);
+        boolean cacheIfNew);
 
     void extendNextOffset(
         int partition,
@@ -46,6 +46,8 @@ public interface TopicCache extends ImmutableTopicCache
     long getOffset(
         int partition,
         OctetsFW key);
+
+    boolean compacted();
 
     long nextOffset(
         int partition);

@@ -35,7 +35,7 @@ import org.jmock.Sequence;
 import org.jmock.integration.junit4.JUnitRuleMockery;
 import org.junit.Rule;
 import org.junit.Test;
-import org.reaktivity.nukleus.kafka.internal.cache.ImmutableTopicCache.Message;
+import org.reaktivity.nukleus.kafka.internal.cache.ImmutableTopicCache.MessageRef;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
@@ -142,11 +142,11 @@ public final class CompactedTopicCacheTest
         fetchOffsets.put(1,  11L);
         fetchOffsets.put(2,  12L);
 
-        Iterator<Message> messages = cache.getMessages(fetchOffsets, null, null);
+        Iterator<MessageRef> messages = cache.getMessages(fetchOffsets, null, null);
 
         // First message is found in cache from partition 0
         assertTrue(messages.hasNext());
-        Message message = messages.next();
+        MessageRef message = messages.next();
         assertSame(messageRO, message.message());
 
         // cycle through partitions 1,2 and back to 0, no more messages are available in cache
@@ -199,7 +199,7 @@ public final class CompactedTopicCacheTest
         fetchOffsets.put(1,  11L);
         fetchOffsets.put(2,  12L);
 
-        Iterator<Message> messages;
+        Iterator<MessageRef> messages;
 
         for (int i=0; i < 4; i++)
         {
@@ -227,9 +227,9 @@ public final class CompactedTopicCacheTest
         Long2LongHashMap fetchOffsets = new Long2LongHashMap(NO_OFFSET);
         fetchOffsets.put(1, 11L);
 
-        Iterator<Message> messages = cache.getMessages(fetchOffsets, key, null);
+        Iterator<MessageRef> messages = cache.getMessages(fetchOffsets, key, null);
         assertTrue(messages.hasNext());
-        Message message = messages.next();
+        MessageRef message = messages.next();
         assertEquals(21L, message.offset());
     }
 
@@ -248,9 +248,9 @@ public final class CompactedTopicCacheTest
         Long2LongHashMap fetchOffsets = new Long2LongHashMap(NO_OFFSET);
         fetchOffsets.put(1, 3L);
 
-        Iterator<Message> messages = cache.getMessages(fetchOffsets, key, null);
+        Iterator<MessageRef> messages = cache.getMessages(fetchOffsets, key, null);
         assertTrue(messages.hasNext());
-        Message message = messages.next();
+        MessageRef message = messages.next();
         assertEquals(4L, message.offset());
     }
 
@@ -269,9 +269,9 @@ public final class CompactedTopicCacheTest
         Long2LongHashMap fetchOffsets = new Long2LongHashMap(NO_OFFSET);
         fetchOffsets.put(1, 11L);
 
-        Iterator<Message> messages = cache.getMessages(fetchOffsets, key, null);
+        Iterator<MessageRef> messages = cache.getMessages(fetchOffsets, key, null);
         assertTrue(messages.hasNext());
-        Message message = messages.next();
+        MessageRef message = messages.next();
         assertEquals(11L, message.offset());
     }
 

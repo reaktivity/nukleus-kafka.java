@@ -42,8 +42,7 @@ public class CompactedTopicCache implements TopicCache
         int deleteRetentionMs,
         MessageCache messageCache,
         LongSupplier cacheHits,
-        LongSupplier cacheMisses
-        )
+        LongSupplier cacheMisses)
     {
         this.messageCache = messageCache;
         indexes = new CompactedPartitionIndex[partitionCount];
@@ -81,7 +80,13 @@ public class CompactedTopicCache implements TopicCache
     }
 
     @Override
-    public Iterator<Message> getMessages(
+    public boolean compacted()
+    {
+        return true;
+    }
+
+    @Override
+    public Iterator<MessageRef> getMessages(
         Long2LongHashMap fetchOffsets,
         OctetsFW fetchKey,
         ListFW<KafkaHeaderFW> headers)
@@ -97,7 +102,7 @@ public class CompactedTopicCache implements TopicCache
     }
 
     @Override
-    public Message getMessage(
+    public MessageRef getMessage(
         int partition,
         long offset)
     {
@@ -140,7 +145,7 @@ public class CompactedTopicCache implements TopicCache
         indexes[partition].startOffset(startOffset);
     }
 
-    private class MessageImpl implements Message
+    private class MessageImpl implements MessageRef
     {
         private int partition;
         private long offset;
@@ -190,13 +195,13 @@ public class CompactedTopicCache implements TopicCache
         }
     }
 
-    final class KeyedMessageIterator implements Iterator<Message>
+    final class KeyedMessageIterator implements Iterator<MessageRef>
     {
         private final MessageImpl message = new MessageImpl();
         private final MessageImpl lastMessage = new MessageImpl();
         private int remainingEntries;
 
-        Iterator<Message> reset(
+        Iterator<MessageRef> reset(
             Long2LongHashMap fetchOffsets,
             OctetsFW fetchKey,
             ListFW<KafkaHeaderFW> headerConditions)
@@ -238,9 +243,9 @@ public class CompactedTopicCache implements TopicCache
         }
 
         @Override
-        public Message next()
+        public MessageRef next()
         {
-            Message result;
+            MessageRef result;
             switch(remainingEntries)
             {
             case 2:
@@ -257,7 +262,7 @@ public class CompactedTopicCache implements TopicCache
         }
     }
 
-    final class MessageIterator implements Iterator<Message>
+    final class MessageIterator implements Iterator<MessageRef>
     {
         private final Iterator<Entry>[]  iterators;
         private int partition = -1;
@@ -270,7 +275,7 @@ public class CompactedTopicCache implements TopicCache
             iterators = new Iterator[partitionCount];
         }
 
-        Iterator<Message> reset(
+        Iterator<MessageRef> reset(
             Long2LongHashMap fetchOffsets,
             ListFW<KafkaHeaderFW> headerConditions)
         {
@@ -305,7 +310,7 @@ public class CompactedTopicCache implements TopicCache
         }
 
         @Override
-        public Message next()
+        public MessageRef next()
         {
             return message.wrap(partition, iterators[partition].next());
         }

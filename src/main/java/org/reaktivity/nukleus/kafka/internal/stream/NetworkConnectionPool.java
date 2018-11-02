@@ -63,7 +63,7 @@ import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaRefCounters;
 import org.reaktivity.nukleus.kafka.internal.cache.CompactedTopicCache;
-import org.reaktivity.nukleus.kafka.internal.cache.DefaultTopicCache;
+import org.reaktivity.nukleus.kafka.internal.cache.StreamingTopicCache;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
 import org.reaktivity.nukleus.kafka.internal.cache.TopicCache;
 import org.reaktivity.nukleus.kafka.internal.function.Attachable;
@@ -2173,14 +2173,12 @@ public final class NetworkConnectionPool
             }
             else
             {
-                cache = DefaultTopicCache.INSTANCE;
+                cache = StreamingTopicCache.INSTANCE;
             }
 
             this.dispatcher = new TopicMessageDispatcher(
                     cache,
-                    partitionCount,
-                    compacted,
-                    compacted ? CompactedHeaderValueMessageDispatcher::new : HeaderValueMessageDispatcher::new);
+                    partitionCount);
 
             // Cache only messages matching route header conditions
             List<ListFW<KafkaHeaderFW>> routeHeadersList = routeHeadersByTopic.remove(topicName);
