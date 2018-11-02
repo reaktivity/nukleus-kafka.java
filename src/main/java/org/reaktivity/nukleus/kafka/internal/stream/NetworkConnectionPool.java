@@ -44,7 +44,6 @@ import java.util.TreeSet;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 import java.util.function.IntToLongFunction;
 import java.util.function.LongSupplier;
@@ -63,17 +62,16 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaRefCounters;
-import org.reaktivity.nukleus.kafka.internal.cache.CompactedPartitionIndex;
-import org.reaktivity.nukleus.kafka.internal.cache.DefaultPartitionIndex;
+import org.reaktivity.nukleus.kafka.internal.cache.CompactedTopicCache;
+import org.reaktivity.nukleus.kafka.internal.cache.StreamingTopicCache;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
-import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex;
-import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
+import org.reaktivity.nukleus.kafka.internal.cache.TopicCache;
+import org.reaktivity.nukleus.kafka.internal.function.Attachable;
 import org.reaktivity.nukleus.kafka.internal.function.IntLongConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
-import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.RequestHeaderFW;
@@ -110,11 +108,12 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.FrameFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.TcpBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
-import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
 import org.reaktivity.nukleus.kafka.internal.util.DelayedTaskScheduler;
 
 public final class NetworkConnectionPool
 {
+    static final long MAX_OFFSET = Long.MAX_VALUE;
+
     private static final short FETCH_API_VERSION = 5;
     private static final short FETCH_API_KEY = 1;
     private static final short LIST_OFFSETS_API_KEY = 2;
@@ -124,7 +123,6 @@ public final class NetworkConnectionPool
     private static final short DESCRIBE_CONFIGS_API_VERSION = 0;
     private static final short DESCRIBE_CONFIGS_API_KEY = 32;
 
-    private static final long MAX_OFFSET = Long.MAX_VALUE;
     private static final long NO_OFFSET = -1L;
 
     private static final byte RESOURCE_TYPE_TOPIC = 2;
@@ -137,7 +135,6 @@ public final class NetworkConnectionPool
     private static final byte[] ANY_IP_ADDR = new byte[4];
 
     private static final int KAFKA_SERVER_DEFAULT_DELETE_RETENTION_MS = 86400000;
-    private static final PartitionIndex DEFAULT_PARTITION_INDEX = new DefaultPartitionIndex();
 
     private static final LongSupplier NO_COUNTER = Long.valueOf(0L)::longValue;
 
@@ -265,10 +262,6 @@ public final class NetworkConnectionPool
 
     private final MessageCache messageCache;
     private final boolean forceProactiveMessageCache;
-    private final UnsafeBuffer keyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-    private final UnsafeBuffer valueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-    private final MessageFW messageRO = new MessageFW();
-    private final HeadersFW headersRO = new HeadersFW();
     private final KafkaHeadersIterator headersIterator = new KafkaHeadersIterator();
 
     private AbstractFetchConnection[] connections = new LiveFetchConnection[0];
@@ -279,7 +272,6 @@ public final class NetworkConnectionPool
     private final Map<String, TopicMetadata> topicMetadataByName;
     private final Map<String, NetworkTopic> topicsByName;
     private final Map<String, List<ListFW<KafkaHeaderFW>>> routeHeadersByTopic;
-    private final Int2ObjectHashMap<Consumer<Long2LongHashMap>> detachersById;
 
     private final List<NetworkTopicPartition> partitionsWorkList = new ArrayList<NetworkTopicPartition>();
     private final LongArrayList offsetsWorkList = new LongArrayList();
@@ -313,29 +305,20 @@ public final class NetworkConnectionPool
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
         this.routeHeadersByTopic = new HashMap<>();
-        this.detachersById = new Int2ObjectHashMap<>();
         this.readIdleTimeout = readIdleTimeout;
         this.metadataBackoffMillis = new Backoff(10, 10_000);
     }
 
     int doAttach(
         String topicName,
-        Long2LongHashMap fetchOffsets,
-        int partitionHash,
-        OctetsFW fetchKey,
-        ListFW<KafkaHeaderFW> headers,
-        MessageDispatcher dispatcher,
-        IntSupplier supplyWindow,
-        Consumer<PartitionProgressHandler> progressHandlerConsumer,
-        Consumer<Consumer<Consumer<Boolean>>> finishAttachConsumer,
+        Attachable attachable,
         Consumer<KafkaError> onMetadataError)
     {
         final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
         final int newAttachId = nextAttachId++;
         metadata.doAttach(
                 newAttachId,
-                m -> doAttach(topicName, fetchOffsets, partitionHash, fetchKey, headers, newAttachId,
-                dispatcher, supplyWindow, progressHandlerConsumer, finishAttachConsumer, onMetadataError, m));
+                m -> doAttach(topicName, attachable, onMetadataError, m));
 
         if (metadataConnection == null)
         {
@@ -348,15 +331,7 @@ public final class NetworkConnectionPool
 
     private void doAttach(
         String topicName,
-        Long2LongHashMap fetchOffsets,
-        int partitionHash,
-        OctetsFW fetchKey,
-        ListFW<KafkaHeaderFW> headers,
-        int attachId,
-        MessageDispatcher dispatcher,
-        IntSupplier supplyWindow,
-        Consumer<PartitionProgressHandler> progressHandlerConsumer,
-        Consumer<Consumer<Consumer<Boolean>>> finishAttachConsumer,
+        Attachable attachable,
         Consumer<KafkaError> onMetadataError,
         TopicMetadata topicMetadata)
     {
@@ -368,44 +343,18 @@ public final class NetworkConnectionPool
             onMetadataError.accept(errorCode);
             break;
         case NONE:
-            // For streaming topics default to receiving only live (new) messages
-            final long defaultOffset = fetchOffsets.isEmpty() && !topicMetadata.compacted ? MAX_OFFSET : 0L;
-
-            if (fetchKey != null)
-            {
-                int partitionId = BufferUtil.partition(partitionHash, topicMetadata.partitionCount());
-                long offset = fetchOffsets.computeIfAbsent(0L, v -> defaultOffset);
-                long lowestOffset = topicMetadata.firstAvailableOffset(partitionId);
-                offset = Math.max(offset,  lowestOffset);
-                if (partitionId != 0)
-                {
-                    fetchOffsets.remove(0L);
-                }
-                fetchOffsets.put(partitionId, offset);
-            }
-            else
-            {
-                final int partitionCount = topicMetadata.partitionCount();
-                for (int partition=0; partition < partitionCount; partition++)
-                {
-                    long offset = fetchOffsets.computeIfAbsent(partition, v -> defaultOffset);
-                    long lowestOffset = topicMetadata.firstAvailableOffset(partition);
-                    offset = Math.max(offset,  lowestOffset);
-                    fetchOffsets.put(partition, offset);
-                }
-            }
             final NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
                     name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, false,
                             topicMetadata.deleteRetentionMs, false));
-            finishAttachConsumer.accept(attachDetailsConsumer ->
-            {
-                progressHandlerConsumer.accept(
-                        topic.doAttach(fetchOffsets, fetchKey, headers, dispatcher, supplyWindow));
-                detachersById.put(attachId, f -> topic.doDetach(f, fetchKey, headers, dispatcher, supplyWindow));
-                doConnections(topicMetadata);
-                attachDetailsConsumer.accept(topicMetadata.compacted);
-            });
-
+            doConnections(topicMetadata);
+            attachable.onAttachPrepared(
+                    topic::doAttach,
+                    topic::doDetach,
+                    topic::handleProgress,
+                    topic.cache,
+                    topicMetadata.partitionCount(),
+                    topicMetadata.compacted,
+                    topicMetadata::firstAvailableOffset);
             break;
         default:
             throw new RuntimeException(format("Unexpected errorCode %s from metadata query for topic %s",
@@ -550,26 +499,17 @@ public final class NetworkConnectionPool
 
     void doDetach(
         String topicName,
-        int attachId,
-        Long2LongHashMap fetchOffsets)
+        int attachId)
     {
-        final Consumer<Long2LongHashMap> detacher = detachersById.remove(attachId);
-        if (detacher == null)
+        TopicMetadata metadata = topicMetadataByName.get(topicName);
+        if (metadata != null)
         {
-            TopicMetadata metadata = topicMetadataByName.get(topicName);
-            if (metadata != null)
+            metadata.doDetach(attachId);
+            if (!metadata.hasConsumers())
             {
-                metadata.doDetach(attachId);
-                if (!metadata.hasConsumers())
-                {
-                    topicMetadataByName.remove(topicName);
-                    topicsByName.remove(topicName);
-                }
+                topicMetadataByName.remove(topicName);
+                topicsByName.remove(topicName);
             }
-        }
-        else
-        {
-            detacher.accept(fetchOffsets);
         }
     }
 
@@ -1658,7 +1598,6 @@ public final class NetworkConnectionPool
             IntToLongFunction getRequestedOffset)
         {
             int partitionCount = 0;
-            int originalEncodeLimit = encodeLimit;
 
             NetworkTopic topic = topicsByName.get(topicName);
             if (topic.needsHistorical())
@@ -1712,15 +1651,6 @@ public final class NetworkConnectionPool
                         topic.partitions.addAll(partitionsWorkList);
                         partitionsWorkList.clear();
                     }
-
-                    partitionCount = topic.satisfyPartitionRequestsFromCache(
-                            partitionCount,
-                            getRequestedOffset,
-                            setRequestedOffset,
-                            NetworkConnectionPool.this.encodeBuffer,
-                            originalEncodeLimit,
-                            encodeLimit,
-                            l -> encodeLimit = l);
                 }
 
             }
@@ -2201,6 +2131,7 @@ public final class NetworkConnectionPool
         private final Set<IntSupplier> windowSuppliers;
         final NavigableSet<NetworkTopicPartition> partitions;
         private final NetworkTopicPartition candidate;
+        private final TopicCache cache;
         private final TopicMessageDispatcher dispatcher;
         private final PartitionProgressHandler progressHandler;
 
@@ -2230,28 +2161,24 @@ public final class NetworkConnectionPool
             this.partitions = new TreeSet<>();
             this.candidate = new NetworkTopicPartition();
             this.progressHandler = this::handleProgress;
-            PartitionIndex[] partitionIndexes = new PartitionIndex[partitionCount];
 
             if (compacted)
             {
-                for (int i = 0; i < partitionCount; i++)
-                {
-                    partitionIndexes[i] = new CompactedPartitionIndex(1000, deleteRetentionMs,
-                            messageCache);
-                }
+                cache = new CompactedTopicCache(
+                                partitionCount,
+                                deleteRetentionMs,
+                                messageCache,
+                                clientStreamFactory.counters.cacheHits,
+                                clientStreamFactory.counters.cacheMisses);
             }
             else
             {
-                for (int i = 0; i < partitionCount; i++)
-                {
-                    partitionIndexes[i] = DEFAULT_PARTITION_INDEX;
-                }
+                cache = StreamingTopicCache.INSTANCE;
             }
 
             this.dispatcher = new TopicMessageDispatcher(
-                    partitionIndexes,
-                    compacted,
-                    compacted ? CompactedHeaderValueMessageDispatcher::new : HeaderValueMessageDispatcher::new);
+                    cache,
+                    partitionCount);
 
             // Cache only messages matching route header conditions
             List<ListFW<KafkaHeaderFW>> routeHeadersList = routeHeadersByTopic.remove(topicName);
@@ -2309,12 +2236,6 @@ public final class NetworkConnectionPool
                 {
                     final int partitionId = (int) keys.nextValue();
                     long fetchOffset = fetchOffsets.get(partitionId);
-                    long cachedOffset = this.dispatcher.entries(partitionId, fetchOffset).next().offset();
-                    if (cachedOffset > fetchOffset)
-                    {
-                        fetchOffsets.put(partitionId, cachedOffset);
-                        fetchOffset = cachedOffset;
-                    }
                     attachToPartition(partitionId, fetchOffset, 1);
                 }
             }
@@ -2323,15 +2244,6 @@ public final class NetworkConnectionPool
                 int fetchKeyPartition = fetchOffsets.keySet().iterator().next().intValue();
                 this.dispatcher.add(fetchKey, fetchKeyPartition, headersIterator, dispatcher);
                 long fetchOffset = fetchOffsets.get(fetchKeyPartition);
-                if (compacted)
-                {
-                    long cachedOffset = this.dispatcher.getEntry(fetchKeyPartition, fetchOffset, fetchKey).offset();
-                    if (cachedOffset > fetchOffset)
-                    {
-                        fetchOffsets.put(fetchKeyPartition, cachedOffset);
-                        fetchOffset = cachedOffset;
-                    }
-                }
                 attachToPartition(fetchKeyPartition, fetchOffset, 1);
             }
 
@@ -2468,117 +2380,6 @@ public final class NetworkConnectionPool
                 writableBytes = writableBytes == Integer.MAX_VALUE ? 0 : writableBytes;
             }
             return writableBytes;
-        }
-
-        int satisfyPartitionRequestsFromCache(
-            final int partitionCount,
-            IntToLongFunction getRequestedOffset,
-            IntLongConsumer setRequestedOffset,
-            MutableDirectBuffer encodeBuffer,
-            int encodeOffset,
-            final int encodeLimit,
-            IntConsumer setNewLimit)
-        {
-            int newPartitionCount = partitionCount;
-            int newEncodeLimit = encodeLimit;
-            for (int i=0; i < partitionCount; i++)
-            {
-                PartitionRequestFW request = partitionRequestRO.wrap(encodeBuffer, encodeOffset, encodeLimit);
-                assert request.limit() <= encodeLimit;
-                int partitionId = request.partitionId();
-                final long fetchOffset = request.fetchOffset();
-                long logStartOffset = request.logStartOffset();
-                int maxBytes = request.maxBytes();
-                int dispatchedBytes = 0;
-                boolean expectingWindow = false;
-                long newOffset = fetchOffset;
-                Iterator<Entry> entries = dispatcher.entries(partitionId, fetchOffset);
-                boolean partitionRequestNeeded = false;
-                boolean flushNeeded = false;
-                final long requestOffset = getRequestedOffset.applyAsLong(partitionId);
-
-                while(entries.hasNext() && dispatchedBytes < maxBytes)
-                {
-                    Entry entry = entries.next();
-                    newOffset = entry.offset();
-                    MessageFW message = messageCache.get(entry.message(), messageRO);
-                    if (message == null)
-                    {
-                        partitionRequestNeeded = true;
-                        break;
-                    }
-                    else
-                    {
-                        DirectBuffer key = wrap(keyBuffer, message.key());
-                        DirectBuffer value = wrap(valueBuffer,  message.value());
-                        HeadersFW headers = headersRO.wrap(message.headers().buffer(),  message.headers().offset(),
-                                message.headers().limit());
-
-                        // call the dispatch variant which does not attempt to re-cache the message
-                        int result = dispatcher.dispatch(partitionId, requestOffset, newOffset, key, headers.headerSupplier(),
-                                message.timestamp(), message.traceId(), value);
-
-                        if (MessageDispatcher.expectingWindow(result))
-                        {
-                            expectingWindow = true;
-                        }
-
-                        if (value != null && expectingWindow)
-                        {
-                            dispatchedBytes += value.capacity();
-                        }
-                        flushNeeded = true;
-                        newOffset++;
-                    }
-                } // end for each partition index entry
-
-                if (!partitionRequestNeeded)
-                {
-                    clientStreamFactory.counters.cacheHits.getAsLong();
-
-                    if (!entries.hasNext())
-                    {
-                        //  End of the partition index reached, advance to latest offset
-                        newOffset = dispatcher.nextOffset(partitionId);
-                    }
-
-                    // Remove the partition request by shifting up the subsequent ones
-                    encodeBuffer.putBytes(encodeOffset,  encodeBuffer, request.limit(), encodeLimit);
-                    newEncodeLimit -= request.sizeof();
-                    newPartitionCount--;
-                }
-                else
-                {
-                    clientStreamFactory.counters.cacheMisses.getAsLong();
-
-                    // Update the partition request if needed
-                    if (newOffset > fetchOffset)
-                    {
-                        request = partitionRequestRW.wrap(encodeBuffer, encodeOffset, newEncodeLimit)
-                            .partitionId(partitionId)
-                            .fetchOffset(newOffset)
-                            .logStartOffset(logStartOffset)
-                            .maxBytes(maxBytes)
-                            .build();
-                    }
-                    encodeOffset = request.limit();
-                }
-
-                if (flushNeeded || newOffset > fetchOffset)
-                {
-                    dispatcher.flush(partitionId, requestOffset, newOffset);
-                    setRequestedOffset.accept(partitionId, newOffset);
-                }
-            } // end for each partition
-
-            assert encodeLimit <= encodeLimit;
-
-            if (newEncodeLimit < encodeLimit)
-            {
-                setNewLimit.accept(newEncodeLimit);
-            }
-
-            return newPartitionCount;
         }
 
         private void handleProgress(

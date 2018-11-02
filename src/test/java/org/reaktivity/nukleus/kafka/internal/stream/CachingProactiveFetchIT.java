@@ -30,6 +30,7 @@ import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.test.KafkaCountersRule;
 import org.reaktivity.reaktor.test.ReaktorRule;
+import org.reaktivity.reaktor.test.annotation.Configure;
 
 public class CachingProactiveFetchIT
 {
@@ -70,7 +71,38 @@ public class CachingProactiveFetchIT
     public void shouldReceiveCompactedHistoricalMessagesFromCacheWhenProactiveMessageCachingIsEnabled() throws Exception
     {
         k3po.finish();
-        assertEquals(1, counters.cacheHits());
+        assertEquals(2, counters.cacheHits());
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/compacted.delivers.compacted.messages/client",
+        "${server}/compacted.delivers.compacted.messages/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveCompactedMessages() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_ONE_UNSUBSCRIBED");
+        k3po.awaitBarrier("SECOND_LIVE_FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/compacted.delivers.deleted.messages/client",
+        "${server}/compacted.delivers.deleted.messages/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveCompactedDeletedMessagesFromCache() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_ONE_UNSUBSCRIBED");
+        k3po.awaitBarrier("SECOND_LIVE_FETCH_REQUEST_RECEIVED");
+        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
+        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
+        k3po.finish();
     }
 
     @Test
@@ -79,10 +111,22 @@ public class CachingProactiveFetchIT
         "${client}/compacted.header.message.multiple.clients/client",
         "${server}/compacted.header.first.matches/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @Configure(name=KafkaConfiguration.READ_IDLE_TIMEOUT_PROPERTY, value="200000")
     public void shouldReceiveHistoricalMessageMatchingHeaderFromCache() throws Exception
     {
         k3po.finish();
         assertEquals(2, counters.cacheHits());
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/compacted.message.subscribed.to.key/client",
+        "${server}/compacted.messages/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldReceiveLastMatchingMessageOnlyFromCacheWhenSubscribedByKey() throws Exception
+    {
+        k3po.finish();
     }
 
 }

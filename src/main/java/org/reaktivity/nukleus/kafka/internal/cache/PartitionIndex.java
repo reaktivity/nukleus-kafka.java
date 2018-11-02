@@ -19,19 +19,24 @@ import java.util.Iterator;
 
 import org.agrona.DirectBuffer;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public interface PartitionIndex
 {
-    int NO_MESSAGE = -1;
-
     public interface Entry
     {
         long offset();
 
-        int message();
+        int messageHandle();
     }
 
+    /**
+     * Adds the message details to the index, and conditionally caches the whole message
+     * @param cacheIfNew   If true, the message is always cached.
+     *                     If false, the message is cached only if it is historical.
+     */
     void add(
         long requestOffset,
         long messageStartOffset,
@@ -40,13 +45,16 @@ public interface PartitionIndex
         DirectBuffer key,
         HeadersFW headers,
         DirectBuffer value,
-        boolean cacheNewMessages);
+        boolean cacheIfNew);
 
     Iterator<Entry> entries(
-        long requestOffset);
+        long requestOffset,
+        ListFW<KafkaHeaderFW> headerConditions);
 
     Entry getEntry(
-        long requestOffset,
+        OctetsFW key);
+
+    long getOffset(
         OctetsFW key);
 
     long nextOffset();

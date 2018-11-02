@@ -26,7 +26,6 @@ import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
 import org.agrona.MutableDirectBuffer;
-import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
@@ -45,8 +44,6 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     private final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
     private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools;
     private final DelayedTaskScheduler scheduler;
-    private final Long2LongHashMap groupBudget;
-    private final Long2LongHashMap groupMembers;
 
     private RouteManager router;
     private MutableDirectBuffer writeBuffer;
@@ -71,8 +68,6 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
         this.correlations = new Long2ObjectHashMap<>();
         this.connectionPools = connectionPools;
         this.scheduler = scheduler;
-        this.groupBudget = new Long2LongHashMap(-1);
-        this.groupMembers = new Long2LongHashMap(-1);
     }
 
     @Override
@@ -166,6 +161,6 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
 
         return new ClientStreamFactory(config, router, writeBuffer, bufferPool, memoryManager, supplyStreamId, supplyTrace,
                 supplyCorrelationId, supplyCounter, correlations, connectionPools, connectPoolFactoryConsumer, scheduler,
-                counters, groupBudget, groupMembers);
+                counters);
     }
 }

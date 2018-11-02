@@ -17,32 +17,42 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 
 import org.agrona.DirectBuffer;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
-import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
+import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
-public interface MessageCache
+/**
+ * A cache of messages for a topic
+ */
+public interface TopicCache extends ImmutableTopicCache
 {
     int NO_MESSAGE = -1;
+    long NO_OFFSET = -1L;
 
-    MessageFW get(
-        int messageHandle,
-        MessageFW message);
-
-    int put(
+    void add(
+        int partition,
+        long requestOffset,
+        long messageStartOffset,
         long timestamp,
         long traceId,
         DirectBuffer key,
         HeadersFW headers,
-        DirectBuffer value);
+        DirectBuffer value,
+        boolean cacheIfNew);
 
-    int release(
-        int messageHandle);
+    void extendNextOffset(
+        int partition,
+        long requestOffset,
+        long lastOffset);
 
-    int replace(
-        int messageHandle,
-        long timestamp,
-        long traceId,
-        DirectBuffer key,
-        HeadersFW headers,
-        DirectBuffer value);
+    long getOffset(
+        int partition,
+        OctetsFW key);
 
+    boolean compacted();
+
+    long nextOffset(
+        int partition);
+
+    void startOffset(
+        int partition,
+        long startOffset);
 }

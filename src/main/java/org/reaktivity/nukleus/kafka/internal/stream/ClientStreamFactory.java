@@ -19,6 +19,8 @@ import static java.lang.Integer.toHexString;
 import static java.lang.String.format;
 import static java.lang.System.identityHashCode;
 import static java.util.Objects.requireNonNull;
+import static org.reaktivity.nukleus.kafka.internal.cache.TopicCache.NO_OFFSET;
+import static org.reaktivity.nukleus.kafka.internal.stream.BudgetManager.NO_BUDGET;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.wrap;
 import static org.reaktivity.nukleus.kafka.internal.util.Flags.FIN;
@@ -29,6 +31,7 @@ import java.util.Map;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.IntToLongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 
@@ -44,12 +47,16 @@ import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaCounters;
 import org.reaktivity.nukleus.kafka.internal.cache.DefaultMessageCache;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
+import org.reaktivity.nukleus.kafka.internal.cache.ImmutableTopicCache;
+import org.reaktivity.nukleus.kafka.internal.cache.ImmutableTopicCache.MessageRef;
+import org.reaktivity.nukleus.kafka.internal.function.AttachDetailsConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
+import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.Varint64FW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.PartitionResponseFW;
@@ -74,8 +81,6 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class ClientStreamFactory implements StreamFactory
 {
-    private static final long UNSET = -1;
-
     private static final long[] ZERO_OFFSETS = new long[] {0L};
 
     private static final PartitionProgressHandler NOOP_PROGRESS_HANDLER = (p, f, n) ->
@@ -83,10 +88,15 @@ public final class ClientStreamFactory implements StreamFactory
 
     };
 
+    private static final Runnable NOOP = () ->
+    {
+
+    };
+
     public static final long INTERNAL_ERRORS_TO_LOG = 100;
 
-    private final UnsafeBuffer workBuffer1 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-    private final UnsafeBuffer workBuffer2 = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    private final UnsafeBuffer keyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
+    private final UnsafeBuffer valueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
 
     private final RouteFW routeRO = new RouteFW();
     final FrameFW frameRO = new FrameFW();
@@ -118,7 +128,10 @@ public final class ClientStreamFactory implements StreamFactory
     private final OctetsFW messageKeyRO = new OctetsFW();
     private final OctetsFW messageValueRO = new OctetsFW();
 
+    private final HeadersFW headersRO = new HeadersFW();
+
     final RouteManager router;
+    final BudgetManager budgetManager;
     final LongSupplier supplyStreamId;
     final LongSupplier supplyTrace;
     final LongSupplier supplyCorrelationId;
@@ -131,8 +144,6 @@ public final class ClientStreamFactory implements StreamFactory
 
     final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
 
-    private final Long2LongHashMap groupBudget;
-    private final Long2LongHashMap groupMembers;
 
     private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools;
     private final int fetchMaxBytes;
@@ -154,15 +165,14 @@ public final class ClientStreamFactory implements StreamFactory
         Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools,
         Consumer<BiFunction<String, Long, NetworkConnectionPool>> setConnectionPoolFactory,
         DelayedTaskScheduler scheduler,
-        KafkaCounters counters,
-        Long2LongHashMap groupBudget,
-        Long2LongHashMap groupMembers)
+        KafkaCounters counters)
     {
         this.fetchMaxBytes = config.fetchMaxBytes();
         this.fetchPartitionMaxBytes = config.fetchPartitionMaxBytes();
         this.forceProactiveMessageCache = config.messageCacheProactive();
         this.readIdleTimeout = config.readIdleTimeout();
         this.router = requireNonNull(router);
+        this.budgetManager = new BudgetManager();
         this.writeBuffer = requireNonNull(writeBuffer);
         this.bufferPool = requireNonNull(bufferPool);
         this.messageCache = new DefaultMessageCache(requireNonNull(memoryManager));
@@ -172,8 +182,6 @@ public final class ClientStreamFactory implements StreamFactory
         this.supplyCounter = requireNonNull(supplyCounter);
         this.correlations = requireNonNull(correlations);
         this.connectionPools = connectionPools;
-        this.groupBudget = groupBudget;
-        this.groupMembers = groupMembers;
         setConnectionPoolFactory.accept((networkName, ref) ->
             new NetworkConnectionPool(this, networkName, ref, fetchMaxBytes, fetchPartitionMaxBytes, bufferPool,
                     messageCache, supplyCounter, forceProactiveMessageCache, readIdleTimeout));
@@ -530,6 +538,8 @@ public final class ClientStreamFactory implements StreamFactory
 
     private final class ClientAcceptStream implements MessageDispatcher
     {
+        private static final int NO_PARTITION = -1;
+
         private static final int UNATTACHED = -1;
 
         private final MessageConsumer applicationThrottle;
@@ -546,42 +556,38 @@ public final class ClientStreamFactory implements StreamFactory
         private MessageConsumer applicationReply;
         private long applicationReplyId;
         private int applicationReplyPadding;
+        private long groupId;
+        private Budget budget = NO_BUDGET;
 
         private int networkAttachId = UNATTACHED;
         private boolean compacted;
-        private PartitionProgressHandler progressHandler;
+        private PartitionProgressHandler progressHandler = NOOP_PROGRESS_HANDLER;
+        private PartitionProgressHandler savedProgressHandler;
 
         private MessageConsumer streamState;
 
-        private final DirectBuffer pendingMessageKeyBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-        private final DirectBuffer pendingMessageValueBuffer = new UnsafeBuffer(EMPTY_BYTE_ARRAY);
-
-        private boolean messagePending;
         private boolean dispatchBlocked;
-        private DirectBuffer pendingMessageKey;
-        private long pendingMessageTimestamp;
-        private long pendingMessageTraceId;
-        private DirectBuffer pendingMessageValue;
-        private int pendingMessageValueOffset;
-        private int pendingMessageValueLimit;
-        private long pendingMessageOffset = UNSET;
-        private int pendingBudget;
 
         int fragmentedMessageBytesWritten;
         int fragmentedMessageLength;
-        long fragmentedMessageOffset = UNSET;
-        long fragmentedMessagePartition = UNSET;
+        long fragmentedMessageOffset = NO_OFFSET;
+        int fragmentedMessagePartition = NO_PARTITION;
         boolean fragmentedMessageDispatched;
 
-        private long progressStartOffset = UNSET;
+        private long progressStartOffset = NO_OFFSET;
         private long progressEndOffset;
-        private boolean firstWindow = true;
-        private long groupId;
-        private Budget budget;
-
-        private Consumer<Consumer<Boolean>> attacher;
 
         private String topicName;
+        private ListFW<KafkaHeaderFW> headers;
+        private OctetsFW fetchKey;
+        private int hashCode;
+
+        private AttachDetailsConsumer attacher;
+        private AttachDetailsConsumer detacher;
+        private Runnable deferredDetach;
+        private ImmutableTopicCache historicalCache;
+        private Runnable dispatchState = () ->
+        { };
 
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
@@ -593,7 +599,6 @@ public final class ClientStreamFactory implements StreamFactory
             this.networkPool = networkPool;
             this.fetchOffsets = new Long2LongHashMap(-1L);
             this.streamState = this::beforeBegin;
-            budget = new StreamBudget();
         }
 
         @Override
@@ -614,16 +619,25 @@ public final class ClientStreamFactory implements StreamFactory
             boolean reattach)
         {
             progressHandler = NOOP_PROGRESS_HANDLER;
-            networkPool.doDetach(topicName, networkAttachId, fetchOffsets);
-            networkAttachId = UNATTACHED;
-            budget.leaveGroup();
-            if (reattach)
+            if (detacher != null && attacher == null)
             {
-                doEnd(applicationReply, applicationReplyId, ZERO_OFFSETS);
+                invoke(detacher);
+                detacher = null;
             }
             else
             {
-                doAbort(applicationReply, applicationReplyId);
+                networkPool.doDetach(topicName, networkAttachId);
+            }
+            networkAttachId = UNATTACHED;
+            budget.closing(applicationReplyId, 0);
+            Runnable detach = reattach ? this::doDeferredDetachWithReattach : this::doDeferredDetach;
+            if (budget.hasUnackedBudget(applicationReplyId))
+            {
+                deferredDetach = detach;
+            }
+            else
+            {
+                detach.run();
             }
         }
 
@@ -639,29 +653,15 @@ public final class ClientStreamFactory implements StreamFactory
             DirectBuffer value)
         {
             int result = MessageDispatcher.FLAGS_MATCHED;
-            if (progressStartOffset == UNSET)
+            if (progressStartOffset == NO_OFFSET)
             {
                 progressStartOffset = fetchOffsets.get(partition);
                 progressEndOffset = progressStartOffset;
             }
-            if (compacted && (subscribedByKey || equals(key, pendingMessageKey)))
-            {
-                // This message replaces the last one
-                if (messagePending && fragmentedMessageBytesWritten == 0)
-                {
-                    messagePending = false;
-                    dispatchBlocked = false;
-                    budget.incApplicationReplyBudget(pendingBudget);
-                }
-            }
-            else
-            {
-                flushPreviousMessage(partition, messageStartOffset);
-            }
 
             boolean skipMessage = false;
 
-            if (fragmentedMessageOffset != UNSET)
+            if (fragmentedMessageOffset != NO_OFFSET)
             {
                if (fragmentedMessagePartition != partition)
                {
@@ -707,23 +707,14 @@ public final class ClientStreamFactory implements StreamFactory
                 assert payloadLength >= 0 : format("fragmentedMessageBytesWritten = %d payloadLength = %d",
                         fragmentedMessageBytesWritten, payloadLength);
 
-                int applicationReplyBudget = budget.applicationReplyBudget();
+                int applicationReplyBudget = budget.getBudget();
                 int writeableBytes = applicationReplyBudget - applicationReplyPadding;
                 if (writeableBytes > 0)
                 {
                     int bytesToWrite = Math.min(payloadLength, writeableBytes);
-                    pendingBudget = bytesToWrite + applicationReplyPadding;
-                    budget.decApplicationReplyBudget(pendingBudget);
-                    assert budget.applicationReplyBudget() >= 0;
+                    int requiredBudget = bytesToWrite + applicationReplyPadding;
+                    budget.decBudget(applicationReplyId, requiredBudget);
 
-                    pendingMessageKey = wrap(pendingMessageKeyBuffer, key);
-                    pendingMessageTimestamp = timestamp;
-                    pendingMessageTraceId = traceId;
-                    pendingMessageValue = wrap(pendingMessageValueBuffer, value);
-                    pendingMessageValueOffset = fragmentedMessageBytesWritten;
-                    pendingMessageValueLimit = pendingMessageValueOffset + bytesToWrite;
-                    pendingMessageOffset = messageStartOffset;
-                    messagePending = true;
                     if (bytesToWrite < payloadLength)
                     {
                         dispatchBlocked = true;
@@ -732,6 +723,16 @@ public final class ClientStreamFactory implements StreamFactory
                     {
                         result |= MessageDispatcher.FLAGS_DELIVERED;
                     }
+
+                    writeMessage(
+                        partition,
+                        messageStartOffset,
+                        traceId,
+                        key,
+                        timestamp,
+                        value,
+                        fragmentedMessageBytesWritten,
+                        fragmentedMessageBytesWritten + bytesToWrite);
                 }
                 else
                 {
@@ -749,10 +750,10 @@ public final class ClientStreamFactory implements StreamFactory
             long requestOffset,
             long nextFetchOffset)
         {
-            flushPreviousMessage(partition, nextFetchOffset);
             long startOffset = progressStartOffset;
             long endOffset = progressEndOffset;
-            if (startOffset == UNSET)
+
+            if (startOffset == NO_OFFSET)
             {
                 // dispatch was not called
                 startOffset = fetchOffsets.get(partition);
@@ -764,7 +765,7 @@ public final class ClientStreamFactory implements StreamFactory
                 endOffset = nextFetchOffset;
             }
 
-            if (fragmentedMessageOffset != UNSET &&
+            if (fragmentedMessageOffset != NO_OFFSET &&
                 fragmentedMessagePartition == partition &&
                 !fragmentedMessageDispatched &&
                 requestOffset <= fragmentedMessageOffset &&
@@ -782,8 +783,7 @@ public final class ClientStreamFactory implements StreamFactory
                 final long oldFetchOffset = this.fetchOffsets.put(partition, endOffset);
                 progressHandler.handle(partition, oldFetchOffset, endOffset);
             }
-            progressStartOffset = UNSET;
-            pendingMessageOffset = UNSET;
+            progressStartOffset = NO_OFFSET;
             dispatchBlocked = false;
             fragmentedMessageDispatched = false;
         }
@@ -792,19 +792,178 @@ public final class ClientStreamFactory implements StreamFactory
         public String toString()
         {
             return format("%s@%s(topic=\"%s\", subscribedByKey=%b, fetchOffsets=%s, fragmentedMessageOffset=%d, " +
-                                 "fragmentedMessagePartition=%d, fragmentedMessageLength=%d, " +
-                                 "fragmentedMessageBytesWritten=%d, applicationId=%x, applicationReplyId=%x)",
-                    ClientAcceptStream.this.getClass().getSimpleName(),
-                    Integer.toHexString(System.identityHashCode(ClientAcceptStream.this)),
-                    ClientAcceptStream.this.topicName,
-                    ClientAcceptStream.this.subscribedByKey,
-                    ClientAcceptStream.this.fetchOffsets,
-                    ClientAcceptStream.this.fragmentedMessageOffset,
-                    ClientAcceptStream.this.fragmentedMessagePartition,
-                    ClientAcceptStream.this.fragmentedMessageLength,
-                    ClientAcceptStream.this.fragmentedMessageBytesWritten,
-                    ClientAcceptStream.this.applicationId,
-                    ClientAcceptStream.this.applicationReplyId);
+                       "fragmentedMessagePartition=%d, fragmentedMessageLength=%d, fragmentedMessageBytesWritten=%d, " +
+                       "applicationId=%x, applicationReplyId=%x, budget=%s)",
+                getClass().getSimpleName(),
+                Integer.toHexString(System.identityHashCode(ClientAcceptStream.this)),
+                topicName,
+                subscribedByKey,
+                fetchOffsets,
+                fragmentedMessageOffset,
+                fragmentedMessagePartition,
+                fragmentedMessageLength,
+                fragmentedMessageBytesWritten,
+                applicationId,
+                applicationReplyId,
+                budgetManager);
+        }
+
+        private void detachFromNetworkPool()
+        {
+            if (detacher != null && attacher == null)
+            {
+                invoke(detacher);
+                detacher = null;
+                attacher = null;
+            }
+            else if (detacher == null)
+            {
+                networkPool.doDetach(topicName, networkAttachId);
+            }
+            networkAttachId = UNATTACHED;
+        }
+
+        private void dispatchMessages()
+        {
+            dispatchState.run();
+        }
+
+        private void dispatchMessagesFromCache()
+        {
+            Iterator<MessageRef> messages = historicalCache.getMessages(fetchOffsets, fetchKey, headers);
+
+            int previousPartition = NO_PARTITION;
+            long flushToOffset = NO_OFFSET;
+            long requestOffset = NO_OFFSET;
+
+            while (writeableBytes() > 0 && messages.hasNext())
+            {
+                MessageRef entry = messages.next();
+                MessageFW message = entry.message();
+                final int partition = entry.partition();
+                long offset = entry.offset();
+
+                if (requestOffset == NO_OFFSET)
+                {
+                    requestOffset = fetchOffsets.get(partition);
+                }
+
+                if (previousPartition != NO_PARTITION && entry.partition() != previousPartition)
+                {
+                    // End of a series of messages dispatched for a partition
+                    flush(previousPartition, requestOffset, flushToOffset);
+                    requestOffset = fetchOffsets.get(partition);
+                }
+
+                if (message != null)
+                {
+                    dispatch(
+                        partition,
+                        requestOffset,
+                        offset,
+                        wrap(keyBuffer, message.key()),
+                        headersRO.wrap(message.headers()).headerSupplier(),
+                        message.timestamp(),
+                        message.traceId(),
+                        wrap(valueBuffer, message.value()));
+
+                    previousPartition = partition;
+                    offset++;
+                    flushToOffset = offset;
+                }
+
+                if (message == null || writeableBytes() == 0)
+                {
+                    flush(partition, requestOffset, offset);
+                    requestOffset = NO_OFFSET;
+                }
+            }
+
+            if (fragmentedMessageOffset != NO_OFFSET)
+            {
+                dispatchState = this::dispatchFragmentedMessageFromCache;
+            }
+
+            if (!messages.hasNext())
+            {
+                // No more messages available in cache
+                dispatchState = this::dispatchMessagesFromPool;
+                progressHandler = savedProgressHandler;
+                savedProgressHandler = null;
+                historicalCache = null;
+
+                if (writeableBytes() > 0)
+                {
+                    dispatchMessages();
+                }
+            }
+        }
+
+        private void dispatchFragmentedMessageFromCache()
+        {
+            assert fragmentedMessageOffset != NO_OFFSET;
+            assert fragmentedMessagePartition != NO_PARTITION;
+
+            MessageRef entry = historicalCache.getMessage(fragmentedMessagePartition, fragmentedMessageOffset);
+
+            MessageFW message = entry.message();
+            final int partition = entry.partition();
+            long offset = entry.offset();
+
+            if (message == null)
+            {
+                // no longer available in cache
+                dispatchState = this::dispatchMessagesFromPool;
+                dispatchMessages();
+            }
+            else
+            {
+                long requestOffset = fetchOffsets.get(partition);
+
+                dispatch(
+                    partition,
+                    requestOffset,
+                    offset,
+                    wrap(keyBuffer, message.key()),
+                    headersRO.wrap(message.headers()).headerSupplier(),
+                    message.timestamp(),
+                    message.traceId(),
+                    wrap(valueBuffer, message.value()));
+
+                flush(partition, requestOffset, offset + 1);
+
+                if (fragmentedMessageOffset == NO_OFFSET)
+                {
+                    dispatchState = this::dispatchMessagesFromCache;
+
+                    if (writeableBytes() > 0)
+                    {
+                        dispatchMessages();
+                    }
+                }
+            }
+        }
+
+        private void dispatchMessagesFromPool()
+        {
+            if (attacher != null)
+            {
+                invoke(attacher);
+                attacher = null;
+            }
+            networkPool.doFlush();
+        }
+
+        private void doDeferredDetach()
+        {
+            budget.closed(applicationReplyId);
+            doAbort(applicationReply, applicationReplyId);
+        }
+
+        private void doDeferredDetachWithReattach()
+        {
+            budget.closed(applicationReplyId);
+            doEnd(applicationReply, applicationReplyId, ZERO_OFFSETS);
         }
 
         private String toString(
@@ -816,59 +975,61 @@ public final class ClientStreamFactory implements StreamFactory
                         buffer.capacity());
         }
 
-        private void flushPreviousMessage(
+        private void writeMessage(
                 int partition,
-                long nextFetchOffset)
+                long messageStartOffset,
+                long traceId,
+                DirectBuffer key,
+                long timestamp,
+                DirectBuffer value,
+                int valueOffset,
+                int valueLimit)
         {
-            if (messagePending)
+            byte flags = value == null || value.capacity() == valueLimit
+                    ? FIN : 0;
+
+            long nextOffset = messageStartOffset + 1;
+
+            if (valueOffset == 0)
             {
-                byte flags = pendingMessageValue == null || pendingMessageValue.capacity() == pendingMessageValueLimit
-                        ? FIN : 0;
+                flags |= INIT;
 
-                if (pendingMessageValueOffset == 0)
-                {
-                    flags |= INIT;
-                    final long oldFetchOffset = this.fetchOffsets.put(partition, nextFetchOffset);
-                    doKafkaData(applicationReply, applicationReplyId, pendingMessageTraceId, applicationReplyPadding, flags,
-                                compacted ? pendingMessageKey : null,
-                                pendingMessageTimestamp, pendingMessageValue, pendingMessageValueLimit, fetchOffsets);
-                    this.fetchOffsets.put(partition, oldFetchOffset);
-                }
-                else
-                {
-                    doKafkaDataContinuation(applicationReply, applicationReplyId, pendingMessageTraceId,
-                            applicationReplyPadding, flags, pendingMessageValue, pendingMessageValueOffset,
-                            pendingMessageValueLimit);
-                }
+                final long oldFetchOffset = this.fetchOffsets.put(partition, nextOffset);
+                doKafkaData(applicationReply, applicationReplyId, traceId, applicationReplyPadding, flags,
+                            compacted ? key : null,
+                            timestamp, value, valueLimit, fetchOffsets);
+                this.fetchOffsets.put(partition, oldFetchOffset);
+            }
+            else
+            {
+                doKafkaDataContinuation(applicationReply, applicationReplyId, traceId,
+                        applicationReplyPadding, flags, value, valueOffset,
+                        valueLimit);
+            }
 
-                messagePending = false;
-                if (Flags.fin(flags))
-                {
-                    fragmentedMessageBytesWritten = 0;
-                    fragmentedMessageOffset = UNSET;
-                    fragmentedMessagePartition = UNSET;
-                    fragmentedMessageLength = 0;
-                    progressEndOffset = nextFetchOffset;
+            if (Flags.fin(flags))
+            {
+                fragmentedMessageBytesWritten = 0;
+                fragmentedMessageOffset = NO_OFFSET;
+                fragmentedMessagePartition = NO_PARTITION;
+                fragmentedMessageLength = 0;
+                progressEndOffset = nextOffset;
 
-                    final long oldFetchOffset = this.fetchOffsets.put(partition, nextFetchOffset);
-                    progressHandler.handle(partition, oldFetchOffset, nextFetchOffset);
-                }
-                else
+                final long oldFetchOffset = this.fetchOffsets.put(partition, nextOffset);
+                progressHandler.handle(partition, oldFetchOffset, nextOffset);
+            }
+            else
+            {
+                if (fragmentedMessagePartition == NO_PARTITION)
                 {
-                    if (fragmentedMessagePartition == UNSET)
-                    {
-                        // Store full message length to verify it remains consistent
-                        fragmentedMessageLength = pendingMessageValue.capacity();
-                    }
-                    fragmentedMessageBytesWritten += (pendingMessageValueLimit - pendingMessageValueOffset);
-                    fragmentedMessageOffset = pendingMessageOffset;
-                    fragmentedMessagePartition = partition;
-                    fragmentedMessageDispatched = true;
-                    progressEndOffset = pendingMessageOffset;
-
-                    final long oldFetchOffset = this.fetchOffsets.put(partition, pendingMessageOffset);
-                    progressHandler.handle(partition, oldFetchOffset, pendingMessageOffset);
+                    // Store full message length to verify it remains consistent
+                    fragmentedMessageLength = value.capacity();
                 }
+                fragmentedMessageBytesWritten += (valueLimit - valueOffset);
+                fragmentedMessageOffset = messageStartOffset;
+                fragmentedMessagePartition = partition;
+                fragmentedMessageDispatched = true;
+                progressEndOffset = messageStartOffset;
             }
         }
 
@@ -908,7 +1069,7 @@ public final class ClientStreamFactory implements StreamFactory
             {
             case DataFW.TYPE_ID:
                 doReset(applicationThrottle, applicationId);
-                networkPool.doDetach(topicName, networkAttachId, fetchOffsets);
+                detachFromNetworkPool();
                 break;
             case EndFW.TYPE_ID:
                 // accept reply stream is allowed to outlive accept stream, so ignore END
@@ -962,21 +1123,22 @@ public final class ClientStreamFactory implements StreamFactory
                     {
                         MutableDirectBuffer headersBuffer = new UnsafeBuffer(new byte[headers.sizeof()]);
                         headersBuffer.putBytes(0, headers.buffer(),  headers.offset(), headers.sizeof());
-                        headers = new ListFW<KafkaHeaderFW>(new KafkaHeaderFW()).wrap(headersBuffer, 0, headersBuffer.capacity());
+                        this.headers = new ListFW<KafkaHeaderFW>(
+                                new KafkaHeaderFW()).wrap(headersBuffer, 0, headersBuffer.capacity());
                     }
-                    int hashCode = -1;
                     if (fetchKey != null)
                     {
                         subscribedByKey = true;
                         MutableDirectBuffer keyBuffer = new UnsafeBuffer(new byte[fetchKey.sizeof()]);
                         keyBuffer.putBytes(0, fetchKey.buffer(),  fetchKey.offset(), fetchKey.sizeof());
-                        fetchKey = new OctetsFW().wrap(keyBuffer, 0, keyBuffer.capacity());
-                        hashCode = hashCodesCount == 1 ? beginEx.fetchKeyHash().nextInt()
+                        this.fetchKey = new OctetsFW().wrap(keyBuffer, 0, keyBuffer.capacity());
+                        this.hashCode = hashCodesCount == 1 ? beginEx.fetchKeyHash().nextInt()
                                 : BufferUtil.defaultHashCode(fetchKey.buffer(), fetchKey.offset(), fetchKey.limit());
                     }
+
                     networkAttachId = networkPool.doAttach(
-                            topicName, this.fetchOffsets, hashCode, fetchKey, headers,
-                            this, this::writeableBytes, h -> progressHandler = h, this::onAttachPrepared,
+                            topicName,
+                            this::onAttachPrepared,
                             this::onMetadataError);
 
                     this.streamState = this::afterBegin;
@@ -997,23 +1159,65 @@ public final class ClientStreamFactory implements StreamFactory
         }
 
         private void onAttachPrepared(
-            Consumer<Consumer<Boolean>> attacher)
+            AttachDetailsConsumer attacher,
+            AttachDetailsConsumer detacher,
+            PartitionProgressHandler progressHandler,
+            ImmutableTopicCache historicalCache,
+            int partitionCount,
+            boolean compacted,
+            IntToLongFunction firstAvailableOffset)
         {
-            if (budget.applicationReplyBudget() > 0)
+            this.compacted = compacted;
+            this.attacher = attacher;
+            this.detacher = detacher;
+            if (historicalCache != null)
             {
-                attacher.accept(this::onAttached);
-                networkPool.doFlush();
+                this.historicalCache = historicalCache;
+                this.savedProgressHandler = progressHandler;
+                dispatchState = this::dispatchMessagesFromCache;
             }
             else
             {
-                this.attacher = attacher;
+                dispatchState = this::dispatchMessagesFromPool;
+                this.progressHandler = progressHandler;
+            }
+
+            // For streaming topics default to receiving only live (new) messages
+            final long defaultOffset = fetchOffsets.isEmpty() && !compacted ? NetworkConnectionPool.MAX_OFFSET : 0L;
+
+            if (fetchKey != null)
+            {
+                int partitionId = BufferUtil.partition(hashCode, partitionCount);
+                long offset = fetchOffsets.computeIfAbsent(0L, v -> defaultOffset);
+                long lowestOffset = firstAvailableOffset.applyAsLong(partitionId);
+                offset = Math.max(offset,  lowestOffset);
+                if (partitionId != 0)
+                {
+                    fetchOffsets.remove(0L);
+                }
+                fetchOffsets.put(partitionId, offset);
+            }
+            else
+            {
+                for (int partition=0; partition < partitionCount; partition++)
+                {
+                    long offset = fetchOffsets.computeIfAbsent(partition, v -> defaultOffset);
+                    long lowestOffset = firstAvailableOffset.applyAsLong(partition);
+                    offset = Math.max(offset,  lowestOffset);
+                    fetchOffsets.put(partition, offset);
+                }
+            }
+
+            if (writeableBytes() > 0)
+            {
+                dispatchState.run();
             }
         }
 
-        private void onAttached(
-            boolean compacted)
+        private void invoke(
+            AttachDetailsConsumer attacher)
         {
-            this.compacted = compacted;
+            attacher.apply(fetchOffsets, fetchKey, headers, this, this::writeableBytes);
         }
 
         private void onMetadataError(
@@ -1049,46 +1253,18 @@ public final class ClientStreamFactory implements StreamFactory
         {
             applicationReplyPadding = window.padding();
             groupId = window.groupId();
-            if (firstWindow)
+
+            if (budget == NO_BUDGET)
             {
-                if (groupId != 0)
-                {
-                    budget = new GroupBudget(groupId, window.streamId(), networkPool);
-                }
-                firstWindow = false;
-                budget.joinGroup(window.credit());
-                if (attacher != null)
-                {
-                    attacher.accept(this::onAttached);
-                    attacher = null;
-                }
-            }
-            else
-            {
-                budget.incApplicationReplyBudget(window.credit());
+                budget = budgetManager.createBudget(groupId);
             }
 
-            networkPool.doFlush();
-        }
+            budget.incBudget(applicationReplyId, window.credit(), this::dispatchMessages);
 
-        private boolean equals(DirectBuffer buffer1, DirectBuffer buffer2)
-        {
-            boolean result = false;
-            if (buffer1 == buffer2)
+            if (deferredDetach != null && !budget.hasUnackedBudget(applicationReplyId))
             {
-                result = true;
+                deferredDetach.run();
             }
-            else if (buffer1 == null || buffer2 == null)
-            {
-                result = false;
-            }
-            else
-            {
-                workBuffer1.wrap(buffer1);
-                workBuffer2.wrap(buffer2);
-                result = workBuffer1.equals(workBuffer2);
-            }
-            return result;
         }
 
         private void handleReset(
@@ -1096,187 +1272,15 @@ public final class ClientStreamFactory implements StreamFactory
         {
             doReset(applicationThrottle, applicationId);
             progressHandler = NOOP_PROGRESS_HANDLER;
-            networkPool.doDetach(topicName, networkAttachId, fetchOffsets);
+            detachFromNetworkPool();
             networkAttachId = UNATTACHED;
-            budget.leaveGroup();
+            budget.closed(applicationReplyId);
         }
 
         private int writeableBytes()
         {
-            return budget.applicationReplyBudget() - applicationReplyPadding;
+            return Math.max(0, budget.getBudget() - applicationReplyPadding);
         }
 
-    }
-
-
-    private interface Budget
-    {
-        int applicationReplyBudget();
-
-        void applicationReplyBudget(int budget);
-
-        void decApplicationReplyBudget(int data);
-
-        void incApplicationReplyBudget(int data);
-
-        void joinGroup(int credit);
-
-        void leaveGroup();
-    }
-
-    private final class StreamBudget implements Budget
-    {
-        int applicationReplyBudget;
-
-        @Override
-        public int applicationReplyBudget()
-        {
-            return applicationReplyBudget;
-        }
-
-        @Override
-        public void applicationReplyBudget(int budget)
-        {
-            applicationReplyBudget = budget;
-        }
-
-        @Override
-        public void decApplicationReplyBudget(int data)
-        {
-            applicationReplyBudget -= data;
-            assert applicationReplyBudget >= 0;
-        }
-
-        @Override
-        public void incApplicationReplyBudget(int credit)
-        {
-            applicationReplyBudget += credit;
-        }
-
-        @Override
-        public void joinGroup(int credit)
-        {
-            applicationReplyBudget += credit;
-        }
-
-        @Override
-        public void leaveGroup()
-        {
-
-        }
-
-        @Override
-        public String toString()
-        {
-            return String.format("(applicationReplyBudget=%d)", applicationReplyBudget());
-        }
-    }
-
-    private final class GroupBudget implements Budget
-    {
-        private final long groupId;
-        private final long streamId;
-        private final NetworkConnectionPool networkPool;
-        private int uncreditedBudget;
-
-        GroupBudget(long groupId, long streamId, NetworkConnectionPool networkPool)
-        {
-            this.groupId = groupId;
-            this.streamId = streamId;
-            this.networkPool = networkPool;
-        }
-
-        @Override
-        public int applicationReplyBudget()
-        {
-            long budget = groupBudget.get(groupId);
-            return budget == -1 ? 0 : (int) budget;
-        }
-
-        @Override
-        public void applicationReplyBudget(int budget)
-        {
-            assert groupBudget.containsKey(groupId);
-            assert budget >= 0;
-
-            groupBudget.put(groupId, budget);
-        }
-
-        @Override
-        public void decApplicationReplyBudget(int data)
-        {
-            assert groupBudget.containsKey(groupId);
-
-            int budget = applicationReplyBudget();
-            assert budget - data >= 0;
-            applicationReplyBudget(budget - data);
-
-            uncreditedBudget += data;
-            assert uncreditedBudget >= 0 : format("budget = %d data = %d uncreditedBudget = %d", budget, data, uncreditedBudget);
-        }
-
-        @Override
-        public void incApplicationReplyBudget(int credit)
-        {
-            assert groupBudget.containsKey(groupId);
-            assert credit >= 0 : format("credit is %d", credit);
-
-            int budget = applicationReplyBudget();
-            applicationReplyBudget(budget + credit);
-
-            uncreditedBudget -= credit;
-            assert uncreditedBudget >= 0 :
-                    format("budget = %d credit = %d uncreditedBudget = %d", budget, credit, uncreditedBudget);
-        }
-
-        @Override
-        public void joinGroup(int credit)
-        {
-            long memberCount = groupMembers.get(groupId);
-            memberCount = (memberCount == -1) ? 1 : memberCount + 1;
-            groupMembers.put(groupId, memberCount);
-
-            if (memberCount == 1)
-            {
-                assert !groupBudget.containsKey(groupId);
-                groupBudget.put(groupId, credit);
-            }
-        }
-
-        @Override
-        public void leaveGroup()
-        {
-            long memberCount = groupMembers.get(groupId);
-            if (memberCount != -1)
-            {
-                memberCount--;
-                assert memberCount >= 0;
-
-                if (memberCount == 0)
-                {
-                    groupMembers.remove(groupId);
-                    groupBudget.remove(groupId);
-                }
-                else
-                {
-                    groupMembers.put(groupId, memberCount);
-
-                    assert groupBudget.containsKey(groupId);
-                    int budget = applicationReplyBudget();
-                    applicationReplyBudget(budget + uncreditedBudget);
-                    uncreditedBudget = 0;
-
-                    // more (from uncredited) group budget available, some messages can be sent
-                    networkPool.doFlush();
-                }
-            }
-        }
-
-        @Override
-        public String toString()
-        {
-            return String.format("(groupId=%d, streamId=%d, applicationReplyBudget=%d)",
-                    groupId, streamId, applicationReplyBudget());
-        }
     }
 }

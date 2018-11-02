@@ -51,7 +51,8 @@ public class DefaultMessageCache implements MessageCache
     private long time = 0;
     private int entries = 0;
 
-    public DefaultMessageCache(MemoryManager memoryManager)
+    public DefaultMessageCache(
+        MemoryManager memoryManager)
     {
         this.memoryManager = memoryManager;
         lruHandles = new int[LRU_SCAN_SIZE];
@@ -65,19 +66,17 @@ public class DefaultMessageCache implements MessageCache
         MessageFW message)
     {
         MessageFW result = null;
-        if (messageHandle != NO_MESSAGE)
+        long address;
+        if (messageHandle != NO_MESSAGE &&
+            (address = addresses.getLong(messageHandle)) >= 0L)
         {
-            long address = addresses.getLong(messageHandle);
-            if (address >= 0L)
-            {
-                long memoryAddress = memoryManager.resolve(address);
-                buffer.wrap(memoryAddress, Integer.BYTES);
-                int size = buffer.getInt(0) + Integer.BYTES;
-                buffer.wrap(memoryAddress, size);
-                accessTimes.setLong(messageHandle,  time++);
-                clearLruEntries();
-                result =  message.wrap(buffer, Integer.BYTES, size);
-            }
+            long memoryAddress = memoryManager.resolve(address);
+            buffer.wrap(memoryAddress, Integer.BYTES);
+            int size = buffer.getInt(0) + Integer.BYTES;
+            buffer.wrap(memoryAddress, size);
+            accessTimes.setLong(messageHandle,  time++);
+            clearLruEntries();
+            result =  message.wrap(buffer, Integer.BYTES, size);
         }
         return result;
     }
