@@ -67,7 +67,7 @@ public final class HeadersFW
         return limit - offset;
     }
 
-    /**
+    /*
      * Wraps a contiguous series of fetch message headers in Kafka fetch response format
      * (varint32 keyLength, octets key, varint32 valueLength, octects value)
      */

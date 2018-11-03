@@ -30,15 +30,14 @@ public interface ImmutableTopicCache
 {
     public interface MessageRef
     {
-        /**
+        /*
          * @return the offset of this message
          */
         long offset();
 
         int partition();
 
-        /**
-         * @param message
+        /*
          * @return The message,
          *         OR null if there are no more messages (we are at live offset) or this message is not
          *         available in the cache; in both cases offset() should be used to fetch further
