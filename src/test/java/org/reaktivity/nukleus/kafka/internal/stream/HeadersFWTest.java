@@ -142,6 +142,34 @@ public final class HeadersFWTest
     }
 
     @Test
+    public void shouldNotMatchMultipleHeaderConditionsWithOneNotMatched()
+    {
+        headersRO.wrap(rawHeaders,  offset, position);
+        MutableDirectBuffer buffer = new UnsafeBuffer(new byte[100]);
+        ListFW<KafkaHeaderFW> headerConditions =
+            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+                .wrap(buffer, 0, buffer.capacity())
+                .item(b -> b.key("header1").value(asOctets("value2")))
+                .item(b -> b.key("header2").value(asOctets("junk")))
+                .build();
+        assertFalse(headersRO.matches(headerConditions));
+    }
+
+    @Test
+    public void shouldNotMatchMultipleHeaderConditionsWithBothNotMatched()
+    {
+        headersRO.wrap(rawHeaders,  offset, position);
+        MutableDirectBuffer buffer = new UnsafeBuffer(new byte[100]);
+        ListFW<KafkaHeaderFW> headerConditions =
+            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+                .wrap(buffer, 0, buffer.capacity())
+                .item(b -> b.key("header1").value(asOctets("junk")))
+                .item(b -> b.key("header2").value(asOctets("junk")))
+                .build();
+        assertFalse(headersRO.matches(headerConditions));
+    }
+
+    @Test
     public void shouldMatchMultipleHeaderConditionsOnMultiplyOccuringHeader()
     {
         headersRO.wrap(rawHeaders,  offset, position);
@@ -153,6 +181,20 @@ public final class HeadersFWTest
                 .item(b -> b.key("header1").value(asOctets("value2")))
                 .build();
         assertTrue(headersRO.matches(headerConditions));
+    }
+
+    @Test
+    public void shouldNotMatchMultipleHeaderConditionsOnMultiplyOccuringHeader()
+    {
+        headersRO.wrap(rawHeaders,  offset, position);
+        MutableDirectBuffer buffer = new UnsafeBuffer(new byte[100]);
+        ListFW<KafkaHeaderFW> headerConditions =
+            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+                .wrap(buffer, 0, buffer.capacity())
+                .item(b -> b.key("header1").value(asOctets("value1")))
+                .item(b -> b.key("header1").value(asOctets("junk")))
+                .build();
+        assertFalse(headersRO.matches(headerConditions));
     }
 
     @Test
@@ -169,7 +211,7 @@ public final class HeadersFWTest
     }
 
     @Test
-    public void shouldNotMatchSingleHeaderConditionOnSinglelyOccuringHeader()
+    public void shouldNotMatchSingleHeaderConditionOnSinglyOccuringHeader()
     {
         headersRO.wrap(rawHeaders,  offset, position);
         MutableDirectBuffer buffer = new UnsafeBuffer(new byte[100]);

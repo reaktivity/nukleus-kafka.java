@@ -101,14 +101,14 @@ public final class HeadersFW
         // Find first non-matching header condition. If not found, all headerConditions are fulfilled.
         return headerConditions == null ||
                headerConditions.isEmpty() ||
-               null != headerConditions.matchFirst(
+               null == headerConditions.matchFirst(
             h ->
             {
                 boolean[] matchFound = new boolean[]{false};
                 headerSupplier().apply(BufferUtil.wrap(key,  h.key())).forEachRemaining(
                     v -> matchFound[0] = matchFound[0] ||
                              BufferUtil.wrap(value1, v).equals(BufferUtil.wrap(value2, h.value())));
-                return matchFound[0];
+                return !matchFound[0];
             }
         );
     }
