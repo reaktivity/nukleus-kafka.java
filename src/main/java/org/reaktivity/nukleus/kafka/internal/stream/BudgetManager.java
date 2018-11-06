@@ -242,6 +242,12 @@ public class BudgetManager
         {
             return false;
         }
+
+        @Override
+        public String toString()
+        {
+            return Integer.toString(budget);
+        }
     }
 
     BudgetManager()
