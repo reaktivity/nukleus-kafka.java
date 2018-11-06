@@ -90,6 +90,14 @@ public final class StreamingTopicCache implements TopicCache
     }
 
     @Override
+    public void extendNextOffset(
+        int partition,
+        long requestOffset,
+        long lastOffset)
+    {
+    }
+
+    @Override
     public Iterator<MessageRef> getMessages(
         Long2LongHashMap fetchOffsets,
         OctetsFW fetchKey,
@@ -107,19 +115,20 @@ public final class StreamingTopicCache implements TopicCache
     }
 
     @Override
-    public void extendNextOffset(
-        int partition,
-        long requestOffset,
-        long lastOffset)
-    {
-    }
-
-    @Override
     public long getOffset(
         int partition,
         OctetsFW key)
     {
         return NO_OFFSET;
+    }
+
+    @Override
+    public boolean hasMessages(
+        Long2LongHashMap fetchOffsets,
+        OctetsFW fetchKey,
+        ListFW<KafkaHeaderFW> headers)
+    {
+        return false;
     }
 
     @Override
