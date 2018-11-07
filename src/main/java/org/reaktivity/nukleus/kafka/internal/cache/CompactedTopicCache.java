@@ -86,6 +86,15 @@ public class CompactedTopicCache implements TopicCache
     }
 
     @Override
+    public void extendNextOffset(
+        int partition,
+        long requestOffset,
+        long lastOffset)
+    {
+        indexes[partition].extendNextOffset(requestOffset, lastOffset);
+    }
+
+    @Override
     public Iterator<MessageRef> getMessages(
         Long2LongHashMap fetchOffsets,
         OctetsFW fetchKey,
@@ -114,20 +123,41 @@ public class CompactedTopicCache implements TopicCache
     }
 
     @Override
-    public void extendNextOffset(
-        int partition,
-        long requestOffset,
-        long lastOffset)
-    {
-        indexes[partition].extendNextOffset(requestOffset, lastOffset);
-    }
-
-    @Override
     public long getOffset(
         int partition,
         OctetsFW key)
     {
         return indexes[partition].getOffset(key);
+    }
+
+    @Override
+    public boolean hasMessages(
+        Long2LongHashMap fetchOffsets,
+        OctetsFW fetchKey,
+        ListFW<KafkaHeaderFW> headers)
+    {
+        boolean result = false;
+
+        if (fetchKey != null)
+        {
+            Iterator<MessageRef> messageRefs = getMessages(fetchOffsets, fetchKey, headers);
+            result = messageRefs.hasNext() && messageRefs.next().message() != null;
+        }
+        else
+        {
+            // Avoid O(log(N)) cost of searching for offsets in each partition index,
+            // preferring to potentially return a false positive
+            assert fetchOffsets.size() == indexes.length;
+
+            for (int partition=0; partition < indexes.length && !result; partition++)
+            {
+                long offset = fetchOffsets.get(partition);
+                result = offset < indexes[partition].nextOffset();
+            }
+        }
+
+
+        return true;
     }
 
     @Override
