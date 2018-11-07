@@ -562,7 +562,7 @@ public final class ClientStreamFactory implements StreamFactory
         private int networkAttachId = UNATTACHED;
         private boolean compacted;
         private PartitionProgressHandler progressHandler = NOOP_PROGRESS_HANDLER;
-        private PartitionProgressHandler savedProgressHandler;
+        private PartitionProgressHandler poolProgressHandler;
 
         private MessageConsumer streamState;
 
@@ -584,10 +584,16 @@ public final class ClientStreamFactory implements StreamFactory
 
         private AttachDetailsConsumer attacher;
         private AttachDetailsConsumer detacher;
+
         private Runnable deferredDetach;
         private ImmutableTopicCache historicalCache;
-        private Runnable dispatchState = () ->
-        { };
+
+        private final Runnable dispatchFromCacheState = this::dispatchMessagesFromCache;
+        private final Runnable dispatchFragmentedFromCacheState = this::dispatchFragmentedMessageFromCache;
+        private final Runnable dispatchFromPoolState = this::dispatchMessagesFromPool;
+        private Runnable dispatchState = NOOP;
+
+        private final Runnable dispatchUsingCurrentState = this::dispatchMessages;
 
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
@@ -783,6 +789,12 @@ public final class ClientStreamFactory implements StreamFactory
                 final long oldFetchOffset = this.fetchOffsets.put(partition, endOffset);
                 progressHandler.handle(partition, oldFetchOffset, endOffset);
             }
+
+            if (dispatchBlocked && dispatchState == dispatchFromPoolState)
+            {
+                enterDispatchFromCacheState();
+            }
+
             progressStartOffset = NO_OFFSET;
             dispatchBlocked = false;
             fragmentedMessageDispatched = false;
@@ -805,16 +817,14 @@ public final class ClientStreamFactory implements StreamFactory
                 fragmentedMessageBytesWritten,
                 applicationId,
                 applicationReplyId,
-                budgetManager);
+                budget);
         }
 
         private void detachFromNetworkPool()
         {
-            if (detacher != null && attacher == null)
+            if (detacher != null && dispatchState == dispatchFromPoolState)
             {
                 invoke(detacher);
-                detacher = null;
-                attacher = null;
             }
             else if (detacher == null)
             {
@@ -881,20 +891,17 @@ public final class ClientStreamFactory implements StreamFactory
 
             if (fragmentedMessageOffset != NO_OFFSET)
             {
-                dispatchState = this::dispatchFragmentedMessageFromCache;
+                dispatchState = dispatchFragmentedFromCacheState;
             }
 
             if (!messages.hasNext())
             {
                 // No more messages available in cache
-                dispatchState = this::dispatchMessagesFromPool;
-                progressHandler = savedProgressHandler;
-                savedProgressHandler = null;
-                historicalCache = null;
+                enterDispatchFromPoolState();
 
                 if (writeableBytes() > 0)
                 {
-                    dispatchMessages();
+                    dispatchState.run();
                 }
             }
         }
@@ -913,8 +920,8 @@ public final class ClientStreamFactory implements StreamFactory
             if (message == null)
             {
                 // no longer available in cache
-                dispatchState = this::dispatchMessagesFromPool;
-                dispatchMessages();
+                enterDispatchFromPoolState();
+                dispatchState.run();
             }
             else
             {
@@ -934,11 +941,11 @@ public final class ClientStreamFactory implements StreamFactory
 
                 if (fragmentedMessageOffset == NO_OFFSET)
                 {
-                    dispatchState = this::dispatchMessagesFromCache;
+                    dispatchState = dispatchFromCacheState;
 
                     if (writeableBytes() > 0)
                     {
-                        dispatchMessages();
+                        dispatchState.run();
                     }
                 }
             }
@@ -946,12 +953,25 @@ public final class ClientStreamFactory implements StreamFactory
 
         private void dispatchMessagesFromPool()
         {
-            if (attacher != null)
-            {
-                invoke(attacher);
-                attacher = null;
-            }
             networkPool.doFlush();
+        }
+
+        private void enterDispatchFromCacheState()
+        {
+            if (historicalCache != null && historicalCache.hasMessages(fetchOffsets, fetchKey, headers))
+            {
+                dispatchState = fragmentedMessageOffset == NO_OFFSET ?
+                        dispatchFromCacheState : dispatchFragmentedFromCacheState;
+                invoke(detacher);
+                progressHandler = NOOP_PROGRESS_HANDLER;
+            }
+        }
+
+        private void enterDispatchFromPoolState()
+        {
+            dispatchState = dispatchFromPoolState;
+            invoke(attacher);
+            progressHandler = poolProgressHandler;
         }
 
         private void doDeferredDetach()
@@ -1173,12 +1193,13 @@ public final class ClientStreamFactory implements StreamFactory
             if (historicalCache != null)
             {
                 this.historicalCache = historicalCache;
-                this.savedProgressHandler = progressHandler;
-                dispatchState = this::dispatchMessagesFromCache;
+                this.poolProgressHandler = progressHandler;
+                dispatchState = dispatchFromCacheState;
             }
             else
             {
-                dispatchState = this::dispatchMessagesFromPool;
+                dispatchState = dispatchFromPoolState;
+                invoke(attacher);
                 this.progressHandler = progressHandler;
             }
 
@@ -1259,7 +1280,7 @@ public final class ClientStreamFactory implements StreamFactory
                 budget = budgetManager.createBudget(groupId);
             }
 
-            budget.incBudget(applicationReplyId, window.credit(), this::dispatchMessages);
+            budget.incBudget(applicationReplyId, window.credit(), dispatchUsingCurrentState);
 
             if (deferredDetach != null && !budget.hasUnackedBudget(applicationReplyId))
             {

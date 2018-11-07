@@ -300,7 +300,12 @@ public class CompactedPartitionIndex implements PartitionIndex
 
     private void compact()
     {
-        compact(0, Long.MAX_VALUE);
+        evictExpiredTombstones(); // mutates compactFrom
+
+        if (compactFrom != Integer.MAX_VALUE)
+        {
+            compact(0, Long.MAX_VALUE);
+        }
         compactFrom = Integer.MAX_VALUE;
     }
 

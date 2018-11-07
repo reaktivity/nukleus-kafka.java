@@ -54,4 +54,18 @@ public interface ImmutableTopicCache
     MessageRef getMessage(
         int partition,
         long offset);
+
+    /**
+     * Reports if the cache contains any messages matching the key and headers starting at the given offsets.
+     * This is on a best effort basis, depending on performance cost.
+     * @param fetchOffsets
+     * @param fetchKey
+     * @param headers
+     * @return true if the cache <i>may</i> contain matching messages
+     *         false if the cache definitively does not contain any matching messages
+     */
+    boolean hasMessages(
+        Long2LongHashMap fetchOffsets,
+        OctetsFW fetchKey,
+        ListFW<KafkaHeaderFW> headers);
 }

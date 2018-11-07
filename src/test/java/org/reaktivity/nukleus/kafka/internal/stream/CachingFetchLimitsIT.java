@@ -58,8 +58,19 @@ public class CachingFetchLimitsIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/compacted.messages.slow.consumer/client",
+        "${server}/compacted.messages.slow.consumer/server"})
+    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    public void shouldDeliverCompactedMessagesFromCacheWhenLiveConsumerFallsBehind() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/compacted.historical.large.message.subscribed.to.key/client",
-        "${server}/compacted.messages.large.and.small.repeated/server"})
+        "${server}/compacted.messages.large.and.small/server"})
     @ScriptProperty({
         "networkAccept \"nukleus://target/streams/kafka\"",
         "applicationConnectWindow \"200\""
@@ -73,7 +84,7 @@ public class CachingFetchLimitsIT
     @Specification({
         "${route}/client/controller",
         "${client}/compacted.historical.large.message.subscribed.to.key/client",
-        "${server}/compacted.messages.large.and.small.repeated/server"})
+        "${server}/compacted.messages.large.and.small/server"})
     @ScriptProperty({
         "networkAccept \"nukleus://target/streams/kafka\"",
         "applicationConnectWindow \"200\""
