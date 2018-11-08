@@ -15,8 +15,10 @@
  */
 package org.reaktivity.nukleus.kafka.internal.function;
 
+import org.reaktivity.nukleus.kafka.internal.stream.MessageDispatcher;
+
 @FunctionalInterface
 public interface PartitionProgressHandler
 {
-    void handle(int partitionId, long firstOffset, long nextOffset);
+    void handle(int partitionId, long firstOffset, long nextOffset, MessageDispatcher dispatcher);
 }

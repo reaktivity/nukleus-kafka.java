@@ -83,7 +83,7 @@ public final class ClientStreamFactory implements StreamFactory
 {
     private static final long[] ZERO_OFFSETS = new long[] {0L};
 
-    private static final PartitionProgressHandler NOOP_PROGRESS_HANDLER = (p, f, n) ->
+    private static final PartitionProgressHandler NOOP_PROGRESS_HANDLER = (p, f, n, d) ->
     {
 
     };
@@ -787,7 +787,7 @@ public final class ClientStreamFactory implements StreamFactory
             if (endOffset > startOffset && requestOffset <= startOffset)
             {
                 final long oldFetchOffset = this.fetchOffsets.put(partition, endOffset);
-                progressHandler.handle(partition, oldFetchOffset, endOffset);
+                progressHandler.handle(partition, oldFetchOffset, endOffset, this);
             }
 
             if (dispatchBlocked && dispatchState == dispatchFromPoolState)
@@ -805,7 +805,7 @@ public final class ClientStreamFactory implements StreamFactory
         {
             return format("%s@%s(topic=\"%s\", subscribedByKey=%b, fetchOffsets=%s, fragmentedMessageOffset=%d, " +
                        "fragmentedMessagePartition=%d, fragmentedMessageLength=%d, fragmentedMessageBytesWritten=%d, " +
-                       "applicationId=%x, applicationReplyId=%x, budget=%s)",
+                       "applicationId=%x, applicationReplyId=%x, dispatchState=%s, budget=%s)",
                 getClass().getSimpleName(),
                 Integer.toHexString(System.identityHashCode(ClientAcceptStream.this)),
                 topicName,
@@ -817,6 +817,8 @@ public final class ClientStreamFactory implements StreamFactory
                 fragmentedMessageBytesWritten,
                 applicationId,
                 applicationReplyId,
+                dispatchState == dispatchFragmentedFromCacheState ? "fragmentedFromCache" :
+                dispatchState == dispatchFromCacheState ? "cache" : "pool",
                 budget);
         }
 
@@ -1036,7 +1038,7 @@ public final class ClientStreamFactory implements StreamFactory
                 progressEndOffset = nextOffset;
 
                 final long oldFetchOffset = this.fetchOffsets.put(partition, nextOffset);
-                progressHandler.handle(partition, oldFetchOffset, nextOffset);
+                progressHandler.handle(partition, oldFetchOffset, nextOffset, this);
             }
             else
             {
