@@ -6,7 +6,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.reaktivity</groupId>
   <artifactId>nukleus-kafka</artifactId>
-  <version>0.118</version>
+  <version>0.119</version>
   <name>Kafka Nukleus Implementation</name>
   <description>Kafka Nukleus Implementation</description>
   <url>https://github.com/reaktivity/nukleus-kafka.java</url>
@@ -213,11 +213,6 @@
             <version>8.3</version>
           </dependency>
         </dependencies>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.6.1</version>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

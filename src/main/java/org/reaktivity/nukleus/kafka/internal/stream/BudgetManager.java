@@ -115,11 +115,14 @@ public class BudgetManager
         public void closing(long streamId, int credit)
         {
             GroupStreamBudget streamBudget = streamMap.get(streamId);
-            streamBudget.unackedBudget -= credit;
-            streamBudget.closing = true;
-            if (credit > 0)
+            if (streamBudget != null)
             {
-                moreBudget(credit);
+                streamBudget.unackedBudget -= credit;
+                streamBudget.closing = true;
+                if (credit > 0)
+                {
+                    moreBudget(credit);
+                }
             }
         }
 

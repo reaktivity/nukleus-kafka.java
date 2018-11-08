@@ -112,6 +112,8 @@ import org.reaktivity.nukleus.kafka.internal.util.DelayedTaskScheduler;
 
 public final class NetworkConnectionPool
 {
+    private static final boolean DEBUG = Boolean.getBoolean("nukleus.kafka.debug");
+
     static final long MAX_OFFSET = Long.MAX_VALUE;
 
     private static final short FETCH_API_VERSION = 5;
@@ -2225,6 +2227,12 @@ public final class NetworkConnectionPool
             MessageDispatcher dispatcher,
             IntSupplier supplyWindow)
         {
+            if (DEBUG)
+            {
+                System.out.format(
+                        "NCP.doAttach: fetchKey = %s, headers.sizeof = %d, dispatcher = %s, topic=%s\n",
+                        fetchKey, headers.sizeof() - 4, dispatcher, this);
+            }
             windowSuppliers.add(supplyWindow);
             headersIterator.wrap(headers);
 
@@ -2303,6 +2311,12 @@ public final class NetworkConnectionPool
             MessageDispatcher dispatcher,
             IntSupplier supplyWindow)
         {
+            if (DEBUG)
+            {
+                System.out.format(
+                        "NCP.doDetach: fetchKey = %s, headers.sizeof = %d, dispatcher = %s, topic = %s\n",
+                        fetchKey, headers.sizeof() - 4, dispatcher, this);
+            }
             windowSuppliers.remove(supplyWindow);
             int fetchKeyPartition = (int) (fetchKey == null ? -1 : fetchOffsets.keySet().iterator().next());
             headersIterator.wrap(headers);
@@ -2385,8 +2399,16 @@ public final class NetworkConnectionPool
         private void handleProgress(
             int partitionId,
             long firstOffset,
-            long nextOffset)
+            long nextOffset,
+            MessageDispatcher dispatcher)
         {
+            if (DEBUG)
+            {
+                System.out.format(
+                        "NCP.handleProgress: partition = %d, firstOffset = %d, nextOffset = %d, dispatcher = %s, " +
+                        "topic = %s\n",
+                        partitionId, firstOffset, nextOffset, dispatcher, this);
+            }
             candidate.id = partitionId;
             candidate.offset = firstOffset;
             NetworkTopicPartition first = partitions.floor(candidate);
@@ -3001,7 +3023,7 @@ public final class NetworkConnectionPool
         {
             if  (lastOffset > offsets[partition])
             {
-                progressHandler.handle(partition, offsets[partition], lastOffset);
+                progressHandler.handle(partition, offsets[partition], lastOffset, this);
                 offsets[partition] = lastOffset;
             }
         }
