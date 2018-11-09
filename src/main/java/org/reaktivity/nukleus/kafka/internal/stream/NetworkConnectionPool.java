@@ -507,7 +507,8 @@ public final class NetworkConnectionPool
         if (metadata != null)
         {
             metadata.doDetach(attachId);
-            if (!metadata.hasConsumers())
+            NetworkTopic topic = topicsByName.get(topicName);
+            if (!metadata.hasConsumers() && (topic == null || topic.partitions.isEmpty()))
             {
                 topicMetadataByName.remove(topicName);
                 topicsByName.remove(topicName);
@@ -2272,7 +2273,7 @@ public final class NetworkConnectionPool
             {
                 // Attach to live stream
                 candidate.offset = partition.offset;
-                dispatcher.adjustOffset(partitionId, fetchOffset, partition.offset);
+                dispatcher.adjustOffset(partitionId, MAX_OFFSET, partition.offset);
             }
 
             if (!candidate.equals(partition))
