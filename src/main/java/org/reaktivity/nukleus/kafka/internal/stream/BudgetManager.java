@@ -182,7 +182,7 @@ public class BudgetManager
             {
                 GroupBudget groupBudget = groups.get(groupId);
                 GroupStreamBudget streamBudget = groupBudget.get(streamId);
-                return streamBudget.unackedBudget != 0;
+                return streamBudget != null && streamBudget.unackedBudget != 0;
             }
         }
 
