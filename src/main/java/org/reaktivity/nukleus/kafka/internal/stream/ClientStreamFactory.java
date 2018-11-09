@@ -19,6 +19,7 @@ import static java.lang.Integer.toHexString;
 import static java.lang.String.format;
 import static java.lang.System.identityHashCode;
 import static java.util.Objects.requireNonNull;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.DEBUG;
 import static org.reaktivity.nukleus.kafka.internal.cache.TopicCache.NO_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.stream.BudgetManager.NO_BUDGET;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
@@ -613,6 +614,12 @@ public final class ClientStreamFactory implements StreamFactory
             long oldOffset,
             long newOffset)
         {
+            if (DEBUG)
+            {
+                System.out.format("CAS.adjustOffset: partition=%d, oldOffset = %d, newOffset = %d, this = %s\n",
+                                  partition, oldOffset, newOffset, this);
+            }
+
             long offset = fetchOffsets.get(partition);
             if (offset == oldOffset)
             {

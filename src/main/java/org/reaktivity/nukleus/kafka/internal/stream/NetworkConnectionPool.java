@@ -21,6 +21,7 @@ import static java.nio.ByteBuffer.allocateDirect;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Collections.emptyIterator;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.DEBUG;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.NONE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.UNEXPECTED_SERVER_ERROR;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.asKafkaError;
@@ -63,8 +64,8 @@ import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaRefCounters;
 import org.reaktivity.nukleus.kafka.internal.cache.CompactedTopicCache;
-import org.reaktivity.nukleus.kafka.internal.cache.StreamingTopicCache;
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
+import org.reaktivity.nukleus.kafka.internal.cache.StreamingTopicCache;
 import org.reaktivity.nukleus.kafka.internal.cache.TopicCache;
 import org.reaktivity.nukleus.kafka.internal.function.Attachable;
 import org.reaktivity.nukleus.kafka.internal.function.IntLongConsumer;
@@ -112,8 +113,6 @@ import org.reaktivity.nukleus.kafka.internal.util.DelayedTaskScheduler;
 
 public final class NetworkConnectionPool
 {
-    private static final boolean DEBUG = Boolean.getBoolean("nukleus.kafka.debug");
-
     static final long MAX_OFFSET = Long.MAX_VALUE;
 
     private static final short FETCH_API_VERSION = 5;
@@ -512,6 +511,12 @@ public final class NetworkConnectionPool
             {
                 topicMetadataByName.remove(topicName);
                 topicsByName.remove(topicName);
+
+                if (DEBUG)
+                {
+                    System.out.format("NCP.doDetach: removed metadata %s, topic %s !!!\n",
+                                      metadata, topic);
+                }
             }
         }
     }
@@ -2145,7 +2150,9 @@ public final class NetworkConnectionPool
         @Override
         public String toString()
         {
-            return format("topicName=%s, partitions=%s, needsHistoricalByPartition=%s, isLiveByPartition=%s",
+            return format("%s@%s(topicName=%s, partitions=%s, needsHistoricalByPartition=%s, isLiveByPartition=%s)",
+                    getClass().getSimpleName(),
+                    Integer.toHexString(System.identityHashCode(this)),
                     topicName, partitions, needsHistoricalByPartition, isLiveByPartition);
         }
 
@@ -2231,9 +2238,10 @@ public final class NetworkConnectionPool
             if (DEBUG)
             {
                 System.out.format(
-                        "NCP.doAttach: fetchKey = %s, headers.sizeof = %d, dispatcher = %s, topic=%s\n",
+                        "NT.doAttach: fetchKey = %s, headers.sizeof = %d, dispatcher = %s, topic=%s\n",
                         fetchKey, headers.sizeof() - 4, dispatcher, this);
             }
+
             windowSuppliers.add(supplyWindow);
             headersIterator.wrap(headers);
 
@@ -2315,9 +2323,10 @@ public final class NetworkConnectionPool
             if (DEBUG)
             {
                 System.out.format(
-                        "NCP.doDetach: fetchKey = %s, headers.sizeof = %d, dispatcher = %s, topic = %s\n",
+                        "NT.doDetach: fetchKey = %s, headers.sizeof = %d, dispatcher = %s, topic = %s\n",
                         fetchKey, headers.sizeof() - 4, dispatcher, this);
             }
+
             windowSuppliers.remove(supplyWindow);
             int fetchKeyPartition = (int) (fetchKey == null ? -1 : fetchOffsets.keySet().iterator().next());
             headersIterator.wrap(headers);
@@ -2406,10 +2415,11 @@ public final class NetworkConnectionPool
             if (DEBUG)
             {
                 System.out.format(
-                        "NCP.handleProgress: partition = %d, firstOffset = %d, nextOffset = %d, dispatcher = %s, " +
+                        "NT.handleProgress: partition = %d, firstOffset = %d, nextOffset = %d, dispatcher = %s, " +
                         "topic = %s\n",
                         partitionId, firstOffset, nextOffset, dispatcher, this);
             }
+
             candidate.id = partitionId;
             candidate.offset = firstOffset;
             NetworkTopicPartition first = partitions.floor(candidate);
