@@ -17,6 +17,11 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_CAPACITY;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_PROACTIVE;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_TOPIC_BOOTSTRAP_ENABLED;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfigurationTest.KAFKA_MESSAGE_CACHE_PROACTIVE_NAME;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfigurationTest.KAFKA_READ_IDLE_TIMEOUT_NAME;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -26,7 +31,6 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
-import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaController;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleusFactorySpi;
 import org.reaktivity.reaktor.test.ReaktorRule;
@@ -52,9 +56,9 @@ public class BootstrapCachingIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(4096)
-        .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "true")
-        .configure(KafkaConfiguration.MESSAGE_CACHE_CAPACITY_PROPERTY, Integer.toString(1024 * 1024))
-        .configure(KafkaConfiguration.MESSAGE_CACHE_PROACTIVE_PROPERTY, "true")
+        .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, true)
+        .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 1024 * 1024)
+        .configure(KAFKA_MESSAGE_CACHE_PROACTIVE, true)
         .clean();
 
     @Rule
@@ -97,7 +101,7 @@ public class BootstrapCachingIT
         "applicationConnectWindow1 \"2000\"",
         "applicationConnectWindow2 \"200\""
     })
-    @Configure(name=KafkaConfiguration.READ_IDLE_TIMEOUT_PROPERTY, value="200000")
+    @Configure(name=KAFKA_READ_IDLE_TIMEOUT_NAME, value="200000")
     public void shouldReceiveCompactedFragmentedMessageAndFollowingFromCacheWhenNotSubscribedToKey() throws Exception
     {
         k3po.start();
@@ -193,8 +197,8 @@ public class BootstrapCachingIT
         "applicationConnectWindow2 \"350\""
     })
     @Configures({
-        @Configure(name=KafkaConfiguration.MESSAGE_CACHE_PROACTIVE_PROPERTY, value="false"),
-        @Configure(name=KafkaConfiguration.READ_IDLE_TIMEOUT_PROPERTY, value="2000000")
+        @Configure(name=KAFKA_MESSAGE_CACHE_PROACTIVE_NAME, value="false"),
+        @Configure(name=KAFKA_READ_IDLE_TIMEOUT_NAME, value="2000000")
     })
     public void shouldReceiveLargeHistoricalMessagesFromMultiplePartitions() throws Exception
     {
