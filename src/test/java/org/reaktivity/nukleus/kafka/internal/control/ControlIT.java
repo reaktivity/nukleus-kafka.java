@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.control;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_TOPIC_BOOTSTRAP_ENABLED;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -26,7 +27,6 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
-import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
 public class ControlIT
@@ -47,7 +47,7 @@ public class ControlIT
             .commandBufferCapacity(1024)
             .responseBufferCapacity(1024)
             .counterValuesBufferCapacity(4096)
-            .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false");
+            .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, false);
 
     @Rule
     public final TestRule chain = outerRule(k3po).around(timeout).around(reaktor);

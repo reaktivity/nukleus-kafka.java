@@ -21,77 +21,68 @@ public class KafkaConfiguration extends Configuration
 {
     public static final boolean DEBUG = Boolean.getBoolean("nukleus.kafka.debug");
 
-    public static final String TOPIC_BOOTSTRAP_ENABLED = "nukleus.kafka.topic.bootstrap.enabled";
+    public static final BooleanPropertyDef KAFKA_TOPIC_BOOTSTRAP_ENABLED;
+    public static final IntPropertyDef KAFKA_FETCH_MAX_BYTES;
+    public static final IntPropertyDef KAFKA_FETCH_PARTITION_MAX_BYTES;
+    public static final IntPropertyDef KAFKA_MESSAGE_CACHE_CAPACITY;
+    public static final IntPropertyDef KAFKA_MESSAGE_CACHE_BLOCK_CAPACITY;
+    public static final BooleanPropertyDef KAFKA_MESSAGE_CACHE_PROACTIVE;
+    public static final IntPropertyDef KAFKA_READ_IDLE_TIMEOUT;
 
-    public static final String FETCH_MAX_BYTES_PROPERTY = "nukleus.kafka.fetch.max.bytes";
+    private static final ConfigurationDef KAFKA_CONFIG;
 
-    // "headers": cache messages during bootstrap only for topics with route header conditions
-    // "all": cache messages during bootstrap for all topics
-    public static final String MESSAGE_CACHE_PROACTIVE_PROPERTY = "nukleus.kafka.message.cache.proactive";
-
-    // Maximum record batch size, corresponding to Kafka broker and topic configuration
-    // property "max.message.bytes"
-    public static final String FETCH_PARTITION_MAX_BYTES_PROPERTY = "nukleus.kafka.fetch.partition.max.bytes";
-
-    private static final boolean TOPIC_BOOTSTRAP_ENABLED_DEFAULT = true;
-
-    private static final int FETCH_MAX_BYTES_DEFAULT = 50 * 1024 * 1024;
-
-    private static final int FETCH_PARTITION_MAX_BYTES_DEFAULT = 1 * 1024 * 1024;
-
-    public static final String MESSAGE_CACHE_CAPACITY_PROPERTY = "nukleus.kafka.message.cache.capacity";
-
-    public static final String MESSAGE_CACHE_BLOCK_CAPACITY_PROPERTY = "nukleus.kafka.message.cache.block.capacity";
-
-    public static final String READ_IDLE_TIMEOUT_PROPERTY = "nukleus.kafka.read.idle.timeout";
-
-    public static final long MESSAGE_CACHE_CAPACITY_DEFAULT = 128 * 1024 * 1024;
-
-    public static final int MESSAGE_CACHE_BLOCK_CAPACITY_DEFAULT = 1024;
-
-    public static final boolean DEFAULT_MESSAGE_CACHE_PROACTIVE = false;
-
-    public static final int READ_IDLE_TIMEOUT_DEFAULT = 5000;
+    static
+    {
+        final ConfigurationDef config = new ConfigurationDef("nukleus.kafka");
+        KAFKA_TOPIC_BOOTSTRAP_ENABLED = config.property("topic.bootstrap.enabled", true);
+        KAFKA_FETCH_MAX_BYTES = config.property("fetch.max.bytes", 50 * 1024 * 1024);
+        // maximum record batch size, corresponding to Kafka broker and topic configuration property "max.message.bytes"
+        KAFKA_FETCH_PARTITION_MAX_BYTES = config.property("fetch.partition.max.bytes", 1 * 1024 * 1024);
+        KAFKA_MESSAGE_CACHE_CAPACITY = config.property("message.cache.capacity", 128 * 1024 * 1024);
+        KAFKA_MESSAGE_CACHE_BLOCK_CAPACITY = config.property("message.cache.block.capacity", 1024);
+        KAFKA_MESSAGE_CACHE_PROACTIVE = config.property("message.cache.proactive", false);
+        KAFKA_READ_IDLE_TIMEOUT = config.property("read.idle.timeout", 5000);
+        KAFKA_CONFIG = config;
+    }
 
     public KafkaConfiguration(
         Configuration config)
     {
-        super(config);
+        super(KAFKA_CONFIG, config);
     }
 
     public boolean topicBootstrapEnabled()
     {
-        return getBoolean(TOPIC_BOOTSTRAP_ENABLED, TOPIC_BOOTSTRAP_ENABLED_DEFAULT);
+        return KAFKA_TOPIC_BOOTSTRAP_ENABLED.getAsBoolean(this);
     }
 
     public int fetchMaxBytes()
     {
-        return getInteger(FETCH_MAX_BYTES_PROPERTY, FETCH_MAX_BYTES_DEFAULT);
+        return KAFKA_FETCH_MAX_BYTES.getAsInt(this);
     }
 
     public int fetchPartitionMaxBytes()
     {
-        return getInteger(FETCH_PARTITION_MAX_BYTES_PROPERTY, FETCH_PARTITION_MAX_BYTES_DEFAULT);
+        return KAFKA_FETCH_PARTITION_MAX_BYTES.get(this);
     }
 
     public long messageCacheCapacity()
     {
-        return getLong(MESSAGE_CACHE_CAPACITY_PROPERTY, MESSAGE_CACHE_CAPACITY_DEFAULT);
+        return KAFKA_MESSAGE_CACHE_CAPACITY.getAsInt(this);
     }
 
     public int messageCacheBlockCapacity()
     {
-        return getInteger(MESSAGE_CACHE_BLOCK_CAPACITY_PROPERTY, MESSAGE_CACHE_BLOCK_CAPACITY_DEFAULT);
+        return KAFKA_MESSAGE_CACHE_BLOCK_CAPACITY.getAsInt(this);
     }
 
     public boolean messageCacheProactive()
     {
-        return getBoolean(MESSAGE_CACHE_PROACTIVE_PROPERTY, DEFAULT_MESSAGE_CACHE_PROACTIVE);
+        return KAFKA_MESSAGE_CACHE_PROACTIVE.getAsBoolean(this);
     }
 
     public int readIdleTimeout()
     {
-        return getInteger(READ_IDLE_TIMEOUT_PROPERTY, READ_IDLE_TIMEOUT_DEFAULT);
+        return KAFKA_READ_IDLE_TIMEOUT.getAsInt(this);
     }
-
 }
