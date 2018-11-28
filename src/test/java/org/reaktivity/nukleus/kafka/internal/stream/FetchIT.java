@@ -52,7 +52,7 @@ public class FetchIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(4096)
         .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, false)
-        .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 0)
+        .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 0L)
         .clean();
 
     @Rule
