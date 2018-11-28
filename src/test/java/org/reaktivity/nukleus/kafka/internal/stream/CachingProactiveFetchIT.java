@@ -56,7 +56,7 @@ public class CachingProactiveFetchIT
         .counterValuesBufferCapacity(4096)
         .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, false)
         .configure(KAFKA_MESSAGE_CACHE_PROACTIVE, true)
-        .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 1024 * 1024)
+        .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 1024L * 1024L)
         .clean();
 
     private final KafkaCountersRule counters = new KafkaCountersRule(reaktor);

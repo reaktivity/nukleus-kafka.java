@@ -50,7 +50,7 @@ public class CachingFetchLimitsIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(4096)
         .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, false)
-        .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 1024 * 2)
+        .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 1024L * 2L)
         .configure(KAFKA_MESSAGE_CACHE_PROACTIVE, true)
         .clean();
 
