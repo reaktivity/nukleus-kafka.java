@@ -56,7 +56,7 @@
     <nukleus.plugin.version>0.32</nukleus.plugin.version>
     <nukleus.version>0.23</nukleus.version>
 
-    <nukleus.kafka.spec.version>0.101</nukleus.kafka.spec.version>
+    <nukleus.kafka.spec.version>develop-SNAPSHOT</nukleus.kafka.spec.version>
     <reaktor.version>0.61</reaktor.version>
 
     <kafka.clients.version>1.0.0</kafka.clients.version>
@@ -256,7 +256,6 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <version>2.17</version>
         <configuration>
-          <argLine>@{argLine}</argLine>
         </configuration>
       </plugin>
       <plugin>
@@ -284,7 +283,6 @@
         <artifactId>maven-failsafe-plugin</artifactId>
         <version>2.19.1</version>
         <configuration>
-          <argLine>@{argLine}</argLine>
           <trimStackTrace>false</trimStackTrace>
         </configuration>
         <executions>

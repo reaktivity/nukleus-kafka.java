@@ -1370,7 +1370,11 @@ public final class NetworkConnectionPool
                             {
                                 // first offset is now lower than client requested offset, topic was
                                 // recreated, force client(s) to re-attach at offset 0
+                                //networkTopic.cache.startOffset(partitionId, MAX_OFFSET);
                                 networkTopic.dispatcher.detach(true);
+
+                                topicsByName.remove(topicName);
+                                topicMetadataByName.remove(topicName);
                             }
                             topicMetadata.offsetsOutOfRangeByPartition[partitionId] = NO_OFFSET;
                         }
