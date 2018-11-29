@@ -107,7 +107,8 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
         ClientStreamFactoryBuilder streamFactoryBuilder = new ClientStreamFactoryBuilder(kafkaConfig,
                 this::supplyMemoryManager, connectionPools, this::setConnectionPoolFactory, scheduler);
 
-        return builder.streamFactory(CLIENT, streamFactoryBuilder)
+        return builder.configure(kafkaConfig)
+                      .streamFactory(CLIENT, streamFactoryBuilder)
                       .routeHandler(CLIENT, this::handleRoute)
                       .inject(scheduler::process)
                       .inject(this)

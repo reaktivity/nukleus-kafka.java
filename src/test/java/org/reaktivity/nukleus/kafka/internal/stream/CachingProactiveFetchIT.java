@@ -18,6 +18,10 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.Assert.assertEquals;
 import static org.junit.rules.RuleChain.outerRule;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_CAPACITY;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_PROACTIVE;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_TOPIC_BOOTSTRAP_ENABLED;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfigurationTest.KAFKA_READ_IDLE_TIMEOUT_NAME;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -27,7 +31,6 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
-import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.test.KafkaCountersRule;
 import org.reaktivity.reaktor.test.ReaktorRule;
 import org.reaktivity.reaktor.test.annotation.Configure;
@@ -51,9 +54,9 @@ public class CachingProactiveFetchIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(4096)
-        .configure(KafkaConfiguration.TOPIC_BOOTSTRAP_ENABLED, "false")
-        .configure(KafkaConfiguration.MESSAGE_CACHE_PROACTIVE_PROPERTY, "true")
-        .configure(KafkaConfiguration.MESSAGE_CACHE_CAPACITY_PROPERTY, Integer.toString(1024 * 1024))
+        .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, false)
+        .configure(KAFKA_MESSAGE_CACHE_PROACTIVE, true)
+        .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 1024L * 1024L)
         .clean();
 
     private final KafkaCountersRule counters = new KafkaCountersRule(reaktor);
@@ -111,7 +114,7 @@ public class CachingProactiveFetchIT
         "${client}/compacted.header.message.multiple.clients/client",
         "${server}/compacted.header.first.matches/server"})
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    @Configure(name=KafkaConfiguration.READ_IDLE_TIMEOUT_PROPERTY, value="200000")
+    @Configure(name=KAFKA_READ_IDLE_TIMEOUT_NAME, value="200000")
     public void shouldReceiveHistoricalMessageMatchingHeaderFromCache() throws Exception
     {
         k3po.finish();
