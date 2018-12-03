@@ -1305,7 +1305,6 @@ public class FetchIT
         k3po.finish();
     }
 
-    // jitu
     @Test
     @Specification({
         "${route}/client/controller",
@@ -1313,21 +1312,6 @@ public class FetchIT
         "${server}/live.fetch.broker.restarted.with.recreated.topic/server" })
     @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldReceiveMessagesAcrossBrokerRestartWithRecreatedTopic() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_RECEIVED_FIRST_MESSAGE");
-        k3po.notifyBarrier("SHUTDOWN_BROKER");
-        k3po.finish();
-    }
-
-    @Ignore
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/zero.offset.message.reattach.message/client",
-        "${server}/live.fetch.broker.restarted.with.recreated.compacted.topic/server" })
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
-    public void shouldReceiveMessagesAcrossBrokerRestartWithRecreatedCompactedTopic() throws Exception
     {
         k3po.start();
         k3po.awaitBarrier("CLIENT_RECEIVED_FIRST_MESSAGE");
