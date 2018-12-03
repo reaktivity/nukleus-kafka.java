@@ -34,6 +34,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.IntToLongFunction;
 import java.util.function.LongSupplier;
+import java.util.function.LongUnaryOperator;
 import java.util.function.Predicate;
 
 import org.agrona.DirectBuffer;
@@ -133,7 +134,8 @@ public final class ClientStreamFactory implements StreamFactory
 
     final RouteManager router;
     final BudgetManager budgetManager;
-    final LongSupplier supplyStreamId;
+    final LongSupplier supplyInitialId;
+    final LongUnaryOperator supplyReplyId;
     final LongSupplier supplyTrace;
     final LongSupplier supplyCorrelationId;
     private Function<String, LongSupplier> supplyCounter;
@@ -158,7 +160,8 @@ public final class ClientStreamFactory implements StreamFactory
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
         MemoryManager memoryManager,
-        LongSupplier supplyStreamId,
+        LongSupplier supplyInitialId,
+        LongUnaryOperator supplyReplyId,
         LongSupplier supplyTrace,
         LongSupplier supplyCorrelationId,
         Function<String, LongSupplier> supplyCounter,
@@ -177,7 +180,8 @@ public final class ClientStreamFactory implements StreamFactory
         this.writeBuffer = requireNonNull(writeBuffer);
         this.bufferPool = requireNonNull(bufferPool);
         this.messageCache = new DefaultMessageCache(requireNonNull(memoryManager));
-        this.supplyStreamId = requireNonNull(supplyStreamId);
+        this.supplyInitialId = requireNonNull(supplyInitialId);
+        this.supplyReplyId = requireNonNull(supplyReplyId);
         this.supplyTrace = requireNonNull(supplyTrace);
         this.supplyCorrelationId = supplyCorrelationId;
         this.supplyCounter = requireNonNull(supplyCounter);
@@ -1173,7 +1177,7 @@ public final class ClientStreamFactory implements StreamFactory
                     this.streamState = this::afterBegin;
 
                     // Start the response stream to the client
-                    final long newReplyId = supplyStreamId.getAsLong();
+                    final long newReplyId = supplyReplyId.applyAsLong(applicationId);
                     final String replyName = applicationName;
                     final MessageConsumer newReply = router.supplyTarget(replyName);
 
