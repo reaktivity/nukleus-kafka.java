@@ -602,7 +602,7 @@ public final class NetworkConnectionPool
                 //       if choose to give up, say after maximum retry attempts,
                 //       then send END to each consumer to clean up
 
-                final long newNetworkId = NetworkConnectionPool.this.clientStreamFactory.supplyStreamId.getAsLong();
+                final long newNetworkId = NetworkConnectionPool.this.clientStreamFactory.supplyInitialId.getAsLong();
                 final long newCorrelationId = NetworkConnectionPool.this.clientStreamFactory.supplyCorrelationId.getAsLong();
 
                 NetworkConnectionPool.this.clientStreamFactory.correlations.put(newCorrelationId, AbstractNetworkConnection.this);
