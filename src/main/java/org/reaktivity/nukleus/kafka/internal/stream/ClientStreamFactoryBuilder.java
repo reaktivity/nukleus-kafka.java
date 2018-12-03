@@ -23,6 +23,7 @@ import java.util.function.IntUnaryOperator;
 import java.util.function.LongConsumer;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
+import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
 
 import org.agrona.MutableDirectBuffer;
@@ -47,7 +48,8 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
 
     private RouteManager router;
     private MutableDirectBuffer writeBuffer;
-    private LongSupplier supplyStreamId;
+    private LongSupplier supplyInitialId;
+    private LongUnaryOperator supplyReplyId;
     private LongSupplier supplyTrace;
     private LongSupplier supplyCorrelationId;
     private Supplier<BufferPool> supplyBufferPool;
@@ -87,10 +89,18 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
-    public ClientStreamFactoryBuilder setStreamIdSupplier(
-        LongSupplier supplyStreamId)
+    public ClientStreamFactoryBuilder setInitialIdSupplier(
+        LongSupplier supplyInitialId)
     {
-        this.supplyStreamId = supplyStreamId;
+        this.supplyInitialId = supplyInitialId;
+        return this;
+    }
+
+    @Override
+    public StreamFactoryBuilder setReplyIdSupplier(
+        LongUnaryOperator supplyReplyId)
+    {
+        this.supplyReplyId = supplyReplyId;
         return this;
     }
 
@@ -159,8 +169,8 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
         final BufferPool bufferPool = supplyBufferPool.get();
         final MemoryManager memoryManager = supplyMemoryManager.apply(counters);
 
-        return new ClientStreamFactory(config, router, writeBuffer, bufferPool, memoryManager, supplyStreamId, supplyTrace,
-                supplyCorrelationId, supplyCounter, correlations, connectionPools, connectPoolFactoryConsumer, scheduler,
-                counters);
+        return new ClientStreamFactory(config, router, writeBuffer, bufferPool, memoryManager, supplyInitialId, supplyReplyId,
+                supplyTrace, supplyCorrelationId, supplyCounter, correlations, connectionPools, connectPoolFactoryConsumer,
+                scheduler, counters);
     }
 }
