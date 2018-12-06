@@ -61,12 +61,10 @@ public class CachingFetchIT
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(counters).around(timeout);
 
-    @Ignore("BEGIN vs RESET read order not yet guaranteed to match write order")
     @Test
     @Specification({
         "${route}/client/controller",
         "${client}/begin.ext.missing/client"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
     public void shouldRejectWhenBeginExtMissing() throws Exception
     {
         k3po.finish();
@@ -984,7 +982,6 @@ public class CachingFetchIT
         k3po.finish();
     }
 
-    @Ignore("order of RESET vs BEGIN/DATA/ABORT/END not guaranteed")
     @Test
     @Specification({
         "${route}/client/controller",
