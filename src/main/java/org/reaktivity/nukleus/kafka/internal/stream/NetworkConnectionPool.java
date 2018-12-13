@@ -255,6 +255,7 @@ public final class NetworkConnectionPool
 
     private final ClientStreamFactory clientStreamFactory;
     private final String networkName;
+    private final long networkRouteId;
     private final long networkRef;
     private final int fetchMaxBytes;
     private final int fetchPartitionMaxBytes;
@@ -283,6 +284,7 @@ public final class NetworkConnectionPool
 
     NetworkConnectionPool(
         ClientStreamFactory clientStreamFactory,
+        long networkRouteId,
         String networkName,
         long networkRef,
         int fetchMaxBytes,
@@ -294,6 +296,7 @@ public final class NetworkConnectionPool
         int readIdleTimeout)
     {
         this.clientStreamFactory = clientStreamFactory;
+        this.networkRouteId = networkRouteId;
         this.networkName = networkName;
         this.networkRef = networkRef;
         this.fetchMaxBytes = fetchMaxBytes;
@@ -608,7 +611,7 @@ public final class NetworkConnectionPool
                 NetworkConnectionPool.this.clientStreamFactory.correlations.put(newCorrelationId, AbstractNetworkConnection.this);
 
                 NetworkConnectionPool.this.clientStreamFactory
-                    .doBegin(networkTarget, newNetworkId, networkRef, newCorrelationId, extensionVisitor);
+                    .doBegin(networkTarget, networkRouteId, newNetworkId, networkRef, newCorrelationId, extensionVisitor);
                 NetworkConnectionPool.this.clientStreamFactory.router.setThrottle(
                         networkName, newNetworkId, this::handleThrottle);
 
@@ -653,7 +656,7 @@ public final class NetworkConnectionPool
         {
             if (networkId != 0L)
             {
-                clientStreamFactory.doAbort(networkTarget, networkId);
+                clientStreamFactory.doAbort(networkTarget, networkRouteId, networkId);
                 this.networkId = 0L;
                 this.networkRequestBudget = 0;
             }
@@ -663,7 +666,7 @@ public final class NetworkConnectionPool
         {
             if (networkId != 0L)
             {
-                clientStreamFactory.doEnd(networkTarget, networkId, null);
+                clientStreamFactory.doEnd(networkTarget, networkRouteId, networkId, null);
                 this.networkId = 0L;
                 this.streamState = this::afterClose;
             }
@@ -710,7 +713,7 @@ public final class NetworkConnectionPool
                     networkCorrelationId, AbstractNetworkConnection.this);
             if (networkReplyId != 0L)
             {
-                clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
+                clientStreamFactory.doReset(networkReplyThrottle, networkRouteId, networkReplyId);
                 networkReplyId = 0L;
             }
             handleConnectionFailed();
@@ -739,7 +742,7 @@ public final class NetworkConnectionPool
             }
             else
             {
-                clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
+                clientStreamFactory.doReset(networkReplyThrottle, networkRouteId, networkReplyId);
             }
         }
 
@@ -753,7 +756,7 @@ public final class NetworkConnectionPool
             if (frame.streamId() != networkReplyId)
             {
                 // reject deferred DATA / END / ABORT after idle ABORT without RESET
-                clientStreamFactory.doReset(networkReplyThrottle, frame.streamId());
+                clientStreamFactory.doReset(networkReplyThrottle, networkRouteId, frame.streamId());
                 return;
             }
 
@@ -772,7 +775,7 @@ public final class NetworkConnectionPool
                 handleAbort(abort);
                 break;
             default:
-                clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
+                clientStreamFactory.doReset(networkReplyThrottle, networkRouteId, networkReplyId);
                 break;
             }
         }
@@ -794,7 +797,7 @@ public final class NetworkConnectionPool
                 doReinitialize();
                 break;
             default:
-                NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
+                NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkRouteId, networkReplyId);
                 break;
             }
         }
@@ -821,7 +824,7 @@ public final class NetworkConnectionPool
 
             if (networkResponseBudget < 0)
             {
-                NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
+                NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkRouteId, networkReplyId);
             }
             else
             {
@@ -916,7 +919,7 @@ public final class NetworkConnectionPool
         {
             if (networkId != 0L)
             {
-                clientStreamFactory.doEnd(networkTarget, networkId, null);
+                clientStreamFactory.doEnd(networkTarget, networkRouteId, networkId, null);
                 this.networkId = 0L;
             }
             doReinitialize();
@@ -929,7 +932,7 @@ public final class NetworkConnectionPool
         {
             if (networkId != 0L)
             {
-                clientStreamFactory.doAbort(networkTarget, networkId);
+                clientStreamFactory.doAbort(networkTarget, networkRouteId, networkId);
                 this.networkId = 0L;
             }
             handleConnectionFailed();
@@ -945,7 +948,7 @@ public final class NetworkConnectionPool
             if (networkResponseCredit > 0)
             {
                 NetworkConnectionPool.this.clientStreamFactory.doWindow(
-                        networkReplyThrottle, networkReplyId, networkResponseCredit, 0, 0);
+                        networkReplyThrottle, networkRouteId, networkReplyId, networkResponseCredit, 0, 0);
 
                 this.networkResponseBudget += networkResponseCredit;
             }
@@ -1126,7 +1129,7 @@ public final class NetworkConnectionPool
 
                 fetches.getAsLong();
 
-                NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId,
+                NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkRouteId, networkId,
                         networkRequestPadding, payload);
                 networkRequestBudget -= payload.sizeof() + networkRequestPadding;
 
@@ -1224,7 +1227,7 @@ public final class NetworkConnectionPool
                         .set((b, o, m) -> m - o)
                         .build();
 
-                NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId,
+                NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkRouteId, networkId,
                         networkRequestPadding, payload);
                 networkRequestBudget -= payload.sizeof() + networkRequestPadding;
 
@@ -1255,7 +1258,7 @@ public final class NetworkConnectionPool
                 networkResponseBudget -= payload.sizeof() + data.padding();
                 if (networkResponseBudget < 0)
                 {
-                    NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkReplyId);
+                    NetworkConnectionPool.this.clientStreamFactory.doReset(networkReplyThrottle, networkRouteId, networkReplyId);
                 }
                 int excessBytes = fetchResponseDecoder.decode(payload, data.trace());
                 doOfferResponseBudget();
@@ -1771,7 +1774,7 @@ public final class NetworkConnectionPool
                             .set((b, o, m) -> m - o)
                             .build();
 
-                    NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId,
+                    NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkRouteId, networkId,
                             networkRequestPadding, payload);
                     networkRequestBudget -= payload.sizeof() + networkRequestPadding;
                     pendingRequest = MetadataRequestType.DESCRIBE_CONFIGS;
@@ -1831,7 +1834,7 @@ public final class NetworkConnectionPool
                             .set((b, o, m) -> m - o)
                             .build();
 
-                    NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkId,
+                    NetworkConnectionPool.this.clientStreamFactory.doData(networkTarget, networkRouteId, networkId,
                             networkRequestPadding, payload);
                     networkRequestBudget -= payload.sizeof() + networkRequestPadding;
                     pendingRequest = MetadataRequestType.METADATA;
