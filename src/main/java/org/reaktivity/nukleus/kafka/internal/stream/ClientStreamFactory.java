@@ -31,6 +31,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.IntSupplier;
 import java.util.function.IntToLongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
@@ -623,6 +624,8 @@ public final class ClientStreamFactory implements StreamFactory
         private Runnable dispatchState = NOOP;
 
         private final Runnable dispatchUsingCurrentState = this::dispatchMessages;
+
+        private final IntSupplier writeableBytes = this::writeableBytes;
 
         private ClientAcceptStream(
             MessageConsumer applicationThrottle,
@@ -1278,7 +1281,7 @@ public final class ClientStreamFactory implements StreamFactory
         private void invoke(
             AttachDetailsConsumer attacher)
         {
-            attacher.apply(fetchOffsets, fetchKey, headers, this, this::writeableBytes);
+            attacher.apply(fetchOffsets, fetchKey, headers, this, writeableBytes);
         }
 
         private void onMetadataError(
