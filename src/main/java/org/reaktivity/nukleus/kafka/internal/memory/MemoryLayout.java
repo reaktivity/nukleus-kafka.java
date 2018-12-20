@@ -19,16 +19,21 @@ import static java.lang.Long.numberOfTrailingZeros;
 import static java.lang.Math.max;
 import static java.lang.String.format;
 import static org.agrona.BitUtil.CACHE_LINE_LENGTH;
-import static org.agrona.IoUtil.createEmptyFile;
+import static org.agrona.IoUtil.ensureDirectoryExists;
+import static org.agrona.IoUtil.fill;
 import static org.agrona.IoUtil.mapExistingFile;
 import static org.agrona.IoUtil.unmap;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 
 import org.agrona.CloseHelper;
 import org.agrona.DirectBuffer;
+import org.agrona.LangUtil;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.AtomicBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
@@ -158,7 +163,7 @@ public final class MemoryLayout extends Layout
                             "BTree size %d exceeds ONE_GB, difference between minimum and maximum block size is too great",
                             metadataSizeAligned));
                 }
-                CloseHelper.close(createEmptyFile(memory, metadataSizeAligned + capacity));
+                CloseHelper.close(createFile(memory, metadataSizeAligned + capacity, metadataSize));
             }
             else
             {
@@ -242,4 +247,32 @@ public final class MemoryLayout extends Layout
 
 
     }
+
+    /**
+     * Create a file, fill with 0s for the specified length, and return the {@link FileChannel}
+     *
+     * @param file   to create
+     * @param length of the file to create
+     * @return {@link java.nio.channels.FileChannel} for the file
+     */
+    private static FileChannel createFile(final File file, final long length, final long fillLength)
+    {
+        ensureDirectoryExists(file.getParentFile(), file.getParent());
+
+        FileChannel templateFile = null;
+        try
+        {
+            final RandomAccessFile randomAccessFile = new RandomAccessFile(file, "rw");
+            randomAccessFile.setLength(length);
+            templateFile = randomAccessFile.getChannel();
+            fill(templateFile, 0, fillLength, (byte)0);
+        }
+        catch (final IOException ex)
+        {
+            LangUtil.rethrowUnchecked(ex);
+        }
+
+        return templateFile;
+    }
+
 }
