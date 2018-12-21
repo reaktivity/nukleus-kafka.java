@@ -83,13 +83,6 @@ public final class KafkaController implements Controller
         return "kafka";
     }
 
-    public <T> T supplySource(
-        String source,
-        BiFunction<MessagePredicate, ToIntFunction<MessageConsumer>, T> factory)
-    {
-        return controllerSpi.doSupplySource(source, factory);
-    }
-
     public <T> T supplyTarget(
         String target,
         BiFunction<ToIntFunction<MessageConsumer>, MessagePredicate, T> factory)
@@ -97,67 +90,35 @@ public final class KafkaController implements Controller
         return controllerSpi.doSupplyTarget(target, factory);
     }
 
-    public CompletableFuture<Long> routeServer(
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
+    public CompletableFuture<Long> routeClient(
+        String localAddress,
+        String remoteAddress,
         String topicName)
     {
-        return route(Role.SERVER, source, sourceRef, target, targetRef, topicName, Collections.emptyMap());
+        return route(Role.CLIENT, localAddress, remoteAddress, topicName, Collections.emptyMap());
     }
 
     public CompletableFuture<Long> routeClient(
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
-        String topicName)
-    {
-        return route(Role.CLIENT, source, sourceRef, target, targetRef, topicName, Collections.emptyMap());
-    }
-
-    public CompletableFuture<Long> routeClient(
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
+        String localAddress,
+        String remoteAddress,
         String topicName,
         Map<String, String> headers)
     {
-        return route(Role.CLIENT, source, sourceRef, target, targetRef, topicName, headers);
+        return route(Role.CLIENT, localAddress, remoteAddress, topicName, headers);
     }
 
-    public CompletableFuture<Void> unrouteServer(
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
-        String topicName)
+    public CompletableFuture<Void> unroute(
+        long routeId)
     {
-        return unroute(Role.SERVER, source, sourceRef, target, targetRef, topicName, Collections.emptyMap());
-    }
+        long correlationId = controllerSpi.nextCorrelationId();
 
-    public CompletableFuture<Void> unrouteClient(
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
-        String topicName,
-        Map<String, String> headers)
-    {
-        return unroute(Role.CLIENT, source, sourceRef, target, targetRef, topicName, headers);
-    }
+        UnrouteFW unrouteRO = unrouteRW.wrap(atomicBuffer, 0, atomicBuffer.capacity())
+                                 .correlationId(correlationId)
+                                 .nukleus(name())
+                                 .routeId(routeId)
+                                 .build();
 
-
-    public CompletableFuture<Void> unrouteClient(
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
-        String topicName)
-    {
-        return unroute(Role.CLIENT, source, sourceRef, target, targetRef, topicName, Collections.emptyMap());
+        return controllerSpi.doUnroute(unrouteRO.typeId(), unrouteRO.buffer(), unrouteRO.offset(), unrouteRO.sizeof());
     }
 
     public CompletableFuture<Void> freeze()
@@ -166,6 +127,7 @@ public final class KafkaController implements Controller
 
         FreezeFW freeze = freezeRW.wrap(atomicBuffer, 0, atomicBuffer.capacity())
                                   .correlationId(correlationId)
+                                  .nukleus(name())
                                   .build();
 
         return controllerSpi.doFreeze(freeze.typeId(), freeze.buffer(), freeze.offset(), freeze.sizeof());
@@ -204,10 +166,8 @@ public final class KafkaController implements Controller
 
     private CompletableFuture<Long> route(
         Role role,
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
+        String localAddress,
+        String remoteAddress,
         String topicName,
         Map<String, String> headers)
     {
@@ -215,38 +175,13 @@ public final class KafkaController implements Controller
 
         RouteFW routeRO = routeRW.wrap(atomicBuffer, 0, atomicBuffer.capacity())
                                  .correlationId(correlationId)
+                                 .nukleus(name())
                                  .role(b -> b.set(role))
-                                 .source(source)
-                                 .sourceRef(sourceRef)
-                                 .target(target)
-                                 .targetRef(targetRef)
+                                 .localAddress(localAddress)
+                                 .remoteAddress(remoteAddress)
                                  .extension(extension(topicName, headers))
                                  .build();
 
         return controllerSpi.doRoute(routeRO.typeId(), routeRO.buffer(), routeRO.offset(), routeRO.sizeof());
-    }
-
-    private CompletableFuture<Void> unroute(
-        Role role,
-        String source,
-        long sourceRef,
-        String target,
-        long targetRef,
-        String topicName,
-        Map<String, String> headers)
-    {
-        long correlationId = controllerSpi.nextCorrelationId();
-
-        UnrouteFW unrouteRO = unrouteRW.wrap(atomicBuffer, 0, atomicBuffer.capacity())
-                                 .correlationId(correlationId)
-                                 .role(b -> b.set(role))
-                                 .source(source)
-                                 .sourceRef(sourceRef)
-                                 .target(target)
-                                 .targetRef(targetRef)
-                                 .extension(extension(topicName, headers))
-                                 .build();
-
-        return controllerSpi.doUnroute(unrouteRO.typeId(), unrouteRO.buffer(), unrouteRO.offset(), unrouteRO.sizeof());
     }
 }

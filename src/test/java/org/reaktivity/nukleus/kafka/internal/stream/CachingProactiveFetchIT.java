@@ -69,7 +69,7 @@ public class CachingProactiveFetchIT
         "${route}/client/controller",
         "${client}/compacted.messages.one.per.key/client",
         "${server}/compacted.messages/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     // Behavior is different with message cache: better compaction, guaranteed only one message per key
     public void shouldReceiveCompactedHistoricalMessagesFromCacheWhenProactiveMessageCachingIsEnabled() throws Exception
     {
@@ -82,7 +82,7 @@ public class CachingProactiveFetchIT
         "${route}/client/controller",
         "${client}/compacted.delivers.compacted.messages/client",
         "${server}/compacted.delivers.compacted.messages/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldReceiveCompactedMessages() throws Exception
     {
         k3po.start();
@@ -97,7 +97,7 @@ public class CachingProactiveFetchIT
         "${route}/client/controller",
         "${client}/compacted.delivers.deleted.messages/client",
         "${server}/compacted.delivers.deleted.messages/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldReceiveCompactedDeletedMessagesFromCache() throws Exception
     {
         k3po.start();
@@ -113,7 +113,7 @@ public class CachingProactiveFetchIT
         "${route}/client/controller",
         "${client}/compacted.header.message.multiple.clients/client",
         "${server}/compacted.header.first.matches/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     @Configure(name=KAFKA_READ_IDLE_TIMEOUT_NAME, value="200000")
     public void shouldReceiveHistoricalMessageMatchingHeaderFromCache() throws Exception
     {
@@ -126,7 +126,7 @@ public class CachingProactiveFetchIT
         "${route}/client/controller",
         "${client}/compacted.message.subscribed.to.key/client",
         "${server}/compacted.messages/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldReceiveLastMatchingMessageOnlyFromCacheWhenSubscribedByKey() throws Exception
     {
         k3po.finish();
