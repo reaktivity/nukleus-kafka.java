@@ -59,7 +59,7 @@ public class MetadataIT
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${metadata}/one.topic.leader.not.available.and.retry/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldRetryWhenLeaderNotAvailable() throws Exception
     {
         k3po.finish();
@@ -70,7 +70,7 @@ public class MetadataIT
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${metadata}/one.topic.unknown.error.abort.receive.abort.and.retry/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldAbortReceiveAbortThenReconnectAndRetryWhenMetadataQueryGivesUnknownError() throws Exception
     {
         k3po.finish();
@@ -81,7 +81,7 @@ public class MetadataIT
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${metadata}/one.topic.unknown.error.abort.receive.end.and.retry/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldAbortReceiveEndThenReconnectAndRetryWhenMetadataQueryGivesUnknownError() throws Exception
     {
         k3po.finish();
@@ -92,7 +92,7 @@ public class MetadataIT
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${metadata}/configs.response.unknown.error.abort.receive.abort.and.retry/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldAbortReceiveAbortThenReconnectAndRetryWhenConfigsResponseGivesUnknownError() throws Exception
     {
         k3po.finish();
@@ -103,7 +103,7 @@ public class MetadataIT
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${metadata}/metadata.connection.aborted.and.reconnect/server" })
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldReconnectAndContinueMetadataQueriesWhenBrokerConnectionIsAborted() throws Exception
     {
         k3po.finish();
@@ -114,7 +114,7 @@ public class MetadataIT
         "${routeAnyTopic}/client/controller",
         "${client}/zero.offset/client",
         "${metadata}/metadata.connection.closed.and.reconnect/server" })
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldReconnectAndContinueMetadataQueriesWhenBrokerIsEnded() throws Exception
     {
         k3po.finish();
@@ -125,7 +125,7 @@ public class MetadataIT
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${metadata}/metadata.connection.reset.and.reconnect/server" })
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldReconnectAndContinueMetadataQueriesWhenBrokerConnectionIsReset() throws Exception
     {
         k3po.finish();
@@ -136,7 +136,7 @@ public class MetadataIT
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${metadata}/one.topic.multiple.nodes/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldHandleMetadataResponseOneTopicOnMultipleNodes() throws Exception
     {
         k3po.finish();
@@ -147,7 +147,7 @@ public class MetadataIT
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${metadata}/one.topic.multiple.nodes.and.replicas/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldHandleMetadataResponseOneTopicMultipleNodesAndReplicas() throws Exception
     {
         k3po.finish();
@@ -158,7 +158,7 @@ public class MetadataIT
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${metadata}/one.topic.multiple.partitions/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldHandleMetadataResponseOneTopicMultiplePartitionsSingleNode() throws Exception
     {
         k3po.finish();
@@ -169,7 +169,7 @@ public class MetadataIT
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${metadata}/one.topic.single.partition/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldHandleMetadataResponseOneTopicSinglePartition() throws Exception
     {
         k3po.finish();
@@ -180,7 +180,7 @@ public class MetadataIT
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${metadata}/metadata.incomplete.response.aborts/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldAbortWhenMetadataResponseIsIncomplete() throws Exception
     {
         k3po.finish();
@@ -191,7 +191,7 @@ public class MetadataIT
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${metadata}/metadata.incomplete.response.broker.aborts/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldAbortWhenMetadataResponseBrokerIsIncomplete() throws Exception
     {
         k3po.finish();
@@ -202,7 +202,7 @@ public class MetadataIT
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${metadata}/metadata.incomplete.response.after.brokers.aborts/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldAbortWhenMetadataResponseAfterBrokersIsIncomplete() throws Exception
     {
         k3po.finish();
@@ -213,7 +213,7 @@ public class MetadataIT
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${metadata}/metadata.incomplete.response.topic.aborts/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldAbortWhenMetadataResponseTopicIsIncomplete() throws Exception
     {
         k3po.finish();
@@ -224,7 +224,7 @@ public class MetadataIT
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${metadata}/metadata.incomplete.response.topic.partition.aborts/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldAbortWhenMetadataResponseTopicPartitionIsIncomplete() throws Exception
     {
         k3po.finish();
@@ -235,7 +235,7 @@ public class MetadataIT
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${metadata}/describe.configs.incomplete.response.aborts/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldAbortWhenDescribeConfigsResponseIsIncomplete() throws Exception
     {
         k3po.finish();
@@ -246,7 +246,7 @@ public class MetadataIT
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${metadata}/describe.configs.incomplete.response.resource.aborts/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldAbortWhenDescribeConfigsResponseResourceIsIncomplete() throws Exception
     {
         k3po.finish();
@@ -257,7 +257,7 @@ public class MetadataIT
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${metadata}/describe.configs.incomplete.response.resource.config.aborts/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldAbortWhenDescribeConfigsResponseResourceConfigIsIncomplete() throws Exception
     {
         k3po.finish();
@@ -269,7 +269,7 @@ public class MetadataIT
         "${routeAnyTopic}/client/controller",
         "${client}/zero.offset.multiple.topics/client",
         "${metadata}/unknown.and.known.topics/server" })
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldRepeatMetadataRequestsWhileTopicIsUnknownAndClientsAreAttachedWithoutBlockingOtherTopicUsage()
             throws Exception
     {

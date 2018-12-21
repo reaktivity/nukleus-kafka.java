@@ -67,7 +67,7 @@ public class FetchLimitsIT
         "${route}/client/controller",
         "${client}/compacted.large.message.subscribed.to.key/client",
         "${server}/compacted.messages.large.and.small/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldReceiveLargeCompactedMessageWhenSubscribedToKey() throws Exception
     {
         k3po.finish();
@@ -79,7 +79,7 @@ public class FetchLimitsIT
         "${client}/compacted.large.message.subscribed.to.key/client",
         "${server}/compacted.messages.large.and.small.repeated/server"})
     @ScriptProperty({
-        "networkAccept \"nukleus://target/streams/kafka\"",
+        "networkAccept \"nukleus://streams/target#0\"",
         "applicationConnectWindow \"200\""
     })
     public void shouldReceiveCompactedFragmentedMessageWhenSubscribedToKey() throws Exception
@@ -92,7 +92,7 @@ public class FetchLimitsIT
         "${route}/client/controller",
         "${client}/zero.offset.partial.message.aborted/client",
         "${server}/zero.offset.messages.large.and.small.then.large.missing/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldBeDetachedWhenPartiallyDeliveredMessageNoLongerAvailable() throws Exception
     {
         k3po.finish();
@@ -104,7 +104,7 @@ public class FetchLimitsIT
         "${client}/zero.offset.messages.large.and.small.fanout/client",
         "${server}/zero.offset.messages.large.and.small.historical/server"})
     @ScriptProperty({
-        "networkAccept \"nukleus://target/streams/kafka\"",
+        "networkAccept \"nukleus://streams/target#0\"",
         "applicationConnectWindow \"200\""
     })
     public void shouldNotDettachWhenDispatchingLiveMessageWhenHistoricalMessageIsPartiallyWritten()
@@ -121,7 +121,7 @@ public class FetchLimitsIT
         "${route}/client/controller",
         "${client}/zero.offset.messages.large.and.small/client",
         "${server}/zero.offset.messages.large.and.small/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageExceedingBufferSlotCapacity() throws Exception
     {
         k3po.finish();
@@ -133,7 +133,7 @@ public class FetchLimitsIT
         "${client}/zero.offset.messages.large.and.small/client",
         "${server}/zero.offset.messages.large.and.small.repeated/server"})
     @ScriptProperty({
-        "networkAccept \"nukleus://target/streams/kafka\"",
+        "networkAccept \"nukleus://streams/target#0\"",
         "applicationConnectWindow \"200\""
     })
     public void shouldReceiveMessageExceedingInitialWindow() throws Exception
@@ -147,7 +147,7 @@ public class FetchLimitsIT
         "${client}/zero.offset.messages.large.and.small/client",
         "${server}/zero.offset.first.record.batch.large.requires.3.fetches/server"})
     @ScriptProperty({
-        "networkAccept \"nukleus://target/streams/kafka\"",
+        "networkAccept \"nukleus://streams/target#0\"",
         "applicationConnectWindow \"100\""
     })
     public void shouldReceiveLargeMessageRequiringThreeDataFrames() throws Exception
@@ -161,7 +161,7 @@ public class FetchLimitsIT
         "${client}/zero.offset.message/client",
         "${server}/message.size.exceeds.max.partition.bytes/server"})
     @ScriptProperty({
-        "networkAccept \"nukleus://target/streams/kafka\"",
+        "networkAccept \"nukleus://streams/target#0\"",
         "applicationConnectWindow \"355\"",
         "messageOffset \"3\""
     })
@@ -176,7 +176,7 @@ public class FetchLimitsIT
         "${client}/zero.offset.messages.multiple.partitions/client",
         "${server}/record.set.size.zero.record.too.large/server"})
     @ScriptProperty({
-        "networkAccept \"nukleus://target/streams/kafka\"",
+        "networkAccept \"nukleus://streams/target#0\"",
         "offsetMessage2 2"
     })
     public void shouldSkipRecordLargerThanFetchPartitionMaxBytes() throws Exception

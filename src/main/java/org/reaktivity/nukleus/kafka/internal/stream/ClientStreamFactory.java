@@ -28,11 +28,11 @@ import static org.reaktivity.nukleus.kafka.internal.util.Flags.FIN;
 import static org.reaktivity.nukleus.kafka.internal.util.Flags.INIT;
 
 import java.util.Iterator;
-import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.IntSupplier;
 import java.util.function.IntToLongFunction;
+import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
 import java.util.function.Predicate;
@@ -53,7 +53,6 @@ import org.reaktivity.nukleus.kafka.internal.cache.ImmutableTopicCache.MessageRe
 import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
 import org.reaktivity.nukleus.kafka.internal.function.AttachDetailsConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
-import org.reaktivity.nukleus.kafka.internal.function.StringLongLongFunction;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
@@ -149,7 +148,7 @@ public final class ClientStreamFactory implements StreamFactory
     final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
 
 
-    private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools;
+    private final Long2ObjectHashMap<NetworkConnectionPool> connectionPools;
     private final int fetchMaxBytes;
     private final int fetchPartitionMaxBytes;
     private final boolean forceProactiveMessageCache;
@@ -167,8 +166,8 @@ public final class ClientStreamFactory implements StreamFactory
         LongSupplier supplyCorrelationId,
         Function<String, LongSupplier> supplyCounter,
         Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations,
-        Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools,
-        Consumer<StringLongLongFunction<NetworkConnectionPool>> setConnectionPoolFactory,
+        Long2ObjectHashMap<NetworkConnectionPool> connectionPools,
+        Consumer<LongFunction<NetworkConnectionPool>> setConnectionPoolFactory,
         DelayedTaskScheduler scheduler,
         KafkaCounters counters)
     {
@@ -188,8 +187,8 @@ public final class ClientStreamFactory implements StreamFactory
         this.supplyCounter = requireNonNull(supplyCounter);
         this.correlations = requireNonNull(correlations);
         this.connectionPools = connectionPools;
-        setConnectionPoolFactory.accept((networkName, networkRouteId, networkRef) ->
-            new NetworkConnectionPool(this, networkRouteId, networkName, networkRef, fetchMaxBytes, fetchPartitionMaxBytes,
+        setConnectionPoolFactory.accept(networkRouteId ->
+            new NetworkConnectionPool(this, networkRouteId, fetchMaxBytes, fetchPartitionMaxBytes,
                     bufferPool, messageCache, supplyCounter, forceProactiveMessageCache, readIdleTimeout));
         this.scheduler = scheduler;
         this.counters = counters;
@@ -204,17 +203,17 @@ public final class ClientStreamFactory implements StreamFactory
             MessageConsumer throttle)
     {
         final BeginFW begin = beginRO.wrap(buffer, index, index + length);
-        final long sourceRef = begin.sourceRef();
+        final long streamId = begin.streamId();
 
         MessageConsumer newStream;
 
-        if (sourceRef == 0L)
+        if ((streamId & 0x8000_0000_0000_0000L) == 0L)
         {
-            newStream = newConnectReplyStream(begin, throttle);
+            newStream = newAcceptStream(begin, throttle);
         }
         else
         {
-            newStream = newAcceptStream(begin, throttle);
+            newStream = newConnectReplyStream(begin, throttle);
         }
 
         return newStream;
@@ -225,7 +224,7 @@ public final class ClientStreamFactory implements StreamFactory
         MessageConsumer applicationThrottle)
     {
         final long authorization = begin.authorization();
-        final long acceptRef = begin.sourceRef();
+        final long applicationRouteId = begin.routeId();
 
         final OctetsFW extension = beginRO.extension();
 
@@ -237,23 +236,18 @@ public final class ClientStreamFactory implements StreamFactory
             String topicName = beginEx.topicName().asString();
             ListFW<KafkaHeaderFW> headers = beginEx.headers();
 
-            final RouteFW route = resolveRoute(authorization, acceptRef, topicName, headers);
+            final RouteFW route = resolveRoute(applicationRouteId, authorization, topicName, headers);
             if (route != null)
             {
-                final long applicationRouteId = begin.routeId();
                 final long applicationId = begin.streamId();
 
                 final long networkRouteId = route.correlationId();
-                final String networkName = route.target().asString();
-                final long networkRef = route.targetRef();
+                final long networkRemoteId = (int)(networkRouteId >> 32) & 0xffff;
 
-                Long2ObjectHashMap<NetworkConnectionPool> connectionPoolsByRef =
-                    connectionPools.computeIfAbsent(networkName, this::newConnectionPoolsByRef);
-
-                NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef,
-                        ref -> new NetworkConnectionPool(this, networkRouteId, networkName, ref, fetchMaxBytes,
-                                fetchPartitionMaxBytes, bufferPool, messageCache, supplyCounter, forceProactiveMessageCache,
-                                readIdleTimeout));
+                NetworkConnectionPool connectionPool = connectionPools.computeIfAbsent(networkRemoteId, ref ->
+                    new NetworkConnectionPool(this, networkRouteId, fetchMaxBytes,
+                        fetchPartitionMaxBytes, bufferPool, messageCache, supplyCounter, forceProactiveMessageCache,
+                        readIdleTimeout));
 
                 newStream = new ClientAcceptStream(applicationThrottle, applicationRouteId,
                                                    applicationId, connectionPool)::handleStream;
@@ -271,28 +265,25 @@ public final class ClientStreamFactory implements StreamFactory
 
     private MessageConsumer newConnectReplyStream(
         BeginFW begin,
-        MessageConsumer networkReplyThrottle)
+        MessageConsumer networkReply)
     {
-        final long networkReplyId = begin.streamId();
-        final long networkReplyRef = begin.sourceRef();
-        final long networkReplyCorrelationId = begin.correlationId();
+        final long networkCorrelationId = begin.correlationId();
 
-        MessageConsumer handleStream = null;
-        if (networkReplyRef == 0L)
+        MessageConsumer newStream = null;
+
+        final NetworkConnectionPool.AbstractNetworkConnection connection = correlations.remove(networkCorrelationId);
+        if (connection != null)
         {
-            final NetworkConnectionPool.AbstractNetworkConnection connection = correlations.remove(networkReplyCorrelationId);
-            if (connection != null)
-            {
-                handleStream = connection.onCorrelated(networkReplyThrottle, networkReplyId);
-            }
+            final long networkReplyId = begin.streamId();
+            newStream = connection.onCorrelated(networkReply, networkReplyId);
         }
 
-        return handleStream;
+        return newStream;
     }
 
     private RouteFW resolveRoute(
+        long routeId,
         long authorization,
-        long sourceRef,
         final String topicName,
         final ListFW<KafkaHeaderFW> headers)
     {
@@ -314,10 +305,10 @@ public final class ClientStreamFactory implements StreamFactory
                                     BufferUtil.matches(r.value(),  h.value())));
                 }
             }
-            return route.sourceRef() == sourceRef && topicMatch.test(topicName) && headersMatch.test(headers);
+            return topicMatch.test(topicName) && headersMatch.test(headers);
         };
 
-        return router.resolve(authorization, filter, this::wrapRoute);
+        return router.resolve(routeId, authorization, filter, this::wrapRoute);
     }
 
     private RouteFW wrapRoute(
@@ -334,7 +325,6 @@ public final class ClientStreamFactory implements StreamFactory
         final MessageConsumer receiver,
         final long routeId,
         final long streamId,
-        final long targetRef,
         final long correlationId,
         final Flyweight.Builder.Visitor visitor)
     {
@@ -342,8 +332,6 @@ public final class ClientStreamFactory implements StreamFactory
                 .routeId(routeId)
                 .streamId(streamId)
                 .trace(supplyTrace.getAsLong())
-                .source("kafka")
-                .sourceRef(targetRef)
                 .correlationId(correlationId)
                 .extension(b -> b.set(visitor))
                 .build();
@@ -461,7 +449,6 @@ public final class ClientStreamFactory implements StreamFactory
         final MessageConsumer receiver,
         final long routeId,
         final long streamId,
-        final long targetRef,
         final long correlationId,
         final byte[] extension)
     {
@@ -469,8 +456,6 @@ public final class ClientStreamFactory implements StreamFactory
                 .routeId(routeId)
                 .streamId(streamId)
                 .trace(supplyTrace.getAsLong())
-                .source("kafka")
-                .sourceRef(targetRef)
                 .correlationId(correlationId)
                 .extension(b -> b.set(extension))
                 .build();
@@ -580,7 +565,6 @@ public final class ClientStreamFactory implements StreamFactory
 
         private boolean subscribedByKey;
 
-        private String applicationName;
         private long applicationCorrelationId;
         private byte[] applicationBeginExtension;
         private MessageConsumer applicationReply;
@@ -1148,7 +1132,6 @@ public final class ClientStreamFactory implements StreamFactory
         private void handleBegin(
             BeginFW begin)
         {
-            applicationName = begin.source().asString();
             applicationCorrelationId = begin.correlationId();
             final OctetsFW extension = begin.extension();
 
@@ -1207,12 +1190,11 @@ public final class ClientStreamFactory implements StreamFactory
 
                     // Start the response stream to the client
                     final long newReplyId = supplyReplyId.applyAsLong(applicationId);
-                    final String replyName = applicationName;
-                    final MessageConsumer newReply = router.supplyTarget(replyName);
+                    final MessageConsumer newReply = router.supplySender(applicationRouteId);
 
-                    doKafkaBegin(newReply, applicationRouteId, newReplyId, 0L,
+                    doKafkaBegin(newReply, applicationRouteId, newReplyId,
                             applicationCorrelationId, applicationBeginExtension);
-                    router.setThrottle(applicationName, newReplyId, this::handleThrottle);
+                    router.setThrottle(newReplyId, this::handleThrottle);
 
                     doWindow(applicationThrottle, applicationRouteId, applicationId, 0, 0, 0);
                     this.applicationReply = newReply;
