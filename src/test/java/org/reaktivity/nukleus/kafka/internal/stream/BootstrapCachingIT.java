@@ -69,7 +69,7 @@ public class BootstrapCachingIT
         "${control}/route.ext.multiple.headers/client/controller",
         "${client}/compacted.messages.header.multiple.routes/client",
         "${server}/compacted.messages.header.multiple.values/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldCacheMessagesMatchingHeadersOnMultipleRoutesDuringBootstrap() throws Exception
     {
         k3po.start();
@@ -97,7 +97,7 @@ public class BootstrapCachingIT
         "${client}/compacted.historical.large.message.and.small/client",
         "${server}/compacted.messages.large.and.small/server"})
     @ScriptProperty({
-        "networkAccept \"nukleus://target/streams/kafka\"",
+        "networkAccept \"nukleus://streams/target#0\"",
         "applicationConnectWindow1 \"2000\"",
         "applicationConnectWindow2 \"200\""
     })
@@ -117,7 +117,7 @@ public class BootstrapCachingIT
         "${client}/compacted.partial.message.aborted/client",
         "${server}/compacted.messages.large.then.small/server"})
     @ScriptProperty({
-        "networkAccept \"nukleus://target/streams/kafka\"",
+        "networkAccept \"nukleus://streams/target#0\"",
         "secondMessageKey \"key1\""
     })
     public void shouldBeDetachedWhenPartiallyWrittenMessageIsReplacedWithNewValueInCache() throws Exception
@@ -137,7 +137,7 @@ public class BootstrapCachingIT
         "${client}/compacted.partial.message.aborted.with.key/client",
         "${server}/compacted.messages.large.then.small/server"})
     @ScriptProperty({
-        "networkAccept \"nukleus://target/streams/kafka\"",
+        "networkAccept \"nukleus://streams/target#0\"",
         "secondMessageKey \"key1\""
     })
     public void shouldNotThrowConcurrentModificationExceptionWhenDetached() throws Exception
@@ -157,7 +157,7 @@ public class BootstrapCachingIT
         "${client}/compacted.partial.message.aborted/client",
         "${server}/compacted.messages.large.then.tombstone/server"})
     @ScriptProperty({
-        "networkAccept \"nukleus://target/streams/kafka\"",
+        "networkAccept \"nukleus://streams/target#0\"",
         "secondMessageKey \"key1\""
     })
     public void shouldBeDetachedWhenPartiallyWrittenMessageIsReplacedWithTombstone() throws Exception
@@ -176,7 +176,7 @@ public class BootstrapCachingIT
         "${route}/client/controller",
         "${client}/compacted.messages.advance.log.start.offset/client",
         "${server}/compacted.messages.advance.log.start.offset/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldReceiveCompactedMessagesAfterLogStartOffset() throws Exception
     {
         k3po.start();
@@ -192,7 +192,7 @@ public class BootstrapCachingIT
         "${client}/compacted.messages.multiple.nodes.historical/client",
         "${server}/compacted.messages.multiple.nodes.historical/server"})
     @ScriptProperty({
-        "networkAccept \"nukleus://target/streams/kafka\"",
+        "networkAccept \"nukleus://streams/target#0\"",
         "applicationConnectWindow1 \"13\"",
         "applicationConnectWindow2 \"350\""
     })

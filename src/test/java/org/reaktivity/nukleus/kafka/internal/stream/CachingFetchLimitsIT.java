@@ -62,7 +62,7 @@ public class CachingFetchLimitsIT
         "${route}/client/controller",
         "${client}/compacted.messages.slow.consumer/client",
         "${server}/compacted.messages.slow.consumer/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldDeliverCompactedMessagesFromCacheWhenLiveConsumerFallsBehind() throws Exception
     {
         k3po.finish();
@@ -74,7 +74,7 @@ public class CachingFetchLimitsIT
         "${client}/compacted.historical.large.message.subscribed.to.key/client",
         "${server}/compacted.messages.large.and.small/server"})
     @ScriptProperty({
-        "networkAccept \"nukleus://target/streams/kafka\"",
+        "networkAccept \"nukleus://streams/target#0\"",
         "applicationConnectWindow \"200\""
     })
     public void shouldReceiveCompactedFragmentedMessageFromCacheWhenSubscribedToKey() throws Exception
@@ -88,7 +88,7 @@ public class CachingFetchLimitsIT
         "${client}/compacted.historical.large.message.subscribed.to.key/client",
         "${server}/compacted.messages.large.and.small/server"})
     @ScriptProperty({
-        "networkAccept \"nukleus://target/streams/kafka\"",
+        "networkAccept \"nukleus://streams/target#0\"",
         "applicationConnectWindow \"200\""
     })
     public void shouldReceiveCompactedFragmentedMessageThenSmallMessageFromCacheWhenSubscribedToKey() throws Exception
@@ -101,7 +101,7 @@ public class CachingFetchLimitsIT
         "${control}/route.ext.header/client/controller",
         "${client}/compacted.messages.header.multiple.clients/client",
         "${server}/compacted.messages.header/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldReceiveCompactedMessagesCachedByRouteHeader() throws Exception
     {
         k3po.finish();
@@ -112,7 +112,7 @@ public class CachingFetchLimitsIT
         "${control}/route.ext.multiple.headers/client/controller",
         "${client}/compacted.messages.header.multiple.routes/client",
         "${server}/compacted.messages.header.multiple.values/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldReceiveCachedCompactedMessagesFilteredByHeaderOnMultipleRoutes() throws Exception
     {
         k3po.start();

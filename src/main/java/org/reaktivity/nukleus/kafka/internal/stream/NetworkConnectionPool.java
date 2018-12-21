@@ -254,9 +254,7 @@ public final class NetworkConnectionPool
     final MutableDirectBuffer encodeBuffer;
 
     private final ClientStreamFactory clientStreamFactory;
-    private final String networkName;
     private final long networkRouteId;
-    private final long networkRef;
     private final int fetchMaxBytes;
     private final int fetchPartitionMaxBytes;
     private final int readIdleTimeout;
@@ -285,8 +283,6 @@ public final class NetworkConnectionPool
     NetworkConnectionPool(
         ClientStreamFactory clientStreamFactory,
         long networkRouteId,
-        String networkName,
-        long networkRef,
         int fetchMaxBytes,
         int fetchPartitionMaxBytes,
         BufferPool bufferPool,
@@ -297,14 +293,12 @@ public final class NetworkConnectionPool
     {
         this.clientStreamFactory = clientStreamFactory;
         this.networkRouteId = networkRouteId;
-        this.networkName = networkName;
-        this.networkRef = networkRef;
         this.fetchMaxBytes = fetchMaxBytes;
         this.fetchPartitionMaxBytes = fetchPartitionMaxBytes;
         this.bufferPool = bufferPool;
         this.messageCache = messageCache;
         this.forceProactiveMessageCache = forceProactiveMessageCache;
-        this.routeCounters = clientStreamFactory.counters.supplyRef(networkName, networkRef);
+        this.routeCounters = clientStreamFactory.counters.supplyRef(networkRouteId);
         this.encodeBuffer = new UnsafeBuffer(new byte[clientStreamFactory.bufferPool.slotCapacity()]);
         this.topicsByName = new LinkedHashMap<>();
         this.topicMetadataByName = new HashMap<>();
@@ -567,7 +561,7 @@ public final class NetworkConnectionPool
 
         private AbstractNetworkConnection()
         {
-            this.networkTarget = NetworkConnectionPool.this.clientStreamFactory.router.supplyTarget(networkName);
+            this.networkTarget = NetworkConnectionPool.this.clientStreamFactory.router.supplyReceiver(networkRouteId);
             localDecodeBuffer = new UnsafeBuffer(allocateDirect(fetchPartitionMaxBytes));
             timer = clientStreamFactory.scheduler.newBlankTimer();
         }
@@ -611,9 +605,9 @@ public final class NetworkConnectionPool
                 NetworkConnectionPool.this.clientStreamFactory.correlations.put(newCorrelationId, AbstractNetworkConnection.this);
 
                 NetworkConnectionPool.this.clientStreamFactory
-                    .doBegin(networkTarget, networkRouteId, newNetworkId, networkRef, newCorrelationId, extensionVisitor);
+                    .doBegin(networkTarget, networkRouteId, newNetworkId, newCorrelationId, extensionVisitor);
                 NetworkConnectionPool.this.clientStreamFactory.router.setThrottle(
-                        networkName, newNetworkId, this::handleThrottle);
+                        newNetworkId, this::handleThrottle);
 
                 this.networkId = newNetworkId;
                 this.networkCorrelationId = newCorrelationId;
@@ -1425,7 +1419,7 @@ public final class NetworkConnectionPool
         {
             for (TopicMetadata metadata : topicMetadataByName.values())
             {
-                if (metadata.invalidateBroker(broker.nodeId))
+                if (broker != null && metadata.invalidateBroker(broker.nodeId))
                 {
                     int newAttachId = nextAttachId++;
                     metadata.doAttach(newAttachId, this::metadataUpdated);

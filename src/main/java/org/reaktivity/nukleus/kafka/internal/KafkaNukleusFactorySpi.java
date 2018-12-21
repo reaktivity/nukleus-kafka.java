@@ -19,9 +19,8 @@ import static java.lang.String.format;
 import static org.reaktivity.nukleus.route.RouteKind.CLIENT;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.function.LongFunction;
 
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
@@ -31,7 +30,6 @@ import org.reaktivity.nukleus.Configuration;
 import org.reaktivity.nukleus.Nukleus;
 import org.reaktivity.nukleus.NukleusBuilder;
 import org.reaktivity.nukleus.NukleusFactorySpi;
-import org.reaktivity.nukleus.kafka.internal.function.StringLongLongFunction;
 import org.reaktivity.nukleus.kafka.internal.memory.CountingMemoryManager;
 import org.reaktivity.nukleus.kafka.internal.memory.DefaultMemoryManager;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryLayout;
@@ -80,13 +78,13 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
     private MemoryManager memoryManager = null;
     private MemoryLayout memoryLayout;
 
-    private final Map<String, Long2ObjectHashMap<NetworkConnectionPool>> connectionPools = new LinkedHashMap<>();
+    private final Long2ObjectHashMap<NetworkConnectionPool> connectionPools = new Long2ObjectHashMap<>();
 
     private final RouteFW routeRO = new RouteFW();
     private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
 
     private List<RouteFW> routesToProcess = new ArrayList<>();
-    private StringLongLongFunction<NetworkConnectionPool> connectionPoolFactory;
+    private LongFunction<NetworkConnectionPool> connectionPoolFactory;
 
     private KafkaConfiguration kafkaConfig;
 
@@ -213,14 +211,10 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
                 final String topicName = routeEx.topicName().asString();
 
                 final long networkRouteId = route.correlationId();
-                final String networkName = route.target().asString();
-                final long networkRef = route.targetRef();
+                final long networkRemoteId = (int)(networkRouteId >> 32) & 0xffff;
 
-                Long2ObjectHashMap<NetworkConnectionPool> connectionPoolsByRef =
-                    connectionPools.computeIfAbsent(networkName, name -> new Long2ObjectHashMap<>());
-
-                NetworkConnectionPool connectionPool = connectionPoolsByRef.computeIfAbsent(networkRef, ref ->
-                    connectionPoolFactory.apply(networkName, networkRouteId, networkRef));
+                NetworkConnectionPool connectionPool =
+                        connectionPools.computeIfAbsent(networkRemoteId, r -> connectionPoolFactory.apply(networkRouteId));
 
                 final ListFW<KafkaHeaderFW> headers = routeEx.headers();
                 ListFW<KafkaHeaderFW> headersCopy = new ListFW<KafkaHeaderFW>(new KafkaHeaderFW());
@@ -250,7 +244,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
     }
 
     private void setConnectionPoolFactory(
-        StringLongLongFunction<NetworkConnectionPool> connectionPoolFactory)
+        LongFunction<NetworkConnectionPool> connectionPoolFactory)
     {
         this.connectionPoolFactory = connectionPoolFactory;
     }

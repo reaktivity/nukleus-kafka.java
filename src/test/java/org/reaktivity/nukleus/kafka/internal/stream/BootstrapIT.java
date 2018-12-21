@@ -63,7 +63,7 @@ public class BootstrapIT
         "${route}/client/controller",
         "${server}/compacted.message/server"})
     @ScriptProperty({
-        "networkAccept \"nukleus://target/streams/kafka\"",
+        "networkAccept \"nukleus://streams/target#0\"",
         "maxPartitionBytes 123000"
 })
     public void shouldBootstrapTopic() throws Exception
@@ -75,7 +75,7 @@ public class BootstrapIT
     @Specification({
         "${route}/client/controller",
         "${server}/compacted.offset.too.low.message/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldBootstrapTopicStartingWithOffsetTooLow() throws Exception
     {
         k3po.finish();
@@ -85,7 +85,7 @@ public class BootstrapIT
     @Specification({
         "${route}/client/controller",
         "${server}/compacted.messages.multiple.nodes/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldBootstrapTopicWithMultiplePartitionsOnMultipleNodes() throws Exception
     {
         k3po.finish();
@@ -96,8 +96,8 @@ public class BootstrapIT
         "${control}/route.ext.multiple.networks/client/controller",
         "${server}/compacted.message.multiple.networks/server"})
     @ScriptProperty({
-        "networkAccept1 \"nukleus://target1/streams/kafka\"",
-        "networkAccept2 \"nukleus://target2/streams/kafka\""})
+        "networkAccept1 \"nukleus://streams/target#0\"",
+        "networkAccept2 \"nukleus://streams/target#1\""})
     public void shouldBootstrapMultipleNetworks() throws Exception
     {
         k3po.finish();
@@ -107,7 +107,7 @@ public class BootstrapIT
     @Specification({
         "${control}/route.ext.multiple.topics/client/controller",
         "${server}/compacted.message.multiple.topics/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldBootstrapMultipleTopics() throws Exception
     {
         k3po.start();
@@ -122,7 +122,7 @@ public class BootstrapIT
         "${route}/client/controller",
         "${client}/compacted.message/client",
         "${server}/compacted.bootstrap.uses.historical/server"})
-    @ScriptProperty({"networkAccept \"nukleus://target/streams/kafka\"",
+    @ScriptProperty({"networkAccept \"nukleus://streams/target#0\"",
                      "offset \"4\""
     })
     public void shouldBootstrapWithHistoricalWhenClientSubscribesAtHigherOffset() throws Exception
@@ -147,7 +147,7 @@ public class BootstrapIT
         "${control}/route/client/controller",
         "${client}/zero.offset.message/client",
         "${server}/zero.offset.message/server" })
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldNotBootstrapWhenTopicBootstrapIsEnabledButTopicIsNotCompacted() throws Exception
     {
         k3po.start();
@@ -160,7 +160,7 @@ public class BootstrapIT
         "${routeAnyTopic}/client/controller",
         "${client}/compacted.message/client",
         "${server}/compacted.message/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldNotBootstrapWhenRouteDoesNotNameATopic() throws Exception
     {
         k3po.start();
@@ -174,7 +174,7 @@ public class BootstrapIT
         "${route}/client/controller",
         "${client}/compacted.bootstrap.historical.uses.cached.key.then.live/client",
         "${server}/compacted.bootstrap.historical.uses.cached.key.then.live/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldBootstrapTopicAndUseCachedKeyOffsetThenLive() throws Exception
     {
         k3po.start();
@@ -193,7 +193,7 @@ public class BootstrapIT
         "${route}/client/controller",
         "${client}/compacted.message/client",
         "${server}/compacted.tombstone.then.message/server"})
-    @ScriptProperty({ "networkAccept \"nukleus://target/streams/kafka\"",
+    @ScriptProperty({ "networkAccept \"nukleus://streams/target#0\"",
                       "messageOffset 12L",
                       })
     public void shouldExpireTombstoneKeyAndOffset() throws Exception
@@ -217,7 +217,7 @@ public class BootstrapIT
         "${route}/client/controller",
         "${client}/compacted.message.tombstone.message.same.key/client",
         "${server}/compacted.message.tombstone.message.same.key/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldNotExpireMessageFollowingTombstoneForSameKey() throws Exception
     {
         k3po.start();
@@ -238,7 +238,7 @@ public class BootstrapIT
     @Specification({
         "${route}/client/controller",
         "${metadata}/one.topic.error.unknown.topic/server"})
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldIssueWarningWhenBootstrapUnkownTopic() throws Exception
     {
         k3po.finish();
@@ -249,7 +249,7 @@ public class BootstrapIT
         "${route}/client/controller",
         "${client}/zero.offset.message.connect.await/client",
         "${server}/zero.offset.message.topic.not.found.initially/server" })
-    @ScriptProperty("networkAccept \"nukleus://target/streams/kafka\"")
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldRequeryMetadataUntilFoundThenReceiveMessageAtZeroOffset() throws Exception
     {
         k3po.start();
