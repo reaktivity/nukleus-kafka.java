@@ -199,7 +199,7 @@ public final class KafkaNukleusFactorySpi implements NukleusFactorySpi, Nukleus
         return 0;
     }
 
-    public void processRoutes(
+    private void processRoutes(
         List<RouteFW> routes)
     {
         for (RouteFW route : routes)

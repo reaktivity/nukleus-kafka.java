@@ -257,12 +257,6 @@ public final class ClientStreamFactory implements StreamFactory
         return newStream;
     }
 
-    private Long2ObjectHashMap<NetworkConnectionPool> newConnectionPoolsByRef(
-        String networkName)
-    {
-        return new Long2ObjectHashMap<>();
-    }
-
     private MessageConsumer newConnectReplyStream(
         BeginFW begin,
         MessageConsumer networkReply)
