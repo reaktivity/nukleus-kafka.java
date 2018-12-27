@@ -19,6 +19,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_FETCH_MAX_BYTES;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_FETCH_PARTITION_MAX_BYTES;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_PROACTIVE;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_TOPIC_BOOTSTRAP_ENABLED;
 import static org.reaktivity.reaktor.internal.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
 
@@ -31,6 +32,7 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
+import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
 public class FetchLimitsIT
@@ -54,7 +56,8 @@ public class FetchLimitsIT
         .configure(REAKTOR_BUFFER_SLOT_CAPACITY, 256)
         .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, false)
         .configure(KAFKA_FETCH_MAX_BYTES, 355)
-        .configure(KAFKA_FETCH_PARTITION_MAX_BYTES, 355);
+        .configure(KAFKA_FETCH_PARTITION_MAX_BYTES, 355)
+        .configure(KAFKA_MESSAGE_CACHE_PROACTIVE, false);
 
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
