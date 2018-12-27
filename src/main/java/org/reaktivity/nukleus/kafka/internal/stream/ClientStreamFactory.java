@@ -50,12 +50,10 @@ import org.reaktivity.nukleus.kafka.internal.KafkaCounters;
 import org.reaktivity.nukleus.kafka.internal.cache.DefaultMessageCache;
 import org.reaktivity.nukleus.kafka.internal.cache.ImmutableTopicCache;
 import org.reaktivity.nukleus.kafka.internal.cache.ImmutableTopicCache.MessageRef;
-import org.reaktivity.nukleus.kafka.internal.cache.MessageCache;
 import org.reaktivity.nukleus.kafka.internal.function.AttachDetailsConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
-import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
@@ -71,8 +69,6 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.DataFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.FrameFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaEndExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
@@ -87,12 +83,10 @@ public final class ClientStreamFactory implements StreamFactory
 
     private static final PartitionProgressHandler NOOP_PROGRESS_HANDLER = (p, f, n, d) ->
     {
-
     };
 
     private static final Runnable NOOP = () ->
     {
-
     };
 
     public static final long INTERNAL_ERRORS_TO_LOG = 100;
@@ -113,22 +107,8 @@ public final class ClientStreamFactory implements StreamFactory
     final WindowFW windowRO = new WindowFW();
     final ResetFW resetRO = new ResetFW();
 
-    private final BeginFW.Builder beginRW = new BeginFW.Builder();
-    private final DataFW.Builder dataRW = new DataFW.Builder();
-    private final EndFW.Builder endRW = new EndFW.Builder();
-    private final AbortFW.Builder abortRW = new AbortFW.Builder();
-
-    private final KafkaDataExFW.Builder dataExRW = new KafkaDataExFW.Builder();
-    private final KafkaEndExFW.Builder endExRW = new KafkaEndExFW.Builder();
-
-    private final WindowFW.Builder windowRW = new WindowFW.Builder();
-    private final ResetFW.Builder resetRW = new ResetFW.Builder();
-
     final PartitionResponseFW partitionResponseRO = new PartitionResponseFW();
     final RecordSetFW recordSetRO = new RecordSetFW();
-
-    private final OctetsFW messageKeyRO = new OctetsFW();
-    private final OctetsFW messageValueRO = new OctetsFW();
 
     private final HeadersFW headersRO = new HeadersFW();
 
@@ -136,23 +116,16 @@ public final class ClientStreamFactory implements StreamFactory
     final BudgetManager budgetManager;
     final LongSupplier supplyInitialId;
     final LongUnaryOperator supplyReplyId;
-    final LongSupplier supplyTrace;
     final LongSupplier supplyCorrelationId;
-    private Function<String, LongSupplier> supplyCounter;
-    final BufferPool bufferPool;
-    final MessageCache messageCache;
-    private final MutableDirectBuffer writeBuffer;
     final DelayedTaskScheduler scheduler;
     final KafkaCounters counters;
 
     final Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations;
 
-
     private final Long2ObjectHashMap<NetworkConnectionPool> connectionPools;
-    private final int fetchMaxBytes;
-    private final int fetchPartitionMaxBytes;
-    private final boolean forceProactiveMessageCache;
-    private final int readIdleTimeout;
+    private final LongFunction<NetworkConnectionPool> connectionPoolFactory;
+
+    private final MessageWriter writer;
 
     public ClientStreamFactory(
         KafkaConfiguration config,
@@ -171,27 +144,24 @@ public final class ClientStreamFactory implements StreamFactory
         DelayedTaskScheduler scheduler,
         KafkaCounters counters)
     {
-        this.fetchMaxBytes = config.fetchMaxBytes();
-        this.fetchPartitionMaxBytes = config.fetchPartitionMaxBytes();
-        this.forceProactiveMessageCache = config.messageCacheProactive();
-        this.readIdleTimeout = config.readIdleTimeout();
         this.router = requireNonNull(router);
         this.budgetManager = new BudgetManager();
-        this.writeBuffer = requireNonNull(writeBuffer);
-        this.bufferPool = requireNonNull(bufferPool);
-        this.messageCache = new DefaultMessageCache(requireNonNull(memoryManager));
+
         this.supplyInitialId = requireNonNull(supplyInitialId);
         this.supplyReplyId = requireNonNull(supplyReplyId);
-        this.supplyTrace = requireNonNull(supplyTrace);
         this.supplyCorrelationId = supplyCorrelationId;
-        this.supplyCounter = requireNonNull(supplyCounter);
         this.correlations = requireNonNull(correlations);
         this.connectionPools = connectionPools;
-        setConnectionPoolFactory.accept(networkRouteId ->
-            new NetworkConnectionPool(this, networkRouteId, fetchMaxBytes, fetchPartitionMaxBytes,
-                    bufferPool, messageCache, supplyCounter, forceProactiveMessageCache, readIdleTimeout));
         this.scheduler = scheduler;
         this.counters = counters;
+        this.writer = new MessageWriter(writeBuffer, supplyTrace);
+
+        final DefaultMessageCache messageCache = new DefaultMessageCache(requireNonNull(memoryManager));
+        this.connectionPoolFactory = networkRouteId ->
+            new NetworkConnectionPool(router, correlations, writer, scheduler, counters, networkRouteId, config,
+                    bufferPool, messageCache, supplyInitialId, supplyCorrelationId);
+
+        setConnectionPoolFactory.accept(connectionPoolFactory);
     }
 
     @Override
@@ -244,10 +214,8 @@ public final class ClientStreamFactory implements StreamFactory
                 final long networkRouteId = route.correlationId();
                 final long networkRemoteId = (int)(networkRouteId >> 32) & 0xffff;
 
-                NetworkConnectionPool connectionPool = connectionPools.computeIfAbsent(networkRemoteId, ref ->
-                    new NetworkConnectionPool(this, networkRouteId, fetchMaxBytes,
-                        fetchPartitionMaxBytes, bufferPool, messageCache, supplyCounter, forceProactiveMessageCache,
-                        readIdleTimeout));
+                NetworkConnectionPool connectionPool =
+                        connectionPools.computeIfAbsent(networkRemoteId, ref -> connectionPoolFactory.apply(networkRouteId));
 
                 newStream = new ClientAcceptStream(applicationThrottle, applicationRouteId,
                                                    applicationId, connectionPool)::handleStream;
@@ -313,235 +281,6 @@ public final class ClientStreamFactory implements StreamFactory
     {
         assert msgTypeId == RouteFW.TYPE_ID;
         return routeRO.wrap(buffer, index, index + length);
-    }
-
-    void doBegin(
-        final MessageConsumer receiver,
-        final long routeId,
-        final long streamId,
-        final long correlationId,
-        final Flyweight.Builder.Visitor visitor)
-    {
-        final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                .routeId(routeId)
-                .streamId(streamId)
-                .trace(supplyTrace.getAsLong())
-                .correlationId(correlationId)
-                .extension(b -> b.set(visitor))
-                .build();
-
-        receiver.accept(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
-    }
-
-    void doData(
-        final MessageConsumer receiver,
-        final long routeId,
-        final long streamId,
-        final int padding,
-        final OctetsFW payload)
-    {
-        final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                .routeId(routeId)
-                .streamId(streamId)
-                .trace(supplyTrace.getAsLong())
-                .groupId(0)
-                .padding(padding)
-                .payload(p -> p.set(payload.buffer(), payload.offset(), payload.sizeof()))
-                .build();
-
-        receiver.accept(data.typeId(), data.buffer(), data.offset(), data.sizeof());
-    }
-
-    void doEnd(
-        final MessageConsumer receiver,
-        final long routeId,
-        final long streamId,
-        final long[] offsets)
-    {
-        final EndFW end = endRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                .routeId(routeId)
-                .streamId(streamId)
-                .trace(supplyTrace.getAsLong())
-                .extension(b -> b.set(visitKafkaEndEx(offsets)))
-                .build();
-
-        receiver.accept(end.typeId(), end.buffer(), end.offset(), end.sizeof());
-    }
-
-    private Flyweight.Builder.Visitor visitKafkaEndEx(
-        long[] fetchOffsets)
-    {
-        return (b, o, l) ->
-        {
-            return endExRW.wrap(b, o, l)
-                    .fetchOffsets(a ->
-                    {
-                        if (fetchOffsets != null)
-                        {
-                        for (int i=0; i < fetchOffsets.length; i++)
-                            {
-                                final long offset = fetchOffsets[i];
-                                a.item(p -> p.set(offset));
-
-                            }
-                        }
-                    })
-                    .build()
-                    .sizeof();
-        };
-    }
-
-    void doAbort(
-        final MessageConsumer receiver,
-        final long routeId,
-        final long streamId)
-    {
-        final AbortFW abort = abortRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                .routeId(routeId)
-                .streamId(streamId)
-                .trace(supplyTrace.getAsLong())
-                .build();
-
-        receiver.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());
-    }
-
-    void doWindow(
-        final MessageConsumer sender,
-        final long routeId,
-        final long streamId,
-        final int credit,
-        final int padding,
-        final long groupId)
-    {
-        final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                .routeId(routeId)
-                .streamId(streamId)
-                .trace(supplyTrace.getAsLong())
-                .credit(credit)
-                .padding(padding)
-                .groupId(groupId)
-                .build();
-
-        sender.accept(window.typeId(), window.buffer(), window.offset(), window.sizeof());
-    }
-
-    void doReset(
-        final MessageConsumer sender,
-        final long routeId,
-        final long streamId)
-    {
-        final ResetFW reset = resetRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                .routeId(routeId)
-                .streamId(streamId)
-                .trace(supplyTrace.getAsLong())
-                .build();
-
-        sender.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
-    }
-
-    private void doKafkaBegin(
-        final MessageConsumer receiver,
-        final long routeId,
-        final long streamId,
-        final long correlationId,
-        final byte[] extension)
-    {
-        final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                .routeId(routeId)
-                .streamId(streamId)
-                .trace(supplyTrace.getAsLong())
-                .correlationId(correlationId)
-                .extension(b -> b.set(extension))
-                .build();
-
-        receiver.accept(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
-    }
-
-    private void doKafkaData(
-        final MessageConsumer receiver,
-        final long routeId,
-        final long streamId,
-        final long traceId,
-        final int padding,
-        final byte flags,
-        final DirectBuffer messageKey,
-        final long timestamp,
-        final DirectBuffer messageValue,
-        final int messageValueLimit,
-        final Long2LongHashMap fetchOffsets)
-    {
-        OctetsFW key = messageKey == null ? null : messageKeyRO.wrap(messageKey, 0, messageKey.capacity());
-        OctetsFW value = messageValue == null ? null : messageValueRO.wrap(messageValue, 0, messageValueLimit);
-        final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                .routeId(routeId)
-                .streamId(streamId)
-                .trace(traceId)
-                .flags(flags)
-                .groupId(0)
-                .padding(padding)
-                .payload(value)
-                .extension(e -> e.set(visitKafkaDataEx(timestamp, fetchOffsets, key)))
-                .build();
-
-        receiver.accept(data.typeId(), data.buffer(), data.offset(), data.sizeof());
-    }
-
-    private void doKafkaDataContinuation(
-        final MessageConsumer receiver,
-        final long routeId,
-        final long streamId,
-        final long traceId,
-        final int padding,
-        final byte flags,
-        final DirectBuffer messageValue,
-        final int messageValueOffset,
-        final int messageValueLimit)
-    {
-        OctetsFW value = messageValue == null ? null : messageValueRO.wrap(messageValue, messageValueOffset, messageValueLimit);
-
-        final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                .routeId(routeId)
-                .streamId(streamId)
-                .trace(traceId)
-                .flags(flags)
-                .groupId(0)
-                .padding(padding)
-                .payload(value)
-                .build();
-
-        receiver.accept(data.typeId(), data.buffer(), data.offset(), data.sizeof());
-    }
-
-    private Flyweight.Builder.Visitor visitKafkaDataEx(
-        long timestamp,
-        Long2LongHashMap fetchOffsets,
-        final OctetsFW messageKey)
-    {
-        return (b, o, l) ->
-        {
-            return dataExRW.wrap(b, o, l)
-                    .timestamp(timestamp)
-                    .fetchOffsets(a ->
-                    {
-                        if (fetchOffsets.size() == 1)
-                        {
-                            final long offset = fetchOffsets.values().iterator().nextValue();
-                            a.item(p -> p.set(offset));
-                        }
-                        else
-                        {
-                            int partition = -1;
-                            while (fetchOffsets.get(++partition) != fetchOffsets.missingValue())
-                            {
-                                final long offset = fetchOffsets.get(partition);
-                                a.item(p -> p.set(offset));
-                            }
-                        }
-                    })
-                    .messageKey(messageKey)
-                    .build()
-                    .sizeof();
-        };
     }
 
     private final class ClientAcceptStream implements MessageDispatcher
@@ -997,13 +736,13 @@ public final class ClientStreamFactory implements StreamFactory
         private void doDeferredDetach()
         {
             budget.closed(applicationReplyId);
-            doAbort(applicationReply, applicationRouteId, applicationReplyId);
+            writer.doAbort(applicationReply, applicationRouteId, applicationReplyId);
         }
 
         private void doDeferredDetachWithReattach()
         {
             budget.closed(applicationReplyId);
-            doEnd(applicationReply, applicationRouteId, applicationReplyId, ZERO_OFFSETS);
+            writer.doEnd(applicationReply, applicationRouteId, applicationReplyId, ZERO_OFFSETS);
         }
 
         private String toString(
@@ -1035,14 +774,15 @@ public final class ClientStreamFactory implements StreamFactory
                 flags |= INIT;
 
                 final long oldFetchOffset = this.fetchOffsets.put(partition, nextOffset);
-                doKafkaData(applicationReply, applicationRouteId, applicationReplyId, traceId, applicationReplyPadding, flags,
-                            compacted ? key : null,
-                            timestamp, value, valueLimit, fetchOffsets);
+                writer.doKafkaData(applicationReply, applicationRouteId, applicationReplyId, traceId,
+                                   applicationReplyPadding, flags,
+                                   compacted ? key : null,
+                                   timestamp, value, valueLimit, fetchOffsets);
                 this.fetchOffsets.put(partition, oldFetchOffset);
             }
             else
             {
-                doKafkaDataContinuation(applicationReply, applicationRouteId, applicationReplyId, traceId,
+                writer.doKafkaDataContinuation(applicationReply, applicationRouteId, applicationReplyId, traceId,
                         applicationReplyPadding, flags, value, valueOffset,
                         valueLimit);
             }
@@ -1095,7 +835,7 @@ public final class ClientStreamFactory implements StreamFactory
             }
             else
             {
-                doReset(applicationThrottle, applicationRouteId, applicationId);
+                writer.doReset(applicationThrottle, applicationRouteId, applicationId);
             }
         }
 
@@ -1108,7 +848,7 @@ public final class ClientStreamFactory implements StreamFactory
             switch (msgTypeId)
             {
             case DataFW.TYPE_ID:
-                doReset(applicationThrottle, applicationRouteId, applicationId);
+                writer.doReset(applicationThrottle, applicationRouteId, applicationId);
                 detachFromNetworkPool();
                 break;
             case EndFW.TYPE_ID:
@@ -1118,7 +858,7 @@ public final class ClientStreamFactory implements StreamFactory
                 detach(false);
                 break;
             default:
-                doReset(applicationThrottle, applicationRouteId, applicationId);
+                writer.doReset(applicationThrottle, applicationRouteId, applicationId);
                 break;
             }
         }
@@ -1131,7 +871,7 @@ public final class ClientStreamFactory implements StreamFactory
 
             if (extension.sizeof() == 0)
             {
-                doReset(applicationThrottle, applicationRouteId, applicationId);
+                writer.doReset(applicationThrottle, applicationRouteId, applicationId);
             }
             else
             {
@@ -1153,7 +893,7 @@ public final class ClientStreamFactory implements StreamFactory
                     (hashCodesCount > 1) ||
                     (hashCodesCount == 1 && fetchKey == null))
                 {
-                    doReset(applicationThrottle, applicationRouteId, applicationId);
+                    writer.doReset(applicationThrottle, applicationRouteId, applicationId);
                 }
                 else
                 {
@@ -1186,11 +926,11 @@ public final class ClientStreamFactory implements StreamFactory
                     final long newReplyId = supplyReplyId.applyAsLong(applicationId);
                     final MessageConsumer newReply = router.supplySender(applicationRouteId);
 
-                    doKafkaBegin(newReply, applicationRouteId, newReplyId,
+                    writer.doKafkaBegin(newReply, applicationRouteId, newReplyId,
                             applicationCorrelationId, applicationBeginExtension);
                     router.setThrottle(newReplyId, this::handleThrottle);
 
-                    doWindow(applicationThrottle, applicationRouteId, applicationId, 0, 0, 0);
+                    writer.doWindow(applicationThrottle, applicationRouteId, applicationId, 0, 0, 0);
                     this.applicationReply = newReply;
                     this.applicationReplyId = newReplyId;
                 }
@@ -1263,7 +1003,7 @@ public final class ClientStreamFactory implements StreamFactory
         private void onMetadataError(
             KafkaError errorCode)
         {
-            doReset(applicationThrottle, applicationRouteId, applicationId);
+            writer.doReset(applicationThrottle, applicationRouteId, applicationId);
         }
 
         private void handleThrottle(
@@ -1310,7 +1050,7 @@ public final class ClientStreamFactory implements StreamFactory
         private void handleReset(
             ResetFW reset)
         {
-            doReset(applicationThrottle, applicationRouteId, applicationId);
+            writer.doReset(applicationThrottle, applicationRouteId, applicationId);
             progressHandler = NOOP_PROGRESS_HANDLER;
             detachFromNetworkPool();
             networkAttachId = UNATTACHED;
