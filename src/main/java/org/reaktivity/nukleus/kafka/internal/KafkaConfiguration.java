@@ -40,7 +40,7 @@ public class KafkaConfiguration extends Configuration
         KAFKA_FETCH_PARTITION_MAX_BYTES = config.property("fetch.partition.max.bytes", 1 * 1024 * 1024);
         KAFKA_MESSAGE_CACHE_CAPACITY = config.property("message.cache.capacity", 128L * 1024L * 1024L);
         KAFKA_MESSAGE_CACHE_BLOCK_CAPACITY = config.property("message.cache.block.capacity", 1024);
-        KAFKA_MESSAGE_CACHE_PROACTIVE = config.property("message.cache.proactive", false);
+        KAFKA_MESSAGE_CACHE_PROACTIVE = config.property("message.cache.proactive", true);
         KAFKA_READ_IDLE_TIMEOUT = config.property("read.idle.timeout", 5000);
         KAFKA_CONFIG = config;
     }
