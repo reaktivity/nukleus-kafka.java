@@ -19,6 +19,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.Assert.assertEquals;
 import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_CAPACITY;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_PROACTIVE;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_TOPIC_BOOTSTRAP_ENABLED;
 
 import org.junit.Ignore;
@@ -54,6 +55,7 @@ public class CachingFetchIT
         .counterValuesBufferCapacity(4096)
         .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, false)
         .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 1024L * 1024L)
+        .configure(KAFKA_MESSAGE_CACHE_PROACTIVE, false)
         .clean();
 
     private final KafkaCountersRule counters = new KafkaCountersRule(reaktor);
