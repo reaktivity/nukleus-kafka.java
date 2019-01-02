@@ -191,7 +191,7 @@ public final class ClientStreamFactory implements StreamFactory
 
     private MessageConsumer newAcceptStream(
         BeginFW begin,
-        MessageConsumer applicationThrottle)
+        MessageConsumer applicationReply)
     {
         final long authorization = begin.authorization();
         final long applicationRouteId = begin.routeId();
@@ -217,7 +217,7 @@ public final class ClientStreamFactory implements StreamFactory
                 NetworkConnectionPool connectionPool =
                         connectionPools.computeIfAbsent(networkRemoteId, ref -> connectionPoolFactory.apply(networkRouteId));
 
-                newStream = new ClientAcceptStream(applicationThrottle, applicationRouteId,
+                newStream = new ClientAcceptStream(applicationReply, applicationRouteId,
                                                    applicationId, connectionPool)::handleStream;
             }
         }
@@ -289,7 +289,7 @@ public final class ClientStreamFactory implements StreamFactory
 
         private static final int UNATTACHED = -1;
 
-        private final MessageConsumer applicationThrottle;
+        private final MessageConsumer applicationReply;
         private final long applicationRouteId;
         private final long applicationId;
         private final NetworkConnectionPool networkPool;
@@ -300,7 +300,6 @@ public final class ClientStreamFactory implements StreamFactory
 
         private long applicationCorrelationId;
         private byte[] applicationBeginExtension;
-        private MessageConsumer applicationReply;
         private long applicationReplyId;
         private int applicationReplyPadding;
         private long groupId;
@@ -345,12 +344,12 @@ public final class ClientStreamFactory implements StreamFactory
         private final IntSupplier writeableBytes = this::writeableBytes;
 
         private ClientAcceptStream(
-            MessageConsumer applicationThrottle,
+            MessageConsumer applicationReply,
             long applicationRouteId,
             long applicationId,
             NetworkConnectionPool networkPool)
         {
-            this.applicationThrottle = applicationThrottle;
+            this.applicationReply = applicationReply;
             this.applicationRouteId = applicationRouteId;
             this.applicationId = applicationId;
             this.networkPool = networkPool;
@@ -835,7 +834,7 @@ public final class ClientStreamFactory implements StreamFactory
             }
             else
             {
-                writer.doReset(applicationThrottle, applicationRouteId, applicationId);
+                writer.doReset(applicationReply, applicationRouteId, applicationId);
             }
         }
 
@@ -848,7 +847,7 @@ public final class ClientStreamFactory implements StreamFactory
             switch (msgTypeId)
             {
             case DataFW.TYPE_ID:
-                writer.doReset(applicationThrottle, applicationRouteId, applicationId);
+                writer.doReset(applicationReply, applicationRouteId, applicationId);
                 detachFromNetworkPool();
                 break;
             case EndFW.TYPE_ID:
@@ -858,7 +857,7 @@ public final class ClientStreamFactory implements StreamFactory
                 detach(false);
                 break;
             default:
-                writer.doReset(applicationThrottle, applicationRouteId, applicationId);
+                writer.doReset(applicationReply, applicationRouteId, applicationId);
                 break;
             }
         }
@@ -871,7 +870,7 @@ public final class ClientStreamFactory implements StreamFactory
 
             if (extension.sizeof() == 0)
             {
-                writer.doReset(applicationThrottle, applicationRouteId, applicationId);
+                writer.doReset(applicationReply, applicationRouteId, applicationId);
             }
             else
             {
@@ -893,7 +892,7 @@ public final class ClientStreamFactory implements StreamFactory
                     (hashCodesCount > 1) ||
                     (hashCodesCount == 1 && fetchKey == null))
                 {
-                    writer.doReset(applicationThrottle, applicationRouteId, applicationId);
+                    writer.doReset(applicationReply, applicationRouteId, applicationId);
                 }
                 else
                 {
@@ -924,14 +923,12 @@ public final class ClientStreamFactory implements StreamFactory
 
                     // Start the response stream to the client
                     final long newReplyId = supplyReplyId.applyAsLong(applicationId);
-                    final MessageConsumer newReply = router.supplySender(applicationRouteId);
 
-                    writer.doKafkaBegin(newReply, applicationRouteId, newReplyId,
+                    writer.doKafkaBegin(applicationReply, applicationRouteId, newReplyId,
                             applicationCorrelationId, applicationBeginExtension);
                     router.setThrottle(newReplyId, this::handleThrottle);
 
-                    writer.doWindow(applicationThrottle, applicationRouteId, applicationId, 0, 0, 0);
-                    this.applicationReply = newReply;
+                    writer.doWindow(applicationReply, applicationRouteId, applicationId, 0, 0, 0);
                     this.applicationReplyId = newReplyId;
                 }
             }
@@ -1003,7 +1000,7 @@ public final class ClientStreamFactory implements StreamFactory
         private void onMetadataError(
             KafkaError errorCode)
         {
-            writer.doReset(applicationThrottle, applicationRouteId, applicationId);
+            writer.doReset(applicationReply, applicationRouteId, applicationId);
         }
 
         private void handleThrottle(
@@ -1050,7 +1047,7 @@ public final class ClientStreamFactory implements StreamFactory
         private void handleReset(
             ResetFW reset)
         {
-            writer.doReset(applicationThrottle, applicationRouteId, applicationId);
+            writer.doReset(applicationReply, applicationRouteId, applicationId);
             progressHandler = NOOP_PROGRESS_HANDLER;
             detachFromNetworkPool();
             networkAttachId = UNATTACHED;
