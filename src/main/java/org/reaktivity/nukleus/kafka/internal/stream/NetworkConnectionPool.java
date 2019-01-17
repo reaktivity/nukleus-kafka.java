@@ -362,6 +362,7 @@ public final class NetworkConnectionPool
         {
         case INVALID_TOPIC_EXCEPTION:
         case UNKNOWN_TOPIC_OR_PARTITION:
+        case PARTITION_COUNT_CHANGED:
             onMetadataError.accept(errorCode);
             break;
         case NONE:
