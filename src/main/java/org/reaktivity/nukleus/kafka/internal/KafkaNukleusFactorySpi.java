@@ -21,7 +21,7 @@ import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
 
 public final class KafkaNukleusFactorySpi implements NukleusFactorySpi
 {
-    public static final String MESSAGE_CACHE_BUFFER_ACQUIRES = "message.cache.buffer.acquires";
+    public static final String MESSAGE_CACHE_BUFFER_ACQUIRES = "kafka.message.cache.buffer.acquires";
 
     static final MemoryManager OUT_OF_SPACE_MEMORY_MANAGER = new MemoryManager()
     {

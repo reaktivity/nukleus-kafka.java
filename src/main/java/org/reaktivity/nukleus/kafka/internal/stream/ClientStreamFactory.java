@@ -114,7 +114,7 @@ public final class ClientStreamFactory implements StreamFactory
 
     final RouteManager router;
     final BudgetManager budgetManager;
-    final LongSupplier supplyInitialId;
+    final LongUnaryOperator supplyInitialId;
     final LongUnaryOperator supplyReplyId;
     final LongSupplier supplyCorrelationId;
     final DelayedTaskScheduler scheduler;
@@ -133,7 +133,7 @@ public final class ClientStreamFactory implements StreamFactory
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
         MemoryManager memoryManager,
-        LongSupplier supplyInitialId,
+        LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTrace,
         LongSupplier supplyCorrelationId,
@@ -434,7 +434,7 @@ public final class ClientStreamFactory implements StreamFactory
                else if (messageStartOffset == fragmentedMessageOffset)
                {
                    fragmentedMessageDispatched = true;
-                   if (value.capacity() != fragmentedMessageLength)
+                   if (value == null || value.capacity() != fragmentedMessageLength)
                    {
                        long errors = networkPool.getRouteCounters().internalErrors.getAsLong();
                        if (errors <= INTERNAL_ERRORS_TO_LOG)

@@ -22,6 +22,7 @@ import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_FET
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_PROACTIVE;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_TOPIC_BOOTSTRAP_ENABLED;
 import static org.reaktivity.reaktor.internal.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
+import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -56,7 +57,9 @@ public class FetchLimitsIT
         .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, false)
         .configure(KAFKA_FETCH_MAX_BYTES, 355)
         .configure(KAFKA_FETCH_PARTITION_MAX_BYTES, 355)
-        .configure(KAFKA_MESSAGE_CACHE_PROACTIVE, false);
+        .configure(KAFKA_MESSAGE_CACHE_PROACTIVE, false)
+        .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
+        .clean();
 
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);

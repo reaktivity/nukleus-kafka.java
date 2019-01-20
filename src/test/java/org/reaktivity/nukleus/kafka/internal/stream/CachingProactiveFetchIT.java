@@ -22,6 +22,7 @@ import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MES
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_PROACTIVE;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_TOPIC_BOOTSTRAP_ENABLED;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfigurationTest.KAFKA_READ_IDLE_TIMEOUT_NAME;
+import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -49,7 +50,6 @@ public class CachingProactiveFetchIT
 
     private final ReaktorRule reaktor = new ReaktorRule()
         .nukleus("kafka"::equals)
-        .controller("kafka"::equals)
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
@@ -57,6 +57,7 @@ public class CachingProactiveFetchIT
         .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, false)
         .configure(KAFKA_MESSAGE_CACHE_PROACTIVE, true)
         .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 1024L * 1024L)
+        .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 
     private final KafkaCountersRule counters = new KafkaCountersRule(reaktor);

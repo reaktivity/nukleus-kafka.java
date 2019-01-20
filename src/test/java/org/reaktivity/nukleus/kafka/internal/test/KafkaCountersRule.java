@@ -18,14 +18,14 @@ package org.reaktivity.nukleus.kafka.internal.test;
 import org.junit.rules.TestRule;
 import org.junit.runner.Description;
 import org.junit.runners.model.Statement;
-import org.reaktivity.nukleus.kafka.internal.KafkaController;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
 public class KafkaCountersRule implements TestRule
 {
     private final ReaktorRule reaktor;
 
-    public KafkaCountersRule(ReaktorRule reaktor)
+    public KafkaCountersRule(
+        ReaktorRule reaktor)
     {
         this.reaktor = reaktor;
     }
@@ -45,22 +45,16 @@ public class KafkaCountersRule implements TestRule
 
     public long cacheHits()
     {
-        return controller().count("cache.hits");
+        return reaktor.counter("kafka.cache.hits");
     }
 
     public long cacheMisses()
     {
-        return controller().count("cache.misses");
+        return reaktor.counter("kafka.cache.misses");
     }
 
     public long cacheInuse()
     {
-        return controller().count("cache.inuse");
+        return reaktor.counter("kafka.cache.inuse");
     }
-
-    private KafkaController controller()
-    {
-        return reaktor.controller(KafkaController.class);
-    }
-
 }

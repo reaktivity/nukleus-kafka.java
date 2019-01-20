@@ -22,6 +22,7 @@ import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MES
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_TOPIC_BOOTSTRAP_ENABLED;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfigurationTest.KAFKA_MESSAGE_CACHE_PROACTIVE_NAME;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfigurationTest.KAFKA_READ_IDLE_TIMEOUT_NAME;
+import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -31,7 +32,6 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
-import org.reaktivity.nukleus.kafka.internal.KafkaController;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleusFactorySpi;
 import org.reaktivity.reaktor.test.ReaktorRule;
 import org.reaktivity.reaktor.test.annotation.Configure;
@@ -51,7 +51,6 @@ public class BootstrapCachingIT
 
     private final ReaktorRule reaktor = new ReaktorRule()
         .nukleus("kafka"::equals)
-        .controller(name -> name.equals("kafka"))
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
@@ -59,6 +58,7 @@ public class BootstrapCachingIT
         .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, true)
         .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 1024L * 1024L)
         .configure(KAFKA_MESSAGE_CACHE_PROACTIVE, true)
+        .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 
     @Rule
@@ -82,7 +82,7 @@ public class BootstrapCachingIT
         k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
 
         // ensure bootstrap is complete before client attaches
-        while (reaktor.controller(KafkaController.class).count(KafkaNukleusFactorySpi.MESSAGE_CACHE_BUFFER_ACQUIRES) < 2L)
+        while (reaktor.counter(KafkaNukleusFactorySpi.MESSAGE_CACHE_BUFFER_ACQUIRES) < 2L)
         {
             Thread.sleep(100);
         }
