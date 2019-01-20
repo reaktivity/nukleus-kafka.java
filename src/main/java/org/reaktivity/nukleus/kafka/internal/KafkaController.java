@@ -22,16 +22,12 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
-import java.util.function.ToIntFunction;
 
 import org.agrona.concurrent.AtomicBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.Controller;
 import org.reaktivity.nukleus.ControllerSpi;
-import org.reaktivity.nukleus.function.MessageConsumer;
-import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.FreezeFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
@@ -83,13 +79,6 @@ public final class KafkaController implements Controller
         return "kafka";
     }
 
-    public <T> T supplyTarget(
-        String target,
-        BiFunction<ToIntFunction<MessageConsumer>, MessagePredicate, T> factory)
-    {
-        return controllerSpi.doSupplyTarget(target, factory);
-    }
-
     public CompletableFuture<Long> routeClient(
         String localAddress,
         String remoteAddress,
@@ -131,11 +120,6 @@ public final class KafkaController implements Controller
                                   .build();
 
         return controllerSpi.doFreeze(freeze.typeId(), freeze.buffer(), freeze.offset(), freeze.sizeof());
-    }
-
-    public long count(String name)
-    {
-        return controllerSpi.doCount(name);
     }
 
     private Consumer<OctetsFW.Builder> extension(

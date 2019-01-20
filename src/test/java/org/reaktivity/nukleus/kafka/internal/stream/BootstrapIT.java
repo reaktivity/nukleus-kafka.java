@@ -19,6 +19,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_FETCH_PARTITION_MAX_BYTES;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_CAPACITY;
+import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Ignore;
 import org.junit.Rule;
@@ -53,6 +54,8 @@ public class BootstrapIT
         .counterValuesBufferCapacity(4096)
         .configure(KAFKA_FETCH_PARTITION_MAX_BYTES, 123000)
         .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 0L)
+        .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
+        .affinityMask("target#1", EXTERNAL_AFFINITY_MASK)
         .clean();
 
     @Rule

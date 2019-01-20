@@ -43,13 +43,13 @@ public class KafkaCounters
         this.supplyCounter = supplyCounter;
         this.supplyAccumulator = supplyAccumulator;
         this.countersByRoute = new Long2ObjectHashMap<>();
-        this.cacheHits = supplyCounter.apply("cache.hits");
-        this.cacheMisses = supplyCounter.apply("cache.misses");
-        this.cacheInUse = supplyAccumulator.apply("cache.inuse");
-        this.dispatchNoWindow = supplyCounter.apply("dispatch.no.window");
-        this.dispatchNeedOtherMessage = supplyCounter.apply("dispatch.need.other.message");
-        this.cacheBufferAcquires = supplyCounter.apply("message.cache.buffer.acquires");
-        this.cacheBufferReleases = supplyCounter.apply("message.cache.buffer.releases");
+        this.cacheHits = supplyCounter.apply("kafka.cache.hits");
+        this.cacheMisses = supplyCounter.apply("kafka.cache.misses");
+        this.cacheInUse = supplyAccumulator.apply("kafka.cache.inuse");
+        this.dispatchNoWindow = supplyCounter.apply("kafka.dispatch.no.window");
+        this.dispatchNeedOtherMessage = supplyCounter.apply("kafka.dispatch.need.other.message");
+        this.cacheBufferAcquires = supplyCounter.apply("kafka.message.cache.buffer.acquires");
+        this.cacheBufferReleases = supplyCounter.apply("kafka.message.cache.buffer.releases");
     }
 
     public KafkaRefCounters supplyRef(
