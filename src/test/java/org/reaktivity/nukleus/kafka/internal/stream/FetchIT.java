@@ -82,6 +82,17 @@ public class FetchIT
 
     @Test
     @Specification({
+        "${routeAnyTopic}/client/controller",
+        "${client}/partition.count.changed/client",
+        "${metadata}/one.topic.error.partition.count.changed/server" })
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    public void partitionCountChanged() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
         "${route}/client/controller",
         "${client}/invalid.fetch.key.and.multiple.offsets/client"})
     public void shouldRejectInvalidBeginExWithFetchKeyAndMultipleOffsets() throws Exception
