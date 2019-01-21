@@ -19,6 +19,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_TOPIC_BOOTSTRAP_ENABLED;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfigurationTest.KAFKA_READ_IDLE_TIMEOUT_NAME;
+import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -49,6 +50,7 @@ public class MetadataIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(4096)
         .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, false)
+        .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 
     @Rule

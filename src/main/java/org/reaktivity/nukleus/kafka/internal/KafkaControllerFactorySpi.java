@@ -38,8 +38,7 @@ public final class KafkaControllerFactorySpi implements ControllerFactorySpi<Kaf
         Configuration config,
         ControllerBuilder<KafkaController> builder)
     {
-        return builder.setName(name())
-                .setFactory(KafkaController::new)
-                .build();
+        return builder.setFactory(KafkaController::new)
+                      .build();
     }
 }

@@ -46,7 +46,7 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
 
     private RouteManager router;
     private MutableDirectBuffer writeBuffer;
-    private LongSupplier supplyInitialId;
+    private LongUnaryOperator supplyInitialId;
     private LongUnaryOperator supplyReplyId;
     private LongSupplier supplyTrace;
     private LongSupplier supplyCorrelationId;
@@ -88,7 +88,7 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
 
     @Override
     public ClientStreamFactoryBuilder setInitialIdSupplier(
-        LongSupplier supplyInitialId)
+        LongUnaryOperator supplyInitialId)
     {
         this.supplyInitialId = supplyInitialId;
         return this;

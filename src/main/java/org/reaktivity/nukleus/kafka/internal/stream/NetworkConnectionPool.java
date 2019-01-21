@@ -48,6 +48,7 @@ import java.util.function.Consumer;
 import java.util.function.IntSupplier;
 import java.util.function.IntToLongFunction;
 import java.util.function.LongSupplier;
+import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
 
 import org.agrona.DirectBuffer;
@@ -269,7 +270,7 @@ public final class NetworkConnectionPool
     private final DelayedTaskScheduler scheduler;
     private final BufferPool bufferPool;
     private final KafkaCounters counters;
-    private final LongSupplier supplyInitialId;
+    private final LongUnaryOperator supplyInitialId;
     private final LongSupplier supplyCorrelationId;
     private final long networkRouteId;
     private final int fetchMaxBytes;
@@ -306,7 +307,7 @@ public final class NetworkConnectionPool
         KafkaConfiguration config,
         BufferPool bufferPool,
         MessageCache messageCache,
-        LongSupplier supplyInitialId,
+        LongUnaryOperator supplyInitialId,
         LongSupplier supplyCorrelationId)
     {
         this.router = router;
@@ -560,10 +561,10 @@ public final class NetworkConnectionPool
 
     abstract class AbstractNetworkConnection
     {
-        final MessageConsumer networkTarget;
+        MessageConsumer networkInitial;
         Timer timer;
 
-        long networkId;
+        long networkInitialId;
         long networkCorrelationId;
 
         int networkRequestBudget;
@@ -586,7 +587,6 @@ public final class NetworkConnectionPool
 
         private AbstractNetworkConnection()
         {
-            this.networkTarget = router.supplyReceiver(networkRouteId);
             localDecodeBuffer = new UnsafeBuffer(allocateDirect(fetchPartitionMaxBytes));
             timer = scheduler.newBlankTimer();
         }
@@ -596,7 +596,7 @@ public final class NetworkConnectionPool
         {
             return format("%s [budget=%d, padding=%d, networkId=%x, networkReplyId=%x, nextRequestId %d, nextResponseId %d]",
                     getClass().getSimpleName(), networkRequestBudget, networkRequestPadding,
-                    networkId, networkReplyId, nextRequestId, nextResponseId);
+                    networkInitialId, networkReplyId, nextRequestId, nextResponseId);
         }
 
         MessageConsumer onCorrelated(
@@ -618,23 +618,23 @@ public final class NetworkConnectionPool
         final void doBeginIfNotConnected(
             Flyweight.Builder.Visitor extensionVisitor)
         {
-            if (networkId == 0L && networkReplyId == 0L)
+            if (networkInitialId == 0L && networkReplyId == 0L)
             {
                 // TODO: progressive back-off before reconnect
                 //       if choose to give up, say after maximum retry attempts,
                 //       then send END to each consumer to clean up
 
-                final long newNetworkId = supplyInitialId.getAsLong();
+                final long networkInitialId = supplyInitialId.applyAsLong(networkRouteId);
+                final MessageConsumer networkInitial = router.supplyReceiver(networkInitialId);
                 final long newCorrelationId = supplyCorrelationId.getAsLong();
 
                 correlations.put(newCorrelationId, AbstractNetworkConnection.this);
 
-                writer
-                    .doBegin(networkTarget, networkRouteId, newNetworkId, newCorrelationId, extensionVisitor);
-                router.setThrottle(
-                        newNetworkId, this::handleThrottle);
+                writer.doBegin(networkInitial, networkRouteId, networkInitialId, newCorrelationId, extensionVisitor);
+                router.setThrottle(networkInitialId, this::handleThrottle);
 
-                this.networkId = newNetworkId;
+                this.networkInitialId = networkInitialId;
+                this.networkInitial = networkInitial;
                 this.networkCorrelationId = newCorrelationId;
             }
         }
@@ -673,20 +673,20 @@ public final class NetworkConnectionPool
 
         final void abort()
         {
-            if (networkId != 0L)
+            if (networkInitialId != 0L)
             {
-                writer.doAbort(networkTarget, networkRouteId, networkId);
-                this.networkId = 0L;
+                writer.doAbort(networkInitial, networkRouteId, networkInitialId);
+                this.networkInitialId = 0L;
                 this.networkRequestBudget = 0;
             }
         }
 
         final void close()
         {
-            if (networkId != 0L)
+            if (networkInitialId != 0L)
             {
-                writer.doEnd(networkTarget, networkRouteId, networkId, null);
-                this.networkId = 0L;
+                writer.doEnd(networkInitial, networkRouteId, networkInitialId, null);
+                this.networkInitialId = 0L;
                 this.streamState = this::afterClose;
             }
         }
@@ -936,10 +936,10 @@ public final class NetworkConnectionPool
         private void handleEnd(
             EndFW end)
         {
-            if (networkId != 0L)
+            if (networkInitialId != 0L)
             {
-                writer.doEnd(networkTarget, networkRouteId, networkId, null);
-                this.networkId = 0L;
+                writer.doEnd(networkInitial, networkRouteId, networkInitialId, null);
+                this.networkInitialId = 0L;
             }
             doReinitialize();
             doRequestIfNeeded();
@@ -949,10 +949,10 @@ public final class NetworkConnectionPool
         private void handleAbort(
             AbortFW abort)
         {
-            if (networkId != 0L)
+            if (networkInitialId != 0L)
             {
-                writer.doAbort(networkTarget, networkRouteId, networkId);
-                this.networkId = 0L;
+                writer.doAbort(networkInitial, networkRouteId, networkInitialId);
+                this.networkInitialId = 0L;
             }
             handleConnectionFailed();
             timer.cancel();
@@ -979,7 +979,7 @@ public final class NetworkConnectionPool
             networkRequestBudget = 0;
             networkRequestPadding = 0;
             networkResponseBudget = 0;
-            networkId = 0L;
+            networkInitialId = 0L;
             networkReplyId = 0L;
             nextRequestId = 0;
             nextResponseId = 0;
@@ -1148,7 +1148,7 @@ public final class NetworkConnectionPool
 
                 fetches.getAsLong();
 
-                writer.doData(networkTarget, networkRouteId, networkId,
+                writer.doData(networkInitial, networkRouteId, networkInitialId,
                         networkRequestPadding, payload);
                 networkRequestBudget -= payload.sizeof() + networkRequestPadding;
 
@@ -1246,7 +1246,7 @@ public final class NetworkConnectionPool
                         .set((b, o, m) -> m - o)
                         .build();
 
-                writer.doData(networkTarget, networkRouteId, networkId,
+                writer.doData(networkInitial, networkRouteId, networkInitialId,
                         networkRequestPadding, payload);
                 networkRequestBudget -= payload.sizeof() + networkRequestPadding;
 
@@ -1519,7 +1519,7 @@ public final class NetworkConnectionPool
             return format("%s [broker=%s, budget=%d, padding=%d, networkId=%x, networkReplyId=%x," +
                           "nextRequestId=%d, nextResponseId=%d]",
                     getClass().getSimpleName(), broker, networkRequestBudget, networkRequestPadding,
-                    networkId, networkReplyId, nextRequestId, nextResponseId);
+                    networkInitialId, networkReplyId, nextRequestId, nextResponseId);
         }
     }
 
@@ -1793,7 +1793,7 @@ public final class NetworkConnectionPool
                             .set((b, o, m) -> m - o)
                             .build();
 
-                    writer.doData(networkTarget, networkRouteId, networkId,
+                    writer.doData(networkInitial, networkRouteId, networkInitialId,
                             networkRequestPadding, payload);
                     networkRequestBudget -= payload.sizeof() + networkRequestPadding;
                     pendingRequest = MetadataRequestType.DESCRIBE_CONFIGS;
@@ -1853,7 +1853,7 @@ public final class NetworkConnectionPool
                             .set((b, o, m) -> m - o)
                             .build();
 
-                    writer.doData(networkTarget, networkRouteId, networkId,
+                    writer.doData(networkInitial, networkRouteId, networkInitialId,
                             networkRequestPadding, payload);
                     networkRequestBudget -= payload.sizeof() + networkRequestPadding;
                     pendingRequest = MetadataRequestType.METADATA;
