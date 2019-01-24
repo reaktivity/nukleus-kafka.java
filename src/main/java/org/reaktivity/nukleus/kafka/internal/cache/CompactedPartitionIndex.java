@@ -27,6 +27,7 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.function.LongSupplier;
 
+import org.agrona.BitUtil;
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.LongArrayList;
@@ -82,6 +83,27 @@ public class CompactedPartitionIndex implements PartitionIndex
         this.cacheHits = cacheHits;
         this.cacheMisses = cacheMisses;
         this.tombstoneLifetimeMillis = tombstoneLifetimeMillis;
+    }
+
+    @Override
+    public String toString()
+    {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        for (Map.Entry<UnsafeBuffer, EntryImpl> entry : entriesByKey.entrySet())
+        {
+            UnsafeBuffer key = entry.getKey();
+            EntryImpl value = entry.getValue();
+            byte[] keyArray = new byte[key.capacity()];
+            key.getBytes(0, keyArray);
+            sb.append(BitUtil.toHex(keyArray));
+            sb.append("=");
+            sb.append(value);
+            sb.append(",");
+        }
+        sb.setLength(sb.length() - 1);
+        sb.append("}");
+        return String.format("[entries = %s, entriesByKey = %s]", entries, sb.toString());
     }
 
     @Override
