@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.function.LongSupplier;
 
@@ -37,13 +38,17 @@ public class CompactedTopicCache implements TopicCache
     private final MessageIterator messageIterator;
     private final MessageImpl message = new MessageImpl();
 
+    private final String topicName;
+
     public CompactedTopicCache(
+        String topicName,
         int partitionCount,
         int deleteRetentionMs,
         MessageCache messageCache,
         LongSupplier cacheHits,
         LongSupplier cacheMisses)
     {
+        this.topicName = topicName;
         this.messageCache = messageCache;
         indexes = new CompactedPartitionIndex[partitionCount];
         for (int i = 0; i < partitionCount; i++)
@@ -55,12 +60,25 @@ public class CompactedTopicCache implements TopicCache
 
     // For unit tests
     CompactedTopicCache(
+        String topicName,
         PartitionIndex[] indexes,
         MessageCache messageCache)
     {
+        this.topicName = topicName;
         this.indexes = indexes;
         this.messageCache = messageCache;
         messageIterator = new MessageIterator(indexes.length);
+    }
+
+    public String topicName()
+    {
+        return topicName;
+    }
+
+    @Override
+    public String toString()
+    {
+        return String.format("[%s] %s", topicName, Arrays.toString(indexes));
     }
 
     @Override

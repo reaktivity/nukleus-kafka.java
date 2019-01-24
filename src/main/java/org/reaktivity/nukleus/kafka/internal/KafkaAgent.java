@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal;
 
 import static java.lang.String.format;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.LongFunction;
@@ -66,10 +67,11 @@ final class KafkaAgent implements Agent
     @Override
     public int doWork() throws Exception
     {
-        if (!routesToProcess.isEmpty() && connectionPoolFactory != null)
+        while (!routesToProcess.isEmpty() && connectionPoolFactory != null)
         {
-            processRoutes(routesToProcess);
-            routesToProcess.clear();
+            List<RouteFW> processedRoutes = new ArrayList<>(routesToProcess);
+            processRoutes(processedRoutes);
+            routesToProcess.removeAll(processedRoutes);
         }
 
         return scheduler.process();

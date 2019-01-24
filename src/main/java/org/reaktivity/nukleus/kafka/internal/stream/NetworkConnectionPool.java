@@ -2199,6 +2199,7 @@ public final class NetworkConnectionPool
             if (compacted)
             {
                 cache = new CompactedTopicCache(
+                                topicName,
                                 partitionCount,
                                 deleteRetentionMs,
                                 messageCache,
@@ -2224,12 +2225,12 @@ public final class NetworkConnectionPool
 
             if (proactive)
             {
-                 for (int i=0; i < partitionCount; i++)
-                 {
-                     attachToPartition(i, 0L, 1);
-                 }
-                 MessageDispatcher bootstrapDispatcher = new ProgressUpdatingMessageDispatcher(partitionCount, progressHandler);
-                 this.dispatcher.add(null, -1, Collections.emptyIterator(), bootstrapDispatcher);
+                for (int i=0; i < partitionCount; i++)
+                {
+                    attachToPartition(i, 0L, 1);
+                }
+                MessageDispatcher bootstrapDispatcher = new ProgressUpdatingMessageDispatcher(partitionCount, progressHandler);
+                this.dispatcher.add(null, -1, Collections.emptyIterator(), bootstrapDispatcher);
             }
         }
 

@@ -81,7 +81,7 @@ public final class CompactedTopicCacheTest
 
     private Sequence order = context.sequence("order");
 
-    private CompactedTopicCache cache = new CompactedTopicCache(
+    private CompactedTopicCache cache = new CompactedTopicCache("test",
             new PartitionIndex[]{index0, index1, index2}, messageCache);
 
     @Test
