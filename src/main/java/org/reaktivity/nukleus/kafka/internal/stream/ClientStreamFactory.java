@@ -177,7 +177,7 @@ public final class ClientStreamFactory implements StreamFactory
 
         MessageConsumer newStream;
 
-        if ((streamId & 0x8000_0000_0000_0000L) == 0L)
+        if ((streamId & 0x0000_0000_0000_0001L) != 0L)
         {
             newStream = newAcceptStream(begin, throttle);
         }
