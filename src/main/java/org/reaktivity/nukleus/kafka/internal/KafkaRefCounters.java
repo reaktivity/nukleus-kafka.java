@@ -34,18 +34,18 @@ public class KafkaRefCounters
         long networkRouteId,
         Function<String, LongSupplier> supplyCounter)
     {
-        this.historicalFetches = supplyCounter.apply(format("historical.fetches.%d", networkRouteId));
+        this.historicalFetches = supplyCounter.apply(format("kafka.historical.fetches.%d", networkRouteId));
         this.metadataRequestIdleTimeouts = supplyCounter.apply(
-                format("metadata.request.idle.timeouts.%d", networkRouteId));
+                format("kafka.metadata.request.idle.timeouts.%d", networkRouteId));
         this.describeConfigsRequestIdleTimeouts = supplyCounter.apply(
-                format("describe.configs.request.idle.timeouts.%d", networkRouteId));
+                format("kafka.describe.configs.request.idle.timeouts.%d", networkRouteId));
         this.listOffsetsRequestIdleTimeouts = supplyCounter.apply(
-                format("list.offsets.request.idle.timeouts.%d", networkRouteId));
+                format("kafka.list.offsets.request.idle.timeouts.%d", networkRouteId));
         this.fetchRequestIdleTimeouts = supplyCounter.apply(
-                format("fetch.request.idle.timeouts.%d", networkRouteId));
+                format("kafka.fetch.request.idle.timeouts.%d", networkRouteId));
         this.forcedDetaches = supplyCounter.apply(
-                format("forced.detaches.%d", networkRouteId));
+                format("kafka.forced.detaches.%d", networkRouteId));
         this.internalErrors = supplyCounter.apply(
-                format("internal.errors.%d", networkRouteId));
+                format("kafka.internal.errors.%d", networkRouteId));
     }
 }
