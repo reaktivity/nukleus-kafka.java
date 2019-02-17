@@ -499,8 +499,8 @@ public class FetchResponseDecoder implements ResponseDecoder
         {
             if (recordBatchBytesRemaining == 0)
             {
-                // If there are deleted records, the last offset reported on the record batch may exceed the
-                // offset of the last record in the batch. So we must use this to make sure we continue to advance.
+                // if there are deleted records, the last offset reported on the record batch may exceed the
+                // offset of the last record in the batch, we must make sure to advance
                 nextFetchAt = firstOffset + lastOffsetDelta + 1;
             }
             messageDispatcher.flush(partition, requestedOffset, nextFetchAt);
@@ -508,6 +508,11 @@ public class FetchResponseDecoder implements ResponseDecoder
         }
         else if (recordBatchBytesRemaining == 0)
         {
+            // if there are deleted records, the last offset reported on the record batch may exceed the
+            // offset of the last record in the batch
+            // we must make sure to advance in case next record batch is incomplete
+            nextFetchAt = firstOffset + lastOffsetDelta + 1;
+            messageDispatcher.flush(partition, requestedOffset, nextFetchAt);
             decoderState = this::decodeRecordBatch;
         }
         else

@@ -1351,9 +1351,9 @@ public final class NetworkConnectionPool
                         return;
                     }
 
-                    if (topicMetadata == null)
+                    if (topicMetadata == null || !topicMetadata.isComplete())
                     {
-                        // all clients have detached, just skip through this topic's response, ignoreing it
+                        // all clients have detached, just skip through this topic's response, ignoring it
                         continue;
                     }
 
@@ -1527,7 +1527,7 @@ public final class NetworkConnectionPool
     {
         LiveFetchConnection()
         {
-            super(NO_COUNTER);
+            super(routeCounters.liveFetches);
         }
 
         @Override

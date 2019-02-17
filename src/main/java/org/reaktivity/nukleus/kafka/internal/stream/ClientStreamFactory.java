@@ -540,7 +540,7 @@ public final class ClientStreamFactory implements StreamFactory
                 detach(false);
             }
 
-            if (endOffset > startOffset && requestOffset <= startOffset)
+            if (requestOffset <= startOffset && startOffset < endOffset)
             {
                 final long oldFetchOffset = this.fetchOffsets.put(partition, endOffset);
                 progressHandler.handle(partition, oldFetchOffset, endOffset, this);
@@ -616,7 +616,7 @@ public final class ClientStreamFactory implements StreamFactory
                     requestOffset = fetchOffsets.get(partition);
                 }
 
-                if (previousPartition != NO_PARTITION && entry.partition() != previousPartition)
+                if (partition != previousPartition && previousPartition != NO_PARTITION)
                 {
                     // End of a series of messages dispatched for a partition
                     flush(previousPartition, requestOffset, flushToOffset);
