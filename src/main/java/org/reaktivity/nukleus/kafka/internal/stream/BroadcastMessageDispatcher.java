@@ -22,14 +22,21 @@ import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
 
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.DEBUG1;
 import static org.reaktivity.nukleus.kafka.internal.stream.HeadersMessageDispatcher.NOOP;
 
 public class BroadcastMessageDispatcher implements MessageDispatcher
 {
     private final List<MessageDispatcher> dispatchers = new ArrayList<MessageDispatcher>();
+    private final String topicName;
 
     private boolean deferUpdates;
     private boolean hasDeferredUpdates;
+
+    BroadcastMessageDispatcher(String topicName)
+    {
+        this.topicName = topicName;
+    }
 
     @Override
     public void adjustOffset(
@@ -78,6 +85,12 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
             result |= dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
+            if (DEBUG1)
+            {
+                System.out.format("BMD.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d result=%d\n",
+                        topicName,
+                        partition, requestOffset, messageOffset, result);
+            }
         }
         deferUpdates = false;
 

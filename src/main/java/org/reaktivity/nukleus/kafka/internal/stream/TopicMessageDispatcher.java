@@ -15,12 +15,16 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.DEBUG;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.DEBUG1;
 import static org.reaktivity.nukleus.kafka.internal.cache.TopicCache.NO_OFFSET;
 
 import java.util.Iterator;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
+import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.cache.TopicCache;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
@@ -29,27 +33,31 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
 {
     private final KeyMessageDispatcher[] keys;
     private final HeadersMessageDispatcher headers;
-    private final BroadcastMessageDispatcher broadcast = new BroadcastMessageDispatcher();
+    private final BroadcastMessageDispatcher broadcast;
     private final TopicCache cache;
+    private final String topicName;
 
     private final OctetsFW octetsRO = new OctetsFW();
 
     private final boolean[] cacheNewMessages;
 
     protected TopicMessageDispatcher(
+        String topicName,
         TopicCache cache,
         int partitionCount)
     {
+        this.topicName = topicName;
+        this.broadcast = new BroadcastMessageDispatcher(topicName);
         this.cache = cache;
         keys = new KeyMessageDispatcher[partitionCount];
         cacheNewMessages = new boolean[partitionCount];
-        Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher =
+        BiFunction<String, DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher =
                 cache.compacted() ? CompactedHeaderValueMessageDispatcher::new : HeaderValueMessageDispatcher::new;
         for (int partition = 0; partition < partitionCount; partition++)
         {
-            keys[partition] = new KeyMessageDispatcher(createHeaderValueMessageDispatcher);
+            keys[partition] = new KeyMessageDispatcher(topicName, createHeaderValueMessageDispatcher);
         }
-        headers = new HeadersMessageDispatcher(createHeaderValueMessageDispatcher);
+        headers = new HeadersMessageDispatcher(topicName, createHeaderValueMessageDispatcher);
     }
 
     @Override
@@ -98,6 +106,12 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         long traceId,
         DirectBuffer value)
     {
+        if (DEBUG1)
+        {
+            System.out.format("TMD.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d\n",
+                    topicName,
+                    partition, requestOffset, messageOffset);
+        }
         if (cache.compacted() && key == null)
         {
             return 0;
@@ -138,6 +152,12 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         if (shouldDispatch(partition, requestOffset, messageOffset, key))
         {
             result |= broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
+            if (DEBUG1)
+            {
+                System.out.format("TMD.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d 1.result=%d\n",
+                        topicName,
+                        partition, requestOffset, messageOffset, result);
+            }
             if (key != null)
             {
                 KeyMessageDispatcher keyDispatcher = keys[partition];
@@ -157,6 +177,12 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
                 }
             }
             result |= headers.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
+            if (DEBUG1)
+            {
+                System.out.format("TMD.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d 2.result=%d\n",
+                        topicName,
+                        partition, requestOffset, messageOffset, result);
+            }
         }
         return result;
     }

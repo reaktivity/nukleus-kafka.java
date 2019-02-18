@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.DEBUG1;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.wrap;
 
 import java.util.ArrayList;
@@ -31,7 +32,7 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public class HeaderValueMessageDispatcher implements MessageDispatcher
 {
-    static final HeaderValueMessageDispatcher NOOP = new HeaderValueMessageDispatcher(null)
+    static final HeaderValueMessageDispatcher NOOP = new HeaderValueMessageDispatcher("noop", null)
     {
         @Override
         public void adjustOffset(int partition, long oldOffset, long newOffset)
@@ -65,6 +66,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
 
     final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
     final DirectBuffer headerName;
+    private final String topicName;
     Map<DirectBuffer, HeadersMessageDispatcher> dispatchersByHeaderValue = new HashMap<>();
 
     private final List<HeadersMessageDispatcher> dispatchers = new ArrayList<>();
@@ -72,8 +74,9 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
     private boolean deferUpdates;
     private boolean hasDeferredUpdates;
 
-    public HeaderValueMessageDispatcher(DirectBuffer headerKey)
+    public HeaderValueMessageDispatcher(String topicName, DirectBuffer headerKey)
     {
+        this.topicName = topicName;
         this.headerName = headerKey;
     }
 
@@ -133,6 +136,12 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
         deferUpdates = false;
 
         processDeferredUpdates();
+        if (DEBUG1)
+        {
+            System.out.format("HVMD.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d result=%d\n",
+                    topicName,
+                    partition, requestOffset, messageOffset, result);
+        }
         return result;
     }
 
@@ -164,7 +173,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
         {
             UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[headerValue.sizeof()]);
             keyCopy.putBytes(0,  headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
-            headersDispatcher =  new HeadersMessageDispatcher(HeaderValueMessageDispatcher::new);
+            headersDispatcher =  new HeadersMessageDispatcher(topicName, HeaderValueMessageDispatcher::new);
             dispatchersByHeaderValue.put(keyCopy, headersDispatcher);
             dispatchers.add(headersDispatcher);
         }

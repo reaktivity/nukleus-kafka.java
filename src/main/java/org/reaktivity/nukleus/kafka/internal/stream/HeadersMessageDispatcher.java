@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
@@ -27,9 +28,11 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.DEBUG1;
+
 public class HeadersMessageDispatcher implements MessageDispatcher
 {
-    static final HeadersMessageDispatcher NOOP = new HeadersMessageDispatcher(null)
+    static final HeadersMessageDispatcher NOOP = new HeadersMessageDispatcher("noop", null)
     {
         @Override
         public void adjustOffset(int partition, long oldOffset, long newOffset)
@@ -64,16 +67,20 @@ public class HeadersMessageDispatcher implements MessageDispatcher
     private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
     private final Map<DirectBuffer, HeaderValueMessageDispatcher> dispatchersByHeaderKey = new HashMap<>();
     private final List<HeaderValueMessageDispatcher> dispatchers = new ArrayList<HeaderValueMessageDispatcher>();
-    private final BroadcastMessageDispatcher broadcast = new BroadcastMessageDispatcher();
-    private final Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher;
+    private final BroadcastMessageDispatcher broadcast;
+    private final BiFunction<String, DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher;
+    private final String topicName;
 
     private boolean deferUpdates;
     private boolean hasDeferredUpdates;
 
     HeadersMessageDispatcher(
-        Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
+        String topicName,
+        BiFunction<String, DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
     {
+        this.topicName = topicName;
         this.createHeaderValueMessageDispatcher = createHeaderValueMessageDispatcher;
+        this.broadcast = new BroadcastMessageDispatcher(topicName);
     }
 
     @Override
@@ -128,6 +135,12 @@ public class HeadersMessageDispatcher implements MessageDispatcher
         deferUpdates = false;
 
         processDeferredUpdates();
+        if (DEBUG1)
+        {
+            System.out.format("HMD.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d result=%d\n",
+                    topicName,
+                    partition, requestOffset, messageOffset, result);
+        }
         return result;
     }
 
@@ -170,7 +183,7 @@ public class HeadersMessageDispatcher implements MessageDispatcher
                 int bytesLength = headerKey.sizeof() - Short.BYTES;
                 UnsafeBuffer headerKeyCopy = new UnsafeBuffer(new byte[bytesLength]);
                 headerKeyCopy.putBytes(0, headerKey.buffer(), keyOffset, keyLength);
-                valueDispatcher = createHeaderValueMessageDispatcher.apply(headerKeyCopy);
+                valueDispatcher = createHeaderValueMessageDispatcher.apply(topicName, headerKeyCopy);
                 dispatchersByHeaderKey.put(headerKeyCopy, valueDispatcher);
                 dispatchers.add(valueDispatcher);
             }

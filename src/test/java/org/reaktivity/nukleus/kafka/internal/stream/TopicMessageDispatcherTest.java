@@ -68,7 +68,7 @@ public final class TopicMessageDispatcherTest
     };
 
     private final TopicMessageDispatcher dispatcher =
-            new TopicMessageDispatcher(topicCache, 3);
+            new TopicMessageDispatcher("", topicCache, 3);
 
     @Test
     public void shouldAddDispatcherWithEmptyHeadersAndNullKey()

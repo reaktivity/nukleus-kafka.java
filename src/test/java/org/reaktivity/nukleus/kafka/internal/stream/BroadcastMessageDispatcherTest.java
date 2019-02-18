@@ -37,7 +37,7 @@ import org.junit.Test;
 
 public final class BroadcastMessageDispatcherTest
 {
-    private BroadcastMessageDispatcher dispatcher = new BroadcastMessageDispatcher();
+    private BroadcastMessageDispatcher dispatcher = new BroadcastMessageDispatcher("");
 
     @Rule
     public JUnitRuleMockery context = new JUnitRuleMockery();

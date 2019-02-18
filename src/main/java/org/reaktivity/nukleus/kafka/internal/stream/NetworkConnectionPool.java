@@ -2212,6 +2212,7 @@ public final class NetworkConnectionPool
             }
 
             this.dispatcher = new TopicMessageDispatcher(
+                    topicName,
                     cache,
                     partitionCount);
 

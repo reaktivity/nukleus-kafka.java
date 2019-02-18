@@ -33,9 +33,9 @@ public class CompactedHeaderValueMessageDispatcher extends HeaderValueMessageDis
 
     private final List<MessageDispatcher> dispatchers = new ArrayList<>();
 
-    public CompactedHeaderValueMessageDispatcher(DirectBuffer headerKey)
+    public CompactedHeaderValueMessageDispatcher(String topicName, DirectBuffer headerKey)
     {
-        super(headerKey);
+        super(topicName, headerKey);
     }
 
     @Override
