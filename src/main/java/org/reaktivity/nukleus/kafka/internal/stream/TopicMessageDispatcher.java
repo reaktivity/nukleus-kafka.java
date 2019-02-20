@@ -108,7 +108,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
     {
         if (DEBUG1)
         {
-            System.out.format("TMD.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d\n",
+            System.out.format("TMD.dispatch.3: topic=%s partition=%d requestOffset=%d messageOffset=%d\n",
                     topicName,
                     partition, requestOffset, messageOffset);
         }
@@ -134,6 +134,13 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
                     cacheNewMessages[partition]);
         }
 
+        if (DEBUG1)
+        {
+            System.out.format("TMD.dispatch.4: topic=%s partition=%d requestOffset=%d messageOffset=%d 1.result=%d\n",
+                    topicName,
+                    partition, requestOffset, messageOffset, result);
+        }
+
         return result;
     }
 
@@ -154,7 +161,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
             result |= broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
             if (DEBUG1)
             {
-                System.out.format("TMD.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d 1.result=%d\n",
+                System.out.format("TMD.dispatch.1: topic=%s partition=%d requestOffset=%d messageOffset=%d 1.result=%d\n",
                         topicName,
                         partition, requestOffset, messageOffset, result);
             }
@@ -177,12 +184,12 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
                 }
             }
             result |= headers.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
-            if (DEBUG1)
-            {
-                System.out.format("TMD.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d 2.result=%d\n",
-                        topicName,
-                        partition, requestOffset, messageOffset, result);
-            }
+        }
+        if (DEBUG1)
+        {
+            System.out.format("TMD.dispatch.2: topic=%s partition=%d requestOffset=%d messageOffset=%d 2.result=%d\n",
+                    topicName,
+                    partition, requestOffset, messageOffset, result);
         }
         return result;
     }

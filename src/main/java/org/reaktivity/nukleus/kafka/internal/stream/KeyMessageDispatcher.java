@@ -26,6 +26,7 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.DEBUG1;
 import static org.reaktivity.nukleus.kafka.internal.stream.HeadersMessageDispatcher.NOOP;
 
 public class KeyMessageDispatcher implements MessageDispatcher
@@ -86,8 +87,15 @@ public class KeyMessageDispatcher implements MessageDispatcher
     {
         buffer.wrap(key, 0, key.capacity());
         MessageDispatcher result = dispatchersByKey.get(buffer);
-        return result == null ? 0 :
+        int resultValue = result == null ? 0 :
             result.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
+        if (DEBUG1)
+        {
+            System.out.format("HVMD.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d result=%d\n",
+                    topicName,
+                    partition, requestOffset, messageOffset, resultValue);
+        }
+        return resultValue;
     }
 
     @Override

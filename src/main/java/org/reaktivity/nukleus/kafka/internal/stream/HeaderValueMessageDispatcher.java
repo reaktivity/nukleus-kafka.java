@@ -201,6 +201,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
                     {
                         dispatchers.set(index, HeadersMessageDispatcher.NOOP);
                     }
+                    hasDeferredUpdates = true;
                 }
                 else
                 {

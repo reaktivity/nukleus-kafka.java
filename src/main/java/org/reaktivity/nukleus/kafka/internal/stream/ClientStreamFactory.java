@@ -605,7 +605,8 @@ if (DEBUG1)
     topicName,
     partition, requestOffset, nextFetchOffset, startOffset, endOffset, dispatchBlocked);
 }
-            if (endOffset > startOffset && requestOffset <= startOffset)
+
+            if (requestOffset <= startOffset && startOffset < endOffset)
             {
 if (DEBUG1)
 {
@@ -697,7 +698,7 @@ if (DEBUG1)
                     requestOffset = fetchOffsets.get(partition);
                 }
 
-                if (previousPartition != NO_PARTITION && entry.partition() != previousPartition)
+                if (partition != previousPartition && previousPartition != NO_PARTITION)
                 {
                     // End of a series of messages dispatched for a partition
                     flush(previousPartition, requestOffset, flushToOffset);
