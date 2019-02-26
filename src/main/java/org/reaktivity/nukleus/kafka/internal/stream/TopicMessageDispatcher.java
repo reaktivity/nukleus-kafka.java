@@ -185,6 +185,15 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
             }
             result |= headers.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
         }
+        else
+        {
+            if (DEBUG1)
+            {
+                System.out.format("TMD.dispatch.5: shouldDispatch=false topic=%s partition=%d requestOffset=%d messageOffset=%d 1.result=%d\n",
+                        topicName,
+                        partition, requestOffset, messageOffset, result);
+            }
+        }
         if (DEBUG1)
         {
             System.out.format("TMD.dispatch.2: topic=%s partition=%d requestOffset=%d messageOffset=%d 2.result=%d\n",
@@ -200,6 +209,12 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         long requestOffset,
         long lastOffset)
     {
+        if (DEBUG1)
+        {
+            System.out.format("TMD.flush: topic=%s partition=%d requestOffset=%d lastOffset=%d\n",
+                    topicName,
+                    partition, requestOffset, lastOffset);
+        }
         broadcast.flush(partition, requestOffset, lastOffset);
         keys[partition].flush(partition, requestOffset, lastOffset);
         headers.flush(partition, requestOffset, lastOffset);

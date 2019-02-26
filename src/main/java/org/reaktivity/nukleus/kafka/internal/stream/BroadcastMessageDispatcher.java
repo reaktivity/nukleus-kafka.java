@@ -79,18 +79,18 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
                  long traceId,
                  DirectBuffer value)
     {
+        if (DEBUG1)
+        {
+            System.out.format("BMD.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d\n",
+                    topicName,
+                    partition, requestOffset, messageOffset);
+        }
         deferUpdates = true;
         int result = 0;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
             result |= dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
-            if (DEBUG1)
-            {
-                System.out.format("BMD.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d result=%d\n",
-                        topicName,
-                        partition, requestOffset, messageOffset, result);
-            }
         }
         deferUpdates = false;
 
@@ -104,6 +104,12 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
             long requestOffset,
             long lastOffset)
     {
+        if (DEBUG1)
+        {
+            System.out.format("BMD.flush: topic=%s partition=%d requestOffset=%d lastOffset=%d\n",
+                    topicName,
+                    partition, requestOffset, lastOffset);
+        }
         deferUpdates = true;
         for (int i = 0; i < dispatchers.size(); i++)
         {

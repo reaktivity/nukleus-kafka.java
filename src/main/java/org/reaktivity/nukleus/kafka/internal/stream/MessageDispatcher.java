@@ -26,6 +26,39 @@ public interface MessageDispatcher
     int FLAGS_EXPECTING_WINDOW = 0x02 | FLAGS_MATCHED;
     int FLAGS_DELIVERED = 0x04 | FLAGS_EXPECTING_WINDOW;
 
+
+    MessageDispatcher NOP = new MessageDispatcher()
+    {
+        @Override
+        public void adjustOffset(int partition, long oldOffset, long newOffset)
+        {
+        }
+
+        @Override
+        public void detach(boolean reattach)
+        {
+        }
+
+        @Override
+        public void flush(int partition, long requestOffset, long nextFetchOffset)
+        {
+        }
+
+        @Override
+        public int dispatch(
+                int partition,
+                long requestOffset,
+                long messageStartOffset,
+                DirectBuffer key,
+                Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
+                long timestamp,
+                long traceId,
+                DirectBuffer value)
+        {
+            return 0;
+        }
+    };
+
     static boolean matched(int result)
     {
         return (result & FLAGS_MATCHED) == FLAGS_MATCHED;

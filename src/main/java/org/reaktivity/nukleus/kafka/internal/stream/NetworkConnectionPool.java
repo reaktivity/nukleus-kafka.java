@@ -2226,12 +2226,12 @@ public final class NetworkConnectionPool
 
             if (proactive)
             {
-                for (int i=0; i < partitionCount; i++)
-                {
-                    attachToPartition(i, 0L, 1);
-                }
                 MessageDispatcher bootstrapDispatcher = new ProgressUpdatingMessageDispatcher(partitionCount, progressHandler);
                 this.dispatcher.add(null, -1, Collections.emptyIterator(), bootstrapDispatcher);
+                for (int i=0; i < partitionCount; i++)
+                {
+                    attachToPartition(i, 0L, 1, bootstrapDispatcher);
+                }
             }
         }
 
@@ -2279,7 +2279,7 @@ public final class NetworkConnectionPool
                 {
                     final int partitionId = (int) keys.nextValue();
                     long fetchOffset = fetchOffsets.get(partitionId);
-                    attachToPartition(partitionId, fetchOffset, 1);
+                    attachToPartition(partitionId, fetchOffset, 1, dispatcher);
                 }
             }
             else
@@ -2287,7 +2287,7 @@ public final class NetworkConnectionPool
                 int fetchKeyPartition = fetchOffsets.keySet().iterator().next().intValue();
                 this.dispatcher.add(fetchKey, fetchKeyPartition, headersIterator, dispatcher);
                 long fetchOffset = fetchOffsets.get(fetchKeyPartition);
-                attachToPartition(fetchKeyPartition, fetchOffset, 1);
+                attachToPartition(fetchKeyPartition, fetchOffset, 1, dispatcher);
             }
 
             return progressHandler;
@@ -2296,7 +2296,8 @@ public final class NetworkConnectionPool
         private void attachToPartition(
             int partitionId,
             long fetchOffset,
-            final int refs)
+            final int refs,
+            MessageDispatcher dispatcher)
         {
             candidate.id = partitionId;
             candidate.offset = fetchOffset;
@@ -2337,6 +2338,7 @@ public final class NetworkConnectionPool
             }
 
             partition.refs += refs;
+            partition.refObjects.add(dispatcher);
         }
 
         void doDetach(
@@ -2356,12 +2358,13 @@ public final class NetworkConnectionPool
             windowSuppliers.remove(supplyWindow);
             int fetchKeyPartition = (int) (fetchKey == null ? -1 : fetchOffsets.keySet().iterator().next());
             headersIterator.wrap(headers);
-            this.dispatcher.remove(fetchKey, fetchKeyPartition, headersIterator, dispatcher);
+            boolean removed = this.dispatcher.remove(fetchKey, fetchKeyPartition, headersIterator, dispatcher);
+            assert removed;
             final LongIterator partitionIds = fetchOffsets.keySet().iterator();
             while (partitionIds.hasNext())
             {
                 long partitionId = partitionIds.nextValue();
-                doDetach((int) partitionId, fetchOffsets.get(partitionId), supplyWindow);
+                doDetach((int) partitionId, fetchOffsets.get(partitionId), supplyWindow, dispatcher);
             }
             if (partitions.isEmpty()  && !compacted)
             {
@@ -2377,7 +2380,8 @@ public final class NetworkConnectionPool
         void doDetach(
             int partitionId,
             long fetchOffset,
-            IntSupplier supplyWindow)
+            IntSupplier supplyWindow,
+            MessageDispatcher dispatcher)
         {
             windowSuppliers.remove(supplyWindow);
             candidate.id = partitionId;
@@ -2391,6 +2395,8 @@ public final class NetworkConnectionPool
             }
 
             partition.refs--;
+            boolean removed = partition.refObjects.remove(dispatcher);
+            assert removed;
             if (partition.refs == 0)
             {
                 remove(partition);
@@ -2458,6 +2464,8 @@ public final class NetworkConnectionPool
             }
 
             first.refs--;
+            first.refObjects.remove(dispatcher);
+            assert first.refs == first.refObjects.size();
 
             candidate.offset = nextOffset;
             NetworkTopicPartition next = partitions.floor(candidate);
@@ -2473,6 +2481,8 @@ public final class NetworkConnectionPool
                 add(next);
             }
             next.refs++;
+            next.refObjects.add(dispatcher);
+            assert next.refs == next.refObjects.size();
             if (first.refs == 0)
             {
                 remove(first);
@@ -2488,7 +2498,9 @@ public final class NetworkConnectionPool
         private void remove(
             NetworkTopicPartition partition)
         {
-            partitions.remove(partition);
+            boolean removed = partitions.remove(partition);
+            assert removed;
+
             boolean needsHistorical = false;
             partition.offset = 0;
             NetworkTopicPartition lowest = partitions.ceiling(partition);
@@ -2534,6 +2546,7 @@ public final class NetworkConnectionPool
                 if (existing != null && existing.id == partitionId && existing.offset == offset)
                 {
                     existing.refs++;
+                    existing.refObjects.add(MessageDispatcher.NOP);
                     NetworkTopicPartition floor = partitions.floor(existing);
                     if (floor.id == partitionId && floor.offset != offset)
                     {
@@ -2581,6 +2594,7 @@ public final class NetworkConnectionPool
         int id;
         long offset;
         private int refs;
+        private List<MessageDispatcher> refObjects = new ArrayList<>();
 
         @Override
         protected NetworkTopicPartition clone()
@@ -2589,6 +2603,7 @@ public final class NetworkConnectionPool
             result.id = id;
             result.offset = offset;
             result.refs = refs;
+            result.refObjects = new ArrayList<>(refObjects);
             return result;
         }
 
@@ -2644,7 +2659,7 @@ public final class NetworkConnectionPool
         @Override
         public String toString()
         {
-            return format("(id=%d, offset=%d, refs=%d)", id, offset, refs);
+            return format("(id=%d, offset=%d, refs=%d, refObjects[0]=%s)", id, offset, refs, refObjects.isEmpty() ? refObjects : refObjects.get(0));
         }
     }
 

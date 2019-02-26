@@ -87,7 +87,7 @@ public class KafkaConfiguration extends Configuration
         return KAFKA_READ_IDLE_TIMEOUT.getAsInt(this);
     }
 
-    public void enableDebug(boolean value)
+    public static void enableDebug(boolean value)
     {
         DEBUG = value;
         DEBUG1 = value;

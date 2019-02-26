@@ -119,6 +119,12 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
         long traceId,
         DirectBuffer value)
     {
+        if (DEBUG1)
+        {
+            System.out.format("HVMD.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d\n",
+                    topicName,
+                    partition, requestOffset, messageOffset);
+        }
         int result = 0;
         deferUpdates = true;
         Iterator<DirectBuffer> values = supplyHeader.apply(headerName);
@@ -129,19 +135,13 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             MessageDispatcher dispatcher = dispatchersByHeaderValue.get(buffer);
             if (dispatcher != null)
             {
-                result = dispatcher.dispatch(partition, requestOffset, messageOffset,
+                result |= dispatcher.dispatch(partition, requestOffset, messageOffset,
                                              key, supplyHeader, timestamp, traceId, value);
             }
         }
         deferUpdates = false;
 
         processDeferredUpdates();
-        if (DEBUG1)
-        {
-            System.out.format("HVMD.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d result=%d\n",
-                    topicName,
-                    partition, requestOffset, messageOffset, result);
-        }
         return result;
     }
 
@@ -151,6 +151,12 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             long requestOffset,
             long lastOffset)
     {
+        if (DEBUG1)
+        {
+            System.out.format("HVMD.flush: topic=%s partition=%d requestOffset=%d messageOffset=%d\n",
+                    topicName,
+                    partition, requestOffset, lastOffset);
+        }
         deferUpdates = true;
         for (int i = 0; i < dispatchers.size(); i++)
         {

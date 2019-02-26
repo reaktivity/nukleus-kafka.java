@@ -124,6 +124,12 @@ public class HeadersMessageDispatcher implements MessageDispatcher
                  long traceId,
                  DirectBuffer value)
     {
+        if (DEBUG1)
+        {
+            System.out.format("HMD.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d\n",
+                    topicName,
+                    partition, requestOffset, messageOffset);
+        }
         int result = 0;
         result |=  broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
         deferUpdates = true;
@@ -135,12 +141,6 @@ public class HeadersMessageDispatcher implements MessageDispatcher
         deferUpdates = false;
 
         processDeferredUpdates();
-        if (DEBUG1)
-        {
-            System.out.format("HMD.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d result=%d\n",
-                    topicName,
-                    partition, requestOffset, messageOffset, result);
-        }
         return result;
     }
 
@@ -150,6 +150,12 @@ public class HeadersMessageDispatcher implements MessageDispatcher
             long requestOffset,
             long lastOffset)
     {
+        if (DEBUG1)
+        {
+            System.out.format("HMD.flush: topic=%s partition=%d requestOffset=%d lastOffset=%d\n",
+                    topicName,
+                    partition, requestOffset, lastOffset);
+        }
         broadcast.flush(partition, requestOffset, lastOffset);
         deferUpdates = true;
         for (int i = 0; i < dispatchers.size(); i++)
@@ -229,6 +235,7 @@ public class HeadersMessageDispatcher implements MessageDispatcher
                         {
                             dispatchers.set(index, HeaderValueMessageDispatcher.NOOP);
                         }
+                        hasDeferredUpdates = true;
                     }
                     else
                     {
