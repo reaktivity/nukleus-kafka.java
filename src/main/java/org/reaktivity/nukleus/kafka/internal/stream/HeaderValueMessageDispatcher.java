@@ -126,8 +126,8 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             MessageDispatcher dispatcher = dispatchersByHeaderValue.get(buffer);
             if (dispatcher != null)
             {
-                result = dispatcher.dispatch(partition, requestOffset, messageOffset,
-                                             key, supplyHeader, timestamp, traceId, value);
+                result |= dispatcher.dispatch(partition, requestOffset, messageOffset,
+                                              key, supplyHeader, timestamp, traceId, value);
             }
         }
         deferUpdates = false;

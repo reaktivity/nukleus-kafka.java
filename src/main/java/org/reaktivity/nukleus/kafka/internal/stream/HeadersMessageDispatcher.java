@@ -216,6 +216,7 @@ public class HeadersMessageDispatcher implements MessageDispatcher
                         {
                             dispatchers.set(index, HeaderValueMessageDispatcher.NOOP);
                         }
+                        hasDeferredUpdates = true;
                     }
                     else
                     {
