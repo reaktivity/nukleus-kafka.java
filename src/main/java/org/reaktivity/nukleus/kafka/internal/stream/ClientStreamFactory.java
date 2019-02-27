@@ -79,6 +79,8 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class ClientStreamFactory implements StreamFactory
 {
+    public static boolean debugSkipReset;
+
     private static final long[] ZERO_OFFSETS = new long[] {0L};
 
     private static final PartitionProgressHandler NOOP_PROGRESS_HANDLER = (p, f, n, d) ->
@@ -1016,8 +1018,11 @@ public final class ClientStreamFactory implements StreamFactory
                 handleWindow(window);
                 break;
             case ResetFW.TYPE_ID:
-                final ResetFW reset = resetRO.wrap(buffer, index, index + length);
-                handleReset(reset);
+                if (!debugSkipReset)
+                {
+                    final ResetFW reset = resetRO.wrap(buffer, index, index + length);
+                    handleReset(reset);
+                }
                 break;
             default:
                 // ignore
