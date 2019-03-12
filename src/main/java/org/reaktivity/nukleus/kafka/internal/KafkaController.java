@@ -18,22 +18,29 @@ package org.reaktivity.nukleus.kafka.internal;
 import static java.nio.ByteBuffer.allocateDirect;
 import static java.nio.ByteOrder.nativeOrder;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.reaktivity.nukleus.route.RouteKind.CLIENT;
 
-import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
 
+import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.AtomicBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.Controller;
 import org.reaktivity.nukleus.ControllerSpi;
+import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.FreezeFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.Role;
 import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.UnrouteFW;
+import org.reaktivity.nukleus.route.RouteKind;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 public final class KafkaController implements Controller
 {
@@ -46,13 +53,20 @@ public final class KafkaController implements Controller
 
     private final KafkaRouteExFW.Builder routeExRW = new KafkaRouteExFW.Builder();
 
-    private final ControllerSpi controllerSpi;
-    private final AtomicBuffer atomicBuffer;
+    private final OctetsFW extensionRO = new OctetsFW().wrap(new UnsafeBuffer(new byte[0]), 0, 0);
 
-    public KafkaController(ControllerSpi controllerSpi)
+    private final ControllerSpi controllerSpi;
+    private final AtomicBuffer commandBuffer;
+    private final MutableDirectBuffer extensionBuffer;
+    private final Gson gson;
+
+    public KafkaController(
+        ControllerSpi controllerSpi)
     {
         this.controllerSpi = controllerSpi;
-        this.atomicBuffer = new UnsafeBuffer(allocateDirect(MAX_SEND_LENGTH).order(nativeOrder()));
+        this.commandBuffer = new UnsafeBuffer(allocateDirect(MAX_SEND_LENGTH).order(nativeOrder()));
+        this.extensionBuffer = new UnsafeBuffer(allocateDirect(MAX_SEND_LENGTH).order(nativeOrder()));
+        this.gson = new Gson();
     }
 
     @Override
@@ -76,24 +90,82 @@ public final class KafkaController implements Controller
     @Override
     public String name()
     {
-        return "kafka";
+        return KafkaNukleus.NAME;
     }
 
+    @Deprecated
     public CompletableFuture<Long> routeClient(
         String localAddress,
         String remoteAddress,
-        String topicName)
+        String topic)
     {
-        return route(Role.CLIENT, localAddress, remoteAddress, topicName, Collections.emptyMap());
+        final JsonObject extension = new JsonObject();
+        extension.addProperty("topic", topic);
+        return route(CLIENT, localAddress, remoteAddress, gson.toJson(extension));
     }
 
+    @Deprecated
     public CompletableFuture<Long> routeClient(
         String localAddress,
         String remoteAddress,
-        String topicName,
+        String topic,
         Map<String, String> headers)
     {
-        return route(Role.CLIENT, localAddress, remoteAddress, topicName, headers);
+        final JsonObject extension = new JsonObject();
+        extension.addProperty("topic", topic);
+        extension.add("headers", gson.toJsonTree(headers));
+
+        return route(CLIENT, localAddress, remoteAddress, gson.toJson(extension));
+    }
+
+    public CompletableFuture<Long> route(
+        RouteKind kind,
+        String localAddress,
+        String remoteAddress)
+    {
+        return route(kind, localAddress, remoteAddress, null);
+    }
+
+    public CompletableFuture<Long> route(
+        RouteKind kind,
+        String localAddress,
+        String remoteAddress,
+        String extension)
+    {
+        Flyweight routeEx = extensionRO;
+
+        if (extension != null)
+        {
+            final JsonParser parser = new JsonParser();
+            final JsonElement element = parser.parse(extension);
+            if (element.isJsonObject())
+            {
+                final JsonObject object = (JsonObject) element;
+                final String topic = gson.fromJson(object.get("topic"), String.class);
+                final JsonObject headers = object.getAsJsonObject("headers");
+
+                if (topic != null || headers != null)
+                {
+                    routeEx = routeExRW.wrap(extensionBuffer, 0, extensionBuffer.capacity())
+                                       .topicName(topic)
+                                       .headers(lhb ->
+                                       {
+                                           if (headers != null)
+                                           {
+                                               headers.entrySet().forEach(e ->
+                                               {
+                                                   final String key = e.getKey();
+                                                   final String value = gson.fromJson(e.getValue(), String.class);
+                                                   lhb.item(hb -> hb.key(key).value(ob -> ob.put(value.getBytes(UTF_8))));
+                                               });
+                                           }
+                                       })
+                                       .build();
+                }
+            }
+        }
+
+        return doRoute(kind, localAddress, remoteAddress, routeEx);
     }
 
     public CompletableFuture<Void> unroute(
@@ -101,7 +173,7 @@ public final class KafkaController implements Controller
     {
         long correlationId = controllerSpi.nextCorrelationId();
 
-        UnrouteFW unrouteRO = unrouteRW.wrap(atomicBuffer, 0, atomicBuffer.capacity())
+        UnrouteFW unrouteRO = unrouteRW.wrap(commandBuffer, 0, commandBuffer.capacity())
                                  .correlationId(correlationId)
                                  .nukleus(name())
                                  .routeId(routeId)
@@ -114,7 +186,7 @@ public final class KafkaController implements Controller
     {
         long correlationId = controllerSpi.nextCorrelationId();
 
-        FreezeFW freeze = freezeRW.wrap(atomicBuffer, 0, atomicBuffer.capacity())
+        FreezeFW freeze = freezeRW.wrap(commandBuffer, 0, commandBuffer.capacity())
                                   .correlationId(correlationId)
                                   .nukleus(name())
                                   .build();
@@ -122,50 +194,24 @@ public final class KafkaController implements Controller
         return controllerSpi.doFreeze(freeze.typeId(), freeze.buffer(), freeze.offset(), freeze.sizeof());
     }
 
-    private Consumer<OctetsFW.Builder> extension(
-        final String topicName,
-        Map<String, String> headers)
-    {
-        if (topicName != null)
-        {
-            return e -> e.set((buffer, offset, limit) ->
-                routeExRW.wrap(buffer, offset, limit)
-                         .topicName(topicName)
-                         .headers(lhb ->
-                         {
-                             headers.forEach((k, v) ->
-                             {
-                                 lhb.item(hb -> hb.key(k).value(ob -> ob.put(v.getBytes(UTF_8))));
-                             });
-                         })
-                         .build()
-                         .sizeof());
-        }
-        else
-        {
-            return e ->
-                { };
-        }
-    }
-
-    private CompletableFuture<Long> route(
-        Role role,
+    private CompletableFuture<Long> doRoute(
+        RouteKind kind,
         String localAddress,
         String remoteAddress,
-        String topicName,
-        Map<String, String> headers)
+        Flyweight extension)
     {
-        long correlationId = controllerSpi.nextCorrelationId();
+        final long correlationId = controllerSpi.nextCorrelationId();
+        final Role role = Role.valueOf(kind.ordinal());
 
-        RouteFW routeRO = routeRW.wrap(atomicBuffer, 0, atomicBuffer.capacity())
+        final RouteFW route = routeRW.wrap(commandBuffer, 0, commandBuffer.capacity())
                                  .correlationId(correlationId)
                                  .nukleus(name())
                                  .role(b -> b.set(role))
                                  .localAddress(localAddress)
                                  .remoteAddress(remoteAddress)
-                                 .extension(extension(topicName, headers))
+                                 .extension(extension.buffer(), extension.offset(), extension.sizeof())
                                  .build();
 
-        return controllerSpi.doRoute(routeRO.typeId(), routeRO.buffer(), routeRO.offset(), routeRO.sizeof());
+        return controllerSpi.doRoute(route.typeId(), route.buffer(), route.offset(), route.sizeof());
     }
 }
