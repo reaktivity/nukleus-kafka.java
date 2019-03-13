@@ -143,15 +143,14 @@ public final class KafkaController implements Controller
                 final JsonObject object = (JsonObject) element;
                 final String topic = gson.fromJson(object.get("topic"), String.class);
                 final JsonObject headers = object.getAsJsonObject("headers");
-                final boolean hasHeaders = headers != null; // && headers.size() > 0;
 
-                if (topic != null || hasHeaders)
+                if (topic != null || headers != null)
                 {
                     routeEx = routeExRW.wrap(extensionBuffer, 0, extensionBuffer.capacity())
                                        .topicName(topic)
                                        .headers(lhb ->
                                        {
-                                           if (hasHeaders)
+                                           if (headers.size() > 0)
                                            {
                                                headers.entrySet().forEach(e ->
                                                {
