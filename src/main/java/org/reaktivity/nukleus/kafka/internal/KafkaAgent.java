@@ -129,6 +129,7 @@ final class KafkaAgent implements Agent
             {
                 final KafkaRouteExFW routeEx = extension.get(routeExRO::wrap);
                 final String topicName = routeEx.topicName().asString();
+                final ListFW<KafkaHeaderFW> headers = routeEx.headers();
 
                 final long networkRouteId = route.correlationId();
                 final long networkRemoteId = (int)(networkRouteId >> 32) & 0xffff;
@@ -137,11 +138,13 @@ final class KafkaAgent implements Agent
                         connectionPools.computeIfAbsent(networkRemoteId,
                                 r -> connectionPoolFactory.apply(networkRouteId));
 
-                final ListFW<KafkaHeaderFW> headers = routeEx.headers();
-                ListFW<KafkaHeaderFW> headersCopy = new ListFW<KafkaHeaderFW>(new KafkaHeaderFW());
-                headersCopy.wrap(headers.buffer(), headers.offset(), headers.limit());
-                connectionPool.addRoute(topicName, headersCopy, config.topicBootstrapEnabled(),
-                        this::onKafkaError);
+                if (topicName != null)
+                {
+                    ListFW<KafkaHeaderFW> headersCopy = new ListFW<KafkaHeaderFW>(new KafkaHeaderFW());
+                    headersCopy.wrap(headers.buffer(), headers.offset(), headers.limit());
+                    connectionPool.addRoute(topicName, headersCopy, config.topicBootstrapEnabled(),
+                            this::onKafkaError);
+                }
             }
         }
     }

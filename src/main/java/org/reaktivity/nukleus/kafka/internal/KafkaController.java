@@ -150,7 +150,7 @@ public final class KafkaController implements Controller
                                        .topicName(topic)
                                        .headers(lhb ->
                                        {
-                                           if (headers != null)
+                                           if (headers != null && headers.size() > 0)
                                            {
                                                headers.entrySet().forEach(e ->
                                                {

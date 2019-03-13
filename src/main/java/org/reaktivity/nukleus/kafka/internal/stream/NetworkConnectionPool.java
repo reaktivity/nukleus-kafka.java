@@ -3078,7 +3078,10 @@ public final class NetworkConnectionPool
         {
             this.headers = headers;
             offsets.clear();
-            headers.forEach(h -> offsets.addInt(h.offset()));
+            if (headers != null)
+            {
+                headers.forEach(h -> offsets.addInt(h.offset()));
+            }
             position = 0;
             return this;
         }
