@@ -2715,7 +2715,7 @@ public final class NetworkConnectionPool
 
         TopicMetadata(String topicName)
         {
-            this.topicName = topicName;
+            this.topicName = requireNonNull(topicName);
         }
 
         boolean isComplete()
