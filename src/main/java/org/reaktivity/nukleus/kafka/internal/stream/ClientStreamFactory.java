@@ -80,6 +80,8 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class ClientStreamFactory implements StreamFactory
 {
+    public static boolean debugSkipReset;
+
     private static final long[] ZERO_OFFSETS = new long[] {0L};
 
     private static final PartitionProgressHandler NOOP_PROGRESS_HANDLER = (p, f, n, d) ->
@@ -296,6 +298,7 @@ public final class ClientStreamFactory implements StreamFactory
         private final NetworkConnectionPool networkPool;
 
         private final Long2LongHashMap fetchOffsets;
+        private Long2LongHashMap progressOffsets;
 
         private boolean subscribedByKey;
 
@@ -355,6 +358,10 @@ public final class ClientStreamFactory implements StreamFactory
             this.applicationId = applicationId;
             this.networkPool = networkPool;
             this.fetchOffsets = new Long2LongHashMap(-1L);
+            this.progressOffsets = fetchOffsets;
+            System.out.printf("CAS.init stream=%d fetchOffsets=%s progressOffsets=%s\n",
+                    applicationId,
+                    fetchOffsets, progressOffsets);
             this.streamState = this::beforeBegin;
         }
 
@@ -371,10 +378,11 @@ public final class ClientStreamFactory implements StreamFactory
                                   partition, oldOffset, newOffset, this);
             }
 
-            long offset = fetchOffsets.get(partition);
+            long offset = progressOffsets.get(partition);
             if (offset == oldOffset)
             {
-                fetchOffsets.put(partition, newOffset);
+                progressOffsets.put(partition, newOffset);
+                convergeOffsetsIfNecessary();
             }
         }
 
@@ -416,13 +424,12 @@ public final class ClientStreamFactory implements StreamFactory
             long traceId,
             DirectBuffer value)
         {
-            if (DEBUG1)
-            {
+
                 System.out.format("CAS.dispatch: stream=%d topic=%s partition=%d requestOffset=%d messageOffset=%d\n",
-                        System.identityHashCode(this),
+                        applicationId,
                         topicName,
                         partition, requestOffset, messageStartOffset);
-            }
+
             int result = MessageDispatcher.FLAGS_MATCHED;
             if (progressStartOffset == NO_OFFSET)
             {
@@ -616,8 +623,9 @@ if (DEBUG1)
     topicName,
     partition, requestOffset, nextFetchOffset, startOffset, endOffset, dispatchBlocked);
 }
-                final long oldFetchOffset = this.fetchOffsets.put(partition, endOffset);
-                progressHandler.handle(partition, oldFetchOffset, endOffset, this);
+                final long oldProgressOffset = this.progressOffsets.put(partition, endOffset);
+                progressHandler.handle(partition, oldProgressOffset, endOffset, this);
+                convergeOffsetsIfNecessary();
             }
 
             if (dispatchBlocked && dispatchState == dispatchFromPoolState)
@@ -732,6 +740,7 @@ if (DEBUG1)
             if (fragmentedMessageOffset != NO_OFFSET)
             {
                 dispatchState = dispatchFragmentedFromCacheState;
+System.out.printf("CAS:dispatchMessagesFromCache stream = %016x fetchOffsets = %s FRAGMENTED\n", this.applicationId, this.fetchOffsets);
             }
 
             if (!messages.hasNext())
@@ -782,6 +791,7 @@ if (DEBUG1)
                 if (fragmentedMessageOffset == NO_OFFSET)
                 {
                     dispatchState = dispatchFromCacheState;
+System.out.printf("CAS:dispatchFragmentedMessageFromCache stream = %016x fetchOffsets = %s CACHE\n", this.applicationId, this.fetchOffsets);
 
                     if (writeableBytes() > 0)
                     {
@@ -802,6 +812,8 @@ if (DEBUG1)
             {
                 dispatchState = fragmentedMessageOffset == NO_OFFSET ?
                         dispatchFromCacheState : dispatchFragmentedFromCacheState;
+System.out.printf("CAS:enterDispatchFromCacheState stream = %016x fetchOffsets = %s FRAGMENTED|CACHE\n", this.applicationId, this.fetchOffsets);
+
                 invoke(detacher);
                 progressHandler = NOOP_PROGRESS_HANDLER;
             }
@@ -810,6 +822,8 @@ if (DEBUG1)
         private void enterDispatchFromPoolState()
         {
             dispatchState = dispatchFromPoolState;
+System.out.printf("CAS:enterDispatchFromPoolState stream = %016x fetchOffsets = %s POOL\n", this.applicationId, this.fetchOffsets);
+
             invoke(attacher);
             progressHandler = poolProgressHandler;
         }
@@ -876,8 +890,8 @@ if (DEBUG1)
                 fragmentedMessageLength = 0;
                 progressEndOffset = nextOffset;
 
-                final long oldFetchOffset = this.fetchOffsets.put(partition, nextOffset);
-                progressHandler.handle(partition, oldFetchOffset, nextOffset, this);
+                final long oldProgressOffset = this.progressOffsets.put(partition, nextOffset);
+                progressHandler.handle(partition, oldProgressOffset, nextOffset, this);
             }
             else
             {
@@ -967,6 +981,7 @@ if (DEBUG1)
                 this.fetchOffsets.clear();
 
                 fetchOffsets.forEach(v -> this.fetchOffsets.put(this.fetchOffsets.size(), v.value()));
+System.out.printf("CAS:handleBegin stream = %016x fetchOffsets = %s\n", this.applicationId, this.fetchOffsets);
 
                 OctetsFW fetchKey = beginEx.fetchKey();
                 byte hashCodesCount = beginEx.fetchKeyHashCount();
@@ -1016,6 +1031,68 @@ if (DEBUG1)
             }
         }
 
+        void convergeOffsetsIfNecessary()
+        {
+            if (progressOffsets != fetchOffsets)
+            {
+                System.out.printf("CAS.convergeOffsetsIfNecessary BEFORE stream=%d fetchOffsets=%s progressOffsets=%s\n",
+                        applicationId,
+                        fetchOffsets, progressOffsets);
+                for (int partition = 0; partition < fetchOffsets.size(); partition++)
+                {
+                    long fetchOffset = fetchOffsets.get(partition);
+                    long progressOffset = progressOffsets.get(partition);
+                    if (progressOffset < fetchOffset)
+                    {
+                        return;
+                    }
+                }
+                // all partitions caught up to or surpassed fetch offsets
+                fetchOffsets.putAll(progressOffsets);
+                progressOffsets = fetchOffsets;
+                System.out.printf("CAS.convergeOffsetsIfNecessary AFTER stream=%d fetchOffsets=%s progressOffsets=%s\n",
+                        applicationId,
+                        fetchOffsets, progressOffsets);
+            }
+        }
+
+        void divergeOffsetsIfNecessary(
+            IntToLongFunction highestAvailableOffset)
+        {
+            if (progressOffsets == fetchOffsets)
+            {
+                for (int partition = 0; partition < fetchOffsets.size(); partition++)
+                {
+                    long highestOffset = highestAvailableOffset.applyAsLong(partition);
+                    long fetchOffset = fetchOffsets.get(partition);
+                    if (fetchOffset > highestOffset)
+                    {
+                        progressOffsets = new Long2LongHashMap(-1L);
+                        progressOffsets.putAll(fetchOffsets);
+                        System.out.printf("CAS.divergeOffsetsIfNecessary BEFORE stream=%d fetchOffsets=%s progressOffsets=%s\n",
+                                applicationId,
+                                fetchOffsets, progressOffsets);
+                        break;
+                    }
+                }
+            }
+            if (progressOffsets != fetchOffsets)
+            {
+                for (int partition = 0; partition < fetchOffsets.size(); partition++)
+                {
+                    long highestOffset = highestAvailableOffset.applyAsLong(partition);
+                    long fetchOffset = fetchOffsets.get(partition);
+                    if (fetchOffset > highestOffset)
+                    {
+                        progressOffsets.put(partition, Math.min(fetchOffset, highestOffset));
+                    }
+                }
+                System.out.printf("CAS.divergeOffsetsIfNecessary AFTER stream=%d fetchOffsets=%s progressOffsets=%s\n",
+                        applicationId,
+                        fetchOffsets, progressOffsets);
+            }
+        }
+
         private void onAttachPrepared(
             AttachDetailsConsumer attacher,
             AttachDetailsConsumer detacher,
@@ -1023,7 +1100,8 @@ if (DEBUG1)
             ImmutableTopicCache historicalCache,
             int partitionCount,
             boolean compacted,
-            IntToLongFunction firstAvailableOffset)
+            IntToLongFunction firstAvailableOffset,
+            IntToLongFunction highestAvailableOffset)
         {
             this.compacted = compacted;
             this.attacher = attacher;
@@ -1067,6 +1145,8 @@ if (DEBUG1)
                 }
             }
 
+            divergeOffsetsIfNecessary(highestAvailableOffset);
+
             if (writeableBytes() > 0)
             {
                 dispatchState.run();
@@ -1076,7 +1156,7 @@ if (DEBUG1)
         private void invoke(
             AttachDetailsConsumer attacher)
         {
-            attacher.apply(fetchOffsets, fetchKey, headers, this, writeableBytes);
+            attacher.apply(progressOffsets, fetchKey, headers, this, writeableBytes);
         }
 
         private void onMetadataError(

@@ -378,7 +378,8 @@ public final class NetworkConnectionPool
                     topic.cache,
                     topicMetadata.partitionCount(),
                     topicMetadata.compacted,
-                    topicMetadata::firstAvailableOffset);
+                    topicMetadata::firstAvailableOffset,
+                    topic::highestAvailableOffset);
             break;
         default:
             throw new RuntimeException(format("Unexpected errorCode %s from metadata query for topic %s",
@@ -1571,6 +1572,7 @@ public final class NetworkConnectionPool
                                     .wrap(encodeBuffer, encodeLimit,
                                             encodeBuffer.capacity())
                                     .partitionId(candidate.id).fetchOffset(offset).maxBytes(maxPartitionBytes).build();
+                            System.out.printf("LIVE fetch offset = %d\n", offset);
 
                             long requestedOffset = candidate.offset;
 
@@ -1661,6 +1663,7 @@ public final class NetworkConnectionPool
                                 .fetchOffset(offset)
                                 .maxBytes(maxPartitionBytes)
                                 .build();
+                            System.out.printf("HIST fetch offset = %d first=%d last = %d\n", offset, topic.partitions.first().offset, topic.partitions.last().offset);
 
                             if (offset < partition.offset)
                             {
@@ -2196,6 +2199,9 @@ public final class NetworkConnectionPool
             this.candidate = new NetworkTopicPartition();
             this.progressHandler = this::handleProgress;
 
+            System.out.printf("NetworkTopic creation %s\n", proactive);
+
+
             if (compacted)
             {
                 cache = new CompactedTopicCache(
@@ -2232,6 +2238,10 @@ public final class NetworkConnectionPool
                 {
                     attachToPartition(i, 0L, 1, bootstrapDispatcher);
                 }
+            }
+            else
+            {
+                System.out.println("ProgressUpdatingMessageDispatcher is not added");
             }
         }
 
@@ -2339,6 +2349,7 @@ public final class NetworkConnectionPool
 
             partition.refs += refs;
             partition.refObjects.add(dispatcher);
+            System.out.printf("attachToPartition = %s\n", partitions);
         }
 
         void doDetach(
@@ -2438,6 +2449,16 @@ public final class NetworkConnectionPool
             return writableBytes;
         }
 
+        private long highestAvailableOffset(
+            int partitionId)
+        {
+System.out.printf("partitions = %s\n", partitions);
+            candidate.id = partitionId;
+            candidate.offset = MAX_OFFSET;
+            NetworkTopicPartition highest = partitions.floor(candidate);
+            return highest != null && highest.id == partitionId ? highest.offset : MAX_OFFSET;
+        }
+
         private void handleProgress(
             int partitionId,
             long firstOffset,
@@ -2509,7 +2530,7 @@ public final class NetworkConnectionPool
             {
                 partition.offset = Long.MAX_VALUE;
                 NetworkTopicPartition highest = partitions.floor(partition);
-                // TODO: BUG must add && highest.id == partition.id
+                assert highest.id == partition.id;
                 if (highest != lowest)
                 {
                     needsHistorical = true;
@@ -2659,7 +2680,7 @@ public final class NetworkConnectionPool
         @Override
         public String toString()
         {
-            return format("(id=%d, offset=%d, refs=%d, refObjects[0]=%s)", id, offset, refs, refObjects.isEmpty() ? refObjects : refObjects.get(0));
+            return format("(id=%d, offset=%d, refs=%d)", id, offset, refs);
         }
     }
 

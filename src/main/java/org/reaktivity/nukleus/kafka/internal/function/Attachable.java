@@ -29,5 +29,6 @@ public interface Attachable
         ImmutableTopicCache historicalCache,
         int partitionCount,
         boolean compacted,
-        IntToLongFunction firstAvailableOffset);
+        IntToLongFunction firstAvailableOffset,
+        IntToLongFunction highestAvailableOffset);
 }

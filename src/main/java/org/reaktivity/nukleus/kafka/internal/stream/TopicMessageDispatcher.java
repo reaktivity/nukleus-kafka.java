@@ -106,12 +106,12 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         long traceId,
         DirectBuffer value)
     {
-        if (DEBUG1)
-        {
+        //if (DEBUG1)
+        //{
             System.out.format("TMD.dispatch.3: topic=%s partition=%d requestOffset=%d messageOffset=%d\n",
                     topicName,
                     partition, requestOffset, messageOffset);
-        }
+        //}
         if (cache.compacted() && key == null)
         {
             return 0;

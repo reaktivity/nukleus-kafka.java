@@ -117,6 +117,9 @@ public class CompactedPartitionIndex implements PartitionIndex
         DirectBuffer value,
         boolean cacheIfNew)
     {
+        System.out.printf("cache add = [%d %d] requestOffset = %d messageStartOffset = %d entries=%d\n",
+                earliestOffset(), validToOffset, requestOffset, messageStartOffset, entries.size());
+
         if (invalidEntries > MAX_INVALID_ENTRIES)
         {
             compact();
@@ -126,7 +129,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         EntryImpl entry = entriesByKey.get(buffer);
 
         // Only cache if there are no gaps in observed offsets and we have not yet observed this offset
-        if (requestOffset <= validToOffset && messageStartOffset >= validToOffset)
+        if ((requestOffset <= validToOffset || entries.isEmpty()) && messageStartOffset >= validToOffset)
         {
             validToOffset = messageStartOffset + 1;
             if (entry == null)
@@ -194,6 +197,9 @@ public class CompactedPartitionIndex implements PartitionIndex
         int position = locate(requestOffset);
         if (position == NO_POSITION)
         {
+            if (requestOffset >= earliestOffset() && requestOffset < validToOffset) {
+                System.out.printf("MISS offsets = [%d %d] requestOffset = %d\n", earliestOffset(), validToOffset, requestOffset);
+            }
             long offset = Math.max(requestOffset, validToOffset);
             result = noMessagesIterator.reset(offset);
         }
@@ -212,6 +218,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         if (requestOffset <= validToOffset)
         {
             validToOffset = Math.max(lastOffset,  validToOffset);
+            System.out.printf("cache extendNextOffset = [%d %d] requestOffset = %d lastOffset = %d\n", earliestOffset(), validToOffset, requestOffset, lastOffset);
         }
     }
 
@@ -295,10 +302,12 @@ public class CompactedPartitionIndex implements PartitionIndex
     {
         if (entry.message == NO_MESSAGE)
         {
+            System.out.printf("cacheMessage.put = [%d %d]\n", earliestOffset(), validToOffset);
             entry.message = messageCache.put(timestamp, traceId, key, headers, value);
         }
         else
         {
+            System.out.printf("cacheMessage.replace = [%d %d]\n", earliestOffset(), validToOffset);
             entry.message = messageCache.replace(entry.message, timestamp, traceId, key, headers, value);
         }
     }
@@ -428,7 +437,13 @@ public class CompactedPartitionIndex implements PartitionIndex
     private int locate(
         long offset)
     {
+        int before = entries.size();
         compact();
+        int after = entries.size();
+        if (before != after) {
+            System.out.printf("cacheMessage.locate compact = [%d %d]\n", before, after);
+
+        }
         candidate.offset = offset;
         int result;
         if (offset >= validToOffset)
