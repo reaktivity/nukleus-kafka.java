@@ -276,6 +276,7 @@ public final class NetworkConnectionPool
     private final int fetchMaxBytes;
     private final int fetchPartitionMaxBytes;
     private final int readIdleTimeout;
+    private final boolean proactive;
 
     private final MessageCache messageCache;
     private final boolean forceProactiveMessageCache;
@@ -320,6 +321,7 @@ public final class NetworkConnectionPool
         this.fetchPartitionMaxBytes = config.fetchPartitionMaxBytes();
         this.forceProactiveMessageCache = config.messageCacheProactive();
         this.readIdleTimeout = config.readIdleTimeout();
+        this.proactive = config.topicBootstrapEnabled();
         this.bufferPool = requireNonNull(bufferPool);
         this.messageCache = requireNonNull(messageCache);
         this.supplyInitialId = supplyInitialId;
@@ -368,7 +370,7 @@ public final class NetworkConnectionPool
             break;
         case NONE:
             final NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
-                    name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, false,
+                    name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, proactive,
                             topicMetadata.deleteRetentionMs, false));
             doConnections(topicMetadata);
             attachable.onAttachPrepared(
@@ -1663,7 +1665,8 @@ public final class NetworkConnectionPool
                                 .fetchOffset(offset)
                                 .maxBytes(maxPartitionBytes)
                                 .build();
-                            System.out.printf("HIST fetch offset = %d first=%d last = %d\n", offset, topic.partitions.first().offset, topic.partitions.last().offset);
+                            System.out.printf("HIST fetch offset = %d refs[0] = %s first=%d last = %d\n",
+                                    offset, partition.refObjects.get(0), topic.partitions.first().offset, topic.partitions.last().offset);
 
                             if (offset < partition.offset)
                             {
@@ -2349,7 +2352,7 @@ public final class NetworkConnectionPool
 
             partition.refs += refs;
             partition.refObjects.add(dispatcher);
-            System.out.printf("attachToPartition = %s\n", partitions);
+            System.out.printf("attachToPartition partitions = %s\n", partitions);
         }
 
         void doDetach(
@@ -2452,7 +2455,7 @@ public final class NetworkConnectionPool
         private long highestAvailableOffset(
             int partitionId)
         {
-System.out.printf("partitions = %s\n", partitions);
+System.out.printf("highestAvailableOffset partitions = %s\n", partitions);
             candidate.id = partitionId;
             candidate.offset = MAX_OFFSET;
             NetworkTopicPartition highest = partitions.floor(candidate);
@@ -3098,7 +3101,14 @@ System.out.printf("partitions = %s\n", partitions);
             {
                 progressHandler.handle(partition, offsets[partition], lastOffset, this);
                 offsets[partition] = lastOffset;
+                System.out.printf("progressumd: %s\n", Arrays.toString(offsets));
             }
+        }
+
+        @Override
+        public String toString()
+        {
+            return String.format("progressumd %s", Arrays.toString(offsets));
         }
     }
 

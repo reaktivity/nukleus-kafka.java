@@ -197,9 +197,6 @@ public class CompactedPartitionIndex implements PartitionIndex
         int position = locate(requestOffset);
         if (position == NO_POSITION)
         {
-            if (requestOffset >= earliestOffset() && requestOffset < validToOffset) {
-                System.out.printf("MISS offsets = [%d %d] requestOffset = %d\n", earliestOffset(), validToOffset, requestOffset);
-            }
             long offset = Math.max(requestOffset, validToOffset);
             result = noMessagesIterator.reset(offset);
         }
@@ -302,14 +299,13 @@ public class CompactedPartitionIndex implements PartitionIndex
     {
         if (entry.message == NO_MESSAGE)
         {
-            System.out.printf("cacheMessage.put = [%d %d]\n", earliestOffset(), validToOffset);
             entry.message = messageCache.put(timestamp, traceId, key, headers, value);
         }
         else
         {
-            System.out.printf("cacheMessage.replace = [%d %d]\n", earliestOffset(), validToOffset);
             entry.message = messageCache.replace(entry.message, timestamp, traceId, key, headers, value);
         }
+        System.out.printf("cacheMessage = [%d %d]\n", earliestOffset(), validToOffset);
     }
 
     private void cancelTombstoneExpiry(
@@ -437,17 +433,17 @@ public class CompactedPartitionIndex implements PartitionIndex
     private int locate(
         long offset)
     {
-        int before = entries.size();
         compact();
-        int after = entries.size();
-        if (before != after) {
-            System.out.printf("cacheMessage.locate compact = [%d %d]\n", before, after);
-
-        }
         candidate.offset = offset;
         int result;
-        if (offset >= validToOffset)
+        if (!entries.isEmpty() && offset < earliestOffset())      // TODO only in bootstrap case
         {
+            System.out.printf("cache.locate offset = %d advanced to = %d\n", offset, entries.get(0).offset);
+            return 0;
+        }
+        else if (offset >= validToOffset)
+        {
+            System.out.printf("cache.locate offset = %d  more than validToOffset = %d\n", offset, validToOffset);
             result = NO_POSITION;
         }
         else
@@ -459,6 +455,8 @@ public class CompactedPartitionIndex implements PartitionIndex
 
                 if (result >= entries.size())
                 {
+                    System.out.printf("cache.locate offset = %d is not in cache [%d, %d] \n",
+                            offset, earliestOffset(), validToOffset);
                     result = NO_POSITION;
                 }
             }
