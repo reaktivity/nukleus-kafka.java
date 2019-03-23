@@ -28,7 +28,9 @@ public class KafkaRefCounters
     public final LongSupplier describeConfigsRequestIdleTimeouts;
     public final LongSupplier listOffsetsRequestIdleTimeouts;
     public final LongSupplier fetchRequestIdleTimeouts;
-    public final LongSupplier forcedDetaches;
+    public final LongSupplier forcedDetaches1;
+    public final LongSupplier forcedDetaches2;
+    public final LongSupplier forcedDetaches3;
     public final LongSupplier internalErrors;
 
     KafkaRefCounters(
@@ -45,8 +47,12 @@ public class KafkaRefCounters
                 format("kafka.list.offsets.request.idle.timeouts.%d", networkRouteId));
         this.fetchRequestIdleTimeouts = supplyCounter.apply(
                 format("kafka.fetch.request.idle.timeouts.%d", networkRouteId));
-        this.forcedDetaches = supplyCounter.apply(
-                format("kafka.forced.detaches.%d", networkRouteId));
+        this.forcedDetaches1 = supplyCounter.apply(
+                format("kafka.forced.detaches.1.%d", networkRouteId));
+        this.forcedDetaches2 = supplyCounter.apply(
+                format("kafka.forced.detaches.2.%d", networkRouteId));
+        this.forcedDetaches3 = supplyCounter.apply(
+                format("kafka.forced.detaches.3.%d", networkRouteId));
         this.internalErrors = supplyCounter.apply(
                 format("kafka.internal.errors.%d", networkRouteId));
     }

@@ -325,6 +325,16 @@ public class CompactedPartitionIndex implements PartitionIndex
         }
     }
 
+    private void inOrder()
+    {
+        for(int j=1; j < entries.size(); j++)
+        {
+            EntryImpl prev = entries.get(j-1);
+            EntryImpl cur = entries.get(j);
+            assert cur.offset > prev.offset : String.format("prev.offset = %d cur.offset = %d", prev.offset, cur.offset);
+        }
+    }
+
     private void compact()
     {
         evictExpiredTombstones(); // mutates compactFrom
@@ -334,6 +344,7 @@ public class CompactedPartitionIndex implements PartitionIndex
             compact(0, Long.MAX_VALUE);
         }
         compactFrom = Integer.MAX_VALUE;
+inOrder();
     }
 
     private void compact(
@@ -378,6 +389,7 @@ public class CompactedPartitionIndex implements PartitionIndex
 
     private long earliestOffset()
     {
+        compact();
         return entries.isEmpty() ? NO_OFFSET : entries.get(0).offset;
     }
 
@@ -430,15 +442,34 @@ public class CompactedPartitionIndex implements PartitionIndex
         }
     }
 
+    List<EntryImpl> copyEntries()
+    {
+        List<EntryImpl> copy = new ArrayList<>();
+        for(EntryImpl entry : entries)
+        {
+            EntryImpl entryCopy = new EntryImpl(entry.offset, entry.message, entry.position);
+            copy.add(entryCopy);
+        }
+        return copy;
+    }
+
     private int locate(
         long offset)
     {
+        String before = String.format("offset = %d  [%d %d]\n", offset, entries.isEmpty() ? -1 : entries.get(0).offset, validToOffset);
         compact();
+        String after = String.format("offset = %d  [%d %d]\n", offset, entries.isEmpty() ? -1 : entries.get(0).offset, validToOffset);
+        if (!after.equals(before))
+        {
+            System.out.printf("cache.locate before='%s' after='%s'\n", before, after);
+        }
+
         candidate.offset = offset;
         int result;
         if (!entries.isEmpty() && offset < earliestOffset())      // TODO only in bootstrap case
         {
-            System.out.printf("cache.locate offset = %d advanced to = %d\n", offset, entries.get(0).offset);
+            System.out.printf("cache.locate offset = %d advanced to = %d [%d %d]\n",
+                    offset, entries.get(0).offset, entries.get(0).offset, entries.get(entries.size() - 1).offset);
             return 0;
         }
         else if (offset >= validToOffset)

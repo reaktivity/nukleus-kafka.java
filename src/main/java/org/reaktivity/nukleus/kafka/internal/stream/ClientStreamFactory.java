@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static java.lang.Integer.min;
 import static java.lang.Integer.toHexString;
 import static java.lang.String.format;
 import static java.lang.System.identityHashCode;
@@ -468,7 +469,7 @@ public final class ClientStreamFactory implements StreamFactory
                                toString(value),
                                this);
                        }
-                       networkPool.getRouteCounters().forcedDetaches.getAsLong();
+                       networkPool.getRouteCounters().forcedDetaches1.getAsLong();
                        detach(false);
                    }
                }
@@ -541,11 +542,11 @@ public final class ClientStreamFactory implements StreamFactory
             long startOffset = progressStartOffset;
             long endOffset = progressEndOffset;
 
-System.out.format(
-"CAS.flush.1: stream = %016x topic=%s partition=%d requestOffset=%d nextFetchOffset=%d startOffset=%d endOffset=%d dispatchBlocked=%s fetchOffsets=%s progressOffsets=%s\n",
-applicationId,
-topicName,
-partition, requestOffset, nextFetchOffset, startOffset, endOffset, dispatchBlocked, fetchOffsets, progressOffsets);
+//System.out.format(
+//"CAS.flush.1: stream = %016x topic=%s partition=%d requestOffset=%d nextFetchOffset=%d startOffset=%d endOffset=%d dispatchBlocked=%s fetchOffsets=%s progressOffsets=%s\n",
+//applicationId,
+//topicName,
+//partition, requestOffset, nextFetchOffset, startOffset, endOffset, dispatchBlocked, fetchOffsets, progressOffsets);
 
             if (startOffset == NO_OFFSET)
             {
@@ -568,24 +569,24 @@ partition, requestOffset, nextFetchOffset, startOffset, endOffset, dispatchBlock
             {
                 // Partially written message no longer exists, we cannot complete it.
                 // Abort the connection to force the client to re-attach.
-                networkPool.getRouteCounters().forcedDetaches.getAsLong();
+                networkPool.getRouteCounters().forcedDetaches2.getAsLong();
                 detach(false);
             }
 
-System.out.format(
-"CAS.flush.2: stream = %016x topic=%s partition=%d requestOffset=%d nextFetchOffset=%d startOffset=%d endOffset=%d dispatchBlocked=%s fetchOffsets=%s progressOffsets=%s\n",
-applicationId,
-topicName,
-partition, requestOffset, nextFetchOffset, startOffset, endOffset, dispatchBlocked, fetchOffsets, progressOffsets);
+//System.out.format(
+//"CAS.flush.2: stream = %016x topic=%s partition=%d requestOffset=%d nextFetchOffset=%d startOffset=%d endOffset=%d dispatchBlocked=%s fetchOffsets=%s progressOffsets=%s\n",
+//applicationId,
+//topicName,
+//partition, requestOffset, nextFetchOffset, startOffset, endOffset, dispatchBlocked, fetchOffsets, progressOffsets);
 
             if (requestOffset <= startOffset && startOffset < endOffset)
             {
 
-System.out.format(
-"CAS.flush.3: stream = %016x topic=%s partition=%d requestOffset=%d nextFetchOffset=%d startOffset=%d endOffset=%d dispatchBlocked=%s fetchOffsets=%s progressOffsets=%s\n",
-applicationId,
-topicName,
-partition, requestOffset, nextFetchOffset, startOffset, endOffset, dispatchBlocked, fetchOffsets, progressOffsets);
+//System.out.format(
+//"CAS.flush.3: stream = %016x topic=%s partition=%d requestOffset=%d nextFetchOffset=%d startOffset=%d endOffset=%d dispatchBlocked=%s fetchOffsets=%s progressOffsets=%s\n",
+//applicationId,
+//topicName,
+//partition, requestOffset, nextFetchOffset, startOffset, endOffset, dispatchBlocked, fetchOffsets, progressOffsets);
 
                 final long oldProgressOffset = this.progressOffsets.put(partition, endOffset);
                 progressHandler.handle(partition, oldProgressOffset, endOffset, this);
@@ -593,7 +594,18 @@ partition, requestOffset, nextFetchOffset, startOffset, endOffset, dispatchBlock
             }
             else if (progressOffsets != fetchOffsets)
             {
-
+                long progressOffset = this.progressOffsets.get(partition);
+                if (progressOffset < endOffset)
+                {
+//System.out.format(
+//"CAS.flush.4: stream = %016x topic=%s partition=%d requestOffset=%d nextFetchOffset=%d startOffset=%d endOffset=%d dispatchBlocked=%s fetchOffsets=%s progressOffsets=%s\n",
+//applicationId,
+//topicName,
+//partition, requestOffset, nextFetchOffset, startOffset, endOffset, dispatchBlocked, fetchOffsets, progressOffsets);
+                    final long oldProgressOffset = this.progressOffsets.put(partition, endOffset);
+                    progressHandler.handle(partition, oldProgressOffset, endOffset, this);
+                    convergeOffsetsIfNecessary();
+                }
             }
 
             if (dispatchBlocked && dispatchState == dispatchFromPoolState)
@@ -650,7 +662,7 @@ System.out.printf("CAS:detachFromNetworkPool stream = %016x fetchOffsets = %s pr
 
         private void dispatchMessagesFromCache()
         {
-            Iterator<MessageRef> messages = historicalCache.getMessages(fetchOffsets, fetchKey, headers);
+            Iterator<MessageRef> messages = historicalCache.getMessages(progressOffsets, fetchKey, headers);
 
             int previousPartition = NO_PARTITION;
             long flushToOffset = NO_OFFSET;
@@ -730,7 +742,8 @@ System.out.printf("CAS:dispatchMessagesFromCache stream = %016x fetchOffsets = %
             if (message == null)
             {
                 // no longer available in cache
-                networkPool.getRouteCounters().forcedDetaches.getAsLong();
+                System.out.printf("CAS: cache.fragmented.offset = %d\n", fragmentedMessageOffset);
+                networkPool.getRouteCounters().forcedDetaches3.getAsLong();
                 detach(false);
             }
             else
