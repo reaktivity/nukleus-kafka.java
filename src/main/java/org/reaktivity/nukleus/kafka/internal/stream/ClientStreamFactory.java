@@ -15,13 +15,11 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
-import static java.lang.Integer.min;
 import static java.lang.Integer.toHexString;
 import static java.lang.String.format;
 import static java.lang.System.identityHashCode;
 import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.DEBUG;
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.DEBUG1;
 import static org.reaktivity.nukleus.kafka.internal.cache.TopicCache.NO_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.stream.BudgetManager.NO_BUDGET;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
@@ -360,9 +358,9 @@ public final class ClientStreamFactory implements StreamFactory
             this.networkPool = networkPool;
             this.fetchOffsets = new Long2LongHashMap(-1L);
             this.progressOffsets = fetchOffsets;
-            System.out.printf("CAS.init stream = %016x fetchOffsets=%s progressOffsets=%s\n",
-                    applicationId,
-                    fetchOffsets, progressOffsets);
+//            System.out.printf("CAS.init stream = %016x fetchOffsets=%s progressOffsets=%s\n",
+//                    applicationId,
+//                    fetchOffsets, progressOffsets);
             this.streamState = this::beforeBegin;
         }
 
@@ -394,7 +392,7 @@ public final class ClientStreamFactory implements StreamFactory
             progressHandler = NOOP_PROGRESS_HANDLER;
             if (detacher != null && dispatchState == dispatchFromPoolState)
             {
-                System.out.printf("CAS:detach stream = %016x fetchOffsets = %s progressOffsets = %s FRAGMENTED|CACHE\n", this.applicationId, this.fetchOffsets, this.progressOffsets);
+//                System.out.printf("CAS:detach stream = %016x fetchOffsets = %s progressOffsets = %s FRAGMENTED|CACHE\n", this.applicationId, this.fetchOffsets, this.progressOffsets);
 
                 invoke(detacher);
                 detacher = null;
@@ -427,13 +425,6 @@ public final class ClientStreamFactory implements StreamFactory
             long traceId,
             DirectBuffer value)
         {
-            if (DEBUG1)
-            {
-                System.out.format("CAS.dispatch: stream = %016x topic=%s partition=%d requestOffset=%d messageOffset=%d\n",
-                        applicationId,
-                        topicName,
-                        partition, requestOffset, messageStartOffset);
-            }
             int result = MessageDispatcher.FLAGS_MATCHED;
             if (progressStartOffset == NO_OFFSET)
             {
@@ -523,13 +514,6 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 result |= MessageDispatcher.FLAGS_EXPECTING_WINDOW;
             }
-            if (DEBUG1)
-            {
-                System.out.format("CAS.dispatch: stream = %016x topic=%s partition=%d requestOffset=%d messageOffset=%d result=%d\n",
-                        System.identityHashCode(this),
-                        topicName,
-                        partition, requestOffset, messageStartOffset, result);
-            }
             return result;
         }
 
@@ -541,12 +525,6 @@ public final class ClientStreamFactory implements StreamFactory
         {
             long startOffset = progressStartOffset;
             long endOffset = progressEndOffset;
-
-//System.out.format(
-//"CAS.flush.1: stream = %016x topic=%s partition=%d requestOffset=%d nextFetchOffset=%d startOffset=%d endOffset=%d dispatchBlocked=%s fetchOffsets=%s progressOffsets=%s\n",
-//applicationId,
-//topicName,
-//partition, requestOffset, nextFetchOffset, startOffset, endOffset, dispatchBlocked, fetchOffsets, progressOffsets);
 
             if (startOffset == NO_OFFSET)
             {
@@ -573,21 +551,8 @@ public final class ClientStreamFactory implements StreamFactory
                 detach(false);
             }
 
-//System.out.format(
-//"CAS.flush.2: stream = %016x topic=%s partition=%d requestOffset=%d nextFetchOffset=%d startOffset=%d endOffset=%d dispatchBlocked=%s fetchOffsets=%s progressOffsets=%s\n",
-//applicationId,
-//topicName,
-//partition, requestOffset, nextFetchOffset, startOffset, endOffset, dispatchBlocked, fetchOffsets, progressOffsets);
-
             if (requestOffset <= startOffset && startOffset < endOffset)
             {
-
-//System.out.format(
-//"CAS.flush.3: stream = %016x topic=%s partition=%d requestOffset=%d nextFetchOffset=%d startOffset=%d endOffset=%d dispatchBlocked=%s fetchOffsets=%s progressOffsets=%s\n",
-//applicationId,
-//topicName,
-//partition, requestOffset, nextFetchOffset, startOffset, endOffset, dispatchBlocked, fetchOffsets, progressOffsets);
-
                 final long oldProgressOffset = this.progressOffsets.put(partition, endOffset);
                 progressHandler.handle(partition, oldProgressOffset, endOffset, this);
                 convergeOffsetsIfNecessary();
@@ -597,11 +562,6 @@ public final class ClientStreamFactory implements StreamFactory
                 long progressOffset = this.progressOffsets.get(partition);
                 if (progressOffset < endOffset)
                 {
-//System.out.format(
-//"CAS.flush.4: stream = %016x topic=%s partition=%d requestOffset=%d nextFetchOffset=%d startOffset=%d endOffset=%d dispatchBlocked=%s fetchOffsets=%s progressOffsets=%s\n",
-//applicationId,
-//topicName,
-//partition, requestOffset, nextFetchOffset, startOffset, endOffset, dispatchBlocked, fetchOffsets, progressOffsets);
                     final long oldProgressOffset = this.progressOffsets.put(partition, endOffset);
                     progressHandler.handle(partition, oldProgressOffset, endOffset, this);
                     convergeOffsetsIfNecessary();
@@ -644,8 +604,6 @@ public final class ClientStreamFactory implements StreamFactory
         {
             if (detacher != null && dispatchState == dispatchFromPoolState)
             {
-System.out.printf("CAS:detachFromNetworkPool stream = %016x fetchOffsets = %s progressOffsets = %s FRAGMENTED|CACHE\n", this.applicationId, this.fetchOffsets, this.progressOffsets);
-
                 invoke(detacher);
             }
             else if (detacher == null)
@@ -714,7 +672,6 @@ System.out.printf("CAS:detachFromNetworkPool stream = %016x fetchOffsets = %s pr
             if (fragmentedMessageOffset != NO_OFFSET)
             {
                 dispatchState = dispatchFragmentedFromCacheState;
-System.out.printf("CAS:dispatchMessagesFromCache stream = %016x fetchOffsets = %s progressOffsets = %s FRAGMENTED\n", this.applicationId, this.fetchOffsets, this.progressOffsets);
             }
             else if (!messages.hasNext())
             {
@@ -742,7 +699,6 @@ System.out.printf("CAS:dispatchMessagesFromCache stream = %016x fetchOffsets = %
             if (message == null)
             {
                 // no longer available in cache
-                System.out.printf("CAS: cache.fragmented.offset = %d\n", fragmentedMessageOffset);
                 networkPool.getRouteCounters().forcedDetaches3.getAsLong();
                 detach(false);
             }
@@ -765,7 +721,6 @@ System.out.printf("CAS:dispatchMessagesFromCache stream = %016x fetchOffsets = %
                 if (fragmentedMessageOffset == NO_OFFSET)
                 {
                     dispatchState = dispatchFromCacheState;
-System.out.printf("CAS:dispatchFragmentedMessageFromCache stream = %016x fetchOffsets = %s progressOffsets = %s CACHE\n", this.applicationId, this.fetchOffsets, this.progressOffsets);
 
                     if (writeableBytes() > 0)
                     {
@@ -786,8 +741,6 @@ System.out.printf("CAS:dispatchFragmentedMessageFromCache stream = %016x fetchOf
             {
                 dispatchState = fragmentedMessageOffset == NO_OFFSET ?
                         dispatchFromCacheState : dispatchFragmentedFromCacheState;
-System.out.printf("CAS:enterDispatchFromCacheState stream = %016x fetchOffsets = %s progressOffsets = %s FRAGMENTED|CACHE\n", this.applicationId, this.fetchOffsets, this.progressOffsets);
-
                 invoke(detacher);
                 progressHandler = NOOP_PROGRESS_HANDLER;
             }
@@ -796,8 +749,6 @@ System.out.printf("CAS:enterDispatchFromCacheState stream = %016x fetchOffsets =
         private void enterDispatchFromPoolState()
         {
             dispatchState = dispatchFromPoolState;
-System.out.printf("CAS:enterDispatchFromPoolState stream = %016x fetchOffsets = %s progressOffsets = %s POOL\n", this.applicationId, this.fetchOffsets, this.progressOffsets);
-
             invoke(attacher);
             progressHandler = poolProgressHandler;
         }
@@ -955,7 +906,6 @@ System.out.printf("CAS:enterDispatchFromPoolState stream = %016x fetchOffsets = 
                 this.fetchOffsets.clear();
 
                 fetchOffsets.forEach(v -> this.fetchOffsets.put(this.fetchOffsets.size(), v.value()));
-System.out.printf("CAS:handleBegin stream = %016x fetchOffsets = %s\n", this.applicationId, this.fetchOffsets);
 
                 OctetsFW fetchKey = beginEx.fetchKey();
                 byte hashCodesCount = beginEx.fetchKeyHashCount();
@@ -1009,9 +959,9 @@ System.out.printf("CAS:handleBegin stream = %016x fetchOffsets = %s\n", this.app
         {
             if (progressOffsets != fetchOffsets)
             {
-                System.out.printf("CAS.convergeOffsetsIfNecessary BEFORE stream = %016x fetchOffsets=%s progressOffsets=%s\n",
-                        applicationId,
-                        fetchOffsets, progressOffsets);
+//                System.out.printf("CAS.convergeOffsetsIfNecessary BEFORE stream = %016x fetchOffsets=%s progressOffsets=%s\n",
+//                        applicationId,
+//                        fetchOffsets, progressOffsets);
                 for (int partition = 0; partition < fetchOffsets.size(); partition++)
                 {
                     long fetchOffset = fetchOffsets.get(partition);
@@ -1043,9 +993,9 @@ System.out.printf("CAS:handleBegin stream = %016x fetchOffsets = %s\n", this.app
                     {
                         progressOffsets = new Long2LongHashMap(-1L);
                         progressOffsets.putAll(fetchOffsets);
-                        System.out.printf("CAS.divergeOffsetsIfNecessary BEFORE stream = %016x fetchOffsets=%s progressOffsets=%s\n",
-                                applicationId,
-                                fetchOffsets, progressOffsets);
+//                        System.out.printf("CAS.divergeOffsetsIfNecessary BEFORE stream = %016x fetchOffsets=%s progressOffsets=%s\n",
+//                                applicationId,
+//                                fetchOffsets, progressOffsets);
                         break;
                     }
                 }
@@ -1061,9 +1011,9 @@ System.out.printf("CAS:handleBegin stream = %016x fetchOffsets = %s\n", this.app
                         progressOffsets.put(partition, Math.min(fetchOffset, highestOffset));
                     }
                 }
-                System.out.printf("CAS.divergeOffsetsIfNecessary AFTER stream = %016x fetchOffsets=%s progressOffsets=%s\n",
-                        applicationId,
-                        fetchOffsets, progressOffsets);
+//                System.out.printf("CAS.divergeOffsetsIfNecessary AFTER stream = %016x fetchOffsets=%s progressOffsets=%s\n",
+//                        applicationId,
+//                        fetchOffsets, progressOffsets);
             }
         }
 
@@ -1089,8 +1039,6 @@ System.out.printf("CAS:handleBegin stream = %016x fetchOffsets = %s\n", this.app
             else
             {
                 dispatchState = dispatchFromPoolState;
-System.out.printf("CAS:onAttachPrepared stream = %016x fetchOffsets = %s progressOffsets = %s FRAGMENTED|CACHE\n", this.applicationId, this.fetchOffsets, this.progressOffsets);
-
                 invoke(attacher);
                 this.progressHandler = progressHandler;
             }

@@ -15,8 +15,6 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.DEBUG;
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.DEBUG1;
 import static org.reaktivity.nukleus.kafka.internal.cache.TopicCache.NO_OFFSET;
 
 import java.util.Iterator;
@@ -24,7 +22,6 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
-import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.cache.TopicCache;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
@@ -106,12 +103,6 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         long traceId,
         DirectBuffer value)
     {
-        //if (DEBUG1)
-        //{
-            System.out.format("TMD.dispatch.3: topic=%s partition=%d requestOffset=%d messageOffset=%d\n",
-                    topicName,
-                    partition, requestOffset, messageOffset);
-        //}
         if (cache.compacted() && key == null)
         {
             return 0;
@@ -134,13 +125,6 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
                     cacheNewMessages[partition]);
         }
 
-        if (DEBUG1)
-        {
-            System.out.format("TMD.dispatch.4: topic=%s partition=%d requestOffset=%d messageOffset=%d 1.result=%d\n",
-                    topicName,
-                    partition, requestOffset, messageOffset, result);
-        }
-
         return result;
     }
 
@@ -159,12 +143,6 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         if (shouldDispatch(partition, requestOffset, messageOffset, key))
         {
             result |= broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
-            if (DEBUG1)
-            {
-                System.out.format("TMD.dispatch.1: topic=%s partition=%d requestOffset=%d messageOffset=%d 1.result=%d\n",
-                        topicName,
-                        partition, requestOffset, messageOffset, result);
-            }
             if (key != null)
             {
                 KeyMessageDispatcher keyDispatcher = keys[partition];
@@ -185,21 +163,6 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
             }
             result |= headers.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
         }
-        else
-        {
-            if (DEBUG1)
-            {
-                System.out.format("TMD.dispatch.5: shouldDispatch=false topic=%s partition=%d requestOffset=%d messageOffset=%d 1.result=%d\n",
-                        topicName,
-                        partition, requestOffset, messageOffset, result);
-            }
-        }
-        if (DEBUG1)
-        {
-            System.out.format("TMD.dispatch.2: topic=%s partition=%d requestOffset=%d messageOffset=%d 2.result=%d\n",
-                    topicName,
-                    partition, requestOffset, messageOffset, result);
-        }
         return result;
     }
 
@@ -209,12 +172,6 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         long requestOffset,
         long lastOffset)
     {
-        if (DEBUG1)
-        {
-            System.out.format("TMD.flush: topic=%s partition=%d requestOffset=%d lastOffset=%d\n",
-                    topicName,
-                    partition, requestOffset, lastOffset);
-        }
         broadcast.flush(partition, requestOffset, lastOffset);
         keys[partition].flush(partition, requestOffset, lastOffset);
         headers.flush(partition, requestOffset, lastOffset);

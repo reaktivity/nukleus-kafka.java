@@ -15,7 +15,6 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.DEBUG1;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.wrap;
 
 import java.util.ArrayList;
@@ -119,12 +118,6 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
         long traceId,
         DirectBuffer value)
     {
-        if (DEBUG1)
-        {
-            System.out.format("HVMD.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d\n",
-                    topicName,
-                    partition, requestOffset, messageOffset);
-        }
         int result = 0;
         deferUpdates = true;
         Iterator<DirectBuffer> values = supplyHeader.apply(headerName);
@@ -151,12 +144,6 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             long requestOffset,
             long lastOffset)
     {
-        if (DEBUG1)
-        {
-            System.out.format("HVMD.flush: topic=%s partition=%d requestOffset=%d messageOffset=%d\n",
-                    topicName,
-                    partition, requestOffset, lastOffset);
-        }
         deferUpdates = true;
         for (int i = 0; i < dispatchers.size(); i++)
         {

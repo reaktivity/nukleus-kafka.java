@@ -47,6 +47,7 @@ public class CompactedPartitionIndex implements PartitionIndex
 
     static final int MAX_INVALID_ENTRIES = 10000;
 
+    private final boolean proactive;
     private final MessageCache messageCache;
     private final LongSupplier cacheHits;
     private final LongSupplier cacheMisses;
@@ -71,12 +72,14 @@ public class CompactedPartitionIndex implements PartitionIndex
     private long validToOffset = 0L;
 
     public CompactedPartitionIndex(
+        boolean proactive,
         int initialCapacity,
         int tombstoneLifetimeMillis,
         MessageCache messageCache,
         LongSupplier cacheHits,
         LongSupplier cacheMisses)
     {
+        this.proactive = proactive;
         this.entriesByKey = new HashMap<>(initialCapacity);
         this.entries = new ArrayList<EntryImpl>(initialCapacity);
         this.messageCache = messageCache;
@@ -117,9 +120,6 @@ public class CompactedPartitionIndex implements PartitionIndex
         DirectBuffer value,
         boolean cacheIfNew)
     {
-        System.out.printf("cache add = [%d %d] requestOffset = %d messageStartOffset = %d entries=%d\n",
-                earliestOffset(), validToOffset, requestOffset, messageStartOffset, entries.size());
-
         if (invalidEntries > MAX_INVALID_ENTRIES)
         {
             compact();
@@ -215,7 +215,6 @@ public class CompactedPartitionIndex implements PartitionIndex
         if (requestOffset <= validToOffset)
         {
             validToOffset = Math.max(lastOffset,  validToOffset);
-            System.out.printf("cache extendNextOffset = [%d %d] requestOffset = %d lastOffset = %d\n", earliestOffset(), validToOffset, requestOffset, lastOffset);
         }
     }
 
@@ -305,7 +304,6 @@ public class CompactedPartitionIndex implements PartitionIndex
         {
             entry.message = messageCache.replace(entry.message, timestamp, traceId, key, headers, value);
         }
-        System.out.printf("cacheMessage = [%d %d]\n", earliestOffset(), validToOffset);
     }
 
     private void cancelTombstoneExpiry(
@@ -325,16 +323,6 @@ public class CompactedPartitionIndex implements PartitionIndex
         }
     }
 
-    private void inOrder()
-    {
-        for(int j=1; j < entries.size(); j++)
-        {
-            EntryImpl prev = entries.get(j-1);
-            EntryImpl cur = entries.get(j);
-            assert cur.offset > prev.offset : String.format("prev.offset = %d cur.offset = %d", prev.offset, cur.offset);
-        }
-    }
-
     private void compact()
     {
         evictExpiredTombstones(); // mutates compactFrom
@@ -344,7 +332,6 @@ public class CompactedPartitionIndex implements PartitionIndex
             compact(0, Long.MAX_VALUE);
         }
         compactFrom = Integer.MAX_VALUE;
-inOrder();
     }
 
     private void compact(
@@ -389,7 +376,7 @@ inOrder();
 
     private long earliestOffset()
     {
-        compact();
+        compact();      // TODO keep track a validFromOffset
         return entries.isEmpty() ? NO_OFFSET : entries.get(0).offset;
     }
 
@@ -442,39 +429,18 @@ inOrder();
         }
     }
 
-    List<EntryImpl> copyEntries()
-    {
-        List<EntryImpl> copy = new ArrayList<>();
-        for(EntryImpl entry : entries)
-        {
-            EntryImpl entryCopy = new EntryImpl(entry.offset, entry.message, entry.position);
-            copy.add(entryCopy);
-        }
-        return copy;
-    }
-
     private int locate(
         long offset)
     {
-        String before = String.format("offset = %d  [%d %d]\n", offset, entries.isEmpty() ? -1 : entries.get(0).offset, validToOffset);
         compact();
-        String after = String.format("offset = %d  [%d %d]\n", offset, entries.isEmpty() ? -1 : entries.get(0).offset, validToOffset);
-        if (!after.equals(before))
-        {
-            System.out.printf("cache.locate before='%s' after='%s'\n", before, after);
-        }
-
         candidate.offset = offset;
         int result;
-        if (!entries.isEmpty() && offset < earliestOffset())      // TODO only in bootstrap case
+        if (proactive && !entries.isEmpty() && offset < earliestOffset())
         {
-            System.out.printf("cache.locate offset = %d advanced to = %d [%d %d]\n",
-                    offset, entries.get(0).offset, entries.get(0).offset, entries.get(entries.size() - 1).offset);
             return 0;
         }
         else if (offset >= validToOffset)
         {
-            System.out.printf("cache.locate offset = %d  more than validToOffset = %d\n", offset, validToOffset);
             result = NO_POSITION;
         }
         else
@@ -486,8 +452,6 @@ inOrder();
 
                 if (result >= entries.size())
                 {
-                    System.out.printf("cache.locate offset = %d is not in cache [%d, %d] \n",
-                            offset, earliestOffset(), validToOffset);
                     result = NO_POSITION;
                 }
             }

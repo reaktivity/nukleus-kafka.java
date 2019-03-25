@@ -28,8 +28,6 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.DEBUG1;
-
 public class HeadersMessageDispatcher implements MessageDispatcher
 {
     static final HeadersMessageDispatcher NOOP = new HeadersMessageDispatcher("noop", null)
@@ -124,12 +122,6 @@ public class HeadersMessageDispatcher implements MessageDispatcher
                  long traceId,
                  DirectBuffer value)
     {
-        if (DEBUG1)
-        {
-            System.out.format("HMD.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d\n",
-                    topicName,
-                    partition, requestOffset, messageOffset);
-        }
         int result = 0;
         result |=  broadcast.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
         deferUpdates = true;
@@ -150,12 +142,6 @@ public class HeadersMessageDispatcher implements MessageDispatcher
             long requestOffset,
             long lastOffset)
     {
-        if (DEBUG1)
-        {
-            System.out.format("HMD.flush: topic=%s partition=%d requestOffset=%d lastOffset=%d\n",
-                    topicName,
-                    partition, requestOffset, lastOffset);
-        }
         broadcast.flush(partition, requestOffset, lastOffset);
         deferUpdates = true;
         for (int i = 0; i < dispatchers.size(); i++)

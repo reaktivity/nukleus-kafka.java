@@ -20,7 +20,6 @@ import org.reaktivity.nukleus.Configuration;
 public class KafkaConfiguration extends Configuration
 {
     public static boolean DEBUG = Boolean.getBoolean("nukleus.kafka.debug");
-    public static boolean DEBUG1 = Boolean.getBoolean("nukleus.kafka.debug1");
 
     public static final BooleanPropertyDef KAFKA_TOPIC_BOOTSTRAP_ENABLED;
     public static final IntPropertyDef KAFKA_FETCH_MAX_BYTES;
@@ -85,11 +84,5 @@ public class KafkaConfiguration extends Configuration
     public int readIdleTimeout()
     {
         return KAFKA_READ_IDLE_TIMEOUT.getAsInt(this);
-    }
-
-    public static void enableDebug(boolean value)
-    {
-        DEBUG = value;
-        DEBUG1 = value;
     }
 }

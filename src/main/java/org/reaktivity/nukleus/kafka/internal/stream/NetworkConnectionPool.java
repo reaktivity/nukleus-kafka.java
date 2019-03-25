@@ -1574,7 +1574,6 @@ public final class NetworkConnectionPool
                                     .wrap(encodeBuffer, encodeLimit,
                                             encodeBuffer.capacity())
                                     .partitionId(candidate.id).fetchOffset(offset).maxBytes(maxPartitionBytes).build();
-                            System.out.printf("LIVE fetch offset = %d\n", offset);
 
                             long requestedOffset = candidate.offset;
 
@@ -1665,8 +1664,6 @@ public final class NetworkConnectionPool
                                 .fetchOffset(offset)
                                 .maxBytes(maxPartitionBytes)
                                 .build();
-                            System.out.printf("HIST fetch offset = %d refs[0] = %s first=%d last = %d\n",
-                                    offset, partition.refObjects.get(0), topic.partitions.first().offset, topic.partitions.last().offset);
 
                             if (offset < partition.offset)
                             {
@@ -2202,12 +2199,10 @@ public final class NetworkConnectionPool
             this.candidate = new NetworkTopicPartition();
             this.progressHandler = this::handleProgress;
 
-            System.out.printf("NetworkTopic creation %s\n", proactive);
-
-
             if (compacted)
             {
                 cache = new CompactedTopicCache(
+                                proactive,
                                 topicName,
                                 partitionCount,
                                 deleteRetentionMs,
@@ -2239,12 +2234,8 @@ public final class NetworkConnectionPool
                 this.dispatcher.add(null, -1, Collections.emptyIterator(), bootstrapDispatcher);
                 for (int i=0; i < partitionCount; i++)
                 {
-                    attachToPartition(i, 0L, 1, bootstrapDispatcher);
+                    attachToPartition(i, 0L, 1);
                 }
-            }
-            else
-            {
-                System.out.println("ProgressUpdatingMessageDispatcher is not added");
             }
         }
 
@@ -2292,7 +2283,7 @@ public final class NetworkConnectionPool
                 {
                     final int partitionId = (int) keys.nextValue();
                     long fetchOffset = fetchOffsets.get(partitionId);
-                    attachToPartition(partitionId, fetchOffset, 1, dispatcher);
+                    attachToPartition(partitionId, fetchOffset, 1);
                 }
             }
             else
@@ -2300,7 +2291,7 @@ public final class NetworkConnectionPool
                 int fetchKeyPartition = fetchOffsets.keySet().iterator().next().intValue();
                 this.dispatcher.add(fetchKey, fetchKeyPartition, headersIterator, dispatcher);
                 long fetchOffset = fetchOffsets.get(fetchKeyPartition);
-                attachToPartition(fetchKeyPartition, fetchOffset, 1, dispatcher);
+                attachToPartition(fetchKeyPartition, fetchOffset, 1);
             }
 
             return progressHandler;
@@ -2309,8 +2300,7 @@ public final class NetworkConnectionPool
         private void attachToPartition(
             int partitionId,
             long fetchOffset,
-            final int refs,
-            MessageDispatcher dispatcher)
+            final int refs)
         {
             candidate.id = partitionId;
             candidate.offset = fetchOffset;
@@ -2351,8 +2341,6 @@ public final class NetworkConnectionPool
             }
 
             partition.refs += refs;
-            partition.refObjects.add(dispatcher);
-            System.out.printf("attachToPartition partitions = %s\n", partitions);
         }
 
         void doDetach(
@@ -2372,13 +2360,12 @@ public final class NetworkConnectionPool
             windowSuppliers.remove(supplyWindow);
             int fetchKeyPartition = (int) (fetchKey == null ? -1 : fetchOffsets.keySet().iterator().next());
             headersIterator.wrap(headers);
-            boolean removed = this.dispatcher.remove(fetchKey, fetchKeyPartition, headersIterator, dispatcher);
-            assert removed;
+            this.dispatcher.remove(fetchKey, fetchKeyPartition, headersIterator, dispatcher);
             final LongIterator partitionIds = fetchOffsets.keySet().iterator();
             while (partitionIds.hasNext())
             {
                 long partitionId = partitionIds.nextValue();
-                doDetach((int) partitionId, fetchOffsets.get(partitionId), supplyWindow, dispatcher);
+                doDetach((int) partitionId, fetchOffsets.get(partitionId), supplyWindow);
             }
             if (partitions.isEmpty()  && !compacted)
             {
@@ -2394,8 +2381,7 @@ public final class NetworkConnectionPool
         void doDetach(
             int partitionId,
             long fetchOffset,
-            IntSupplier supplyWindow,
-            MessageDispatcher dispatcher)
+            IntSupplier supplyWindow)
         {
             windowSuppliers.remove(supplyWindow);
             candidate.id = partitionId;
@@ -2409,8 +2395,6 @@ public final class NetworkConnectionPool
             }
 
             partition.refs--;
-            boolean removed = partition.refObjects.remove(dispatcher);
-            assert removed;
             if (partition.refs == 0)
             {
                 remove(partition);
@@ -2455,7 +2439,6 @@ public final class NetworkConnectionPool
         private long highestAvailableOffset(
             int partitionId)
         {
-System.out.printf("highestAvailableOffset partitions = %s\n", partitions);
             candidate.id = partitionId;
             candidate.offset = MAX_OFFSET;
             NetworkTopicPartition highest = partitions.floor(candidate);
@@ -2488,8 +2471,6 @@ System.out.printf("highestAvailableOffset partitions = %s\n", partitions);
             }
 
             first.refs--;
-            first.refObjects.remove(dispatcher);
-            assert first.refs == first.refObjects.size();
 
             candidate.offset = nextOffset;
             NetworkTopicPartition next = partitions.floor(candidate);
@@ -2505,8 +2486,6 @@ System.out.printf("highestAvailableOffset partitions = %s\n", partitions);
                 add(next);
             }
             next.refs++;
-            next.refObjects.add(dispatcher);
-            assert next.refs == next.refObjects.size();
             if (first.refs == 0)
             {
                 remove(first);
@@ -2522,9 +2501,7 @@ System.out.printf("highestAvailableOffset partitions = %s\n", partitions);
         private void remove(
             NetworkTopicPartition partition)
         {
-            boolean removed = partitions.remove(partition);
-            assert removed;
-
+            partitions.remove(partition);
             boolean needsHistorical = false;
             partition.offset = 0;
             NetworkTopicPartition lowest = partitions.ceiling(partition);
@@ -2533,7 +2510,7 @@ System.out.printf("highestAvailableOffset partitions = %s\n", partitions);
             {
                 partition.offset = Long.MAX_VALUE;
                 NetworkTopicPartition highest = partitions.floor(partition);
-                assert highest.id == partition.id;
+                // TODO: BUG must add && highest.id == partition.id
                 if (highest != lowest)
                 {
                     needsHistorical = true;
@@ -2570,7 +2547,6 @@ System.out.printf("highestAvailableOffset partitions = %s\n", partitions);
                 if (existing != null && existing.id == partitionId && existing.offset == offset)
                 {
                     existing.refs++;
-                    existing.refObjects.add(MessageDispatcher.NOP);
                     NetworkTopicPartition floor = partitions.floor(existing);
                     if (floor.id == partitionId && floor.offset != offset)
                     {
@@ -2618,7 +2594,6 @@ System.out.printf("highestAvailableOffset partitions = %s\n", partitions);
         int id;
         long offset;
         private int refs;
-        private List<MessageDispatcher> refObjects = new ArrayList<>();
 
         @Override
         protected NetworkTopicPartition clone()
@@ -2627,7 +2602,6 @@ System.out.printf("highestAvailableOffset partitions = %s\n", partitions);
             result.id = id;
             result.offset = offset;
             result.refs = refs;
-            result.refObjects = new ArrayList<>(refObjects);
             return result;
         }
 
@@ -3101,14 +3075,7 @@ System.out.printf("highestAvailableOffset partitions = %s\n", partitions);
             {
                 progressHandler.handle(partition, offsets[partition], lastOffset, this);
                 offsets[partition] = lastOffset;
-                System.out.printf("progressumd: %s\n", Arrays.toString(offsets));
             }
-        }
-
-        @Override
-        public String toString()
-        {
-            return String.format("progressumd %s", Arrays.toString(offsets));
         }
     }
 

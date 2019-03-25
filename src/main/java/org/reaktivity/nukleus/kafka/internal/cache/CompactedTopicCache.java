@@ -41,6 +41,7 @@ public class CompactedTopicCache implements TopicCache
     private final String topicName;
 
     public CompactedTopicCache(
+        boolean proactive,
         String topicName,
         int partitionCount,
         int deleteRetentionMs,
@@ -53,7 +54,7 @@ public class CompactedTopicCache implements TopicCache
         indexes = new CompactedPartitionIndex[partitionCount];
         for (int i = 0; i < partitionCount; i++)
         {
-            indexes[i] = new CompactedPartitionIndex(1000, deleteRetentionMs, messageCache, cacheHits, cacheMisses);
+            indexes[i] = new CompactedPartitionIndex(proactive, 1000, deleteRetentionMs, messageCache, cacheHits, cacheMisses);
         }
         messageIterator = new MessageIterator(partitionCount);
     }

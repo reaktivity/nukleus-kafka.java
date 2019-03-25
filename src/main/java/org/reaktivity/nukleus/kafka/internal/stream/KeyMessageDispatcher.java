@@ -26,7 +26,6 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.DEBUG1;
 import static org.reaktivity.nukleus.kafka.internal.stream.HeadersMessageDispatcher.NOOP;
 
 public class KeyMessageDispatcher implements MessageDispatcher
@@ -85,17 +84,10 @@ public class KeyMessageDispatcher implements MessageDispatcher
         long traceId,
         DirectBuffer value)
     {
-        if (DEBUG1)
-        {
-            System.out.format("key.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d\n",
-                    topicName,
-                    partition, requestOffset, messageOffset);
-        }
         buffer.wrap(key, 0, key.capacity());
         MessageDispatcher result = dispatchersByKey.get(buffer);
-        int resultValue = result == null ? 0 :
+        return result == null ? 0 :
             result.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
-        return resultValue;
     }
 
     @Override
@@ -104,12 +96,6 @@ public class KeyMessageDispatcher implements MessageDispatcher
         long requestOffset,
         long lastOffset)
     {
-        if (DEBUG1)
-        {
-            System.out.format("key.flush: topic=%s partition=%d requestOffset=%d messageOffset=%d\n",
-                    topicName,
-                    partition, requestOffset, lastOffset);
-        }
         deferUpdates = true;
         for (MessageDispatcher dispatcher: dispatchersByKey.values())
         {
@@ -160,12 +146,6 @@ public class KeyMessageDispatcher implements MessageDispatcher
             long lastOffset,
             DirectBuffer key)
     {
-        if (DEBUG1)
-        {
-            System.out.format("KEY.flush: topic=%s partition=%d requestOffset=%d lastOffset=%d\n",
-                    topicName,
-                    partition, requestOffset, lastOffset);
-        }
         buffer.wrap(key, 0, key.capacity());
         MessageDispatcher dispatcher = dispatchersByKey.get(buffer);
         if (dispatcher != null)

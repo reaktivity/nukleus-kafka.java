@@ -22,7 +22,6 @@ import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
 
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.DEBUG1;
 import static org.reaktivity.nukleus.kafka.internal.stream.HeadersMessageDispatcher.NOOP;
 
 public class BroadcastMessageDispatcher implements MessageDispatcher
@@ -79,12 +78,6 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
                  long traceId,
                  DirectBuffer value)
     {
-        if (DEBUG1)
-        {
-            System.out.format("BMD.dispatch: topic=%s partition=%d requestOffset=%d messageOffset=%d\n",
-                    topicName,
-                    partition, requestOffset, messageOffset);
-        }
         deferUpdates = true;
         int result = 0;
         for (int i = 0; i < dispatchers.size(); i++)
@@ -104,12 +97,6 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
             long requestOffset,
             long lastOffset)
     {
-        if (DEBUG1)
-        {
-            System.out.format("BMD.flush: topic=%s partition=%d requestOffset=%d lastOffset=%d\n",
-                    topicName,
-                    partition, requestOffset, lastOffset);
-        }
         deferUpdates = true;
         for (int i = 0; i < dispatchers.size(); i++)
         {
