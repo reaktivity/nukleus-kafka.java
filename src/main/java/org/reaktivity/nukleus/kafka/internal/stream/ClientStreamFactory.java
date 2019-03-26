@@ -358,9 +358,6 @@ public final class ClientStreamFactory implements StreamFactory
             this.networkPool = networkPool;
             this.fetchOffsets = new Long2LongHashMap(-1L);
             this.progressOffsets = fetchOffsets;
-//            System.out.printf("CAS.init stream = %016x fetchOffsets=%s progressOffsets=%s\n",
-//                    applicationId,
-//                    fetchOffsets, progressOffsets);
             this.streamState = this::beforeBegin;
         }
 
@@ -392,8 +389,6 @@ public final class ClientStreamFactory implements StreamFactory
             progressHandler = NOOP_PROGRESS_HANDLER;
             if (detacher != null && dispatchState == dispatchFromPoolState)
             {
-//                System.out.printf("CAS:detach stream = %016x fetchOffsets = %s progressOffsets = %s FRAGMENTED|CACHE\n", this.applicationId, this.fetchOffsets, this.progressOffsets);
-
                 invoke(detacher);
                 detacher = null;
             }
@@ -581,7 +576,7 @@ public final class ClientStreamFactory implements StreamFactory
         @Override
         public String toString()
         {
-            return format("%s@%s(topic=\"%s\", subscribedByKey=%b, fetchOffsets=%s, fragmentedMessageOffset=%d, " +
+            return format("%s@%s(topic=\"%s\", subscribedByKey=%b, fetchOffsets=%s, progressOffsets=%s, fragmentedMessageOffset=%d, " +
                        "fragmentedMessagePartition=%d, fragmentedMessageLength=%d, fragmentedMessageBytesWritten=%d, " +
                        "applicationId=%x, applicationReplyId=%x, dispatchState=%s, budget=%s)",
                 getClass().getSimpleName(),
@@ -589,6 +584,7 @@ public final class ClientStreamFactory implements StreamFactory
                 topicName,
                 subscribedByKey,
                 fetchOffsets,
+                progressOffsets,
                 fragmentedMessageOffset,
                 fragmentedMessagePartition,
                 fragmentedMessageLength,
@@ -959,9 +955,6 @@ public final class ClientStreamFactory implements StreamFactory
         {
             if (progressOffsets != fetchOffsets)
             {
-//                System.out.printf("CAS.convergeOffsetsIfNecessary BEFORE stream = %016x fetchOffsets=%s progressOffsets=%s\n",
-//                        applicationId,
-//                        fetchOffsets, progressOffsets);
                 for (int partition = 0; partition < fetchOffsets.size(); partition++)
                 {
                     long fetchOffset = fetchOffsets.get(partition);
@@ -974,9 +967,6 @@ public final class ClientStreamFactory implements StreamFactory
                 // all partitions caught up to or surpassed fetch offsets
                 fetchOffsets.putAll(progressOffsets);
                 progressOffsets = fetchOffsets;
-                System.out.printf("CAS.convergeOffsetsIfNecessary AFTER stream = %016x fetchOffsets=%s progressOffsets=%s\n",
-                        applicationId,
-                        fetchOffsets, progressOffsets);
             }
         }
 
@@ -993,9 +983,6 @@ public final class ClientStreamFactory implements StreamFactory
                     {
                         progressOffsets = new Long2LongHashMap(-1L);
                         progressOffsets.putAll(fetchOffsets);
-//                        System.out.printf("CAS.divergeOffsetsIfNecessary BEFORE stream = %016x fetchOffsets=%s progressOffsets=%s\n",
-//                                applicationId,
-//                                fetchOffsets, progressOffsets);
                         break;
                     }
                 }
@@ -1011,9 +998,6 @@ public final class ClientStreamFactory implements StreamFactory
                         progressOffsets.put(partition, Math.min(fetchOffset, highestOffset));
                     }
                 }
-//                System.out.printf("CAS.divergeOffsetsIfNecessary AFTER stream = %016x fetchOffsets=%s progressOffsets=%s\n",
-//                        applicationId,
-//                        fetchOffsets, progressOffsets);
             }
         }
 
@@ -1069,7 +1053,10 @@ public final class ClientStreamFactory implements StreamFactory
                 }
             }
 
-            divergeOffsetsIfNecessary(highestAvailableOffset);
+            if (compacted)
+            {
+                divergeOffsetsIfNecessary(highestAvailableOffset);
+            }
 
             if (writeableBytes() > 0)
             {
