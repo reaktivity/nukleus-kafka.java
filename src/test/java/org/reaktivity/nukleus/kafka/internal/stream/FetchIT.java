@@ -253,6 +253,9 @@ public class FetchIT
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldReceiveCompactedMessagesWithUncachedKeyUsingZeroOffset() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("CLIENT_THREE_CONNECTED");
+        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_THREE");
         k3po.finish();
     }
 

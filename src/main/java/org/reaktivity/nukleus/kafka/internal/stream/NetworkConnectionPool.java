@@ -1574,6 +1574,7 @@ public final class NetworkConnectionPool
                                     .wrap(encodeBuffer, encodeLimit,
                                             encodeBuffer.capacity())
                                     .partitionId(candidate.id).fetchOffset(offset).maxBytes(maxPartitionBytes).build();
+                            System.out.printf("LIVE offset = %d\n", offset);
 
                             long requestedOffset = candidate.offset;
 
@@ -1657,6 +1658,8 @@ public final class NetworkConnectionPool
                                 partitionId < partition.id && nodeIdsByPartition[partition.id] == broker.nodeId)
                         {
                             long offset = metadata.ensureOffsetInRange(partition.id, partition.offset);
+                            System.out.printf("HIST offset = %d\n", offset);
+
                             PartitionRequestFW partitionRequest = partitionRequestRW
                                 .wrap(encodeBuffer, encodeLimit,
                                         encodeBuffer.capacity())

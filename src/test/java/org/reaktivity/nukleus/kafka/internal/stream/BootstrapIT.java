@@ -122,31 +122,6 @@ public class BootstrapIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.message/client",
-        "${server}/compacted.bootstrap.uses.historical/server"})
-    @ScriptProperty({"networkAccept \"nukleus://streams/target#0\"",
-                     "offset \"4\""
-    })
-    public void shouldBootstrapWithHistoricalWhenClientSubscribesAtHigherOffset() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CLIENT");
-        k3po.awaitBarrier("FIRST_LIVE_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("CONNECT_CLIENT");
-        k3po.awaitBarrier("CLIENT_CONNECTED");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("WRITE_FIRST_LIVE_FETCH_RESPONSE");
-        k3po.awaitBarrier("SECOND_LIVE_FETCH_REQUEST_RECEIVED");
-        k3po.awaitBarrier("HISTORICAL_FETCH_REQUEST_RECEIVED");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("WRITE_HISTORICAL_FETCH_RESPONSE");
-        k3po.notifyBarrier("WRITE_SECOND_LIVE_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
         "${control}/route/client/controller",
         "${client}/zero.offset.message/client",
         "${server}/zero.offset.message/server" })
@@ -163,7 +138,8 @@ public class BootstrapIT
         "${routeAnyTopic}/client/controller",
         "${client}/compacted.message/client",
         "${server}/compacted.message/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty({"networkAccept \"nukleus://streams/target#0\"",
+            "maxPartitionBytes 123000"})
     public void shouldNotBootstrapWhenRouteDoesNotNameATopic() throws Exception
     {
         k3po.start();

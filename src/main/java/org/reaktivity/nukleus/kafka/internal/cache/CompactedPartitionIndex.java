@@ -120,6 +120,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         DirectBuffer value,
         boolean cacheIfNew)
     {
+        System.out.printf("add.reqOffset = %d msgStartOffset = %d key = %s\n", requestOffset, messageStartOffset, key.getStringWithoutLengthUtf8(0, key.capacity()));
         if (invalidEntries > MAX_INVALID_ENTRIES)
         {
             compact();
@@ -223,6 +224,8 @@ public class CompactedPartitionIndex implements PartitionIndex
         OctetsFW key)
     {
         buffer.wrap(key.buffer(), key.offset(), key.sizeof());
+        System.out.printf("getEntry key = %s\n", buffer.getStringWithoutLengthUtf8(0, buffer.capacity()));
+
         Entry result = entriesByKey.get(buffer);
         if (result != null)
         {
@@ -299,6 +302,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         if (entry.message == NO_MESSAGE)
         {
             entry.message = messageCache.put(timestamp, traceId, key, headers, value);
+            System.out.printf("cacheMessage.entry.message = %d\n", entry.message);
         }
         else
         {
@@ -432,12 +436,13 @@ public class CompactedPartitionIndex implements PartitionIndex
     private int locate(
         long offset)
     {
+        System.out.printf("locate offset=%d < earliestOffset=%d\n", offset, earliestOffset());
         compact();
         candidate.offset = offset;
         int result;
         if (proactive && !entries.isEmpty() && offset < earliestOffset())
         {
-            return 0;
+            result = 0;
         }
         else if (offset >= validToOffset)
         {
