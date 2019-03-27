@@ -20,7 +20,6 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
@@ -30,7 +29,7 @@ import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 
 public class HeadersMessageDispatcher implements MessageDispatcher
 {
-    static final HeadersMessageDispatcher NOOP = new HeadersMessageDispatcher("noop", null)
+    static final HeadersMessageDispatcher NOOP = new HeadersMessageDispatcher(null)
     {
         @Override
         public void adjustOffset(int partition, long oldOffset, long newOffset)
@@ -65,20 +64,16 @@ public class HeadersMessageDispatcher implements MessageDispatcher
     private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
     private final Map<DirectBuffer, HeaderValueMessageDispatcher> dispatchersByHeaderKey = new HashMap<>();
     private final List<HeaderValueMessageDispatcher> dispatchers = new ArrayList<HeaderValueMessageDispatcher>();
-    private final BroadcastMessageDispatcher broadcast;
-    private final BiFunction<String, DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher;
-    private final String topicName;
+    private final BroadcastMessageDispatcher broadcast = new BroadcastMessageDispatcher();
+    private final Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher;
 
     private boolean deferUpdates;
     private boolean hasDeferredUpdates;
 
     HeadersMessageDispatcher(
-        String topicName,
-        BiFunction<String, DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
+        Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
     {
-        this.topicName = topicName;
         this.createHeaderValueMessageDispatcher = createHeaderValueMessageDispatcher;
-        this.broadcast = new BroadcastMessageDispatcher(topicName);
     }
 
     @Override
@@ -175,7 +170,7 @@ public class HeadersMessageDispatcher implements MessageDispatcher
                 int bytesLength = headerKey.sizeof() - Short.BYTES;
                 UnsafeBuffer headerKeyCopy = new UnsafeBuffer(new byte[bytesLength]);
                 headerKeyCopy.putBytes(0, headerKey.buffer(), keyOffset, keyLength);
-                valueDispatcher = createHeaderValueMessageDispatcher.apply(topicName, headerKeyCopy);
+                valueDispatcher = createHeaderValueMessageDispatcher.apply(headerKeyCopy);
                 dispatchersByHeaderKey.put(headerKeyCopy, valueDispatcher);
                 dispatchers.add(valueDispatcher);
             }

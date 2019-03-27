@@ -31,7 +31,7 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public class HeaderValueMessageDispatcher implements MessageDispatcher
 {
-    static final HeaderValueMessageDispatcher NOOP = new HeaderValueMessageDispatcher("noop", null)
+    static final HeaderValueMessageDispatcher NOOP = new HeaderValueMessageDispatcher(null)
     {
         @Override
         public void adjustOffset(int partition, long oldOffset, long newOffset)
@@ -65,7 +65,6 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
 
     final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
     final DirectBuffer headerName;
-    private final String topicName;
     Map<DirectBuffer, HeadersMessageDispatcher> dispatchersByHeaderValue = new HashMap<>();
 
     private final List<HeadersMessageDispatcher> dispatchers = new ArrayList<>();
@@ -73,9 +72,8 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
     private boolean deferUpdates;
     private boolean hasDeferredUpdates;
 
-    public HeaderValueMessageDispatcher(String topicName, DirectBuffer headerKey)
+    public HeaderValueMessageDispatcher(DirectBuffer headerKey)
     {
-        this.topicName = topicName;
         this.headerName = headerKey;
     }
 
@@ -166,7 +164,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
         {
             UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[headerValue.sizeof()]);
             keyCopy.putBytes(0,  headerValue.buffer(), headerValue.offset(), headerValue.sizeof());
-            headersDispatcher =  new HeadersMessageDispatcher(topicName, HeaderValueMessageDispatcher::new);
+            headersDispatcher =  new HeadersMessageDispatcher(HeaderValueMessageDispatcher::new);
             dispatchersByHeaderValue.put(keyCopy, headersDispatcher);
             dispatchers.add(headersDispatcher);
         }

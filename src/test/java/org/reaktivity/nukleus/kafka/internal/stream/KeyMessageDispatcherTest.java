@@ -39,7 +39,7 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public final class KeyMessageDispatcherTest
 {
-    private KeyMessageDispatcher dispatcher = new KeyMessageDispatcher("", HeaderValueMessageDispatcher::new);
+    private KeyMessageDispatcher dispatcher = new KeyMessageDispatcher(HeaderValueMessageDispatcher::new);
     private Iterator<KafkaHeaderFW> emptyHeaders = Collections.emptyIterator();
 
     @Rule

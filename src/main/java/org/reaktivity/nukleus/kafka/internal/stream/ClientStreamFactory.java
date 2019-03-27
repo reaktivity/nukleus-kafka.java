@@ -376,8 +376,7 @@ public final class ClientStreamFactory implements StreamFactory
         {
             if (DEBUG)
             {
-                System.out.format("CAS.adjustOffset: stream = %016x partition=%d, oldOffset = %d, newOffset = %d, this = %s\n",
-                                  System.identityHashCode(this),
+                System.out.format("CAS.adjustOffset: partition=%d, oldOffset = %d, newOffset = %d, this = %s\n",
                                   partition, oldOffset, newOffset, this);
             }
 
@@ -427,7 +426,6 @@ public final class ClientStreamFactory implements StreamFactory
             long traceId,
             DirectBuffer value)
         {
-            System.out.printf("CAS.dispatch stream = %d reqOffset = %d msgStartOffset = %d\n", applicationId, requestOffset, messageStartOffset);
             int result = MessageDispatcher.FLAGS_MATCHED;
             if (progressStartOffset == NO_OFFSET)
             {
@@ -463,7 +461,7 @@ public final class ClientStreamFactory implements StreamFactory
                                toString(value),
                                this);
                        }
-                       networkPool.getRouteCounters().forcedDetaches1.getAsLong();
+                       networkPool.getRouteCounters().forcedDetaches.getAsLong();
                        detach(false);
                    }
                }
@@ -526,8 +524,6 @@ public final class ClientStreamFactory implements StreamFactory
             long requestOffset,
             long nextFetchOffset)
         {
-            System.out.printf("CAS.flush.1 stream = %d fetch = %s progress = %s\n", applicationId, fetchOffsets, progressOffsets);
-
             long startOffset = progressStartOffset;
             long endOffset = progressEndOffset;
 
@@ -552,7 +548,7 @@ public final class ClientStreamFactory implements StreamFactory
             {
                 // Partially written message no longer exists, we cannot complete it.
                 // Abort the connection to force the client to re-attach.
-                networkPool.getRouteCounters().forcedDetaches2.getAsLong();
+                networkPool.getRouteCounters().forcedDetaches.getAsLong();
                 detach(false);
             }
 
@@ -561,7 +557,6 @@ public final class ClientStreamFactory implements StreamFactory
                 final long oldProgressOffset = this.progressOffsets.put(partition, endOffset);
                 progressHandler.handle(partition, oldProgressOffset, endOffset, this);
                 convergeOffsetsIfNecessary();
-                System.out.printf("CAS.flush.2 stream = %d fetch = %s progress = %s\n", applicationId, fetchOffsets, progressOffsets);
             }
             else if (progressOffsets != fetchOffsets)
             {
@@ -571,7 +566,6 @@ public final class ClientStreamFactory implements StreamFactory
                     final long oldProgressOffset = this.progressOffsets.put(partition, endOffset);
                     progressHandler.handle(partition, oldProgressOffset, endOffset, this);
                     convergeOffsetsIfNecessary();
-                    System.out.printf("CAS.flush.3 stream = %d fetch = %s progress = %s\n", applicationId, fetchOffsets, progressOffsets);
                 }
             }
 
@@ -588,7 +582,8 @@ public final class ClientStreamFactory implements StreamFactory
         @Override
         public String toString()
         {
-            return format("%s@%s(topic=\"%s\", subscribedByKey=%b, fetchOffsets=%s, progressOffsets=%s, fragmentedMessageOffset=%d, " +
+            return format("%s@%s(topic=\"%s\", subscribedByKey=%b, fetchOffsets=%s, progressOffsets=%s, " +
+                       "fragmentedMessageOffset=%d, " +
                        "fragmentedMessagePartition=%d, fragmentedMessageLength=%d, fragmentedMessageBytesWritten=%d, " +
                        "applicationId=%x, applicationReplyId=%x, dispatchState=%s, budget=%s)",
                 getClass().getSimpleName(),
@@ -715,8 +710,7 @@ public final class ClientStreamFactory implements StreamFactory
                 else
                 {
                     // no longer available in cache due to compaction
-System.out.println("CAS.dispatchFragmentedMessageFromCache ******* detaching");
-                    networkPool.getRouteCounters().forcedDetaches3.getAsLong();
+                    networkPool.getRouteCounters().forcedDetaches.getAsLong();
                     detach(false);
                 }
             }
@@ -812,7 +806,6 @@ System.out.println("CAS.dispatchFragmentedMessageFromCache ******* detaching");
                 flags |= INIT;
 
                 final long oldFetchOffset = this.fetchOffsets.put(partition, nextOffset);
-                System.out.printf("CAS.writeMessage *** stream=%d fetchOffsets=%s\n", applicationId, fetchOffsets);
                 writer.doKafkaData(applicationReply, applicationRouteId, applicationReplyId, traceId,
                                    applicationReplyPadding, flags,
                                    compacted ? key : null,
@@ -1080,8 +1073,6 @@ System.out.println("CAS.dispatchFragmentedMessageFromCache ******* detaching");
             {
                 divergeOffsetsIfNecessary(highestAvailableOffset);
             }
-            System.out.printf("CAS.attachPrepared stream = %d fetch = %s  progress = %s\n",
-                    applicationId, fetchOffsets, progressOffsets);
 
             if (writeableBytes() > 0)
             {
@@ -1114,8 +1105,11 @@ System.out.println("CAS.dispatchFragmentedMessageFromCache ******* detaching");
                 handleWindow(window);
                 break;
             case ResetFW.TYPE_ID:
-                final ResetFW reset = resetRO.wrap(buffer, index, index + length);
-                handleReset(reset);
+                if (!debugSkipReset)
+                {
+                    final ResetFW reset = resetRO.wrap(buffer, index, index + length);
+                    handleReset(reset);
+                }
                 break;
             default:
                 // ignore

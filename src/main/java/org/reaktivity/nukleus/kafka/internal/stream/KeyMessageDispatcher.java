@@ -18,7 +18,6 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
@@ -31,8 +30,7 @@ import static org.reaktivity.nukleus.kafka.internal.stream.HeadersMessageDispatc
 public class KeyMessageDispatcher implements MessageDispatcher
 {
     protected final UnsafeBuffer buffer = new UnsafeBuffer(new byte[0]);
-    private final BiFunction<String, DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher;
-    private final String topicName;
+    private final Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher;
 
     private Map<UnsafeBuffer, HeadersMessageDispatcher> dispatchersByKey = new HashMap<>();
 
@@ -40,10 +38,8 @@ public class KeyMessageDispatcher implements MessageDispatcher
     private boolean hasDeferredUpdates;
 
     public KeyMessageDispatcher(
-        String topicName,
-        BiFunction<String, DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
+        Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher)
     {
-        this.topicName = topicName;
         this.createHeaderValueMessageDispatcher = createHeaderValueMessageDispatcher;
     }
 
@@ -134,7 +130,7 @@ public class KeyMessageDispatcher implements MessageDispatcher
         {
             UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[key.sizeof()]);
             keyCopy.putBytes(0,  key.buffer(), key.offset(), key.sizeof());
-            existing = new HeadersMessageDispatcher(topicName, createHeaderValueMessageDispatcher);
+            existing = new HeadersMessageDispatcher(createHeaderValueMessageDispatcher);
             dispatchersByKey.put(keyCopy, existing);
         }
         existing.add(headers, dispatcher);

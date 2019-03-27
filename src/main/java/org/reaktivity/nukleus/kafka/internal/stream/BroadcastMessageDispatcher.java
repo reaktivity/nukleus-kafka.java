@@ -27,15 +27,9 @@ import static org.reaktivity.nukleus.kafka.internal.stream.HeadersMessageDispatc
 public class BroadcastMessageDispatcher implements MessageDispatcher
 {
     private final List<MessageDispatcher> dispatchers = new ArrayList<MessageDispatcher>();
-    private final String topicName;
 
     private boolean deferUpdates;
     private boolean hasDeferredUpdates;
-
-    BroadcastMessageDispatcher(String topicName)
-    {
-        this.topicName = topicName;
-    }
 
     @Override
     public void adjustOffset(

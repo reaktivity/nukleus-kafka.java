@@ -18,7 +18,6 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static org.reaktivity.nukleus.kafka.internal.cache.TopicCache.NO_OFFSET;
 
 import java.util.Iterator;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
@@ -30,31 +29,27 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
 {
     private final KeyMessageDispatcher[] keys;
     private final HeadersMessageDispatcher headers;
-    private final BroadcastMessageDispatcher broadcast;
+    private final BroadcastMessageDispatcher broadcast = new BroadcastMessageDispatcher();
     private final TopicCache cache;
-    private final String topicName;
 
     private final OctetsFW octetsRO = new OctetsFW();
 
     private final boolean[] cacheNewMessages;
 
     protected TopicMessageDispatcher(
-        String topicName,
         TopicCache cache,
         int partitionCount)
     {
-        this.topicName = topicName;
-        this.broadcast = new BroadcastMessageDispatcher(topicName);
         this.cache = cache;
         keys = new KeyMessageDispatcher[partitionCount];
         cacheNewMessages = new boolean[partitionCount];
-        BiFunction<String, DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher =
+        Function<DirectBuffer, HeaderValueMessageDispatcher> createHeaderValueMessageDispatcher =
                 cache.compacted() ? CompactedHeaderValueMessageDispatcher::new : HeaderValueMessageDispatcher::new;
         for (int partition = 0; partition < partitionCount; partition++)
         {
-            keys[partition] = new KeyMessageDispatcher(topicName, createHeaderValueMessageDispatcher);
+            keys[partition] = new KeyMessageDispatcher(createHeaderValueMessageDispatcher);
         }
-        headers = new HeadersMessageDispatcher(topicName, createHeaderValueMessageDispatcher);
+        headers = new HeadersMessageDispatcher(createHeaderValueMessageDispatcher);
     }
 
     @Override

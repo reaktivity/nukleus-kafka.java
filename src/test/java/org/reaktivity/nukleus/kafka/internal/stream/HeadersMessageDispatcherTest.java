@@ -52,7 +52,7 @@ public final class HeadersMessageDispatcherTest
 
     private Iterator<KafkaHeaderFW> emptyHeaders = Collections.emptyIterator();
 
-    private HeadersMessageDispatcher dispatcher = new HeadersMessageDispatcher("", HeaderValueMessageDispatcher::new);
+    private HeadersMessageDispatcher dispatcher = new HeadersMessageDispatcher(HeaderValueMessageDispatcher::new);
 
     @Rule
     public JUnitRuleMockery context = new JUnitRuleMockery();
