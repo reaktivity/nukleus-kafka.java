@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2018 The Reaktivity Project
+ * Copyright 2016-2019 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -260,11 +260,18 @@ public final class ClientStreamFactory implements StreamFactory
             if (extension.sizeof() > 0)
             {
                 final KafkaRouteExFW routeEx = extension.get(routeExRO::wrap);
-                topicMatch = routeEx.topicName().asString()::equals;
-                if (routeEx.headers().sizeof() > 0)
+                final String routeTopic = routeEx.topicName().asString();
+                final ListFW<KafkaHeaderFW> routeHeaders = routeEx.headers();
+
+                if (routeTopic != null)
+                {
+                    topicMatch = routeTopic::equals;
+                }
+
+                if (!routeHeaders.isEmpty())
                 {
                     headersMatch = candidate ->
-                            !routeEx.headers().anyMatch(r -> !candidate.anyMatch(
+                            !routeHeaders.anyMatch(r -> !candidate.anyMatch(
                                     h -> BufferUtil.matches(r.key(),  h.key()) &&
                                     BufferUtil.matches(r.value(),  h.value())));
                 }
@@ -930,7 +937,7 @@ System.out.println("CAS.dispatchFragmentedMessageFromCache ******* detaching");
                 else
                 {
                     ListFW<KafkaHeaderFW> headers = beginEx.headers();
-                    if (headers != null && headers.sizeof() > 0)
+                    if (headers != null && !headers.isEmpty())
                     {
                         MutableDirectBuffer headersBuffer = new UnsafeBuffer(new byte[headers.sizeof()]);
                         headersBuffer.putBytes(0, headers.buffer(),  headers.offset(), headers.sizeof());

@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2018 The Reaktivity Project
+ * Copyright 2016-2019 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -2732,7 +2732,7 @@ public final class NetworkConnectionPool
 
         TopicMetadata(String topicName)
         {
-            this.topicName = topicName;
+            this.topicName = requireNonNull(topicName);
         }
 
         boolean isComplete()
@@ -3095,7 +3095,10 @@ public final class NetworkConnectionPool
         {
             this.headers = headers;
             offsets.clear();
-            headers.forEach(h -> offsets.addInt(h.offset()));
+            if (headers != null)
+            {
+                headers.forEach(h -> offsets.addInt(h.offset()));
+            }
             position = 0;
             return this;
         }
