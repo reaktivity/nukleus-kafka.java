@@ -276,7 +276,7 @@ public final class NetworkConnectionPool
     private final int fetchMaxBytes;
     private final int fetchPartitionMaxBytes;
     private final int readIdleTimeout;
-    private final boolean proactive;
+    private final boolean bootstrap;
 
     private final MessageCache messageCache;
     private final boolean forceProactiveMessageCache;
@@ -321,7 +321,7 @@ public final class NetworkConnectionPool
         this.fetchPartitionMaxBytes = config.fetchPartitionMaxBytes();
         this.forceProactiveMessageCache = config.messageCacheProactive();
         this.readIdleTimeout = config.readIdleTimeout();
-        this.proactive = config.topicBootstrapEnabled();
+        this.bootstrap = config.topicBootstrapEnabled();
         this.bufferPool = requireNonNull(bufferPool);
         this.messageCache = requireNonNull(messageCache);
         this.supplyInitialId = supplyInitialId;
@@ -370,7 +370,7 @@ public final class NetworkConnectionPool
             break;
         case NONE:
             final NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
-                    name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, proactive,
+                    name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, bootstrap,
                             topicMetadata.deleteRetentionMs, false));
             doConnections(topicMetadata);
             attachable.onAttachPrepared(
@@ -2172,7 +2172,7 @@ public final class NetworkConnectionPool
 
         private BitSet needsHistoricalByPartition = new BitSet();
         private BitSet isLiveByPartition = new BitSet();
-        private final boolean proactive;
+        private final boolean bootstrap;
 
         @Override
         public String toString()
@@ -2187,13 +2187,13 @@ public final class NetworkConnectionPool
             String topicName,
             int partitionCount,
             boolean compacted,
-            boolean proactive,
+            boolean bootstrap,
             int deleteRetentionMs,
             boolean forceProactiveMessageCache)
         {
             this.topicName = topicName;
             this.compacted = compacted;
-            this.proactive = proactive;
+            this.bootstrap = bootstrap;
             this.windowSuppliers = new HashSet<>();
             this.partitions = new TreeSet<>();
             this.candidate = new NetworkTopicPartition();
@@ -2202,7 +2202,7 @@ public final class NetworkConnectionPool
             if (compacted)
             {
                 cache = new CompactedTopicCache(
-                                proactive,
+                                bootstrap,
                                 topicName,
                                 partitionCount,
                                 deleteRetentionMs,
@@ -2227,7 +2227,7 @@ public final class NetworkConnectionPool
                 routeHeadersList.forEach(this::addRoute);
             }
 
-            if (proactive)
+            if (bootstrap)
             {
                 MessageDispatcher bootstrapDispatcher = new ProgressUpdatingMessageDispatcher(partitionCount, progressHandler);
                 this.dispatcher.add(null, -1, Collections.emptyIterator(), bootstrapDispatcher);
@@ -2414,7 +2414,7 @@ public final class NetworkConnectionPool
         int writableBytes(boolean live)
         {
             int writableBytes;
-            if (live && proactive)
+            if (live && bootstrap)
             {
                 writableBytes = fetchPartitionMaxBytes;
             }

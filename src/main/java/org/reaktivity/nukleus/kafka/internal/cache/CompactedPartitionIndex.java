@@ -47,7 +47,7 @@ public class CompactedPartitionIndex implements PartitionIndex
 
     static final int MAX_INVALID_ENTRIES = 10000;
 
-    private final boolean proactive;
+    private final boolean bootstrap;
     private final MessageCache messageCache;
     private final LongSupplier cacheHits;
     private final LongSupplier cacheMisses;
@@ -69,17 +69,20 @@ public class CompactedPartitionIndex implements PartitionIndex
 
     private int compactFrom = Integer.MAX_VALUE;
     private int invalidEntries;
+    private int validFromIndex = 0;
+    private long validFromOffset = NO_OFFSET;
     private long validToOffset = 0L;
 
+
     public CompactedPartitionIndex(
-        boolean proactive,
+        boolean bootstrap,
         int initialCapacity,
         int tombstoneLifetimeMillis,
         MessageCache messageCache,
         LongSupplier cacheHits,
         LongSupplier cacheMisses)
     {
-        this.proactive = proactive;
+        this.bootstrap = bootstrap;
         this.entriesByKey = new HashMap<>(initialCapacity);
         this.entries = new ArrayList<EntryImpl>(initialCapacity);
         this.messageCache = messageCache;
@@ -132,17 +135,20 @@ public class CompactedPartitionIndex implements PartitionIndex
         if ((requestOffset <= validToOffset || entries.isEmpty()) && messageStartOffset >= validToOffset)
         {
             validToOffset = messageStartOffset + 1;
+            int replacingIndex;
             if (entry == null)
             {
                 UnsafeBuffer keyCopy = new UnsafeBuffer(new byte[key.capacity()]);
                 keyCopy.putBytes(0,  key, 0, key.capacity());
                 entry = new EntryImpl(messageStartOffset, NO_MESSAGE, entries.size());
                 entriesByKey.put(keyCopy, entry);
+                replacingIndex = entries.size();
             }
             else
             {
                 compactFrom = Math.min(compactFrom, entry.position());
                 invalidEntries++;
+                replacingIndex = entry.position();
                 entry.setPosition(entries.size());
                 entry.offset = messageStartOffset;
 
@@ -152,6 +158,11 @@ public class CompactedPartitionIndex implements PartitionIndex
                 }
             }
             entries.add(entry);
+            assert replacingIndex >= validFromIndex;
+            if (replacingIndex == validFromIndex)
+            {
+                validFrom(validFromIndex);
+            }
             if (value == null)
             {
                 MutableDirectBuffer keyCopy = new UnsafeBuffer(new byte[key.capacity()]);
@@ -332,6 +343,7 @@ public class CompactedPartitionIndex implements PartitionIndex
             compact(0, Long.MAX_VALUE);
         }
         compactFrom = Integer.MAX_VALUE;
+        validFrom(0);
     }
 
     private void compact(
@@ -372,12 +384,38 @@ public class CompactedPartitionIndex implements PartitionIndex
                 entries.remove(i);
             }
         }
+        validFrom(0);
+    }
+
+    private void validFrom(int index)
+    {
+        if (entries.isEmpty())
+        {
+            validFromOffset = NO_OFFSET;
+        }
+        else if (entries.size() == 1)
+        {
+            validFromOffset = entries.get(0).offset;
+            validFromIndex = 0;
+        }
+        else
+        {
+            for (int i = index; i < entries.size(); i++)
+            {
+                EntryImpl entry = entries.get(i);
+                if (entry.position() == i)    // valid entry
+                {
+                    validFromOffset = entry.offset;
+                    validFromIndex = i;
+                    break;
+                }
+            }
+        }
     }
 
     private long earliestOffset()
     {
-        compact();      // TODO keep track a validFromOffset
-        return entries.isEmpty() ? NO_OFFSET : entries.get(0).offset;
+        return validFromOffset;
     }
 
     private void evictExpiredTombstones()
@@ -435,7 +473,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         compact();
         candidate.offset = offset;
         int result;
-        if (proactive && !entries.isEmpty() && offset < earliestOffset())
+        if (bootstrap && !entries.isEmpty() && offset < earliestOffset())
         {
             result = 0;         // catch up to the latest offset
         }
