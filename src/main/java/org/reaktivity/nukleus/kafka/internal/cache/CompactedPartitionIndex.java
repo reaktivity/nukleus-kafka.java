@@ -437,7 +437,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         int result;
         if (proactive && !entries.isEmpty() && offset < earliestOffset())
         {
-            result = 0;
+            result = 0;         // catch up to the latest offset
         }
         else if (offset >= validToOffset)
         {
