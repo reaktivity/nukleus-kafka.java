@@ -138,7 +138,7 @@ public class CompactedTopicCache implements TopicCache
 
         return entry.offset() == offset ?
                 message.wrap(partition, entry) :
-                message.wrap(partition, offset, NO_MESSAGE);
+                message.wrap(partition, entry.offset(), NO_MESSAGE);
     }
 
     @Override

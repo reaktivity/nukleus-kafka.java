@@ -701,7 +701,7 @@ public final class ClientStreamFactory implements StreamFactory
 
             if (message == null)
             {
-                if (fragmentedMessageOffset == entry.offset())
+                if (fragmentedMessageOffset == offset)
                 {
                     // no longer available in cache due to eviction (or didn't fit)
                     enterDispatchFromPoolState();
@@ -710,6 +710,7 @@ public final class ClientStreamFactory implements StreamFactory
                 else
                 {
                     // no longer available in cache due to compaction
+                    dispatchState = NOOP;
                     networkPool.getRouteCounters().forcedDetaches.getAsLong();
                     detach(false);
                 }
