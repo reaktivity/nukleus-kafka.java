@@ -41,6 +41,7 @@ public class CompactedTopicCache implements TopicCache
     private final String topicName;
 
     public CompactedTopicCache(
+        boolean bootstrap,
         String topicName,
         int partitionCount,
         int deleteRetentionMs,
@@ -53,7 +54,7 @@ public class CompactedTopicCache implements TopicCache
         indexes = new CompactedPartitionIndex[partitionCount];
         for (int i = 0; i < partitionCount; i++)
         {
-            indexes[i] = new CompactedPartitionIndex(1000, deleteRetentionMs, messageCache, cacheHits, cacheMisses);
+            indexes[i] = new CompactedPartitionIndex(bootstrap, 1000, deleteRetentionMs, messageCache, cacheHits, cacheMisses);
         }
         messageIterator = new MessageIterator(partitionCount);
     }
@@ -137,7 +138,7 @@ public class CompactedTopicCache implements TopicCache
 
         return entry.offset() == offset ?
                 message.wrap(partition, entry) :
-                message.wrap(partition, offset, NO_MESSAGE);
+                message.wrap(partition, entry.offset(), NO_MESSAGE);
     }
 
     @Override

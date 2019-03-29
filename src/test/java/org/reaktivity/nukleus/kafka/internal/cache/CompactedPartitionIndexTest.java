@@ -130,6 +130,7 @@ public final class CompactedPartitionIndexTest
     };
 
     private CompactedPartitionIndex index = new CompactedPartitionIndex(
+                                                true,
                                                 5,
                                                 TOMBSTONE_LIFETIME_MILLIS,
                                                 messageCache,
@@ -362,16 +363,9 @@ public final class CompactedPartitionIndexTest
             {
                 oneOf(messageCache).put(123, 456, asBuffer("key1"), emptyHeaders, value);
                 will(returnValue(0));
-                oneOf(messageCache).put(124, 457, asBuffer("key2"), emptyHeaders, value);
-                will(returnValue(1));
-                oneOf(messageCache).put(125, 458, asBuffer("key3"), emptyHeaders, value);
-                will(returnValue(2));
-                oneOf(messageCache).put(126, 459, asBuffer("key4"), emptyHeaders, value);
-                will(returnValue(3));
-                oneOf(messageCache).get(with(1), with(any(MessageFW.class)));
+                oneOf(messageCache).get(with(0), with(any(MessageFW.class)));
                 will(returnValue(anyMessage));
-                oneOf(messageCache).get(with(3), with(any(MessageFW.class)));
-                will(returnValue(anyMessage));
+
             }
         });
         index.add(101L, 110L, 123, 456, asBuffer("key1"), emptyHeaders, value, true);
@@ -381,11 +375,12 @@ public final class CompactedPartitionIndexTest
         Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(100L, null);
         assertTrue(iterator.hasNext());
         Entry entry = iterator.next();
-        assertEquals(100L, entry.offset());
-        assertEquals(1, entry.messageHandle());
+        assertEquals(110L, entry.offset());
+        assertEquals(0, entry.messageHandle());
+        assertTrue(iterator.hasNext());
         entry = iterator.next();
-        assertEquals(101L, entry.offset());
-        assertEquals(3, entry.messageHandle());
+        assertEquals(111L, entry.offset());
+        assertEquals(NO_MESSAGE, entry.messageHandle());
     }
 
     @Test

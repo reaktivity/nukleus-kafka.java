@@ -276,6 +276,7 @@ public final class NetworkConnectionPool
     private final int fetchMaxBytes;
     private final int fetchPartitionMaxBytes;
     private final int readIdleTimeout;
+    private final boolean bootstrap;
 
     private final MessageCache messageCache;
     private final boolean forceProactiveMessageCache;
@@ -320,6 +321,7 @@ public final class NetworkConnectionPool
         this.fetchPartitionMaxBytes = config.fetchPartitionMaxBytes();
         this.forceProactiveMessageCache = config.messageCacheProactive();
         this.readIdleTimeout = config.readIdleTimeout();
+        this.bootstrap = config.topicBootstrapEnabled();
         this.bufferPool = requireNonNull(bufferPool);
         this.messageCache = requireNonNull(messageCache);
         this.supplyInitialId = supplyInitialId;
@@ -368,7 +370,7 @@ public final class NetworkConnectionPool
             break;
         case NONE:
             final NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
-                    name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, false,
+                    name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, bootstrap,
                             topicMetadata.deleteRetentionMs, false));
             doConnections(topicMetadata);
             attachable.onAttachPrepared(
@@ -378,7 +380,8 @@ public final class NetworkConnectionPool
                     topic.cache,
                     topicMetadata.partitionCount(),
                     topicMetadata.compacted,
-                    topicMetadata::firstAvailableOffset);
+                    topicMetadata::firstAvailableOffset,
+                    topic::highestAvailableOffset);
             break;
         default:
             throw new RuntimeException(format("Unexpected errorCode %s from metadata query for topic %s",
@@ -2169,7 +2172,7 @@ public final class NetworkConnectionPool
 
         private BitSet needsHistoricalByPartition = new BitSet();
         private BitSet isLiveByPartition = new BitSet();
-        private final boolean proactive;
+        private final boolean bootstrap;
 
         @Override
         public String toString()
@@ -2184,13 +2187,13 @@ public final class NetworkConnectionPool
             String topicName,
             int partitionCount,
             boolean compacted,
-            boolean proactive,
+            boolean bootstrap,
             int deleteRetentionMs,
             boolean forceProactiveMessageCache)
         {
             this.topicName = topicName;
             this.compacted = compacted;
-            this.proactive = proactive;
+            this.bootstrap = bootstrap;
             this.windowSuppliers = new HashSet<>();
             this.partitions = new TreeSet<>();
             this.candidate = new NetworkTopicPartition();
@@ -2199,6 +2202,7 @@ public final class NetworkConnectionPool
             if (compacted)
             {
                 cache = new CompactedTopicCache(
+                                bootstrap,
                                 topicName,
                                 partitionCount,
                                 deleteRetentionMs,
@@ -2223,14 +2227,14 @@ public final class NetworkConnectionPool
                 routeHeadersList.forEach(this::addRoute);
             }
 
-            if (proactive)
+            if (bootstrap)
             {
+                MessageDispatcher bootstrapDispatcher = new ProgressUpdatingMessageDispatcher(partitionCount, progressHandler);
+                this.dispatcher.add(null, -1, Collections.emptyIterator(), bootstrapDispatcher);
                 for (int i=0; i < partitionCount; i++)
                 {
                     attachToPartition(i, 0L, 1);
                 }
-                MessageDispatcher bootstrapDispatcher = new ProgressUpdatingMessageDispatcher(partitionCount, progressHandler);
-                this.dispatcher.add(null, -1, Collections.emptyIterator(), bootstrapDispatcher);
             }
         }
 
@@ -2410,7 +2414,7 @@ public final class NetworkConnectionPool
         int writableBytes(boolean live)
         {
             int writableBytes;
-            if (live && proactive)
+            if (live && bootstrap)
             {
                 writableBytes = fetchPartitionMaxBytes;
             }
@@ -2429,6 +2433,15 @@ public final class NetworkConnectionPool
                 writableBytes = writableBytes == Integer.MAX_VALUE ? 0 : writableBytes;
             }
             return writableBytes;
+        }
+
+        private long highestAvailableOffset(
+            int partitionId)
+        {
+            candidate.id = partitionId;
+            candidate.offset = MAX_OFFSET;
+            NetworkTopicPartition highest = partitions.floor(candidate);
+            return highest != null && highest.id == partitionId ? highest.offset : MAX_OFFSET;
         }
 
         private void handleProgress(

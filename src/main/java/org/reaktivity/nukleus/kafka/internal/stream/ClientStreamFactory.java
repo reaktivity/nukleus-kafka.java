@@ -300,6 +300,7 @@ public final class ClientStreamFactory implements StreamFactory
         private final NetworkConnectionPool networkPool;
 
         private final Long2LongHashMap fetchOffsets;
+        private Long2LongHashMap progressOffsets;
 
         private boolean subscribedByKey;
 
@@ -358,6 +359,7 @@ public final class ClientStreamFactory implements StreamFactory
             this.applicationId = applicationId;
             this.networkPool = networkPool;
             this.fetchOffsets = new Long2LongHashMap(-1L);
+            this.progressOffsets = fetchOffsets;
             this.streamState = this::beforeBegin;
         }
 
@@ -373,10 +375,11 @@ public final class ClientStreamFactory implements StreamFactory
                                   partition, oldOffset, newOffset, this);
             }
 
-            long offset = fetchOffsets.get(partition);
+            long offset = progressOffsets.get(partition);
             if (offset == oldOffset)
             {
-                fetchOffsets.put(partition, newOffset);
+                progressOffsets.put(partition, newOffset);
+                convergeOffsetsIfNecessary();
             }
         }
 
@@ -546,8 +549,19 @@ public final class ClientStreamFactory implements StreamFactory
 
             if (requestOffset <= startOffset && startOffset < endOffset)
             {
-                final long oldFetchOffset = this.fetchOffsets.put(partition, endOffset);
-                progressHandler.handle(partition, oldFetchOffset, endOffset, this);
+                final long oldProgressOffset = this.progressOffsets.put(partition, endOffset);
+                progressHandler.handle(partition, oldProgressOffset, endOffset, this);
+                convergeOffsetsIfNecessary();
+            }
+            else if (progressOffsets != fetchOffsets)
+            {
+                long progressOffset = this.progressOffsets.get(partition);
+                if (progressOffset < endOffset)
+                {
+                    final long oldProgressOffset = this.progressOffsets.put(partition, endOffset);
+                    progressHandler.handle(partition, oldProgressOffset, endOffset, this);
+                    convergeOffsetsIfNecessary();
+                }
             }
 
             if (dispatchBlocked && dispatchState == dispatchFromPoolState)
@@ -563,7 +577,8 @@ public final class ClientStreamFactory implements StreamFactory
         @Override
         public String toString()
         {
-            return format("%s@%s(topic=\"%s\", subscribedByKey=%b, fetchOffsets=%s, fragmentedMessageOffset=%d, " +
+            return format("%s@%s(topic=\"%s\", subscribedByKey=%b, fetchOffsets=%s, progressOffsets=%s, " +
+                       "fragmentedMessageOffset=%d, " +
                        "fragmentedMessagePartition=%d, fragmentedMessageLength=%d, fragmentedMessageBytesWritten=%d, " +
                        "applicationId=%x, applicationReplyId=%x, dispatchState=%s, budget=%s)",
                 getClass().getSimpleName(),
@@ -571,6 +586,7 @@ public final class ClientStreamFactory implements StreamFactory
                 topicName,
                 subscribedByKey,
                 fetchOffsets,
+                progressOffsets,
                 fragmentedMessageOffset,
                 fragmentedMessagePartition,
                 fragmentedMessageLength,
@@ -602,7 +618,7 @@ public final class ClientStreamFactory implements StreamFactory
 
         private void dispatchMessagesFromCache()
         {
-            Iterator<MessageRef> messages = historicalCache.getMessages(fetchOffsets, fetchKey, headers);
+            Iterator<MessageRef> messages = historicalCache.getMessages(progressOffsets, fetchKey, headers);
 
             int previousPartition = NO_PARTITION;
             long flushToOffset = NO_OFFSET;
@@ -655,8 +671,7 @@ public final class ClientStreamFactory implements StreamFactory
             {
                 dispatchState = dispatchFragmentedFromCacheState;
             }
-
-            if (!messages.hasNext())
+            else if (!messages.hasNext())
             {
                 // No more messages available in cache
                 enterDispatchFromPoolState();
@@ -681,9 +696,19 @@ public final class ClientStreamFactory implements StreamFactory
 
             if (message == null)
             {
-                // no longer available in cache
-                enterDispatchFromPoolState();
-                dispatchState.run();
+                if (fragmentedMessageOffset == offset)
+                {
+                    // no longer available in cache due to eviction (or didn't fit)
+                    enterDispatchFromPoolState();
+                    dispatchState.run();
+                }
+                else
+                {
+                    // no longer available in cache due to compaction
+                    dispatchState = NOOP;
+                    networkPool.getRouteCounters().forcedDetaches.getAsLong();
+                    detach(false);
+                }
             }
             else
             {
@@ -798,8 +823,8 @@ public final class ClientStreamFactory implements StreamFactory
                 fragmentedMessageLength = 0;
                 progressEndOffset = nextOffset;
 
-                final long oldFetchOffset = this.fetchOffsets.put(partition, nextOffset);
-                progressHandler.handle(partition, oldFetchOffset, nextOffset, this);
+                final long oldProgressOffset = this.progressOffsets.put(partition, nextOffset);
+                progressHandler.handle(partition, oldProgressOffset, nextOffset, this);
             }
             else
             {
@@ -937,6 +962,56 @@ public final class ClientStreamFactory implements StreamFactory
             }
         }
 
+        void convergeOffsetsIfNecessary()
+        {
+            if (progressOffsets != fetchOffsets)
+            {
+                for (int partition = 0; partition < fetchOffsets.size(); partition++)
+                {
+                    long fetchOffset = fetchOffsets.get(partition);
+                    long progressOffset = progressOffsets.get(partition);
+                    if (progressOffset < fetchOffset)
+                    {
+                        return;
+                    }
+                }
+                // all partitions caught up to or surpassed fetch offsets
+                fetchOffsets.putAll(progressOffsets);
+                progressOffsets = fetchOffsets;
+            }
+        }
+
+        void divergeOffsetsIfNecessary(
+            IntToLongFunction highestAvailableOffset)
+        {
+            if (progressOffsets == fetchOffsets)
+            {
+                for (int partition = 0; partition < fetchOffsets.size(); partition++)
+                {
+                    long highestOffset = highestAvailableOffset.applyAsLong(partition);
+                    long fetchOffset = fetchOffsets.get(partition);
+                    if (fetchOffset > highestOffset)
+                    {
+                        progressOffsets = new Long2LongHashMap(-1L);
+                        progressOffsets.putAll(fetchOffsets);
+                        break;
+                    }
+                }
+            }
+            if (progressOffsets != fetchOffsets)
+            {
+                for (int partition = 0; partition < fetchOffsets.size(); partition++)
+                {
+                    long highestOffset = highestAvailableOffset.applyAsLong(partition);
+                    long fetchOffset = fetchOffsets.get(partition);
+                    if (fetchOffset > highestOffset)
+                    {
+                        progressOffsets.put(partition, Math.min(fetchOffset, highestOffset));
+                    }
+                }
+            }
+        }
+
         private void onAttachPrepared(
             AttachDetailsConsumer attacher,
             AttachDetailsConsumer detacher,
@@ -944,7 +1019,8 @@ public final class ClientStreamFactory implements StreamFactory
             ImmutableTopicCache historicalCache,
             int partitionCount,
             boolean compacted,
-            IntToLongFunction firstAvailableOffset)
+            IntToLongFunction firstAvailableOffset,
+            IntToLongFunction highestAvailableOffset)
         {
             this.compacted = compacted;
             this.attacher = attacher;
@@ -988,6 +1064,11 @@ public final class ClientStreamFactory implements StreamFactory
                 }
             }
 
+            if (compacted)
+            {
+                divergeOffsetsIfNecessary(highestAvailableOffset);
+            }
+
             if (writeableBytes() > 0)
             {
                 dispatchState.run();
@@ -997,7 +1078,7 @@ public final class ClientStreamFactory implements StreamFactory
         private void invoke(
             AttachDetailsConsumer attacher)
         {
-            attacher.apply(fetchOffsets, fetchKey, headers, this, writeableBytes);
+            attacher.apply(progressOffsets, fetchKey, headers, this, writeableBytes);
         }
 
         private void onMetadataError(
