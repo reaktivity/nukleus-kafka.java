@@ -260,9 +260,8 @@ public final class MemoryLayout extends Layout
         ensureDirectoryExists(file.getParentFile(), file.getParent());
 
         FileChannel templateFile = null;
-        try
+        try (RandomAccessFile randomAccessFile = new RandomAccessFile(file, "rw"))
         {
-            final RandomAccessFile randomAccessFile = new RandomAccessFile(file, "rw");
             randomAccessFile.setLength(length);
             templateFile = randomAccessFile.getChannel();
             fill(templateFile, 0, fillLength, (byte)0);

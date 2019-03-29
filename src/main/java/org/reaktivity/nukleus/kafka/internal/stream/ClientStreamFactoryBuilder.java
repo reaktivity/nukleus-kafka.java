@@ -49,7 +49,6 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     private LongUnaryOperator supplyInitialId;
     private LongUnaryOperator supplyReplyId;
     private LongSupplier supplyTrace;
-    private LongSupplier supplyCorrelationId;
     private Supplier<BufferPool> supplyBufferPool;
     private Function<String, LongSupplier> supplyCounter;
     private Function<String, LongConsumer> supplyAccumulator;
@@ -125,14 +124,6 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
-    public ClientStreamFactoryBuilder setTargetCorrelationIdSupplier(
-        LongSupplier supplyCorrelationId)
-    {
-        this.supplyCorrelationId = supplyCorrelationId;
-        return this;
-    }
-
-    @Override
     public StreamFactoryBuilder setBufferPoolSupplier(
         Supplier<BufferPool> supplyBufferPool)
     {
@@ -168,7 +159,7 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
         final MemoryManager memoryManager = supplyMemoryManager.apply(counters);
 
         return new ClientStreamFactory(config, router, writeBuffer, bufferPool, memoryManager, supplyInitialId, supplyReplyId,
-                supplyTrace, supplyCorrelationId, supplyCounter, correlations, connectionPools, connectPoolFactoryConsumer,
+                supplyTrace, supplyCounter, correlations, connectionPools, connectPoolFactoryConsumer,
                 scheduler, counters);
     }
 }

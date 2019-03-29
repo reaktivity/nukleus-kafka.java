@@ -64,14 +64,12 @@ public final class MessageWriter
         final MessageConsumer receiver,
         final long routeId,
         final long streamId,
-        final long correlationId,
         final Flyweight.Builder.Visitor visitor)
     {
         final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
                 .trace(supplyTrace.getAsLong())
-                .correlationId(correlationId)
                 .extension(b -> b.set(visitor))
                 .build();
 
@@ -188,14 +186,12 @@ public final class MessageWriter
         final MessageConsumer receiver,
         final long routeId,
         final long streamId,
-        final long correlationId,
         final byte[] extension)
     {
         final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
                 .trace(supplyTrace.getAsLong())
-                .correlationId(correlationId)
                 .extension(b -> b.set(extension))
                 .build();
 
