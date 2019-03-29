@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2018 The Reaktivity Project
+ * Copyright 2016-2019 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -271,7 +271,7 @@ public final class NetworkConnectionPool
     private final BufferPool bufferPool;
     private final KafkaCounters counters;
     private final LongUnaryOperator supplyInitialId;
-    private final LongSupplier supplyCorrelationId;
+    private final LongUnaryOperator supplyReplyId;
     private final long networkRouteId;
     private final int fetchMaxBytes;
     private final int fetchPartitionMaxBytes;
@@ -308,7 +308,7 @@ public final class NetworkConnectionPool
         BufferPool bufferPool,
         MessageCache messageCache,
         LongUnaryOperator supplyInitialId,
-        LongSupplier supplyCorrelationId)
+        LongUnaryOperator supplyReplyId)
     {
         this.router = router;
         this.writer = writer;
@@ -323,7 +323,7 @@ public final class NetworkConnectionPool
         this.bufferPool = requireNonNull(bufferPool);
         this.messageCache = requireNonNull(messageCache);
         this.supplyInitialId = supplyInitialId;
-        this.supplyCorrelationId = supplyCorrelationId;
+        this.supplyReplyId = supplyReplyId;
         this.routeCounters = counters.supplyRef(networkRouteId);
         this.encodeBuffer = new UnsafeBuffer(new byte[bufferPool.slotCapacity()]);
         this.topicsByName = new LinkedHashMap<>();
@@ -626,16 +626,16 @@ public final class NetworkConnectionPool
 
                 final long networkInitialId = supplyInitialId.applyAsLong(networkRouteId);
                 final MessageConsumer networkInitial = router.supplyReceiver(networkInitialId);
-                final long newCorrelationId = supplyCorrelationId.getAsLong();
+                final long networkReplyId = supplyReplyId.applyAsLong(networkInitialId);
 
-                correlations.put(newCorrelationId, AbstractNetworkConnection.this);
+                correlations.put(networkReplyId, AbstractNetworkConnection.this);
 
-                writer.doBegin(networkInitial, networkRouteId, networkInitialId, newCorrelationId, extensionVisitor);
+                writer.doBegin(networkInitial, networkRouteId, networkInitialId, extensionVisitor);
                 router.setThrottle(networkInitialId, this::handleThrottle);
 
                 this.networkInitialId = networkInitialId;
                 this.networkInitial = networkInitial;
-                this.networkCorrelationId = newCorrelationId;
+                this.networkCorrelationId = networkReplyId;
             }
         }
 
