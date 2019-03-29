@@ -118,7 +118,6 @@ public final class ClientStreamFactory implements StreamFactory
     final BudgetManager budgetManager;
     final LongUnaryOperator supplyInitialId;
     final LongUnaryOperator supplyReplyId;
-    final LongSupplier supplyCorrelationId;
     final DelayedTaskScheduler scheduler;
     final KafkaCounters counters;
 
@@ -138,7 +137,6 @@ public final class ClientStreamFactory implements StreamFactory
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTrace,
-        LongSupplier supplyCorrelationId,
         Function<String, LongSupplier> supplyCounter,
         Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations,
         Long2ObjectHashMap<NetworkConnectionPool> connectionPools,
@@ -151,7 +149,6 @@ public final class ClientStreamFactory implements StreamFactory
 
         this.supplyInitialId = requireNonNull(supplyInitialId);
         this.supplyReplyId = requireNonNull(supplyReplyId);
-        this.supplyCorrelationId = supplyCorrelationId;
         this.correlations = requireNonNull(correlations);
         this.connectionPools = connectionPools;
         this.scheduler = scheduler;
@@ -161,7 +158,7 @@ public final class ClientStreamFactory implements StreamFactory
         final DefaultMessageCache messageCache = new DefaultMessageCache(requireNonNull(memoryManager));
         this.connectionPoolFactory = networkRouteId ->
             new NetworkConnectionPool(router, correlations, writer, scheduler, counters, networkRouteId, config,
-                    bufferPool, messageCache, supplyInitialId, supplyCorrelationId);
+                    bufferPool, messageCache, supplyInitialId, supplyReplyId);
 
         setConnectionPoolFactory.accept(connectionPoolFactory);
     }
@@ -231,14 +228,13 @@ public final class ClientStreamFactory implements StreamFactory
         BeginFW begin,
         MessageConsumer networkReply)
     {
-        final long networkCorrelationId = begin.correlationId();
+        final long networkReplyId = begin.streamId();
 
         MessageConsumer newStream = null;
 
-        final NetworkConnectionPool.AbstractNetworkConnection connection = correlations.remove(networkCorrelationId);
+        final NetworkConnectionPool.AbstractNetworkConnection connection = correlations.remove(networkReplyId);
         if (connection != null)
         {
-            final long networkReplyId = begin.streamId();
             newStream = connection.onCorrelated(networkReply, networkReplyId);
         }
 
@@ -307,7 +303,6 @@ public final class ClientStreamFactory implements StreamFactory
 
         private boolean subscribedByKey;
 
-        private long applicationCorrelationId;
         private byte[] applicationBeginExtension;
         private long applicationReplyId;
         private int applicationReplyPadding;
@@ -874,7 +869,6 @@ public final class ClientStreamFactory implements StreamFactory
         private void handleBegin(
             BeginFW begin)
         {
-            applicationCorrelationId = begin.correlationId();
             final OctetsFW extension = begin.extension();
 
             if (extension.sizeof() == 0)
@@ -934,7 +928,7 @@ public final class ClientStreamFactory implements StreamFactory
                     final long newReplyId = supplyReplyId.applyAsLong(applicationId);
 
                     writer.doKafkaBegin(applicationReply, applicationRouteId, newReplyId,
-                            applicationCorrelationId, applicationBeginExtension);
+                            applicationBeginExtension);
                     router.setThrottle(newReplyId, this::handleThrottle);
 
                     writer.doWindow(applicationReply, applicationRouteId, applicationId, 0, 0, 0);
