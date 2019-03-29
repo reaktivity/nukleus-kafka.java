@@ -249,10 +249,10 @@ public class CachingFetchIT
         "${client}/compacted.historical.uses.cached.key.then.zero.offset/client",
         "${server}/compacted.historical.uses.zero.offset/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveCompactedMessagesWithUncachedKeyUsingZeroOffset() throws Exception
+    public void shouldReceiveCompactedMessagesWithCachedKeyUsingZeroOffset() throws Exception
     {
         k3po.finish();
-        assertEquals(1, counters.cacheHits());
+        assertEquals(2, counters.cacheHits());
         assertEquals(0, counters.cacheMisses());
     }
 
