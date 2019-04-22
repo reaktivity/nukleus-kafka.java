@@ -181,7 +181,7 @@ public class BudgetManager
             else
             {
                 GroupBudget groupBudget = groups.get(groupId);
-                GroupStreamBudget streamBudget = groupBudget.get(streamId);
+                GroupStreamBudget streamBudget = groupBudget != null ? groupBudget.get(streamId) : null;
                 return streamBudget != null && streamBudget.unackedBudget != 0;
             }
         }
