@@ -15,46 +15,95 @@
  */
 package org.reaktivity.nukleus.kafka.internal.util;
 
-import org.agrona.TimerWheel;
+import org.agrona.DeadlineTimerWheel;
+import org.agrona.DeadlineTimerWheel.TimerHandler;
+import org.agrona.collections.Long2ObjectHashMap;
+
+import static java.lang.System.currentTimeMillis;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static org.agrona.DeadlineTimerWheel.NULL_TIMER;
 
 import java.util.concurrent.TimeUnit;
 
 public class DelayedTaskScheduler
 {
-    private final TimerWheel timerWheel;
+    private final DeadlineTimerWheel timerWheel;
+    private final Long2ObjectHashMap<Runnable> tasksByTimerId;
+    private final TimerHandler handleTimeout;
 
     public DelayedTaskScheduler()
     {
-        this.timerWheel = new TimerWheel(500, TimeUnit.MILLISECONDS, 32);
+        this.timerWheel = new DeadlineTimerWheel(MILLISECONDS, currentTimeMillis(), 512, 32);
+        this.tasksByTimerId = new Long2ObjectHashMap<>();
+        this.handleTimeout = this::onTimeout;
     }
 
-    public TimerWheel.Timer newBlankTimer()
+    public long newTimeout(
+        long delay,
+        Runnable task)
     {
-        return timerWheel.newBlankTimer();
+        final long nowMillis = System.currentTimeMillis();
+        final long timerId = timerWheel.scheduleTimer(nowMillis + delay);
+
+        tasksByTimerId.put(timerId, task);
+
+        return timerId;
     }
 
-    public TimerWheel.Timer newTimeout(long delay, Runnable task)
+    public long rescheduleTimeout(
+        long delay,
+        long timerId)
     {
-        return timerWheel.newTimeout(delay, TimeUnit.MILLISECONDS, task);
+        if (timerId != NULL_TIMER)
+        {
+            final Runnable task = tasksByTimerId.remove(timerId);
+            assert task != null;
+
+            timerWheel.cancelTimer(timerId);
+
+            timerId = newTimeout(delay, task);
+        }
+
+        return timerId;
     }
 
-    public void rescheduleTimeout(long delay, TimerWheel.Timer timer)
+    public long rescheduleTimeout(
+        long delay,
+        long timerId,
+        Runnable task)
     {
-        timerWheel.rescheduleTimeout(delay, TimeUnit.MILLISECONDS, timer);
+        cancel(timerId);
+        return newTimeout(delay, task);
     }
 
-    public void rescheduleTimeout(long delay, TimerWheel.Timer timer, Runnable task)
+    public long cancel(
+        long timerId)
     {
-        timerWheel.rescheduleTimeout(delay, TimeUnit.MILLISECONDS, timer, task);
+        if (timerWheel.cancelTimer(timerId))
+        {
+            tasksByTimerId.remove(timerId);
+        }
+
+        return NULL_TIMER;
     }
 
     public int process()
     {
-        if (timerWheel.computeDelayInMs() <= 0)
-        {
-            return timerWheel.expireTimers();
-        }
-        return 0;
+        final long nowMillis = System.currentTimeMillis();
+
+        return timerWheel.poll(nowMillis, handleTimeout, Integer.MAX_VALUE);
     }
 
+    private boolean onTimeout(
+        TimeUnit unit,
+        long now,
+        long timerId)
+    {
+        final Runnable task = tasksByTimerId.remove(timerId);
+        if (task != null)
+        {
+            task.run();
+        }
+        return task != null;
+    }
 }

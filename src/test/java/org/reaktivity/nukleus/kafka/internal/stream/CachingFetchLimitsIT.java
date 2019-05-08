@@ -49,7 +49,7 @@ public class CachingFetchLimitsIT
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
-        .counterValuesBufferCapacity(4096)
+        .counterValuesBufferCapacity(8192)
         .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, false)
         .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 1024L * 2L)
         .configure(KAFKA_MESSAGE_CACHE_PROACTIVE, true)
