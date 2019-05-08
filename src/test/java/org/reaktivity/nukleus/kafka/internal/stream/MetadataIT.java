@@ -48,7 +48,7 @@ public class MetadataIT
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
-        .counterValuesBufferCapacity(4096)
+        .counterValuesBufferCapacity(8192)
         .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, false)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();

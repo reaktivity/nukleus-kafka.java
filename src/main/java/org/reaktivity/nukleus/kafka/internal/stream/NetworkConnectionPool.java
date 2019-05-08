@@ -51,14 +51,14 @@ import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
 
+import org.agrona.DeadlineTimerWheel;
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
-import org.agrona.TimerWheel.Timer;
 import org.agrona.collections.ArrayUtil;
 import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.IntArrayList;
 import org.agrona.collections.Long2LongHashMap;
-import org.agrona.collections.Long2LongHashMap.LongIterator;
+import org.agrona.collections.Long2LongHashMap.KeyIterator;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.collections.LongArrayList;
 import org.agrona.concurrent.UnsafeBuffer;
@@ -531,7 +531,7 @@ public final class NetworkConnectionPool
         TopicMetadata metadata = topicMetadataByName.get(topicName);
         if (metadata != null)
         {
-            metadata.doDetach(attachId);
+            metadata.doDetach(scheduler, attachId);
             NetworkTopic topic = topicsByName.get(topicName);
             if (!metadata.hasConsumers() && (topic == null || topic.partitions.isEmpty()))
             {
@@ -565,7 +565,7 @@ public final class NetworkConnectionPool
     abstract class AbstractNetworkConnection
     {
         MessageConsumer networkInitial;
-        Timer timer;
+        long timerId = DeadlineTimerWheel.NULL_TIMER;
 
         long networkInitialId;
         long networkCorrelationId;
@@ -591,7 +591,6 @@ public final class NetworkConnectionPool
         private AbstractNetworkConnection()
         {
             localDecodeBuffer = new UnsafeBuffer(allocateDirect(fetchPartitionMaxBytes));
-            timer = scheduler.newBlankTimer();
         }
 
         @Override
@@ -739,7 +738,7 @@ public final class NetworkConnectionPool
                 networkReplyId = 0L;
             }
             handleConnectionFailed();
-            timer.cancel();
+            timerId = scheduler.cancel(timerId);
         }
 
         private void handleStream(
@@ -836,8 +835,7 @@ public final class NetworkConnectionPool
         void handleData(
             DataFW data)
         {
-            timer.cancel();
-            scheduler.rescheduleTimeout(readIdleTimeout, timer);
+            timerId = scheduler.rescheduleTimeout(readIdleTimeout, timerId);
 
             final OctetsFW payload = data.payload();
             final long networkTraceId = data.trace();
@@ -946,7 +944,7 @@ public final class NetworkConnectionPool
             }
             doReinitialize();
             doRequestIfNeeded();
-            timer.cancel();
+            timerId = scheduler.cancel(timerId);
         }
 
         private void handleAbort(
@@ -958,7 +956,7 @@ public final class NetworkConnectionPool
                 this.networkInitialId = 0L;
             }
             handleConnectionFailed();
-            timer.cancel();
+            timerId = scheduler.cancel(timerId);
         }
 
         void doOfferResponseBudget()
@@ -1155,8 +1153,7 @@ public final class NetworkConnectionPool
                         networkRequestPadding, payload);
                 networkRequestBudget -= payload.sizeof() + networkRequestPadding;
 
-                timer.cancel();
-                scheduler.rescheduleTimeout(readIdleTimeout, timer, this::fetchRequestIdle);
+                timerId = scheduler.rescheduleTimeout(readIdleTimeout, timerId, this::fetchRequestIdle);
             }
         }
 
@@ -1253,8 +1250,7 @@ public final class NetworkConnectionPool
                         networkRequestPadding, payload);
                 networkRequestBudget -= payload.sizeof() + networkRequestPadding;
 
-                timer.cancel();
-                scheduler.rescheduleTimeout(readIdleTimeout, timer, this::listOffsetsRequestIdle);
+                timerId = scheduler.rescheduleTimeout(readIdleTimeout, timerId, this::listOffsetsRequestIdle);
             }
         }
 
@@ -1273,8 +1269,7 @@ public final class NetworkConnectionPool
             }
             else
             {
-                timer.cancel();
-                scheduler.rescheduleTimeout(readIdleTimeout, timer);
+                timerId = scheduler.rescheduleTimeout(readIdleTimeout, timerId);
 
                 final OctetsFW payload = data.payload();
                 networkResponseBudget -= payload.sizeof() + data.padding();
@@ -1286,7 +1281,7 @@ public final class NetworkConnectionPool
                 doOfferResponseBudget();
                 if (excessBytes >= 0) // response complete
                 {
-                    timer.cancel();
+                    timerId = scheduler.cancel(timerId);
                     assert excessBytes == 0 :
                             format("%s: %d bytes remaining after fetch response, pipelined requests are not being used",
                                     this, excessBytes);
@@ -1315,7 +1310,7 @@ public final class NetworkConnectionPool
             int networkOffset,
             int networkLimit)
         {
-            timer.cancel();
+            timerId = scheduler.cancel(timerId);
 
             final ListOffsetsResponseFW response = listOffsetsResponseRO.tryWrap(networkBuffer, networkOffset, networkLimit);
             if (response == null)
@@ -1801,8 +1796,7 @@ public final class NetworkConnectionPool
                     networkRequestBudget -= payload.sizeof() + networkRequestPadding;
                     pendingRequest = MetadataRequestType.DESCRIBE_CONFIGS;
 
-                    timer.cancel();
-                    scheduler.rescheduleTimeout(readIdleTimeout, timer, this::describeConfigsRequestIdle);
+                    timerId = scheduler.rescheduleTimeout(readIdleTimeout, timerId, this::describeConfigsRequestIdle);
                 }
             }
         }
@@ -1861,8 +1855,7 @@ public final class NetworkConnectionPool
                     networkRequestBudget -= payload.sizeof() + networkRequestPadding;
                     pendingRequest = MetadataRequestType.METADATA;
 
-                    timer.cancel();
-                    scheduler.rescheduleTimeout(readIdleTimeout, timer, this::metadataRequestIdle);
+                    timerId = scheduler.rescheduleTimeout(readIdleTimeout, timerId, this::metadataRequestIdle);
                 }
             }
         }
@@ -1891,7 +1884,7 @@ public final class NetworkConnectionPool
             int networkOffset,
             final int networkLimit)
         {
-            timer.cancel();
+            timerId = scheduler.cancel(timerId);
 
             final DescribeConfigsResponseFW describeConfigsResponse =
                     describeConfigsResponseRO.tryWrap(networkBuffer, networkOffset, networkLimit);
@@ -1980,7 +1973,7 @@ public final class NetworkConnectionPool
                     pendingTopicMetadata = null;
                     metadata.setCompacted(compacted);
                     metadata.setDeleteRetentionMs(deleteRetentionMs);
-                    KafkaError priorError = metadata.setComplete(error);
+                    KafkaError priorError = metadata.setComplete(scheduler, error);
                     metadata.flush();
                     switch (priorError)
                     {
@@ -2005,7 +1998,7 @@ public final class NetworkConnectionPool
             int networkOffset,
             final int networkLimit)
         {
-            timer.cancel();
+            timerId = scheduler.cancel(timerId);
 
             KafkaError error = decodeMetadataResponse(networkBuffer, networkOffset, networkLimit);
             final TopicMetadata topicMetadata = pendingTopicMetadata;
@@ -2277,7 +2270,7 @@ public final class NetworkConnectionPool
             if (fetchKey == null)
             {
                 this.dispatcher.add(null, -1, headersIterator, dispatcher);
-                final LongIterator keys = fetchOffsets.keySet().iterator();
+                final KeyIterator keys = fetchOffsets.keySet().iterator();
                 while (keys.hasNext())
                 {
                     final int partitionId = (int) keys.nextValue();
@@ -2360,7 +2353,7 @@ public final class NetworkConnectionPool
             int fetchKeyPartition = (int) (fetchKey == null ? -1 : fetchOffsets.keySet().iterator().next());
             headersIterator.wrap(headers);
             this.dispatcher.remove(fetchKey, fetchKeyPartition, headersIterator, dispatcher);
-            final LongIterator partitionIds = fetchOffsets.keySet().iterator();
+            final KeyIterator partitionIds = fetchOffsets.keySet().iterator();
             while (partitionIds.hasNext())
             {
                 long partitionId = partitionIds.nextValue();
@@ -2724,7 +2717,7 @@ public final class NetworkConnectionPool
         private Int2ObjectHashMap<Consumer<TopicMetadata>> consumers = new Int2ObjectHashMap<>();
         private MetadataRequestType nextRequiredRequestType = MetadataRequestType.METADATA;
         private int retries;
-        private Timer retryTimer;
+        private long retryTimerId = DeadlineTimerWheel.NULL_TIMER;
 
         TopicMetadata(String topicName)
         {
@@ -2742,15 +2735,13 @@ public final class NetworkConnectionPool
         }
 
         KafkaError setComplete(
+            DelayedTaskScheduler scheduler,
             KafkaError error)
         {
             state = State.COMPLETE;
             KafkaError priorError = errorCode;
             errorCode = error;
-            if (retryTimer != null)
-            {
-                retryTimer.cancel();
-            }
+            retryTimerId = scheduler.cancel(retryTimerId);
             return priorError;
         }
 
@@ -2768,9 +2759,7 @@ public final class NetworkConnectionPool
             // disable metadata gets until timer expires
             state = State.GET_SCHEDULED;
 
-            Timer timer = getOrCreateTimer(scheduler);
-            timer.cancel();
-            scheduler.rescheduleTimeout(backoffMillis.next(retries), timer, () -> doRefresh(connection));
+            retryTimerId = scheduler.rescheduleTimeout(backoffMillis.next(retries), retryTimerId, () -> doRefresh(connection));
         }
 
         void doRefresh(
@@ -2967,12 +2956,14 @@ public final class NetworkConnectionPool
         }
 
         void doDetach(
+            DelayedTaskScheduler scheduler,
             int consumerId)
         {
             consumers.remove(consumerId);
-            if (retryTimer != null && consumers.isEmpty())
+
+            if (consumers.isEmpty())
             {
-                retryTimer.cancel();
+                retryTimerId = scheduler.cancel(retryTimerId);
             }
         }
 
@@ -3010,16 +3001,6 @@ public final class NetworkConnectionPool
         int partitionCount()
         {
             return nodeIdsByPartition.length;
-        }
-
-        private Timer getOrCreateTimer(
-            DelayedTaskScheduler scheduler)
-        {
-            if (retryTimer == null)
-            {
-                retryTimer = scheduler.newBlankTimer();
-            }
-            return retryTimer;
         }
     }
 
