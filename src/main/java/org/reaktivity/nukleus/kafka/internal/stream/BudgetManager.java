@@ -133,7 +133,10 @@ public class BudgetManager
             budget -= amount;
 
             GroupStreamBudget streamBudget = streamMap.get(streamId);
-            streamBudget.unackedBudget += amount;
+            if (streamBudget != null)
+            {
+                streamBudget.unackedBudget += amount;
+            }
         }
 
         @Override
