@@ -89,7 +89,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
     @Override
     public int dispatch(
         int partition,
-        long requestOffset,
+        long requestedOffset,
         long messageOffset,
         long highWatermark,
         DirectBuffer key,
@@ -102,7 +102,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         {
             return 0;
         }
-        int result = dispatch(partition, requestOffset, messageOffset, key, headers.headerSupplier(), timestamp,
+        int result = dispatch(partition, requestedOffset, messageOffset, key, headers.headerSupplier(), timestamp,
                 traceId, value);
 
         if (messageOffset + 1 == highWatermark)
@@ -116,7 +116,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
 
         if (MessageDispatcher.matched(result))
         {
-            cache.add(partition, requestOffset, messageOffset, timestamp, traceId, key, headers, value,
+            cache.add(partition, requestedOffset, messageOffset, timestamp, traceId, key, headers, value,
                     cacheNewMessages[partition]);
         }
 
@@ -164,13 +164,13 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
     @Override
     public void flush(
         int partition,
-        long requestOffset,
-        long lastOffset)
+        long requestedOffset,
+        long nextFetchOffset)
     {
-        broadcast.flush(partition, requestOffset, lastOffset);
-        keys[partition].flush(partition, requestOffset, lastOffset);
-        headers.flush(partition, requestOffset, lastOffset);
-        cache.extendNextOffset(partition, requestOffset, lastOffset);
+        broadcast.flush(partition, requestedOffset, nextFetchOffset);
+        keys[partition].flush(partition, requestedOffset, nextFetchOffset);
+        headers.flush(partition, requestedOffset, nextFetchOffset);
+        cache.extendNextOffset(partition, requestedOffset, nextFetchOffset);
     }
 
     public void add(

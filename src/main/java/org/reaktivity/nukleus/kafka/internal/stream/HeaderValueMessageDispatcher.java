@@ -44,15 +44,15 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
         }
 
         @Override
-        public void flush(int partition, long requestOffset, long nextFetchOffset)
+        public void flush(int partition, long requestedOffset, long nextFetchOffset)
         {
         }
 
         @Override
         public int dispatch(
             int partition,
-            long requestOffset,
-            long messageStartOffset,
+            long requestedOffset,
+            long messageOffset,
             DirectBuffer key,
             Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
             long timestamp,
@@ -108,7 +108,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
     @Override
     public int dispatch(
         int partition,
-        long requestOffset,
+        long requestedOffset,
         long messageOffset,
         DirectBuffer key,
         Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
@@ -126,7 +126,7 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
             MessageDispatcher dispatcher = dispatchersByHeaderValue.get(buffer);
             if (dispatcher != null)
             {
-                result |= dispatcher.dispatch(partition, requestOffset, messageOffset,
+                result |= dispatcher.dispatch(partition, requestedOffset, messageOffset,
                                               key, supplyHeader, timestamp, traceId, value);
             }
         }
@@ -138,15 +138,15 @@ public class HeaderValueMessageDispatcher implements MessageDispatcher
 
     @Override
     public void flush(
-            int partition,
-            long requestOffset,
-            long lastOffset)
+        int partition,
+        long requestedOffset,
+        long nextFetchOffset)
     {
         deferUpdates = true;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
-            dispatcher.flush(partition, requestOffset, lastOffset);
+            dispatcher.flush(partition, requestedOffset, nextFetchOffset);
         }
         deferUpdates = false;
 

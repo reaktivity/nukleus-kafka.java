@@ -41,7 +41,7 @@ public class CompactedHeaderValueMessageDispatcher extends HeaderValueMessageDis
     @Override
     public int dispatch(
          int partition,
-         long requestOffset,
+         long requestedOffset,
          long messageOffset,
          DirectBuffer key,
          Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
@@ -63,13 +63,13 @@ public class CompactedHeaderValueMessageDispatcher extends HeaderValueMessageDis
             {
                 dispatchers.add(dispatcher);
                 result = MessageDispatcher.FLAGS_MATCHED;
-                result |= dispatcher.dispatch(partition, requestOffset, messageOffset,
+                result |= dispatcher.dispatch(partition, requestedOffset, messageOffset,
                                               key, supplyHeader, timestamp, traceId, value);
             }
         }
         if (key != null)
         {
-            result = updateDispatchersForKey(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId,
+            result = updateDispatchersForKey(partition, requestedOffset, messageOffset, key, supplyHeader, timestamp, traceId,
                         result, dispatchers);
         }
         return result;

@@ -72,7 +72,7 @@ public class KeyMessageDispatcher implements MessageDispatcher
     @Override
     public int dispatch(
         int partition,
-        long requestOffset,
+        long requestedOffset,
         long messageOffset,
         DirectBuffer key,
         Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
@@ -83,19 +83,19 @@ public class KeyMessageDispatcher implements MessageDispatcher
         buffer.wrap(key, 0, key.capacity());
         MessageDispatcher result = dispatchersByKey.get(buffer);
         return result == null ? 0 :
-            result.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
+            result.dispatch(partition, requestedOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
     }
 
     @Override
     public void flush(
         int partition,
-        long requestOffset,
-        long lastOffset)
+        long requestedOffset,
+        long nextFetchOffset)
     {
         deferUpdates = true;
         for (MessageDispatcher dispatcher: dispatchersByKey.values())
         {
-            dispatcher.flush(partition, requestOffset, lastOffset);
+            dispatcher.flush(partition, requestedOffset, nextFetchOffset);
         }
         deferUpdates = false;
 

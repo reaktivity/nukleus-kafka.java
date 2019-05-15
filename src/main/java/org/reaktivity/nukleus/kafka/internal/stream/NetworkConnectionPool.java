@@ -26,7 +26,6 @@ import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.DEBUG;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.NONE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.UNEXPECTED_SERVER_ERROR;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.asKafkaError;
-import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -45,6 +44,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.IntSupplier;
 import java.util.function.IntToLongFunction;
 import java.util.function.LongSupplier;
@@ -142,8 +142,6 @@ public final class NetworkConnectionPool
 
     private static final int KAFKA_SERVER_DEFAULT_DELETE_RETENTION_MS = 86400000;
 
-    private static final LongSupplier NO_COUNTER = Long.valueOf(0L)::longValue;
-
     private static final DecoderMessageDispatcher NOOP_DISPATCHER = new DecoderMessageDispatcher()
     {
         @Override
@@ -195,10 +193,10 @@ public final class NetworkConnectionPool
         @Override
         public int dispatch(
             int partition,
-            long requestOffset,
+            long requestedOffset,
             long messageOffset,
             DirectBuffer key,
-            java.util.function.Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
+            Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
             long timestamp,
             long traceId,
             DirectBuffer value)
@@ -209,8 +207,8 @@ public final class NetworkConnectionPool
         @Override
         public void flush(
             int partition,
-            long requestOffset,
-            long lastOffset)
+            long requestedOffset,
+            long nextFetchOffset)
         {
         }
     };
@@ -2554,25 +2552,6 @@ public final class NetworkConnectionPool
                 }
             }
         }
-
-        DirectBuffer wrap(MutableDirectBuffer wrapper, Flyweight wrapped)
-        {
-            DirectBuffer result = null;
-            if (wrapped != null)
-            {
-                final int wrappedLength = wrapped.sizeof();
-                if (wrappedLength == 0)
-                {
-                    wrapper.wrap(EMPTY_BYTE_ARRAY);
-                }
-                else
-                {
-                    wrapper.wrap(wrapped.buffer(), wrapped.offset(), wrappedLength);
-                }
-                result = wrapper;
-            }
-            return result;
-        }
     }
 
     static final class NetworkTopicPartition implements Comparable<NetworkTopicPartition>
@@ -3004,7 +2983,7 @@ public final class NetworkConnectionPool
         }
     }
 
-    private static final class ProgressUpdatingMessageDispatcher  implements MessageDispatcher
+    private static final class ProgressUpdatingMessageDispatcher implements MessageDispatcher
     {
         private final long[] offsets;
         private final PartitionProgressHandler progressHandler;
@@ -3034,10 +3013,10 @@ public final class NetworkConnectionPool
         @Override
         public int dispatch(
             int partition,
-            long requestOffset,
+            long requestedOffset,
             long messageOffset,
             DirectBuffer key,
-            java.util.function.Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
+            Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
             long timestamp,
             long traceId,
             DirectBuffer value)
@@ -3049,12 +3028,12 @@ public final class NetworkConnectionPool
         public void flush(
             int partition,
             long requestOffset,
-            long lastOffset)
+            long nextFetchOffset)
         {
-            if  (lastOffset > offsets[partition])
+            if  (nextFetchOffset > offsets[partition])
             {
-                progressHandler.handle(partition, offsets[partition], lastOffset, this);
-                offsets[partition] = lastOffset;
+                progressHandler.handle(partition, offsets[partition], nextFetchOffset, this);
+                offsets[partition] = nextFetchOffset;
             }
         }
     }

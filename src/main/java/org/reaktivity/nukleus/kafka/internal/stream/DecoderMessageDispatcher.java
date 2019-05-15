@@ -25,7 +25,7 @@ public interface DecoderMessageDispatcher
 
     int dispatch(
         int partition,
-        long requestOffset,
+        long requestedOffset,
         long messageOffset,
         long highWatermark,
         DirectBuffer key,
