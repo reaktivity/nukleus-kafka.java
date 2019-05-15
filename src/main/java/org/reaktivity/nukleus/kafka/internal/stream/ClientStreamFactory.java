@@ -83,7 +83,7 @@ public final class ClientStreamFactory implements StreamFactory
 
     private static final long[] ZERO_OFFSETS = new long[] {0L};
 
-    private static final PartitionProgressHandler NOOP_PROGRESS_HANDLER = (p, f, n, d) ->
+    private static final PartitionProgressHandler NOOP_PROGRESS_HANDLER = (s, p, f, n, d) ->
     {
     };
 
@@ -550,7 +550,7 @@ public final class ClientStreamFactory implements StreamFactory
             if (requestedOffset <= startOffset && startOffset < endOffset)
             {
                 final long oldProgressOffset = this.progressOffsets.put(partition, endOffset);
-                progressHandler.handle(partition, oldProgressOffset, endOffset, this);
+                progressHandler.handle(applicationId, partition, oldProgressOffset, endOffset, this);
                 convergeOffsetsIfNecessary();
             }
             else if (progressOffsets != fetchOffsets)
@@ -559,7 +559,7 @@ public final class ClientStreamFactory implements StreamFactory
                 if (progressOffset < endOffset)
                 {
                     final long oldProgressOffset = this.progressOffsets.put(partition, endOffset);
-                    progressHandler.handle(partition, oldProgressOffset, endOffset, this);
+                    progressHandler.handle(applicationId, partition, oldProgressOffset, endOffset, this);
                     convergeOffsetsIfNecessary();
                 }
             }
@@ -824,7 +824,7 @@ public final class ClientStreamFactory implements StreamFactory
                 progressEndOffset = nextOffset;
 
                 final long oldProgressOffset = this.progressOffsets.put(partition, nextOffset);
-                progressHandler.handle(partition, oldProgressOffset, nextOffset, this);
+                progressHandler.handle(applicationId, partition, oldProgressOffset, nextOffset, this);
             }
             else
             {
@@ -1078,7 +1078,7 @@ public final class ClientStreamFactory implements StreamFactory
         private void invoke(
             AttachDetailsConsumer attacher)
         {
-            attacher.apply(progressOffsets, fetchKey, headers, this, writeableBytes);
+            attacher.apply(applicationId, progressOffsets, fetchKey, headers, this, writeableBytes);
         }
 
         private void onMetadataError(
