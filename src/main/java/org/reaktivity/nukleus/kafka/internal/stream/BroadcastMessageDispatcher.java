@@ -63,21 +63,22 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
 
     @Override
     public int dispatch(
-                 int partition,
-                 long requestOffset,
-                 long messageOffset,
-                 DirectBuffer key,
-                 Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
-                 long timestamp,
-                 long traceId,
-                 DirectBuffer value)
+         int partition,
+         long requestedOffset,
+         long messageOffset,
+         DirectBuffer key,
+         Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
+         long timestamp,
+         long traceId,
+         DirectBuffer value)
     {
         deferUpdates = true;
         int result = 0;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
-            result |= dispatcher.dispatch(partition, requestOffset, messageOffset, key, supplyHeader, timestamp, traceId, value);
+            result |= dispatcher.dispatch(partition, requestedOffset, messageOffset, key, supplyHeader,
+                        timestamp, traceId, value);
         }
         deferUpdates = false;
 
@@ -87,15 +88,15 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
 
     @Override
     public void flush(
-            int partition,
-            long requestOffset,
-            long lastOffset)
+        int partition,
+        long requestedOffset,
+        long nextFetchOffset)
     {
         deferUpdates = true;
         for (int i = 0; i < dispatchers.size(); i++)
         {
             MessageDispatcher dispatcher = dispatchers.get(i);
-            dispatcher.flush(partition, requestOffset, lastOffset);
+            dispatcher.flush(partition, requestedOffset, nextFetchOffset);
         }
         deferUpdates = false;
 

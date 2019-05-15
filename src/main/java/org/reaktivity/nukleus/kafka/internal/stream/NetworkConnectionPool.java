@@ -26,7 +26,6 @@ import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.DEBUG;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.NONE;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.UNEXPECTED_SERVER_ERROR;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaError.asKafkaError;
-import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -45,6 +44,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.IntSupplier;
 import java.util.function.IntToLongFunction;
 import java.util.function.LongSupplier;
@@ -61,6 +61,7 @@ import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2LongHashMap.KeyIterator;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.collections.LongArrayList;
+import org.agrona.collections.LongHashSet;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
@@ -142,8 +143,6 @@ public final class NetworkConnectionPool
 
     private static final int KAFKA_SERVER_DEFAULT_DELETE_RETENTION_MS = 86400000;
 
-    private static final LongSupplier NO_COUNTER = Long.valueOf(0L)::longValue;
-
     private static final DecoderMessageDispatcher NOOP_DISPATCHER = new DecoderMessageDispatcher()
     {
         @Override
@@ -195,10 +194,10 @@ public final class NetworkConnectionPool
         @Override
         public int dispatch(
             int partition,
-            long requestOffset,
+            long requestedOffset,
             long messageOffset,
             DirectBuffer key,
-            java.util.function.Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
+            Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
             long timestamp,
             long traceId,
             DirectBuffer value)
@@ -209,8 +208,8 @@ public final class NetworkConnectionPool
         @Override
         public void flush(
             int partition,
-            long requestOffset,
-            long lastOffset)
+            long requestedOffset,
+            long nextFetchOffset)
         {
         }
     };
@@ -2151,6 +2150,7 @@ public final class NetworkConnectionPool
         }
     }
 
+    private static final long BOOTSTRAP_STREAM_ID = 0L;
 
     private final class NetworkTopic
     {
@@ -2226,7 +2226,7 @@ public final class NetworkConnectionPool
                 this.dispatcher.add(null, -1, Collections.emptyIterator(), bootstrapDispatcher);
                 for (int i=0; i < partitionCount; i++)
                 {
-                    attachToPartition(i, 0L, 1);
+                    attachToPartition(BOOTSTRAP_STREAM_ID, i, 0L);
                 }
             }
         }
@@ -2251,6 +2251,7 @@ public final class NetworkConnectionPool
         }
 
         PartitionProgressHandler doAttach(
+            long streamId,
             Long2LongHashMap fetchOffsets,
             OctetsFW fetchKey,
             ListFW<KafkaHeaderFW> headers,
@@ -2275,7 +2276,7 @@ public final class NetworkConnectionPool
                 {
                     final int partitionId = (int) keys.nextValue();
                     long fetchOffset = fetchOffsets.get(partitionId);
-                    attachToPartition(partitionId, fetchOffset, 1);
+                    attachToPartition(streamId, partitionId, fetchOffset);
                 }
             }
             else
@@ -2283,16 +2284,16 @@ public final class NetworkConnectionPool
                 int fetchKeyPartition = fetchOffsets.keySet().iterator().next().intValue();
                 this.dispatcher.add(fetchKey, fetchKeyPartition, headersIterator, dispatcher);
                 long fetchOffset = fetchOffsets.get(fetchKeyPartition);
-                attachToPartition(fetchKeyPartition, fetchOffset, 1);
+                attachToPartition(streamId, fetchKeyPartition, fetchOffset);
             }
 
             return progressHandler;
         }
 
         private void attachToPartition(
+            long streamId,
             int partitionId,
-            long fetchOffset,
-            final int refs)
+            long fetchOffset)
         {
             candidate.id = partitionId;
             candidate.offset = fetchOffset;
@@ -2332,10 +2333,17 @@ public final class NetworkConnectionPool
                 }
             }
 
-            partition.refs += refs;
+            partition.refs++;
+
+            if (KafkaConfiguration.DEBUG_PROGRESS)
+            {
+                partition.streamIds.add(streamId);
+                assert partition.streamIds.size() == partition.refs;
+            }
         }
 
         void doDetach(
+            long streamId,
             Long2LongHashMap fetchOffsets,
             OctetsFW fetchKey,
             ListFW<KafkaHeaderFW> headers,
@@ -2357,7 +2365,7 @@ public final class NetworkConnectionPool
             while (partitionIds.hasNext())
             {
                 long partitionId = partitionIds.nextValue();
-                doDetach((int) partitionId, fetchOffsets.get(partitionId), supplyWindow);
+                doDetach(streamId, (int) partitionId, fetchOffsets.get(partitionId), supplyWindow);
             }
             if (partitions.isEmpty()  && !compacted)
             {
@@ -2371,6 +2379,7 @@ public final class NetworkConnectionPool
         }
 
         void doDetach(
+            long streamId,
             int partitionId,
             long fetchOffset,
             IntSupplier supplyWindow)
@@ -2387,6 +2396,13 @@ public final class NetworkConnectionPool
             }
 
             partition.refs--;
+
+            if (KafkaConfiguration.DEBUG_PROGRESS)
+            {
+                partition.streamIds.remove(streamId);
+                assert partition.streamIds.size() == partition.refs;
+            }
+
             if (partition.refs == 0)
             {
                 remove(partition);
@@ -2438,6 +2454,7 @@ public final class NetworkConnectionPool
         }
 
         private void handleProgress(
+            long streamId,
             int partitionId,
             long firstOffset,
             long nextOffset,
@@ -2446,9 +2463,9 @@ public final class NetworkConnectionPool
             if (DEBUG)
             {
                 System.out.format(
-                        "NT.handleProgress: partition = %d, firstOffset = %d, nextOffset = %d, dispatcher = %s, " +
+                        "NT.handleProgress: streamId = %d, partition = %d, firstOffset = %d, nextOffset = %d, dispatcher = %s, " +
                         "topic = %s\n",
-                        partitionId, firstOffset, nextOffset, dispatcher, this);
+                        streamId, partitionId, firstOffset, nextOffset, dispatcher, this);
             }
 
             candidate.id = partitionId;
@@ -2464,6 +2481,12 @@ public final class NetworkConnectionPool
 
             first.refs--;
 
+            if (KafkaConfiguration.DEBUG_PROGRESS)
+            {
+                first.streamIds.remove(streamId);
+                assert first.streamIds.size() == first.refs;
+            }
+
             candidate.offset = nextOffset;
             NetworkTopicPartition next = partitions.floor(candidate);
             if (next == null || next.offset != nextOffset)
@@ -2477,7 +2500,15 @@ public final class NetworkConnectionPool
                 next.offset = nextOffset;
                 add(next);
             }
+
             next.refs++;
+
+            if (KafkaConfiguration.DEBUG_PROGRESS)
+            {
+                next.streamIds.add(streamId);
+                assert next.streamIds.size() == next.refs;
+            }
+
             if (first.refs == 0)
             {
                 remove(first);
@@ -2539,6 +2570,13 @@ public final class NetworkConnectionPool
                 if (existing != null && existing.id == partitionId && existing.offset == offset)
                 {
                     existing.refs++;
+
+                    if (KafkaConfiguration.DEBUG_PROGRESS)
+                    {
+                        existing.streamIds.add(BOOTSTRAP_STREAM_ID);
+                        assert existing.streamIds.size() == existing.refs;
+                    }
+
                     NetworkTopicPartition floor = partitions.floor(existing);
                     if (floor.id == partitionId && floor.offset != offset)
                     {
@@ -2554,25 +2592,6 @@ public final class NetworkConnectionPool
                 }
             }
         }
-
-        DirectBuffer wrap(MutableDirectBuffer wrapper, Flyweight wrapped)
-        {
-            DirectBuffer result = null;
-            if (wrapped != null)
-            {
-                final int wrappedLength = wrapped.sizeof();
-                if (wrappedLength == 0)
-                {
-                    wrapper.wrap(EMPTY_BYTE_ARRAY);
-                }
-                else
-                {
-                    wrapper.wrap(wrapped.buffer(), wrapped.offset(), wrappedLength);
-                }
-                result = wrapper;
-            }
-            return result;
-        }
     }
 
     static final class NetworkTopicPartition implements Comparable<NetworkTopicPartition>
@@ -2586,6 +2605,14 @@ public final class NetworkConnectionPool
         int id;
         long offset;
         private int refs;
+        private LongHashSet streamIds;
+
+        {
+            if (KafkaConfiguration.DEBUG_PROGRESS)
+            {
+                streamIds = new LongHashSet();
+            }
+        }
 
         @Override
         protected NetworkTopicPartition clone()
@@ -2594,6 +2621,12 @@ public final class NetworkConnectionPool
             result.id = id;
             result.offset = offset;
             result.refs = refs;
+
+            if (KafkaConfiguration.DEBUG_PROGRESS)
+            {
+                result.streamIds.addAll(streamIds);
+            }
+
             return result;
         }
 
@@ -2649,7 +2682,7 @@ public final class NetworkConnectionPool
         @Override
         public String toString()
         {
-            return format("(id=%d, offset=%d, refs=%d)", id, offset, refs);
+            return format("(id=%d, offset=%d, refs=%d, streamIds=%s)", id, offset, refs, streamIds);
         }
     }
 
@@ -3004,16 +3037,16 @@ public final class NetworkConnectionPool
         }
     }
 
-    private static final class ProgressUpdatingMessageDispatcher  implements MessageDispatcher
+    private static final class ProgressUpdatingMessageDispatcher implements MessageDispatcher
     {
         private final long[] offsets;
         private final PartitionProgressHandler progressHandler;
 
         ProgressUpdatingMessageDispatcher(
-                int partitions,
-                PartitionProgressHandler progressHandler)
+            int partitions,
+            PartitionProgressHandler progressHandler)
         {
-            offsets = new long[partitions];
+            this.offsets = new long[partitions];
             this.progressHandler = progressHandler;
         }
 
@@ -3034,10 +3067,10 @@ public final class NetworkConnectionPool
         @Override
         public int dispatch(
             int partition,
-            long requestOffset,
+            long requestedOffset,
             long messageOffset,
             DirectBuffer key,
-            java.util.function.Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
+            Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
             long timestamp,
             long traceId,
             DirectBuffer value)
@@ -3049,12 +3082,12 @@ public final class NetworkConnectionPool
         public void flush(
             int partition,
             long requestOffset,
-            long lastOffset)
+            long nextFetchOffset)
         {
-            if  (lastOffset > offsets[partition])
+            if  (nextFetchOffset > offsets[partition])
             {
-                progressHandler.handle(partition, offsets[partition], lastOffset, this);
-                offsets[partition] = lastOffset;
+                progressHandler.handle(BOOTSTRAP_STREAM_ID, partition, offsets[partition], nextFetchOffset, this);
+                offsets[partition] = nextFetchOffset;
             }
         }
     }

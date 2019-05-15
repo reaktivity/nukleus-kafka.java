@@ -83,7 +83,7 @@ public final class ClientStreamFactory implements StreamFactory
 
     private static final long[] ZERO_OFFSETS = new long[] {0L};
 
-    private static final PartitionProgressHandler NOOP_PROGRESS_HANDLER = (p, f, n, d) ->
+    private static final PartitionProgressHandler NOOP_PROGRESS_HANDLER = (s, p, f, n, d) ->
     {
     };
 
@@ -413,8 +413,8 @@ public final class ClientStreamFactory implements StreamFactory
         @Override
         public int dispatch(
             int partition,
-            long requestOffset,
-            long messageStartOffset,
+            long requestedOffset,
+            long messageOffset,
             DirectBuffer key,
             Function<DirectBuffer, Iterator<DirectBuffer>> supplyHeader,
             long timestamp,
@@ -438,7 +438,7 @@ public final class ClientStreamFactory implements StreamFactory
                    skipMessage = true;
                    counters.dispatchNeedOtherMessage.getAsLong();
                }
-               else if (messageStartOffset == fragmentedMessageOffset)
+               else if (messageOffset == fragmentedMessageOffset)
                {
                    fragmentedMessageDispatched = true;
                    if (value == null || value.capacity() != fragmentedMessageLength)
@@ -448,10 +448,10 @@ public final class ClientStreamFactory implements StreamFactory
                        {
                            System.out.format(
                                "Internal Error: unexpected value length for partially delivered message, partition=%d, " +
-                               "requestOffset=%d, messageStartOffset=%d, key=%s, value=%s, %s\n",
+                               "requestedOffset=%d, messageOffset=%d, key=%s, value=%s, %s\n",
                                partition,
-                               requestOffset,
-                               messageStartOffset,
+                               requestedOffset,
+                               messageOffset,
                                toString(key),
                                toString(value),
                                this);
@@ -467,9 +467,9 @@ public final class ClientStreamFactory implements StreamFactory
                }
             }
 
-            if (requestOffset <= progressStartOffset // avoid out of order delivery
-                && messageStartOffset >= progressStartOffset // avoid repeated delivery
-                && !skipMessage)
+            if (requestedOffset <= progressStartOffset && // avoid out of order delivery
+                messageOffset >= progressStartOffset && // avoid repeated delivery
+                !skipMessage)
             {
                 final int payloadLength = value == null ? 0 : value.capacity() - fragmentedMessageBytesWritten;
 
@@ -495,7 +495,7 @@ public final class ClientStreamFactory implements StreamFactory
 
                     writeMessage(
                         partition,
-                        messageStartOffset,
+                        messageOffset,
                         traceId,
                         key,
                         timestamp,
@@ -516,7 +516,7 @@ public final class ClientStreamFactory implements StreamFactory
         @Override
         public void flush(
             int partition,
-            long requestOffset,
+            long requestedOffset,
             long nextFetchOffset)
         {
             long startOffset = progressStartOffset;
@@ -528,7 +528,7 @@ public final class ClientStreamFactory implements StreamFactory
                 startOffset = fetchOffsets.get(partition);
                 endOffset = nextFetchOffset;
             }
-            else if (requestOffset <= startOffset && !dispatchBlocked)
+            else if (requestedOffset <= startOffset && !dispatchBlocked)
             {
                 // We didn't skip or do partial write of any messages due to lack of window, advance to highest offset
                 endOffset = nextFetchOffset;
@@ -537,7 +537,7 @@ public final class ClientStreamFactory implements StreamFactory
             if (fragmentedMessageOffset != NO_OFFSET &&
                 fragmentedMessagePartition == partition &&
                 !fragmentedMessageDispatched &&
-                requestOffset <= fragmentedMessageOffset &&
+                requestedOffset <= fragmentedMessageOffset &&
                 startOffset <= fragmentedMessageOffset &&
                 nextFetchOffset > fragmentedMessageOffset)
             {
@@ -547,10 +547,10 @@ public final class ClientStreamFactory implements StreamFactory
                 detach(false);
             }
 
-            if (requestOffset <= startOffset && startOffset < endOffset)
+            if (requestedOffset <= startOffset && startOffset < endOffset)
             {
                 final long oldProgressOffset = this.progressOffsets.put(partition, endOffset);
-                progressHandler.handle(partition, oldProgressOffset, endOffset, this);
+                progressHandler.handle(applicationId, partition, oldProgressOffset, endOffset, this);
                 convergeOffsetsIfNecessary();
             }
             else if (progressOffsets != fetchOffsets)
@@ -559,7 +559,7 @@ public final class ClientStreamFactory implements StreamFactory
                 if (progressOffset < endOffset)
                 {
                     final long oldProgressOffset = this.progressOffsets.put(partition, endOffset);
-                    progressHandler.handle(partition, oldProgressOffset, endOffset, this);
+                    progressHandler.handle(applicationId, partition, oldProgressOffset, endOffset, this);
                     convergeOffsetsIfNecessary();
                 }
             }
@@ -824,7 +824,7 @@ public final class ClientStreamFactory implements StreamFactory
                 progressEndOffset = nextOffset;
 
                 final long oldProgressOffset = this.progressOffsets.put(partition, nextOffset);
-                progressHandler.handle(partition, oldProgressOffset, nextOffset, this);
+                progressHandler.handle(applicationId, partition, oldProgressOffset, nextOffset, this);
             }
             else
             {
@@ -1078,7 +1078,7 @@ public final class ClientStreamFactory implements StreamFactory
         private void invoke(
             AttachDetailsConsumer attacher)
         {
-            attacher.apply(progressOffsets, fetchKey, headers, this, writeableBytes);
+            attacher.apply(applicationId, progressOffsets, fetchKey, headers, this, writeableBytes);
         }
 
         private void onMetadataError(

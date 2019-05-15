@@ -20,6 +20,7 @@ import org.reaktivity.nukleus.Configuration;
 public class KafkaConfiguration extends Configuration
 {
     public static final boolean DEBUG = Boolean.getBoolean("nukleus.kafka.debug");
+    public static final boolean DEBUG_PROGRESS = Boolean.parseBoolean(System.getProperty("nukleus.kafka.debug.progress", "true"));
 
     public static final BooleanPropertyDef KAFKA_TOPIC_BOOTSTRAP_ENABLED;
     public static final IntPropertyDef KAFKA_FETCH_MAX_BYTES;

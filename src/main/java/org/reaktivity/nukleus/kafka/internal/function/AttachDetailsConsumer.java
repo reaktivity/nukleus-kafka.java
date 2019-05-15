@@ -27,6 +27,7 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 public interface AttachDetailsConsumer
 {
     void apply(
+        long streamId,
         Long2LongHashMap fetchOffsets,
         OctetsFW fetchKey,
         ListFW<KafkaHeaderFW> headers,
