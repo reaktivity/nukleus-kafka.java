@@ -2569,11 +2569,11 @@ public final class NetworkConnectionPool
 
                 if (existing != null && existing.id == partitionId && existing.offset == offset)
                 {
-                    existing.refs++;
+                    existing.refs += maxOffset.refs;
 
                     if (KafkaConfiguration.DEBUG_PROGRESS)
                     {
-                        existing.streamIds.add(BOOTSTRAP_STREAM_ID);
+                        existing.streamIds.addAll(maxOffset.streamIds);
                         assert existing.streamIds.size() == existing.refs : topicName;
                     }
 
