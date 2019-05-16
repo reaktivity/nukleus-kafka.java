@@ -2574,7 +2574,7 @@ public final class NetworkConnectionPool
                     if (KafkaConfiguration.DEBUG_PROGRESS)
                     {
                         existing.streamIds.add(BOOTSTRAP_STREAM_ID);
-                        assert existing.streamIds.size() == existing.refs;
+                        assert existing.streamIds.size() == existing.refs : topicName;
                     }
 
                     NetworkTopicPartition floor = partitions.floor(existing);
