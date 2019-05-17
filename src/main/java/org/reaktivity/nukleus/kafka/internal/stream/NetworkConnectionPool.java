@@ -2337,8 +2337,8 @@ public final class NetworkConnectionPool
 
             if (KafkaConfiguration.DEBUG_PROGRESS)
             {
-                partition.streamIds.add(streamId);
-                assert partition.streamIds.size() == partition.refs;
+                assert partition.streamIds.add(streamId) : streamId;
+                assert partition.streamIds.size() == partition.refs : partition;
             }
         }
 
@@ -2399,8 +2399,8 @@ public final class NetworkConnectionPool
 
             if (KafkaConfiguration.DEBUG_PROGRESS)
             {
-                partition.streamIds.remove(streamId);
-                assert partition.streamIds.size() == partition.refs;
+                assert partition.streamIds.remove(streamId) : streamId;
+                assert partition.streamIds.size() == partition.refs : partition;
             }
 
             if (partition.refs == 0)
@@ -2483,15 +2483,15 @@ public final class NetworkConnectionPool
 
             if (KafkaConfiguration.DEBUG_PROGRESS)
             {
-                first.streamIds.remove(streamId);
-                assert first.streamIds.size() == first.refs;
+                assert first.streamIds.remove(streamId) : streamId;
+                assert first.streamIds.size() == first.refs : first;
             }
 
             candidate.offset = nextOffset;
             NetworkTopicPartition next = partitions.floor(candidate);
             if (next == null || next.offset != nextOffset)
             {
-                if (next !=  null && (next != first || first.refs > 0))
+                if (next != null && (next != first || first.refs > 0))
                 {
                     needsHistoricalByPartition.set(partitionId);
                 }
@@ -2506,7 +2506,7 @@ public final class NetworkConnectionPool
             if (KafkaConfiguration.DEBUG_PROGRESS)
             {
                 next.streamIds.add(streamId);
-                assert next.streamIds.size() == next.refs;
+                assert next.streamIds.size() == next.refs : next;
             }
 
             if (first.refs == 0)
@@ -2518,12 +2518,24 @@ public final class NetworkConnectionPool
         private void add(
             NetworkTopicPartition partition)
         {
+            if (KafkaConfiguration.DEBUG_PROGRESS)
+            {
+                assert partition.refs == 0 : partition;
+                assert partition.streamIds.isEmpty() : partition;
+            }
+
             partitions.add(partition);
         }
 
         private void remove(
             NetworkTopicPartition partition)
         {
+            if (KafkaConfiguration.DEBUG_PROGRESS)
+            {
+                assert partition.refs == 0 : partition;
+                assert partition.streamIds.isEmpty() : partition;
+            }
+
             partitions.remove(partition);
             boolean needsHistorical = false;
             partition.offset = 0;
