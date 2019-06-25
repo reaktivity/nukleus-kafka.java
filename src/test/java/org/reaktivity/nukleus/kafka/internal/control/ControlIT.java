@@ -63,16 +63,6 @@ public class ControlIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
-        "${unroute}/client/controller"
-    })
-    public void shouldUnrouteClient() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
         "${routeEx}/client/controller"
     })
     public void shouldRouteClientWithExtension() throws Exception
@@ -127,60 +117,10 @@ public class ControlIT
 
     @Test
     @Specification({
-        "${routeEx}/client/controller",
-        "${unrouteEx}/client/controller"
+        "${route}/client/controller",
+        "${unroute}/client/controller"
     })
-    public void shouldUnrouteClientWithExtension() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.header/client/controller",
-        "${control}/unroute.ext.header/client/controller"
-    })
-    public void shouldUnrouteClientWithHeaderCondition() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.headers/client/controller",
-        "${control}/unroute.ext.headers/client/controller"
-    })
-    public void shouldUnrouteClientWithHeaderConditions() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.multiple.headers/client/controller",
-        "${control}/unroute.ext.multiple.headers/client/controller"
-    })
-    public void shouldUnrouteClientWithMultipleRoutesDifferingOnlyInHeaders() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.multiple.networks/client/controller",
-        "${control}/unroute.ext.multiple.networks/client/controller"
-    })
-    public void shouldUnrouteClientMultipleRoutesDifferentNetworks() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.multiple.topics/client/controller",
-        "${control}/unroute.ext.multiple.topics/client/controller"
-    })
-    public void shouldUnrouteClientMultipleRoutesDifferentTopics() throws Exception
+    public void shouldUnrouteClient() throws Exception
     {
         k3po.finish();
     }
