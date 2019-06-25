@@ -23,6 +23,7 @@ import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
+import java.util.function.ToIntFunction;
 
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
@@ -53,6 +54,7 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     private Function<String, LongSupplier> supplyCounter;
     private Function<String, LongConsumer> supplyAccumulator;
     private KafkaCounters counters;
+    private ToIntFunction<String> supplyTypeId;
 
     public ClientStreamFactoryBuilder(
         KafkaConfiguration config,
@@ -110,6 +112,14 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
+    public StreamFactoryBuilder setTypeIdSupplier(
+        ToIntFunction<String> supplyTypeId)
+    {
+        this.supplyTypeId = supplyTypeId;
+        return this;
+    }
+
+    @Override
     public ClientStreamFactoryBuilder setGroupBudgetClaimer(
         LongFunction<IntUnaryOperator> groupBudgetClaimer)
     {
@@ -158,8 +168,20 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
         final BufferPool bufferPool = supplyBufferPool.get();
         final MemoryManager memoryManager = supplyMemoryManager.apply(counters);
 
-        return new ClientStreamFactory(config, router, writeBuffer, bufferPool, memoryManager, supplyInitialId, supplyReplyId,
-                supplyTrace, supplyCounter, correlations, connectionPools, connectPoolFactoryConsumer,
+        return new ClientStreamFactory(
+                config,
+                router,
+                writeBuffer,
+                bufferPool,
+                memoryManager,
+                supplyInitialId,
+                supplyReplyId,
+                supplyTrace,
+                supplyTypeId,
+                supplyCounter,
+                correlations,
+                connectionPools,
+                connectPoolFactoryConsumer,
                 scheduler, counters);
     }
 }

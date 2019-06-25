@@ -18,11 +18,13 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.util.Objects.requireNonNull;
 
 import java.util.function.LongSupplier;
+import java.util.function.ToIntFunction;
 
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2LongHashMap;
 import org.reaktivity.nukleus.function.MessageConsumer;
+import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.AbortFW;
@@ -51,13 +53,16 @@ public final class MessageWriter
 
     private final MutableDirectBuffer writeBuffer;
     private final LongSupplier supplyTrace;
+    private final int kafkaTypeId;
 
     public MessageWriter(
         MutableDirectBuffer writeBuffer,
-        LongSupplier supplyTrace)
+        LongSupplier supplyTrace,
+        ToIntFunction<String> supplyTypeId)
     {
         this.writeBuffer = requireNonNull(writeBuffer);
         this.supplyTrace = requireNonNull(supplyTrace);
+        this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
     }
 
     void doBegin(
@@ -117,6 +122,7 @@ public final class MessageWriter
         return (b, o, l) ->
         {
             return endExRW.wrap(b, o, l)
+                    .typeId(kafkaTypeId)
                     .fetchOffsets(a ->
                     {
                         if (fetchOffsets != null)
@@ -261,6 +267,7 @@ public final class MessageWriter
         return (b, o, l) ->
         {
             return dataExRW.wrap(b, o, l)
+                    .typeId(kafkaTypeId)
                     .timestamp(timestamp)
                     .fetchOffsets(a ->
                     {

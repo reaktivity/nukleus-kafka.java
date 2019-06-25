@@ -36,6 +36,7 @@ import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
 import java.util.function.Predicate;
+import java.util.function.ToIntFunction;
 
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
@@ -137,6 +138,7 @@ public final class ClientStreamFactory implements StreamFactory
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTrace,
+        ToIntFunction<String> supplyTypeId,
         Function<String, LongSupplier> supplyCounter,
         Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations,
         Long2ObjectHashMap<NetworkConnectionPool> connectionPools,
@@ -153,12 +155,12 @@ public final class ClientStreamFactory implements StreamFactory
         this.connectionPools = connectionPools;
         this.scheduler = scheduler;
         this.counters = counters;
-        this.writer = new MessageWriter(writeBuffer, supplyTrace);
+        this.writer = new MessageWriter(writeBuffer, supplyTrace, supplyTypeId);
 
         final DefaultMessageCache messageCache = new DefaultMessageCache(requireNonNull(memoryManager));
         this.connectionPoolFactory = networkRouteId ->
             new NetworkConnectionPool(router, correlations, writer, scheduler, counters, networkRouteId, config,
-                    bufferPool, messageCache, supplyInitialId, supplyReplyId);
+                    bufferPool, messageCache, supplyInitialId, supplyReplyId, supplyTypeId);
 
         setConnectionPoolFactory.accept(connectionPoolFactory);
     }

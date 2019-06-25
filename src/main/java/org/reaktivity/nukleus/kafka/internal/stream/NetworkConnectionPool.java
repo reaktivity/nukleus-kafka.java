@@ -50,6 +50,7 @@ import java.util.function.IntToLongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
+import java.util.function.ToIntFunction;
 
 import org.agrona.DeadlineTimerWheel;
 import org.agrona.DirectBuffer;
@@ -293,6 +294,7 @@ public final class NetworkConnectionPool
     private final List<NetworkTopicPartition> partitionsWorkList = new ArrayList<NetworkTopicPartition>();
     private final LongArrayList offsetsWorkList = new LongArrayList();
     private final KafkaRefCounters routeCounters;
+    private final int tcpTypeId;
 
     private int nextAttachId;
     private int nestedDoFlushCalls = 0;
@@ -308,7 +310,8 @@ public final class NetworkConnectionPool
         BufferPool bufferPool,
         MessageCache messageCache,
         LongUnaryOperator supplyInitialId,
-        LongUnaryOperator supplyReplyId)
+        LongUnaryOperator supplyReplyId,
+        ToIntFunction<String> supplyTypeId)
     {
         this.router = router;
         this.writer = writer;
@@ -331,6 +334,7 @@ public final class NetworkConnectionPool
         this.topicMetadataByName = new HashMap<>();
         this.routeHeadersByTopic = new HashMap<>();
         this.metadataBackoffMillis = new Backoff(10, 10_000);
+        this.tcpTypeId = supplyTypeId.applyAsInt("tcp");
     }
 
     int doAttach(
@@ -1024,11 +1028,12 @@ public final class NetworkConnectionPool
                 doBeginIfNotConnected((b, o, m) ->
                 {
                     return tcpBeginExRW.wrap(b, o, m)
-                            .localAddress(lab -> lab.ipv4Address(ob -> ob.put(ANY_IP_ADDR)))
-                                      .localPort(0)
-                                      .remoteAddress(rab -> rab.host(broker.host))
-                                      .remotePort(broker.port)
-                                      .limit();
+                                       .typeId(tcpTypeId)
+                                       .localAddress(lab -> lab.ipv4Address(ob -> ob.put(ANY_IP_ADDR)))
+                                       .localPort(0)
+                                       .remoteAddress(rab -> rab.host(broker.host))
+                                       .remotePort(broker.port)
+                                       .limit();
                 });
 
                 if (networkRequestBudget > networkRequestPadding)

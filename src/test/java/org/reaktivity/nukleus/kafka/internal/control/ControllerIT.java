@@ -70,29 +70,6 @@ public class ControllerIT
         k3po.finish();
     }
 
-
-    @Test
-    @Specification({
-        "${route}/client/nukleus",
-        "${unroute}/client/nukleus"
-    })
-    public void shouldUnrouteClient() throws Exception
-    {
-        k3po.start();
-
-        long routeId = reaktor.controller(KafkaController.class)
-              .routeClient("kafka#0", "target#0", null)
-              .get();
-
-        k3po.notifyBarrier("ROUTED_CLIENT");
-
-        reaktor.controller(KafkaController.class)
-               .unroute(routeId)
-               .get();
-
-        k3po.finish();
-    }
-
     @Test
     @Specification({
         "${routeEx}/client/nukleus"
@@ -225,185 +202,21 @@ public class ControllerIT
 
     @Test
     @Specification({
-        "${routeEx}/client/nukleus",
-        "${unrouteEx}/client/nukleus"
+        "${route}/client/nukleus",
+        "${unroute}/client/nukleus"
     })
-    public void shouldUnrouteClientWithExtension() throws Exception
+    public void shouldUnrouteClient() throws Exception
     {
-        String topicName = "test";
-
         k3po.start();
 
         long routeId = reaktor.controller(KafkaController.class)
-              .routeClient("kafka#0", "target#0", topicName)
+              .routeClient("kafka#0", "target#0", null)
               .get();
 
         k3po.notifyBarrier("ROUTED_CLIENT");
 
         reaktor.controller(KafkaController.class)
                .unroute(routeId)
-               .get();
-
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.header/client/nukleus",
-        "${control}/unroute.ext.header/client/nukleus"
-    })
-    public void shouldUnrouteClientWithHeader() throws Exception
-    {
-        String topicName = "test";
-
-        Map<String, String> headers = new LinkedHashMap<>();
-        headers.put("header1", "match1");
-
-        k3po.start();
-
-        long routeId = reaktor.controller(KafkaController.class)
-              .routeClient("kafka#0", "target#0", topicName, headers)
-              .get();
-
-        k3po.notifyBarrier("ROUTED_CLIENT");
-
-        reaktor.controller(KafkaController.class)
-               .unroute(routeId)
-               .get();
-
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.headers/client/nukleus",
-        "${control}/unroute.ext.headers/client/nukleus"
-    })
-    public void shouldUnrouteClientWithHeaders() throws Exception
-    {
-        String topicName = "test";
-
-        Map<String, String> headers = new LinkedHashMap<>();
-        headers.put("header1", "match1");
-        headers.put("header2", "match2");
-
-        k3po.start();
-
-        long routeId = reaktor.controller(KafkaController.class)
-              .routeClient("kafka#0", "target#0", topicName, headers)
-              .get();
-
-        k3po.notifyBarrier("ROUTED_CLIENT");
-
-        reaktor.controller(KafkaController.class)
-               .unroute(routeId)
-               .get();
-
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.multiple.headers/client/nukleus",
-        "${control}/unroute.ext.multiple.headers/client/nukleus"
-    })
-    public void shouldUnrouteClientWithMultipleRoutesDifferingOnlyInHeaders() throws Exception
-    {
-        String topicName = "test";
-        Map<String, String> headers1 = new LinkedHashMap<>();
-        Map<String, String> headers2 = new LinkedHashMap<>();
-        headers1.put("header1", "match1");
-        headers2.put("header1", "match2");
-
-        k3po.start();
-
-        long routeId1 = reaktor.controller(KafkaController.class)
-               .routeClient("kafka#0", "target#0", topicName, headers1)
-               .get();
-
-        long routeId2 = reaktor.controller(KafkaController.class)
-                .routeClient("kafka#0", "target#0", topicName, headers2)
-                .get();
-
-        k3po.notifyBarrier("ROUTED_CLIENT");
-
-        reaktor.controller(KafkaController.class)
-                .unroute(routeId1)
-                .get();
-
-        reaktor.controller(KafkaController.class)
-                .unroute(routeId2)
-                .get();
-
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.multiple.networks/client/nukleus",
-        "${control}/unroute.ext.multiple.networks/client/nukleus"
-    })
-    public void shouldUnrouteClientWithMultipleRoutesDifferentNetworks() throws Exception
-    {
-        String topicName = "test";
-
-        k3po.start();
-
-        long routeId1 = reaktor.controller(KafkaController.class)
-               .routeClient("kafka#0", "target#0", topicName)
-               .get();
-
-        long routeId2 = reaktor.controller(KafkaController.class)
-               .routeClient("kafka#0", "target#1", topicName)
-               .get();
-
-        k3po.notifyBarrier("ROUTED_CLIENT");
-
-        reaktor.controller(KafkaController.class)
-               .unroute(routeId1)
-               .get();
-
-        reaktor.controller(KafkaController.class)
-               .unroute(routeId2)
-               .get();
-
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.multiple.topics/client/nukleus",
-        "${control}/unroute.ext.multiple.topics/client/nukleus"
-    })
-    public void shouldUnrouteClientWithMultipleRoutesDifferentTopics() throws Exception
-    {
-        k3po.start();
-
-        final CompletableFuture<Long> future1 = reaktor.controller(KafkaController.class)
-               .routeClient("kafka#0", "target#0", "test1");
-
-        final CompletableFuture<Long> future2 = reaktor.controller(KafkaController.class)
-               .routeClient("kafka#0", "target#0", "test2");
-
-        final CompletableFuture<Long> future3 = reaktor.controller(KafkaController.class)
-               .routeClient("kafka#0", "target#0", "test3");
-
-        long routeId1 = future1.get();
-        long routeId2 = future2.get();
-        long routeId3 = future3.get();
-
-        k3po.notifyBarrier("ROUTED_CLIENT");
-
-        reaktor.controller(KafkaController.class)
-               .unroute(routeId1)
-               .get();
-
-        reaktor.controller(KafkaController.class)
-               .unroute(routeId2)
-               .get();
-
-        reaktor.controller(KafkaController.class)
-               .unroute(routeId3)
                .get();
 
         k3po.finish();

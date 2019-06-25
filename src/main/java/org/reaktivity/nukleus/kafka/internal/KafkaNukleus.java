@@ -25,9 +25,9 @@ import org.reaktivity.nukleus.Nukleus;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.route.RouteKind;
 
-final class KafkaNukleus implements Nukleus
+public final class KafkaNukleus implements Nukleus
 {
-    static final String NAME = "kafka";
+    public static final String NAME = "kafka";
 
     private final KafkaConfiguration config;
     private final KafkaAgent agent;
