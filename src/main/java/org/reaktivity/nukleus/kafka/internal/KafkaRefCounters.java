@@ -22,8 +22,10 @@ import static java.lang.String.format;
 
 public class KafkaRefCounters
 {
-    public final LongSupplier liveFetches;
-    public final LongSupplier historicalFetches;
+    public final LongSupplier liveFetchRequests;
+    public final LongSupplier liveFetchResponses;
+    public final LongSupplier historicalFetchRequests;
+    public final LongSupplier historicalFetchResponses;
     public final LongSupplier metadataRequestIdleTimeouts;
     public final LongSupplier describeConfigsRequestIdleTimeouts;
     public final LongSupplier listOffsetsRequestIdleTimeouts;
@@ -35,8 +37,10 @@ public class KafkaRefCounters
         long networkRouteId,
         Function<String, LongSupplier> supplyCounter)
     {
-        this.liveFetches = supplyCounter.apply(format("kafka.live.fetches.%d", networkRouteId));
-        this.historicalFetches = supplyCounter.apply(format("kafka.historical.fetches.%d", networkRouteId));
+        this.liveFetchRequests = supplyCounter.apply(format("kafka.live.fetch.requests.%d", networkRouteId));
+        this.liveFetchResponses = supplyCounter.apply(format("kafka.live.fetch.responses.%d", networkRouteId));
+        this.historicalFetchRequests = supplyCounter.apply(format("kafka.historical.fetch.requests.%d", networkRouteId));
+        this.historicalFetchResponses = supplyCounter.apply(format("kafka.historical.fetch.responses.%d", networkRouteId));
         this.metadataRequestIdleTimeouts = supplyCounter.apply(
                 format("kafka.metadata.request.idle.timeouts.%d", networkRouteId));
         this.describeConfigsRequestIdleTimeouts = supplyCounter.apply(
