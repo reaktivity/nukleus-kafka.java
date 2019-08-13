@@ -1005,7 +1005,7 @@ public final class NetworkConnectionPool
         final ResponseDecoder fetchResponseDecoder;
 
         private final LongSupplier requestFetches;
-        private LongSupplier responseFetches;
+        private final LongSupplier responseFetches;
         private boolean inFetch;
 
         private AbstractFetchConnection(
