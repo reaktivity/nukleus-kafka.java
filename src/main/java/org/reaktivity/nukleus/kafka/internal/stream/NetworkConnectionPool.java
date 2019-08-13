@@ -1004,17 +1004,17 @@ public final class NetworkConnectionPool
         Map<String, long[]> requestedFetchOffsetsByTopic = new HashMap<>();
         final ResponseDecoder fetchResponseDecoder;
 
-        private final LongSupplier requestFetches;
-        private final LongSupplier responseFetches;
+        private final LongSupplier fetchRequests;
+        private final LongSupplier fetchResponses;
         private boolean inFetch;
 
         private AbstractFetchConnection(
-            LongSupplier requestFetches,
-            LongSupplier responseFetches)
+            LongSupplier fetchRequests,
+            LongSupplier fetchResponses)
         {
             super();
-            this.requestFetches = requestFetches;
-            this.responseFetches = responseFetches;
+            this.fetchRequests = fetchRequests;
+            this.fetchResponses = fetchResponses;
             fetchResponseDecoder = new FetchResponseDecoder(
                     this::getTopicDispatcher,
                     this::getRequestedOffset,
@@ -1154,7 +1154,7 @@ public final class NetworkConnectionPool
                     .set((b, o, m) -> m - o)
                     .build();
 
-                requestFetches.getAsLong();
+                fetchRequests.getAsLong();
 
                 writer.doData(networkInitial, networkRouteId, networkInitialId,
                         networkRequestPadding, payload);
@@ -1293,7 +1293,7 @@ public final class NetworkConnectionPool
                             format("%s: %d bytes remaining after fetch response, pipelined requests are not being used",
                                     this, excessBytes);
                     nextResponseId++;
-                    responseFetches.getAsLong();
+                    fetchResponses.getAsLong();
                     doRequestIfNeeded();
                 }
             }
