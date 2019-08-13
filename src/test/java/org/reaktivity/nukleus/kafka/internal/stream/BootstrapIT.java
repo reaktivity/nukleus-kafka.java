@@ -51,7 +51,7 @@ public class BootstrapIT
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
-        .counterValuesBufferCapacity(8192)
+        .counterValuesBufferCapacity(16384)
         .configure(KAFKA_FETCH_PARTITION_MAX_BYTES, 123000)
         .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 0L)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
