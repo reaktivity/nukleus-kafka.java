@@ -1004,14 +1004,17 @@ public final class NetworkConnectionPool
         Map<String, long[]> requestedFetchOffsetsByTopic = new HashMap<>();
         final ResponseDecoder fetchResponseDecoder;
 
-        private final LongSupplier fetches;
+        private final LongSupplier fetchRequests;
+        private final LongSupplier fetchResponses;
         private boolean inFetch;
 
         private AbstractFetchConnection(
-            LongSupplier fetches)
+            LongSupplier fetchRequests,
+            LongSupplier fetchResponses)
         {
             super();
-            this.fetches = fetches;
+            this.fetchRequests = fetchRequests;
+            this.fetchResponses = fetchResponses;
             fetchResponseDecoder = new FetchResponseDecoder(
                     this::getTopicDispatcher,
                     this::getRequestedOffset,
@@ -1151,7 +1154,7 @@ public final class NetworkConnectionPool
                     .set((b, o, m) -> m - o)
                     .build();
 
-                fetches.getAsLong();
+                fetchRequests.getAsLong();
 
                 writer.doData(networkInitial, networkRouteId, networkInitialId,
                         networkRequestPadding, payload);
@@ -1290,6 +1293,7 @@ public final class NetworkConnectionPool
                             format("%s: %d bytes remaining after fetch response, pipelined requests are not being used",
                                     this, excessBytes);
                     nextResponseId++;
+                    fetchResponses.getAsLong();
                     doRequestIfNeeded();
                 }
             }
@@ -1529,7 +1533,7 @@ public final class NetworkConnectionPool
     {
         LiveFetchConnection()
         {
-            super(routeCounters.liveFetches);
+            super(routeCounters.liveFetchRequests, routeCounters.liveFetchResponses);
         }
 
         @Override
@@ -1622,7 +1626,7 @@ public final class NetworkConnectionPool
     {
         private HistoricalFetchConnection()
         {
-            super(routeCounters.historicalFetches);
+            super(routeCounters.historicalFetchRequests, routeCounters.historicalFetchResponses);
         }
 
         @Override
