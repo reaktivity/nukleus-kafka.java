@@ -20,8 +20,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_CAPACITY;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_PROACTIVE;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_READ_IDLE_TIMEOUT;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_TOPIC_BOOTSTRAP_ENABLED;
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfigurationTest.KAFKA_READ_IDLE_TIMEOUT_NAME;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Rule;
@@ -34,7 +34,6 @@ import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.nukleus.kafka.internal.test.KafkaCountersRule;
 import org.reaktivity.reaktor.test.ReaktorRule;
-import org.reaktivity.reaktor.test.annotation.Configure;
 
 public class CachingProactiveFetchIT
 {
@@ -57,6 +56,7 @@ public class CachingProactiveFetchIT
         .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, false)
         .configure(KAFKA_MESSAGE_CACHE_PROACTIVE, true)
         .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 1024L * 1024L)
+        .configure(KAFKA_READ_IDLE_TIMEOUT, 86400)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 
@@ -115,7 +115,6 @@ public class CachingProactiveFetchIT
         "${client}/compacted.header.message.multiple.clients/client",
         "${server}/compacted.header.first.matches/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    @Configure(name=KAFKA_READ_IDLE_TIMEOUT_NAME, value="200000")
     public void shouldReceiveHistoricalMessageMatchingHeaderFromCache() throws Exception
     {
         k3po.finish();

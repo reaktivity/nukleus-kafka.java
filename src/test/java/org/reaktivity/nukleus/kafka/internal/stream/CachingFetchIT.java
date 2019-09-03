@@ -20,6 +20,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_CAPACITY;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_PROACTIVE;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_READ_IDLE_TIMEOUT;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_TOPIC_BOOTSTRAP_ENABLED;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
@@ -56,6 +57,7 @@ public class CachingFetchIT
         .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, false)
         .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 1024L * 1024L)
         .configure(KAFKA_MESSAGE_CACHE_PROACTIVE, false)
+        .configure(KAFKA_READ_IDLE_TIMEOUT, 86400)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 
