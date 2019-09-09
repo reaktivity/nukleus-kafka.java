@@ -106,35 +106,69 @@ public final class CompactedTopicCacheTest
         context.checking(new Expectations()
         {
             {
-                oneOf(index0).entries(10L, null); will(returnValue(iterator0));
-                oneOf(index1).entries(11L, null); will(returnValue(iterator1));
-                oneOf(index2).entries(12L, null); will(returnValue(iterator2));
+                oneOf(index0).entries(10L, null);
+                will(returnValue(iterator0));
 
-                oneOf(iterator0).hasNext(); will(returnValue(true));
-                oneOf(iterator0).next(); will(returnValue(entry0));
+                oneOf(index1).entries(11L, null);
+                will(returnValue(iterator1));
+
+                oneOf(index2).entries(12L, null);
+                will(returnValue(iterator2));
+
+                oneOf(iterator0).hasNext();
+                will(returnValue(true));
+
+                oneOf(iterator0).next();
+                will(returnValue(entry0));
+
                 oneOf(entry0).offset();
-                oneOf(entry0).messageHandle(); will(returnValue(111));
+                oneOf(entry0).messageHandle();
+                will(returnValue(111));
+
                 oneOf(messageCache).get(with(111), with(any(MessageFW.class)));
                 will(returnValue(messageRO));
 
-                oneOf(iterator1).hasNext(); will(returnValue(true));
-                oneOf(iterator1).next(); will(returnValue(entry1));
+                oneOf(iterator1).hasNext();
+                will(returnValue(true));
+
+                oneOf(iterator1).next();
+                will(returnValue(entry1));
+
                 oneOf(entry1).offset();
-                oneOf(entry1).messageHandle(); will(returnValue(NO_MESSAGE));
+                oneOf(entry1).messageHandle();
+                will(returnValue(NO_MESSAGE));
 
-                oneOf(iterator2).hasNext(); will(returnValue(true));
-                oneOf(iterator2).next(); will(returnValue(entry2));
+                oneOf(iterator2).hasNext();
+                will(returnValue(true));
+
+                oneOf(iterator2).next();
+                will(returnValue(entry2));
+
                 oneOf(entry2).offset();
-                oneOf(entry2).messageHandle(); will(returnValue(NO_MESSAGE));
+                oneOf(entry2).messageHandle();
+                will(returnValue(NO_MESSAGE));
 
-                oneOf(iterator0).hasNext(); will(returnValue(true));
-                oneOf(iterator0).next(); will(returnValue(entry0));
+                oneOf(iterator0).hasNext();
+                will(returnValue(true));
+
+                oneOf(iterator0).next();
+                will(returnValue(entry0));
+
                 oneOf(entry0).offset();
-                oneOf(entry0).messageHandle(); will(returnValue(NO_MESSAGE));
+                oneOf(entry0).messageHandle();
+                will(returnValue(NO_MESSAGE));
 
-                oneOf(iterator1).hasNext(); will(returnValue(false)); inSequence(order);
-                oneOf(iterator2).hasNext(); will(returnValue(false)); inSequence(order);
-                oneOf(iterator0).hasNext(); will(returnValue(false)); inSequence(order);
+                oneOf(iterator1).hasNext();
+                will(returnValue(false));
+                inSequence(order);
+
+                oneOf(iterator2).hasNext();
+                will(returnValue(false));
+                inSequence(order);
+
+                oneOf(iterator0).hasNext();
+                will(returnValue(false));
+                inSequence(order);
             }
         });
         Long2LongHashMap fetchOffsets = new Long2LongHashMap(NO_OFFSET);
@@ -172,25 +206,53 @@ public final class CompactedTopicCacheTest
                 exactly(4).of(index2).entries(12L, null);
                 will(returnValue(iterator2));
 
-                oneOf(iterator0).hasNext(); will(returnValue(true)); inSequence(order);
-                oneOf(iterator0).next(); will(returnValue(entry0)); inSequence(order);
-                oneOf(entry0).offset();
-                oneOf(entry0).messageHandle(); will(returnValue(NO_MESSAGE));
+                oneOf(iterator0).hasNext();
+                will(returnValue(true));
+                inSequence(order);
 
-                oneOf(iterator1).hasNext(); will(returnValue(true)); inSequence(order);
-                oneOf(iterator1).next(); will(returnValue(entry1)); inSequence(order);
+                oneOf(iterator0).next();
+                will(returnValue(entry0));
+                inSequence(order);
+
+                oneOf(entry0).offset();
+                oneOf(entry0).messageHandle();
+                will(returnValue(NO_MESSAGE));
+
+                oneOf(iterator1).hasNext();
+                will(returnValue(true));
+                inSequence(order);
+
+                oneOf(iterator1).next();
+                will(returnValue(entry1));
+                inSequence(order);
+
                 oneOf(entry1).offset();
-                oneOf(entry1).messageHandle(); will(returnValue(NO_MESSAGE));
+                oneOf(entry1).messageHandle();
+                will(returnValue(NO_MESSAGE));
 
-                oneOf(iterator2).hasNext(); will(returnValue(true)); inSequence(order);
-                oneOf(iterator2).next(); will(returnValue(entry2)); inSequence(order);
+                oneOf(iterator2).hasNext();
+                will(returnValue(true));
+                inSequence(order);
+
+                oneOf(iterator2).next();
+                will(returnValue(entry2));
+                inSequence(order);
+
                 oneOf(entry2).offset();
-                oneOf(entry2).messageHandle(); will(returnValue(NO_MESSAGE));
+                oneOf(entry2).messageHandle();
+                will(returnValue(NO_MESSAGE));
 
-                oneOf(iterator0).hasNext(); will(returnValue(true)); inSequence(order);
-                oneOf(iterator0).next(); will(returnValue(entry0)); inSequence(order);
+                oneOf(iterator0).hasNext();
+                will(returnValue(true));
+                inSequence(order);
+
+                oneOf(iterator0).next();
+                will(returnValue(entry0));
+                inSequence(order);
+
                 oneOf(entry0).offset();
-                oneOf(entry0).messageHandle(); will(returnValue(NO_MESSAGE));
+                oneOf(entry0).messageHandle();
+                will(returnValue(NO_MESSAGE));
             }
         });
 
@@ -216,9 +278,15 @@ public final class CompactedTopicCacheTest
         context.checking(new Expectations()
         {
             {
-                oneOf(index1).getEntry(key); will(returnValue(entry1));
-                exactly(2).of(entry1).offset(); will(returnValue(21L));
-                oneOf(entry1).messageHandle(); will(returnValue(NO_MESSAGE));
+                oneOf(index1).getEntry(key);
+                will(returnValue(entry1));
+
+                exactly(2).of(entry1).offset();
+                will(returnValue(21L));
+
+                oneOf(entry1).messageHandle();
+                will(returnValue(NO_MESSAGE));
+
                 oneOf(messageCache).get(with(NO_MESSAGE), with(any(MessageFW.class)));
                 will(returnValue(null));
             }
@@ -240,8 +308,11 @@ public final class CompactedTopicCacheTest
         context.checking(new Expectations()
         {
             {
-                oneOf(index1).getEntry(key); will(returnValue(null));
-                oneOf(index1).nextOffset(); will(returnValue(4L));
+                oneOf(index1).getEntry(key);
+                will(returnValue(null));
+
+                oneOf(index1).nextOffset();
+                will(returnValue(4L));
             }
         });
 
@@ -261,8 +332,11 @@ public final class CompactedTopicCacheTest
         context.checking(new Expectations()
         {
             {
-                oneOf(index1).getEntry(key); will(returnValue(null));
-                oneOf(index1).nextOffset(); will(returnValue(4L));
+                oneOf(index1).getEntry(key);
+                will(returnValue(null));
+
+                oneOf(index1).nextOffset();
+                will(returnValue(4L));
             }
         });
 

@@ -179,18 +179,18 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         Iterator<KafkaHeaderFW> headers,
         MessageDispatcher dispatcher)
     {
-         if (fetchKey != null)
-         {
-             keys[fetchKeyPartition].add(fetchKey, headers, dispatcher);
-         }
-         else if (headers.hasNext())
-         {
-             this.headers.add(headers, dispatcher);
-         }
-         else
-         {
-             broadcast.add(dispatcher);
-         }
+        if (fetchKey != null)
+        {
+            keys[fetchKeyPartition].add(fetchKey, headers, dispatcher);
+        }
+        else if (headers.hasNext())
+        {
+            this.headers.add(headers, dispatcher);
+        }
+        else
+        {
+            broadcast.add(dispatcher);
+        }
     }
 
     public boolean remove(
@@ -198,22 +198,22 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         int fetchKeyPartition,
         Iterator<KafkaHeaderFW> headers,
         MessageDispatcher dispatcher)
-      {
-           boolean result = false;
-           if (fetchKey != null)
-           {
-               result = keys[fetchKeyPartition].remove(fetchKey, headers, dispatcher);
-           }
-           else if (headers.hasNext())
-           {
-               result = this.headers.remove(headers, dispatcher);
-           }
-           else
-           {
-               result = broadcast.remove(dispatcher);
-           }
-           return result;
-      }
+    {
+        boolean result = false;
+        if (fetchKey != null)
+        {
+            result = keys[fetchKeyPartition].remove(fetchKey, headers, dispatcher);
+        }
+        else if (headers.hasNext())
+        {
+            result = this.headers.remove(headers, dispatcher);
+        }
+        else
+        {
+            result = broadcast.remove(dispatcher);
+        }
+        return result;
+    }
 
     public boolean isEmpty()
     {

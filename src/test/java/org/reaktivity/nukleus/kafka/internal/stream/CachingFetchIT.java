@@ -220,31 +220,6 @@ public class CachingFetchIT
         k3po.finish();
     }
 
-//    // Test is not relevant with message cache active
-//    @Test
-//    @Specification({
-//        "${route}/client/controller",
-//        "${client}/compacted.historical.uses.cached.key.then.live.after.null.message/client",
-//        "${server}/compacted.historical.uses.cached.key.then.live.after.null.message.no.historical/server"})
-//    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-//    public void shouldReceiveCompactedMessagesFromLiveStreamAfterCachedKeyRemovedByNullMessage() throws Exception
-//    {
-//        k3po.finish();
-//    }
-
-//  // Test is not relevant with message cache active
-//    @Test
-//    @Specification(
-//    {"${route}/client/controller",
-//            "${client}/compacted.historical.uses.cached.key.then.live.after.offset.too.low.and.null.message/client",
-//            "${server}/compacted.historical.uses.cached.key.then.live.after.offset.too.low.and.null.message/server"})
-//    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-//    public void shouldReceiveCompactedMessagesFromLiveStreamAfterOffsetTooEarlyAndCachedKeyRemovedByNullMessage()
-//            throws Exception
-//    {
-//        k3po.finish();
-//    }
-
     @Test
     @Specification({
         "${route}/client/controller",

@@ -345,8 +345,8 @@ public final class NetworkConnectionPool
         final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
         final int newAttachId = nextAttachId++;
         metadata.doAttach(
-                newAttachId,
-                m -> doAttach(topicName, attachable, onMetadataError, m));
+            newAttachId,
+            m -> doAttach(topicName, attachable, onMetadataError, m));
 
         if (metadataConnection == null)
         {
@@ -373,8 +373,8 @@ public final class NetworkConnectionPool
             break;
         case NONE:
             final NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
-                    name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, bootstrap,
-                            topicMetadata.deleteRetentionMs, false));
+                name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, bootstrap,
+                                         topicMetadata.deleteRetentionMs, false));
             doConnections(topicMetadata);
             attachable.onAttachPrepared(
                     topic::doAttach,
@@ -404,8 +404,8 @@ public final class NetworkConnectionPool
         {
             int newAttachId = nextAttachId++;
             metadata.doAttach(
-                    newAttachId,
-                    m -> addRoute(topicName, routeHeaders, proactive, onMetadataError, m));
+                newAttachId,
+                m -> addRoute(topicName, routeHeaders, proactive, onMetadataError, m));
             if (metadataConnection == null)
             {
                 metadataConnection = new MetadataConnection();
@@ -438,8 +438,8 @@ public final class NetworkConnectionPool
             if (topicMetadata.compacted)
             {
                 NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
-                        name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted,
-                                proactive, topicMetadata.deleteRetentionMs, forceProactiveMessageCache));
+                    name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted,
+                            proactive, topicMetadata.deleteRetentionMs, forceProactiveMessageCache));
                 topic.addRoute(routeHeaders);
                 doConnections(topicMetadata);
                 doFlush();
@@ -1104,11 +1104,10 @@ public final class NetworkConnectionPool
                 encodeLimit = topicRequest.limit();
 
                 long[] requestedOffsets = requestedFetchOffsetsByTopic.computeIfAbsent(
-                        topicName,
-                        k  ->  new long[topicMetadataByName.get(topicName).partitionCount()]);
+                    topicName, k  ->  new long[topicMetadataByName.get(topicName).partitionCount()]);
                 int partitionCount = addTopicToRequest(topicName,
-                        (p, o) -> requestedOffsets[p] = o,
-                        (p) -> requestedOffsets[p]);
+                    (p, o) -> requestedOffsets[p] = o,
+                    p -> requestedOffsets[p]);
 
                 if (partitionCount > 0)
                 {
@@ -2443,9 +2442,9 @@ public final class NetworkConnectionPool
                 // TODO: eliminate iterator allocation
                 for (IntSupplier supplyWindow : windowSuppliers)
                 {
-                   // Get lowest non-zero value
-                   int lowest = Math.min(writableBytes, supplyWindow.getAsInt());
-                   writableBytes = lowest == 0 ? writableBytes : lowest;
+                    // Get lowest non-zero value
+                    int lowest = Math.min(writableBytes, supplyWindow.getAsInt());
+                    writableBytes = lowest == 0 ? writableBytes : lowest;
                 }
 
                 writableBytes = writableBytes == Integer.MAX_VALUE ? 0 : writableBytes;
@@ -2672,9 +2671,9 @@ public final class NetworkConnectionPool
             NetworkTopicPartition that,
             int comparison)
         {
-            return (comparison == 0 && this.id - that.id == 0 && this.offset - that.offset == 0L)
-                    ||  (comparison < 0 && (this.id < that.id) || (this.offset < that.offset))
-                    ||   (comparison > 0 && (this.id > that.id) || (this.offset > that.offset));
+            return (comparison == 0 && this.id - that.id == 0 && this.offset - that.offset == 0L) ||
+                    (comparison < 0 && (this.id < that.id) || (this.offset < that.offset)) ||
+                    (comparison > 0 && (this.id > that.id) || (this.offset > that.offset));
         }
 
         @Override
@@ -2725,14 +2724,13 @@ public final class NetworkConnectionPool
             Object obj)
         {
             BrokerMetadata that;
-            return (this == obj ||
+            return this == obj ||
                     (this != null &&
                     obj instanceof BrokerMetadata &&
                     this.nodeId == (that = (BrokerMetadata) obj).nodeId &&
                     this.nodeId == that.nodeId &&
                     this.host.equals(that.host) &&
-                    this.port == that.port)
-                    );
+                    this.port == that.port);
         }
 
         @Override
@@ -2837,7 +2835,7 @@ public final class NetworkConnectionPool
         void setDeleteRetentionMs(
             int deleteRetentionMs)
         {
-             this.deleteRetentionMs = deleteRetentionMs;
+            this.deleteRetentionMs = deleteRetentionMs;
         }
 
         void setErrorCode(

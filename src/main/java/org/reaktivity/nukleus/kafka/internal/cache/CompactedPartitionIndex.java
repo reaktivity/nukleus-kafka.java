@@ -327,9 +327,9 @@ public class CompactedPartitionIndex implements PartitionIndex
             buffer2.wrap(candidate, 0, candidate.capacity());
             if (key.equals(buffer2))
             {
-                 tombstoneKeys.remove(pos);
-                 tombstoneExpiryTimes.remove(pos);
-                 break;
+                tombstoneKeys.remove(pos);
+                tombstoneExpiryTimes.remove(pos);
+                break;
             }
         }
     }
@@ -584,7 +584,7 @@ public class CompactedPartitionIndex implements PartitionIndex
             }
             else
             {
-                 throw new NoSuchElementException();
+                throw new NoSuchElementException();
             }
         }
     }
@@ -598,7 +598,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         private int  message;
         private int  position;
 
-         EntryImpl(
+        EntryImpl(
             long offset,
             int  message,
             int  position)

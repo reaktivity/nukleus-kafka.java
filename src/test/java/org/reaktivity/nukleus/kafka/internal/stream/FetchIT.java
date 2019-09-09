@@ -236,10 +236,10 @@ public class FetchIT
     }
 
     @Test
-    @Specification(
-    {"${route}/client/controller",
-            "${client}/compacted.historical.uses.cached.key.then.live.after.offset.too.low.and.null.message/client",
-            "${server}/compacted.historical.uses.cached.key.then.live.after.offset.too.low.and.null.message/server"})
+    @Specification({
+        "${route}/client/controller",
+        "${client}/compacted.historical.uses.cached.key.then.live.after.offset.too.low.and.null.message/client",
+        "${server}/compacted.historical.uses.cached.key.then.live.after.offset.too.low.and.null.message/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldReceiveCompactedMessagesFromLiveStreamAfterOffsetTooLowAndCachedKeyRemovedByNullMessage()
             throws Exception
@@ -1446,8 +1446,8 @@ public class FetchIT
         "${client}/zero.offset.message.two.topics/client",
         "${server}/live.fetch.error.recovered/server" })
     @ScriptProperty({
-    "networkAccept \"nukleus://streams/target#0\"",
-    "errorCode 6s"
+        "networkAccept \"nukleus://streams/target#0\"",
+        "errorCode 6s"
     })
     public void shouldContinueReceivingMessagesAfterLeadershipElection() throws Exception
     {
@@ -1477,7 +1477,7 @@ public class FetchIT
         "${client}/zero.offset.message.two.topics/client",
         "${server}/live.fetch.error.then.metadata.error/server" })
     @ScriptProperty({
-    "networkAccept \"nukleus://streams/target#0\""
+        "networkAccept \"nukleus://streams/target#0\""
     })
     public void shouldHandleFetchErrorFollowedByMetadataRefreshError() throws Exception
     {

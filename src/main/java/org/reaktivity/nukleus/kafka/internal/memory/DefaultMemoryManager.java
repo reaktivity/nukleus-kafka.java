@@ -168,7 +168,7 @@ public class DefaultMemoryManager implements MemoryManager
 
             if (node.index() == 0)
             {
-                 break;
+                break;
             }
         }
 

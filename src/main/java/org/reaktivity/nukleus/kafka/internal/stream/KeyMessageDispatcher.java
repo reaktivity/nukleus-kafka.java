@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static org.reaktivity.nukleus.kafka.internal.stream.HeadersMessageDispatcher.NOOP;
+
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -24,8 +26,6 @@ import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
-
-import static org.reaktivity.nukleus.kafka.internal.stream.HeadersMessageDispatcher.NOOP;
 
 public class KeyMessageDispatcher implements MessageDispatcher
 {

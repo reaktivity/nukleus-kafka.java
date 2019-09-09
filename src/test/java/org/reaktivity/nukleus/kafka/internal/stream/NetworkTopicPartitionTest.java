@@ -35,58 +35,58 @@ public final class NetworkTopicPartitionTest
     @Test
     public void shouldFindFloor()
     {
-         NetworkTopicPartition partition;
-         partition = new NetworkTopicPartition();
-         partition.id = 0;
-         partition.offset = 6789;
-         partitions.add(partition);
-         partition = new NetworkTopicPartition();
-         partition.id = 0;
-         partition.offset = 142706;
-         partitions.add(partition);
+        NetworkTopicPartition partition;
+        partition = new NetworkTopicPartition();
+        partition.id = 0;
+        partition.offset = 6789;
+        partitions.add(partition);
+        partition = new NetworkTopicPartition();
+        partition.id = 0;
+        partition.offset = 142706;
+        partitions.add(partition);
 
-         partition = new NetworkTopicPartition();
-         partition.id = 1;
-         partition.offset = 3574;
-         partitions.add(partition);
-         partition = new NetworkTopicPartition();
-         partition.id = 1;
-         partition.offset = 168550;
-         partitions.add(partition);
+        partition = new NetworkTopicPartition();
+        partition.id = 1;
+        partition.offset = 3574;
+        partitions.add(partition);
+        partition = new NetworkTopicPartition();
+        partition.id = 1;
+        partition.offset = 168550;
+        partitions.add(partition);
 
-         partition = new NetworkTopicPartition();
-         partition.id = 2;
-         partition.offset = 16968;
-         partitions.add(partition);
-         partition = new NetworkTopicPartition();
-         partition.id = 2;
-         partition.offset = 0;
-         partitions.add(partition);
-         partition = new NetworkTopicPartition();
-         partition.id = 2;
-         partition.offset = 168162;
-         partitions.add(partition);
+        partition = new NetworkTopicPartition();
+        partition.id = 2;
+        partition.offset = 16968;
+        partitions.add(partition);
+        partition = new NetworkTopicPartition();
+        partition.id = 2;
+        partition.offset = 0;
+        partitions.add(partition);
+        partition = new NetworkTopicPartition();
+        partition.id = 2;
+        partition.offset = 168162;
+        partitions.add(partition);
 
-         partition = new NetworkTopicPartition();
-         partition.id = 3;
-         partition.offset = 426618;
-         partitions.add(partition);
+        partition = new NetworkTopicPartition();
+        partition.id = 3;
+        partition.offset = 426618;
+        partitions.add(partition);
 
-         NetworkTopicPartition  candidate = new NetworkTopicPartition();
-         candidate.id = 2;
-         candidate.offset = 0;
-         NetworkTopicPartition first = partitions.floor(candidate);
+        NetworkTopicPartition  candidate = new NetworkTopicPartition();
+        candidate.id = 2;
+        candidate.offset = 0;
+        NetworkTopicPartition first = partitions.floor(candidate);
 
-         assertEquals(2, first.id);
-         assertEquals(0, first.offset);
+        assertEquals(2, first.id);
+        assertEquals(0, first.offset);
 
-         candidate.id = 1;
-         candidate.offset = 3573;
-         first = partitions.floor(candidate);
+        candidate.id = 1;
+        candidate.offset = 3573;
+        first = partitions.floor(candidate);
 
 
-         assertEquals(0, first.id);
-         assertEquals(142706, first.offset);
+        assertEquals(0, first.id);
+        assertEquals(142706, first.offset);
     }
 
 }

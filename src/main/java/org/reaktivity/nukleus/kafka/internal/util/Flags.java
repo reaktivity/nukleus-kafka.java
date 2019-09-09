@@ -25,4 +25,8 @@ public final class Flags
         return (flags & FIN) != 0;
     }
 
+    private Flags()
+    {
+        // utility
+    }
 }
