@@ -270,8 +270,8 @@ public final class ClientStreamFactory implements StreamFactory
                 {
                     headersMatch = candidate ->
                             !routeHeaders.anyMatch(r -> !candidate.anyMatch(
-                                    h -> BufferUtil.matches(r.key(),  h.key()) &&
-                                    BufferUtil.matches(r.value(),  h.value())));
+                                h -> BufferUtil.matches(r.key(),  h.key()) &&
+                                     BufferUtil.matches(r.value(),  h.value())));
                 }
             }
             return topicMatch.test(topicName) && headersMatch.test(headers);
@@ -434,39 +434,39 @@ public final class ClientStreamFactory implements StreamFactory
 
             if (fragmentedMessageOffset != NO_OFFSET)
             {
-               if (fragmentedMessagePartition != partition)
-               {
-                   dispatchBlocked = true;
-                   skipMessage = true;
-                   counters.dispatchNeedOtherMessage.getAsLong();
-               }
-               else if (messageOffset == fragmentedMessageOffset)
-               {
-                   fragmentedMessageDispatched = true;
-                   if (value == null || value.capacity() != fragmentedMessageLength)
-                   {
-                       long errors = networkPool.getRouteCounters().internalErrors.getAsLong();
-                       if (errors <= INTERNAL_ERRORS_TO_LOG)
-                       {
-                           System.out.format(
-                               "Internal Error: unexpected value length for partially delivered message, partition=%d, " +
-                               "requestedOffset=%d, messageOffset=%d, key=%s, value=%s, %s\n",
-                               partition,
-                               requestedOffset,
-                               messageOffset,
-                               toString(key),
-                               toString(value),
-                               this);
-                       }
-                       networkPool.getRouteCounters().forcedDetaches.getAsLong();
-                       detach(false);
-                   }
-               }
-               else
-               {
-                   skipMessage = true;
-                   counters.dispatchNeedOtherMessage.getAsLong();
-               }
+                if (fragmentedMessagePartition != partition)
+                {
+                    dispatchBlocked = true;
+                    skipMessage = true;
+                    counters.dispatchNeedOtherMessage.getAsLong();
+                }
+                else if (messageOffset == fragmentedMessageOffset)
+                {
+                    fragmentedMessageDispatched = true;
+                    if (value == null || value.capacity() != fragmentedMessageLength)
+                    {
+                        long errors = networkPool.getRouteCounters().internalErrors.getAsLong();
+                        if (errors <= INTERNAL_ERRORS_TO_LOG)
+                        {
+                            System.out.format(
+                                "Internal Error: unexpected value length for partially delivered message, partition=%d, " +
+                                "requestedOffset=%d, messageOffset=%d, key=%s, value=%s, %s\n",
+                                partition,
+                                requestedOffset,
+                                messageOffset,
+                                toString(key),
+                                toString(value),
+                                this);
+                        }
+                        networkPool.getRouteCounters().forcedDetaches.getAsLong();
+                        detach(false);
+                    }
+                }
+                else
+                {
+                    skipMessage = true;
+                    counters.dispatchNeedOtherMessage.getAsLong();
+                }
             }
 
             if (requestedOffset <= progressStartOffset && // avoid out of order delivery
@@ -835,7 +835,7 @@ public final class ClientStreamFactory implements StreamFactory
                     // Store full message length to verify it remains consistent
                     fragmentedMessageLength = value.capacity();
                 }
-                fragmentedMessageBytesWritten += (valueLimit - valueOffset);
+                fragmentedMessageBytesWritten += valueLimit - valueOffset;
                 fragmentedMessageOffset = messageStartOffset;
                 fragmentedMessagePartition = partition;
                 fragmentedMessageDispatched = true;

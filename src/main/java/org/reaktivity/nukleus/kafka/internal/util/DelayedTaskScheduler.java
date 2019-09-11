@@ -15,15 +15,15 @@
  */
 package org.reaktivity.nukleus.kafka.internal.util;
 
-import org.agrona.DeadlineTimerWheel;
-import org.agrona.DeadlineTimerWheel.TimerHandler;
-import org.agrona.collections.Long2ObjectHashMap;
-
 import static java.lang.System.currentTimeMillis;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.agrona.DeadlineTimerWheel.NULL_TIMER;
 
 import java.util.concurrent.TimeUnit;
+
+import org.agrona.DeadlineTimerWheel;
+import org.agrona.DeadlineTimerWheel.TimerHandler;
+import org.agrona.collections.Long2ObjectHashMap;
 
 public class DelayedTaskScheduler
 {

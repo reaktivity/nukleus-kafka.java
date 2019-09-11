@@ -69,14 +69,13 @@ public final class CompactedPartitionIndexTest
             .traceId(567L)
             .key(asOctets("key2"))
             .headers(builder -> builder.set(
-                 (b, offset, limit) ->
-                 new HeaderFW.Builder().wrap(b, offset, limit)
-                 .keyLen("header1".length())
-                 .key(asOctets("header1"))
-                 .valueLen("match".length())
-                 .value(asOctets("match"))
-                 .build()
-                 .sizeof()))
+                (b, offset, limit) -> new HeaderFW.Builder().wrap(b, offset, limit)
+                    .keyLen("header1".length())
+                    .key(asOctets("header1"))
+                    .valueLen("match".length())
+                    .value(asOctets("match"))
+                    .build()
+                    .sizeof()))
             .value(asOctets("value"))
             .build();
     private HeadersFW matchHeaders = new HeadersFW().wrap(matchMessage.headers());
@@ -86,14 +85,13 @@ public final class CompactedPartitionIndexTest
             .traceId(567L)
             .key(asOctets("key1"))
             .headers(builder -> builder.set(
-                 (b, offset, limit) ->
-                 new HeaderFW.Builder().wrap(b, offset, limit)
-                 .keyLen("header1".length())
-                 .key(asOctets("header1"))
-                 .valueLen("nomatch".length())
-                 .value(asOctets("nomatch"))
-                 .build()
-                 .sizeof()))
+                (b, offset, limit) -> new HeaderFW.Builder().wrap(b, offset, limit)
+                    .keyLen("header1".length())
+                    .key(asOctets("header1"))
+                    .valueLen("nomatch".length())
+                    .value(asOctets("nomatch"))
+                    .build()
+                    .sizeof()))
             .value(asOctets("value"))
             .build();
     private HeadersFW noMatchHeaders = new HeadersFW().wrap(noMatchMessage.headers());

@@ -70,7 +70,7 @@ public class BootstrapIT
     @ScriptProperty({
         "networkAccept \"nukleus://streams/target#0\"",
         "maxPartitionBytes 123000"
-})
+    })
     public void shouldBootstrapTopic() throws Exception
     {
         k3po.finish();

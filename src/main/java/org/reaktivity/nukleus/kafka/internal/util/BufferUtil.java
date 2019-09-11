@@ -109,7 +109,7 @@ public final class BufferUtil
             final int offset2 = o2.offset();
             for (int i=0; i < o1.sizeof(); i++)
             {
-            if ((buffer1.getByte(offset1 + i) != buffer2.getByte(offset2 + i)))
+                if (buffer1.getByte(offset1 + i) != buffer2.getByte(offset2 + i))
                 {
                     result = false;
                     break;
@@ -194,4 +194,8 @@ public final class BufferUtil
         return wrapper;
     }
 
+    private BufferUtil()
+    {
+        // utility
+    }
 }
