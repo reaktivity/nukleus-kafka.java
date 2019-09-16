@@ -97,7 +97,7 @@ public class DefaultMemoryManagerTest
                 acquiredAddresses.add(addressOffset);
                 memoryManagerRule.assertNotReleased();
             }
-            assertEquals(KB/BYTES_64, acquiredAddresses.size());
+            assertEquals(KB / BYTES_64, acquiredAddresses.size());
             for (int i = 0; (i * BYTES_64) < KB; i++)
             {
                 long addressOffset = acquiredAddresses.get(i);
@@ -133,7 +133,7 @@ public class DefaultMemoryManagerTest
                 acquiredAddresses.add(addressOffset);
                 memoryManagerRule.assertNotReleased();
             }
-            assertEquals(KB/BYTES_128, acquiredAddresses.size());
+            assertEquals(KB / BYTES_128, acquiredAddresses.size());
             for (int i = 0; (i * BYTES_128) < KB; i++)
             {
                 long addressOffset = acquiredAddresses.get(i);

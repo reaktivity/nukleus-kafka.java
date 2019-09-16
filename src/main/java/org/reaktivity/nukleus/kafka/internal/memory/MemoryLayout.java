@@ -202,7 +202,7 @@ public final class MemoryLayout extends Layout
 
             final MutableDirectBuffer[] memoryBuffers = new MutableDirectBuffer[mappedMemoryBuffers.length];
 
-            for (int i=0; i < memoryBuffers.length; i++)
+            for (int i = 0; i < memoryBuffers.length; i++)
             {
                 memoryBuffers[i] = new UnsafeBuffer(mappedMemoryBuffers[i]);
             }

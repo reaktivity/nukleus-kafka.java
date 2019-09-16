@@ -99,7 +99,7 @@ final class KafkaAgent implements Agent
         int length)
     {
         boolean result = true;
-        switch(msgTypeId)
+        switch (msgTypeId)
         {
         case RouteFW.TYPE_ID:
             RouteFW route = routeRO.wrap(buffer, index, index + length);
@@ -151,7 +151,7 @@ final class KafkaAgent implements Agent
         KafkaError errorCode,
         String topicName)
     {
-        switch(errorCode)
+        switch (errorCode)
         {
         case UNKNOWN_TOPIC_OR_PARTITION:
             System.out.println(format(

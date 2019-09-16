@@ -1057,7 +1057,7 @@ public final class ClientStreamFactory implements StreamFactory
             }
             else
             {
-                for (int partition=0; partition < partitionCount; partition++)
+                for (int partition = 0; partition < partitionCount; partition++)
                 {
                     long offset = fetchOffsets.computeIfAbsent(partition, v -> defaultOffset);
                     long lowestOffset = firstAvailableOffset.applyAsLong(partition);

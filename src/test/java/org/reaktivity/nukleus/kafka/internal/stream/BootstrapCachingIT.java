@@ -198,8 +198,8 @@ public class BootstrapCachingIT
         "applicationConnectWindow2 \"350\""
     })
     @Configures({
-        @Configure(name=KAFKA_MESSAGE_CACHE_PROACTIVE_NAME, value="false"),
-        @Configure(name=KAFKA_READ_IDLE_TIMEOUT_NAME, value="2000000")
+        @Configure(name = KAFKA_MESSAGE_CACHE_PROACTIVE_NAME, value = "false"),
+        @Configure(name = KAFKA_READ_IDLE_TIMEOUT_NAME, value = "2000000")
     })
     public void shouldReceiveLargeHistoricalMessagesFromMultiplePartitions() throws Exception
     {
