@@ -18,8 +18,8 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 import java.util.Iterator;
 
 import org.agrona.collections.Long2LongHashMap;
+import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
@@ -49,7 +49,7 @@ public interface ImmutableTopicCache
     Iterator<MessageRef> getMessages(
         Long2LongHashMap fetchOffsets,
         OctetsFW fetchKey,
-        ListFW<KafkaHeaderFW> headers);
+        ArrayFW<KafkaHeaderFW> headers);
 
     MessageRef getMessage(
         int partition,
@@ -67,5 +67,5 @@ public interface ImmutableTopicCache
     boolean hasMessages(
         Long2LongHashMap fetchOffsets,
         OctetsFW fetchKey,
-        ListFW<KafkaHeaderFW> headers);
+        ArrayFW<KafkaHeaderFW> headers);
 }

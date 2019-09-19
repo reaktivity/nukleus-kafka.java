@@ -76,9 +76,9 @@ import org.reaktivity.nukleus.kafka.internal.cache.TopicCache;
 import org.reaktivity.nukleus.kafka.internal.function.Attachable;
 import org.reaktivity.nukleus.kafka.internal.function.IntLongConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
+import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.RequestHeaderFW;
@@ -289,7 +289,7 @@ public final class NetworkConnectionPool
 
     private final Map<String, TopicMetadata> topicMetadataByName;
     private final Map<String, NetworkTopic> topicsByName;
-    private final Map<String, List<ListFW<KafkaHeaderFW>>> routeHeadersByTopic;
+    private final Map<String, List<ArrayFW<KafkaHeaderFW>>> routeHeadersByTopic;
 
     private final List<NetworkTopicPartition> partitionsWorkList = new ArrayList<NetworkTopicPartition>();
     private final LongArrayList offsetsWorkList = new LongArrayList();
@@ -394,7 +394,7 @@ public final class NetworkConnectionPool
 
     public void addRoute(
         String topicName,
-        ListFW<KafkaHeaderFW> routeHeaders,
+        ArrayFW<KafkaHeaderFW> routeHeaders,
         boolean proactive,
         BiConsumer<KafkaError, String> onMetadataError)
     {
@@ -415,14 +415,14 @@ public final class NetworkConnectionPool
         else
         {
             // apply route header filtering later during first subscribe
-            routeHeadersByTopic.computeIfAbsent(topicName, t -> new ArrayList<ListFW<KafkaHeaderFW>>())
+            routeHeadersByTopic.computeIfAbsent(topicName, t -> new ArrayList<ArrayFW<KafkaHeaderFW>>())
                 .add(routeHeaders);
         }
     }
 
     private void addRoute(
         String topicName,
-        ListFW<KafkaHeaderFW> routeHeaders,
+        ArrayFW<KafkaHeaderFW> routeHeaders,
         boolean proactive,
         BiConsumer<KafkaError, String> onMetadataError,
         TopicMetadata topicMetadata)
@@ -2221,7 +2221,7 @@ public final class NetworkConnectionPool
                     partitionCount);
 
             // Cache only messages matching route header conditions
-            List<ListFW<KafkaHeaderFW>> routeHeadersList = routeHeadersByTopic.remove(topicName);
+            List<ArrayFW<KafkaHeaderFW>> routeHeadersList = routeHeadersByTopic.remove(topicName);
 
             if (routeHeadersList != null)
             {
@@ -2240,7 +2240,7 @@ public final class NetworkConnectionPool
         }
 
         void addRoute(
-            ListFW<KafkaHeaderFW> routeHeaders)
+            ArrayFW<KafkaHeaderFW> routeHeaders)
         {
             // Cache only messages matching route conditions
             if (routeHeaders != null && !routeHeaders.isEmpty())
@@ -2262,7 +2262,7 @@ public final class NetworkConnectionPool
             long streamId,
             Long2LongHashMap fetchOffsets,
             OctetsFW fetchKey,
-            ListFW<KafkaHeaderFW> headers,
+            ArrayFW<KafkaHeaderFW> headers,
             MessageDispatcher dispatcher,
             IntSupplier supplyWindow)
         {
@@ -2354,7 +2354,7 @@ public final class NetworkConnectionPool
             long streamId,
             Long2LongHashMap fetchOffsets,
             OctetsFW fetchKey,
-            ListFW<KafkaHeaderFW> headers,
+            ArrayFW<KafkaHeaderFW> headers,
             MessageDispatcher dispatcher,
             IntSupplier supplyWindow)
         {
@@ -3116,11 +3116,11 @@ public final class NetworkConnectionPool
         private final KafkaHeaderFW headerRO = new KafkaHeaderFW();
         private final IntArrayList offsets = new IntArrayList();
 
-        private ListFW<KafkaHeaderFW> headers;
+        private ArrayFW<KafkaHeaderFW> headers;
         private int position;
 
         private Iterator<KafkaHeaderFW> wrap(
-                ListFW<KafkaHeaderFW> headers)
+                ArrayFW<KafkaHeaderFW> headers)
         {
             this.headers = headers;
             offsets.clear();
