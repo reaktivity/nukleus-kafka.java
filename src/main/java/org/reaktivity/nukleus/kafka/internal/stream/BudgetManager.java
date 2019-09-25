@@ -66,6 +66,10 @@ public class BudgetManager
         private void moreBudget(int credit)
         {
             budget += credit;
+            if (budget > initialBudget)
+            {
+                initialBudget = budget;
+            }
             assert budget <= initialBudget;
 
             // For fairness iterate from a moving startPosition to end, then 0 to startPosition
@@ -168,6 +172,10 @@ public class BudgetManager
             else
             {
                 streamBudget.unackedBudget -= credit;
+                if (streamBudget.unackedBudget < 0)
+                {
+                    streamBudget.unackedBudget = 0;
+                }
                 assert streamBudget.unackedBudget >= 0;
             }
 
