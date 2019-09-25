@@ -67,7 +67,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         long newOffset)
     {
         broadcast.adjustOffset(partition, oldOffset, newOffset);
-        for (int i=0; i < keys.length; i++)
+        for (int i = 0; i < keys.length; i++)
         {
             keys[i].adjustOffset(partition, oldOffset, newOffset);
         }
@@ -79,7 +79,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
         boolean reattach)
     {
         broadcast.detach(reattach);
-        for (int i=0; i < keys.length; i++)
+        for (int i = 0; i < keys.length; i++)
         {
             keys[i].detach(reattach);
         }
@@ -227,7 +227,7 @@ public class TopicMessageDispatcher implements MessageDispatcher, DecoderMessage
 
     public void enableProactiveMessageCaching()
     {
-        for (int i=0; i < cacheNewMessages.length; i++)
+        for (int i = 0; i < cacheNewMessages.length; i++)
         {
             cacheNewMessages[i] = true;
         }

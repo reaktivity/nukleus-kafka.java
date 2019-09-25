@@ -127,7 +127,7 @@ public final class MessageWriter
                     {
                         if (fetchOffsets != null)
                         {
-                            for (int i=0; i < fetchOffsets.length; i++)
+                            for (int i = 0; i < fetchOffsets.length; i++)
                             {
                                 final long offset = fetchOffsets[i];
                                 a.item(p -> p.set(offset));

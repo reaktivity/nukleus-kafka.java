@@ -74,7 +74,7 @@ public final class CompactedTopicCacheTest
             iterator1 = mock(Iterator.class, "iterator1");
             iterator2 = mock(Iterator.class, "iterator2");
             entry0 = mock(Entry.class, "entry0");
-            entry1= mock(Entry.class, "entry1");
+            entry1 = mock(Entry.class, "entry1");
             entry2 = mock(Entry.class, "entry2");
         }
     };
@@ -184,7 +184,7 @@ public final class CompactedTopicCacheTest
         assertSame(messageRO, message.message());
 
         // cycle through partitions 1,2 and back to 0, no more messages are available in cache
-        for (int i=0; i < 3; i++)
+        for (int i = 0; i < 3; i++)
         {
             assertTrue(messages.hasNext());
             message = messages.next();
@@ -263,7 +263,7 @@ public final class CompactedTopicCacheTest
 
         Iterator<MessageRef> messages;
 
-        for (int i=0; i < 4; i++)
+        for (int i = 0; i < 4; i++)
         {
             messages = cache.getMessages(fetchOffsets, null, null);
             assertTrue(messages.hasNext());

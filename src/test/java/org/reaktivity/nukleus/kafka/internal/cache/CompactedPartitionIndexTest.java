@@ -159,7 +159,7 @@ public final class CompactedPartitionIndexTest
     {
         long offset = 0;
 
-        for (int i=0; i <= CompactedPartitionIndex.MAX_INVALID_ENTRIES + 1; i++)
+        for (int i = 0; i <= CompactedPartitionIndex.MAX_INVALID_ENTRIES + 1; i++)
         {
             index.add(0L, offset++, 123L, 456L, key, emptyHeaders, value, false);
         }
@@ -575,7 +575,7 @@ public final class CompactedPartitionIndexTest
         assertFalse(iterator.hasNext());
     }
 
-    @Test(expected=NoSuchElementException.class)
+    @Test(expected = NoSuchElementException.class)
     public void shouldThrowExceptionFromNoMessageIteratorNextWhenNoMoreElements()
     {
         Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(102L, null);

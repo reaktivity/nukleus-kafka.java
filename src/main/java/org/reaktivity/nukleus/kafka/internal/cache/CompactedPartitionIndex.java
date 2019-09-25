@@ -320,8 +320,7 @@ public class CompactedPartitionIndex implements PartitionIndex
     private void cancelTombstoneExpiry(
         UnsafeBuffer key)
     {
-        int pos = 0;
-        for (pos=0; pos < tombstoneKeys.size(); pos++)
+        for (int pos = 0; pos < tombstoneKeys.size(); pos++)
         {
             DirectBuffer candidate = tombstoneKeys.get(pos);
             buffer2.wrap(candidate, 0, candidate.capacity());
@@ -353,7 +352,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         evictExpiredTombstones();
 
         int invalidFrom = NO_POSITION;
-        for (int i=startPosition; i < entries.size(); i++)
+        for (int i = startPosition; i < entries.size(); i++)
         {
             EntryImpl entry = entries.get(i);
 
@@ -379,7 +378,7 @@ public class CompactedPartitionIndex implements PartitionIndex
 
         if (invalidFrom != NO_POSITION)
         {
-            for (int i=entries.size() - 1; i > invalidFrom - 1; i--)
+            for (int i = entries.size() - 1; i > invalidFrom - 1; i--)
             {
                 entries.remove(i);
             }
@@ -423,8 +422,8 @@ public class CompactedPartitionIndex implements PartitionIndex
         if (tombstoneKeys.size() > 0)
         {
             final long now = System.currentTimeMillis();
-            int pos = 0;
-            for (pos=0; pos < tombstoneKeys.size(); pos++)
+            int pos;
+            for (pos = 0; pos < tombstoneKeys.size(); pos++)
             {
                 if (now >= tombstoneExpiryTimes.getLong(pos))
                 {
@@ -624,7 +623,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         public int compareTo(
             EntryImpl o)
         {
-            return (int) (this.offset - o.offset);
+            return Long.compare(this.offset, o.offset);
         }
 
         @Override

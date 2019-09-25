@@ -107,7 +107,7 @@ public final class BufferUtil
             final DirectBuffer buffer2 = o2.buffer();
             final int offset1 = o1.offset();
             final int offset2 = o2.offset();
-            for (int i=0; i < o1.sizeof(); i++)
+            for (int i = 0; i < o1.sizeof(); i++)
             {
                 if (buffer1.getByte(offset1 + i) != buffer2.getByte(offset2 + i))
                 {
@@ -130,7 +130,7 @@ public final class BufferUtil
             final DirectBuffer stringBuf = string.buffer();
             final int octetsOffset = octets.offset();
             final int stringOffset = string.offset() + STRING16_SIZE_LENGTH;
-            for (int i=0; i < octets.sizeof(); i++)
+            for (int i = 0; i < octets.sizeof(); i++)
             {
                 if (stringBuf.getByte(i + stringOffset) != octetsBuf.getByte(i + octetsOffset))
                 {
