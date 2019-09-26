@@ -22,9 +22,9 @@ import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.HeaderFW;
 import org.reaktivity.nukleus.kafka.internal.util.BufferUtil;
@@ -96,7 +96,7 @@ public final class HeadersFW
     }
 
     public boolean matches(
-        ListFW<KafkaHeaderFW> headerConditions)
+        ArrayFW<KafkaHeaderFW> headerConditions)
     {
         // Find first non-matching header condition. If not found, all headerConditions are fulfilled.
         return headerConditions == null ||

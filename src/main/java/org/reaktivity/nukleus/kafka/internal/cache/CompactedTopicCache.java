@@ -23,8 +23,8 @@ import org.agrona.DirectBuffer;
 import org.agrona.collections.Long2LongHashMap;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
+import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
@@ -117,7 +117,7 @@ public class CompactedTopicCache implements TopicCache
     public Iterator<MessageRef> getMessages(
         Long2LongHashMap fetchOffsets,
         OctetsFW fetchKey,
-        ListFW<KafkaHeaderFW> headers)
+        ArrayFW<KafkaHeaderFW> headers)
     {
         if (fetchKey != null)
         {
@@ -153,7 +153,7 @@ public class CompactedTopicCache implements TopicCache
     public boolean hasMessages(
         Long2LongHashMap fetchOffsets,
         OctetsFW fetchKey,
-        ListFW<KafkaHeaderFW> headers)
+        ArrayFW<KafkaHeaderFW> headers)
     {
         boolean result = false;
 
@@ -253,7 +253,7 @@ public class CompactedTopicCache implements TopicCache
         Iterator<MessageRef> reset(
             Long2LongHashMap fetchOffsets,
             OctetsFW fetchKey,
-            ListFW<KafkaHeaderFW> headerConditions)
+            ArrayFW<KafkaHeaderFW> headerConditions)
         {
             int partition = fetchOffsets.keySet().iterator().next().intValue();
             long requestedOffset = fetchOffsets.get(partition);
@@ -326,7 +326,7 @@ public class CompactedTopicCache implements TopicCache
 
         Iterator<MessageRef> reset(
             Long2LongHashMap fetchOffsets,
-            ListFW<KafkaHeaderFW> headerConditions)
+            ArrayFW<KafkaHeaderFW> headerConditions)
         {
             assert fetchOffsets.size() == iterators.length;
 

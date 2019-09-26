@@ -39,15 +39,15 @@ import org.jmock.integration.junit4.JUnitRuleMockery;
 import org.junit.Rule;
 import org.junit.Test;
 import org.reaktivity.nukleus.kafka.internal.cache.TopicCache;
+import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 
 public final class TopicMessageDispatcherTest
 {
     private Iterator<KafkaHeaderFW> emptyHeaders = Collections.emptyIterator();
 
-    private final ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW> headersRW =
-            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW());
+    private final ArrayFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW> headersRW =
+            new ArrayFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW());
     private final MutableDirectBuffer headersBuffer = new UnsafeBuffer(new byte[1000]);
 
     private TopicCache topicCache;
