@@ -19,6 +19,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_FETCH_PARTITION_MAX_BYTES;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_CAPACITY;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_READ_IDLE_TIMEOUT;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Ignore;
@@ -54,6 +55,7 @@ public class BootstrapIT
         .counterValuesBufferCapacity(16384)
         .configure(KAFKA_FETCH_PARTITION_MAX_BYTES, 123000)
         .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 0L)
+        .configure(KAFKA_READ_IDLE_TIMEOUT, 86400)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .affinityMask("target#1", EXTERNAL_AFFINITY_MASK)
         .clean();
@@ -68,7 +70,7 @@ public class BootstrapIT
     @ScriptProperty({
         "networkAccept \"nukleus://streams/target#0\"",
         "maxPartitionBytes 123000"
-})
+    })
     public void shouldBootstrapTopic() throws Exception
     {
         k3po.finish();

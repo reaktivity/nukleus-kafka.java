@@ -157,7 +157,7 @@ public class DefaultMemoryManager implements MemoryManager
         for (;; node.walk(node.parentIndex()))
         {
             node.clear(FULL);
-            if(node.order() == 0 || (node.flags(node.leftIndex()) == EMPTY && node.flags(node.rightIndex()) == EMPTY))
+            if (node.order() == 0 || (node.flags(node.leftIndex()) == EMPTY && node.flags(node.rightIndex()) == EMPTY))
             {
                 node.clear(SPLIT);
             }
@@ -168,7 +168,7 @@ public class DefaultMemoryManager implements MemoryManager
 
             if (node.index() == 0)
             {
-                 break;
+                break;
             }
         }
 

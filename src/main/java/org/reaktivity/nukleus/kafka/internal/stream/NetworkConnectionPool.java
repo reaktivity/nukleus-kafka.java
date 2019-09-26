@@ -345,8 +345,8 @@ public final class NetworkConnectionPool
         final TopicMetadata metadata = topicMetadataByName.computeIfAbsent(topicName, TopicMetadata::new);
         final int newAttachId = nextAttachId++;
         metadata.doAttach(
-                newAttachId,
-                m -> doAttach(topicName, attachable, onMetadataError, m));
+            newAttachId,
+            m -> doAttach(topicName, attachable, onMetadataError, m));
 
         if (metadataConnection == null)
         {
@@ -364,7 +364,7 @@ public final class NetworkConnectionPool
         TopicMetadata topicMetadata)
     {
         KafkaError errorCode = topicMetadata.errorCode();
-        switch(errorCode)
+        switch (errorCode)
         {
         case INVALID_TOPIC_EXCEPTION:
         case UNKNOWN_TOPIC_OR_PARTITION:
@@ -373,8 +373,8 @@ public final class NetworkConnectionPool
             break;
         case NONE:
             final NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
-                    name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, bootstrap,
-                            topicMetadata.deleteRetentionMs, false));
+                name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted, bootstrap,
+                                         topicMetadata.deleteRetentionMs, false));
             doConnections(topicMetadata);
             attachable.onAttachPrepared(
                     topic::doAttach,
@@ -404,8 +404,8 @@ public final class NetworkConnectionPool
         {
             int newAttachId = nextAttachId++;
             metadata.doAttach(
-                    newAttachId,
-                    m -> addRoute(topicName, routeHeaders, proactive, onMetadataError, m));
+                newAttachId,
+                m -> addRoute(topicName, routeHeaders, proactive, onMetadataError, m));
             if (metadataConnection == null)
             {
                 metadataConnection = new MetadataConnection();
@@ -428,7 +428,7 @@ public final class NetworkConnectionPool
         TopicMetadata topicMetadata)
     {
         KafkaError errorCode = topicMetadata.errorCode();
-        switch(errorCode)
+        switch (errorCode)
         {
         case INVALID_TOPIC_EXCEPTION:
         case UNKNOWN_TOPIC_OR_PARTITION:
@@ -438,8 +438,8 @@ public final class NetworkConnectionPool
             if (topicMetadata.compacted)
             {
                 NetworkTopic topic = topicsByName.computeIfAbsent(topicName,
-                        name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted,
-                                proactive, topicMetadata.deleteRetentionMs, forceProactiveMessageCache));
+                    name -> new NetworkTopic(name, topicMetadata.partitionCount(), topicMetadata.compacted,
+                            proactive, topicMetadata.deleteRetentionMs, forceProactiveMessageCache));
                 topic.addRoute(routeHeaders);
                 doConnections(topicMetadata);
                 doFlush();
@@ -1104,11 +1104,10 @@ public final class NetworkConnectionPool
                 encodeLimit = topicRequest.limit();
 
                 long[] requestedOffsets = requestedFetchOffsetsByTopic.computeIfAbsent(
-                        topicName,
-                        k  ->  new long[topicMetadataByName.get(topicName).partitionCount()]);
+                    topicName, k  ->  new long[topicMetadataByName.get(topicName).partitionCount()]);
                 int partitionCount = addTopicToRequest(topicName,
-                        (p, o) -> requestedOffsets[p] = o,
-                        (p) -> requestedOffsets[p]);
+                    (p, o) -> requestedOffsets[p] = o,
+                    p -> requestedOffsets[p]);
 
                 if (partitionCount > 0)
                 {
@@ -1208,7 +1207,7 @@ public final class NetworkConnectionPool
 
                     encodeLimit = listOffsetsTopic.limit();
 
-                    for (int partitionId=0; partitionId <  topicMetadata.nodeIdsByPartition.length; partitionId++)
+                    for (int partitionId = 0; partitionId <  topicMetadata.nodeIdsByPartition.length; partitionId++)
                     {
                         if (topicMetadata.nodeIdsByPartition[partitionId] == broker.nodeId &&
                             topicMetadata.offsetsOutOfRangeByPartition[partitionId] != NO_OFFSET)
@@ -1480,7 +1479,7 @@ public final class NetworkConnectionPool
         {
             TopicMetadata metadata = topicMetadataByName.get(topicName);
 
-            switch(errorCode)
+            switch (errorCode)
             {
             case OFFSET_OUT_OF_RANGE:
                 // metadata may be null if all clients have detached
@@ -1604,7 +1603,7 @@ public final class NetworkConnectionPool
                 if (!partitionsWorkList.isEmpty())
                 {
                     // Update the partition offsets. We must remove and add to preserve ordering.
-                    for (int i=0; i < partitionsWorkList.size(); i++)
+                    for (int i = 0; i < partitionsWorkList.size(); i++)
                     {
                         NetworkTopicPartition partition = partitionsWorkList.get(i);
                         boolean removed = topic.partitions.remove(partition);
@@ -1716,7 +1715,7 @@ public final class NetworkConnectionPool
                 }
                 if (pendingTopicMetadata != null)
                 {
-                    switch(pendingTopicMetadata.nextRequiredRequestType())
+                    switch (pendingTopicMetadata.nextRequiredRequestType())
                     {
                     case DESCRIBE_CONFIGS:
                         doDescribeConfigsRequest();
@@ -1875,7 +1874,7 @@ public final class NetworkConnectionPool
             int networkOffset,
             final int networkLimit)
         {
-            switch(pendingRequest)
+            switch (pendingRequest)
             {
             case DESCRIBE_CONFIGS:
                 handleDescribeConfigsResponse(networkTraceId, networkBuffer, networkOffset, networkLimit);
@@ -2010,7 +2009,7 @@ public final class NetworkConnectionPool
 
             KafkaError error = decodeMetadataResponse(networkBuffer, networkOffset, networkLimit);
             final TopicMetadata topicMetadata = pendingTopicMetadata;
-            switch(error)
+            switch (error)
             {
             case NONE:
                 topicMetadata.nextRequiredRequestType = MetadataRequestType.DESCRIBE_CONFIGS;
@@ -2075,7 +2074,7 @@ public final class NetworkConnectionPool
             pendingTopicMetadata.initializeBrokers(brokerCount);
             networkOffset = metadataResponse.limit();
             KafkaError error = NONE;
-            for (int brokerIndex=0; brokerIndex < brokerCount; brokerIndex++)
+            for (int brokerIndex = 0; brokerIndex < brokerCount; brokerIndex++)
             {
                 final BrokerMetadataFW broker = brokerMetadataRO.tryWrap(networkBuffer, networkOffset, networkLimit);
                 if (broker == null)
@@ -2233,7 +2232,7 @@ public final class NetworkConnectionPool
             {
                 MessageDispatcher bootstrapDispatcher = new ProgressUpdatingMessageDispatcher(partitionCount, progressHandler);
                 this.dispatcher.add(null, -1, Collections.emptyIterator(), bootstrapDispatcher);
-                for (int i=0; i < partitionCount; i++)
+                for (int i = 0; i < partitionCount; i++)
                 {
                     attachToPartition(BOOTSTRAP_STREAM_ID, i, 0L);
                 }
@@ -2443,9 +2442,9 @@ public final class NetworkConnectionPool
                 // TODO: eliminate iterator allocation
                 for (IntSupplier supplyWindow : windowSuppliers)
                 {
-                   // Get lowest non-zero value
-                   int lowest = Math.min(writableBytes, supplyWindow.getAsInt());
-                   writableBytes = lowest == 0 ? writableBytes : lowest;
+                    // Get lowest non-zero value
+                    int lowest = Math.min(writableBytes, supplyWindow.getAsInt());
+                    writableBytes = lowest == 0 ? writableBytes : lowest;
                 }
 
                 writableBytes = writableBytes == Integer.MAX_VALUE ? 0 : writableBytes;
@@ -2672,9 +2671,9 @@ public final class NetworkConnectionPool
             NetworkTopicPartition that,
             int comparison)
         {
-            return (comparison == 0 && this.id - that.id == 0 && this.offset - that.offset == 0L)
-                    ||  (comparison < 0 && (this.id < that.id) || (this.offset < that.offset))
-                    ||   (comparison > 0 && (this.id > that.id) || (this.offset > that.offset));
+            return (comparison == 0 && this.id - that.id == 0 && this.offset - that.offset == 0L) ||
+                    (comparison < 0 && (this.id < that.id) || (this.offset < that.offset)) ||
+                    (comparison > 0 && (this.id > that.id) || (this.offset > that.offset));
         }
 
         @Override
@@ -2725,14 +2724,13 @@ public final class NetworkConnectionPool
             Object obj)
         {
             BrokerMetadata that;
-            return (this == obj ||
+            return this == obj ||
                     (this != null &&
                     obj instanceof BrokerMetadata &&
                     this.nodeId == (that = (BrokerMetadata) obj).nodeId &&
                     this.nodeId == that.nodeId &&
                     this.host.equals(that.host) &&
-                    this.port == that.port)
-                    );
+                    this.port == that.port);
         }
 
         @Override
@@ -2837,7 +2835,7 @@ public final class NetworkConnectionPool
         void setDeleteRetentionMs(
             int deleteRetentionMs)
         {
-             this.deleteRetentionMs = deleteRetentionMs;
+            this.deleteRetentionMs = deleteRetentionMs;
         }
 
         void setErrorCode(
@@ -2949,7 +2947,7 @@ public final class NetworkConnectionPool
             int result = 0;
             if (nodeIdsByPartition != null)
             {
-                for (int i=0; i < nodeIdsByPartition.length; i++)
+                for (int i = 0; i < nodeIdsByPartition.length; i++)
                 {
                     if (nodeIdsByPartition[i] == nodeId &&
                             offsetsOutOfRangeByPartition[i] != NO_OFFSET)

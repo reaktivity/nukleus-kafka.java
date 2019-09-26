@@ -21,7 +21,7 @@ import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
-public class TestUtil
+public final class TestUtil
 {
     public static DirectBuffer asBuffer(String value)
     {
@@ -33,5 +33,10 @@ public class TestUtil
     {
         DirectBuffer buffer = asBuffer(value);
         return new OctetsFW().wrap(buffer, 0, buffer.capacity());
+    }
+
+    private TestUtil()
+    {
+        // utility
     }
 }

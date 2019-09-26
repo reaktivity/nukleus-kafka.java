@@ -15,14 +15,14 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static org.reaktivity.nukleus.kafka.internal.stream.HeadersMessageDispatcher.NOOP;
+
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.function.Function;
 
 import org.agrona.DirectBuffer;
-
-import static org.reaktivity.nukleus.kafka.internal.stream.HeadersMessageDispatcher.NOOP;
 
 public class BroadcastMessageDispatcher implements MessageDispatcher
 {
@@ -105,7 +105,7 @@ public class BroadcastMessageDispatcher implements MessageDispatcher
 
     public void add(MessageDispatcher dispatcher)
     {
-         dispatchers.add(dispatcher);
+        dispatchers.add(dispatcher);
     }
 
     public boolean remove(MessageDispatcher dispatcher)

@@ -99,18 +99,16 @@ final class KafkaAgent implements Agent
         int length)
     {
         boolean result = true;
-        switch(msgTypeId)
+        switch (msgTypeId)
         {
         case RouteFW.TYPE_ID:
+            RouteFW route = routeRO.wrap(buffer, index, index + length);
+            final OctetsFW extension = route.extension();
+            if (extension.sizeof() > 0)
             {
-                RouteFW route = routeRO.wrap(buffer, index, index + length);
-                final OctetsFW extension = route.extension();
-                if (extension.sizeof() > 0)
-                {
-                    MutableDirectBuffer routeBuffer = new UnsafeBuffer(new byte[length]);
-                    buffer.getBytes(index,  routeBuffer, 0, length);
-                    routesToProcess.add(new RouteFW().wrap(routeBuffer, 0, length));
-                }
+                MutableDirectBuffer routeBuffer = new UnsafeBuffer(new byte[length]);
+                buffer.getBytes(index,  routeBuffer, 0, length);
+                routesToProcess.add(new RouteFW().wrap(routeBuffer, 0, length));
             }
             break;
         default:
@@ -136,7 +134,7 @@ final class KafkaAgent implements Agent
 
                 NetworkConnectionPool connectionPool =
                         connectionPools.computeIfAbsent(networkRemoteId,
-                                r -> connectionPoolFactory.apply(networkRouteId));
+                            r -> connectionPoolFactory.apply(networkRouteId));
 
                 if (topicName != null)
                 {
@@ -153,7 +151,7 @@ final class KafkaAgent implements Agent
         KafkaError errorCode,
         String topicName)
     {
-        switch(errorCode)
+        switch (errorCode)
         {
         case UNKNOWN_TOPIC_OR_PARTITION:
             System.out.println(format(

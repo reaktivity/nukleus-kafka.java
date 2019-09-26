@@ -168,7 +168,7 @@ public class CompactedTopicCache implements TopicCache
             // preferring to potentially return a false positive
             assert fetchOffsets.size() == indexes.length;
 
-            for (int partition=0; partition < indexes.length && !result; partition++)
+            for (int partition = 0; partition < indexes.length && !result; partition++)
             {
                 long offset = fetchOffsets.get(partition);
                 result = offset < indexes[partition].nextOffset();
@@ -295,7 +295,7 @@ public class CompactedTopicCache implements TopicCache
         public MessageRef next()
         {
             MessageRef result;
-            switch(remainingEntries)
+            switch (remainingEntries)
             {
             case 2:
                 result = message;
@@ -330,7 +330,7 @@ public class CompactedTopicCache implements TopicCache
         {
             assert fetchOffsets.size() == iterators.length;
 
-            for (int i=0; i < iterators.length; i++)
+            for (int i = 0; i < iterators.length; i++)
             {
                 iterators[i] = indexes[i].entries(fetchOffsets.get(i), headerConditions);
             }
@@ -343,7 +343,7 @@ public class CompactedTopicCache implements TopicCache
         {
             boolean result = false;
             partition = nextPartition(partition);
-            for (int i=0; i < iterators.length; i++)
+            for (int i = 0; i < iterators.length; i++)
             {
                 result = iterators[partition].hasNext();
                 if (result)

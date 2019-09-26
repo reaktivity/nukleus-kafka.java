@@ -19,6 +19,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_CAPACITY;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_PROACTIVE;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_READ_IDLE_TIMEOUT;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_TOPIC_BOOTSTRAP_ENABLED;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfigurationTest.KAFKA_MESSAGE_CACHE_PROACTIVE_NAME;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfigurationTest.KAFKA_READ_IDLE_TIMEOUT_NAME;
@@ -58,6 +59,7 @@ public class BootstrapCachingIT
         .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, true)
         .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 1024L * 1024L)
         .configure(KAFKA_MESSAGE_CACHE_PROACTIVE, true)
+        .configure(KAFKA_READ_IDLE_TIMEOUT, 86400)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 
@@ -101,7 +103,6 @@ public class BootstrapCachingIT
         "applicationConnectWindow1 \"2000\"",
         "applicationConnectWindow2 \"200\""
     })
-    @Configure(name=KAFKA_READ_IDLE_TIMEOUT_NAME, value="200000")
     public void shouldReceiveCompactedFragmentedMessageAndFollowingFromCacheWhenNotSubscribedToKey() throws Exception
     {
         k3po.start();
@@ -197,8 +198,8 @@ public class BootstrapCachingIT
         "applicationConnectWindow2 \"350\""
     })
     @Configures({
-        @Configure(name=KAFKA_MESSAGE_CACHE_PROACTIVE_NAME, value="false"),
-        @Configure(name=KAFKA_READ_IDLE_TIMEOUT_NAME, value="2000000")
+        @Configure(name = KAFKA_MESSAGE_CACHE_PROACTIVE_NAME, value = "false"),
+        @Configure(name = KAFKA_READ_IDLE_TIMEOUT_NAME, value = "2000000")
     })
     public void shouldReceiveLargeHistoricalMessagesFromMultiplePartitions() throws Exception
     {

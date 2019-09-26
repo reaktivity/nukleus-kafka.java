@@ -51,16 +51,16 @@ public class DefaultMemoryManagerRule implements TestRule
                     .getDeclaredMethod(testMethod)
                     .getAnnotation(ConfigureMemoryLayout.class);
             mlb.capacity(configures.capacity())
-               .minimumBlockSize(configures.smallestBlockSize())
-               .create(true);
+                .minimumBlockSize(configures.smallestBlockSize())
+                .create(true);
         }
         catch (Exception e)
         {
             LangUtil.rethrowUnchecked(e);
         }
         this.layout = mlb.build();
-        Function<String, LongSupplier> supplyCounter = (x) -> (LongSupplier) () -> 0;
-        Function<String, LongConsumer> supplyAccumulator = (x) -> (LongConsumer) value -> {};
+        Function<String, LongSupplier> supplyCounter = x -> () -> 0;
+        Function<String, LongConsumer> supplyAccumulator = x -> value -> {};
         KafkaCounters counters = new KafkaCounters(supplyCounter, supplyAccumulator);
         this.memoryManager = new DefaultMemoryManager(layout, counters);
         return new Statement()

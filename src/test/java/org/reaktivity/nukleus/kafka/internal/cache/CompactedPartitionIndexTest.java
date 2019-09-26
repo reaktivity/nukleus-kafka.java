@@ -69,14 +69,13 @@ public final class CompactedPartitionIndexTest
             .traceId(567L)
             .key(asOctets("key2"))
             .headers(builder -> builder.set(
-                 (b, offset, limit) ->
-                 new HeaderFW.Builder().wrap(b, offset, limit)
-                 .keyLen("header1".length())
-                 .key(asOctets("header1"))
-                 .valueLen("match".length())
-                 .value(asOctets("match"))
-                 .build()
-                 .sizeof()))
+                (b, offset, limit) -> new HeaderFW.Builder().wrap(b, offset, limit)
+                    .keyLen("header1".length())
+                    .key(asOctets("header1"))
+                    .valueLen("match".length())
+                    .value(asOctets("match"))
+                    .build()
+                    .sizeof()))
             .value(asOctets("value"))
             .build();
     private HeadersFW matchHeaders = new HeadersFW().wrap(matchMessage.headers());
@@ -86,14 +85,13 @@ public final class CompactedPartitionIndexTest
             .traceId(567L)
             .key(asOctets("key1"))
             .headers(builder -> builder.set(
-                 (b, offset, limit) ->
-                 new HeaderFW.Builder().wrap(b, offset, limit)
-                 .keyLen("header1".length())
-                 .key(asOctets("header1"))
-                 .valueLen("nomatch".length())
-                 .value(asOctets("nomatch"))
-                 .build()
-                 .sizeof()))
+                (b, offset, limit) -> new HeaderFW.Builder().wrap(b, offset, limit)
+                    .keyLen("header1".length())
+                    .key(asOctets("header1"))
+                    .valueLen("nomatch".length())
+                    .value(asOctets("nomatch"))
+                    .build()
+                    .sizeof()))
             .value(asOctets("value"))
             .build();
     private HeadersFW noMatchHeaders = new HeadersFW().wrap(noMatchMessage.headers());
@@ -161,7 +159,7 @@ public final class CompactedPartitionIndexTest
     {
         long offset = 0;
 
-        for (int i=0; i <= CompactedPartitionIndex.MAX_INVALID_ENTRIES + 1; i++)
+        for (int i = 0; i <= CompactedPartitionIndex.MAX_INVALID_ENTRIES + 1; i++)
         {
             index.add(0L, offset++, 123L, 456L, key, emptyHeaders, value, false);
         }
@@ -577,7 +575,7 @@ public final class CompactedPartitionIndexTest
         assertFalse(iterator.hasNext());
     }
 
-    @Test(expected=NoSuchElementException.class)
+    @Test(expected = NoSuchElementException.class)
     public void shouldThrowExceptionFromNoMessageIteratorNextWhenNoMoreElements()
     {
         Iterator<CompactedPartitionIndex.Entry> iterator = index.entries(102L, null);

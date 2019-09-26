@@ -52,7 +52,7 @@ public enum KafkaError
     {
         KafkaError result = UNRECOGNIZED_ERROR_CODE;
         KafkaError[] values = KafkaError.values();
-        for (int i=0; i < values.length; i++)
+        for (int i = 0; i < values.length; i++)
         {
             if (values[i].errorCode == errorCode)
             {

@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_CAPACITY;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_READ_IDLE_TIMEOUT;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_TOPIC_BOOTSTRAP_ENABLED;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfigurationTest.KAFKA_READ_IDLE_TIMEOUT_NAME;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
@@ -54,6 +55,7 @@ public class FetchIT
         .counterValuesBufferCapacity(8192)
         .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, false)
         .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 0L)
+        .configure(KAFKA_READ_IDLE_TIMEOUT, 86400)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 
@@ -234,10 +236,10 @@ public class FetchIT
     }
 
     @Test
-    @Specification(
-    {"${route}/client/controller",
-            "${client}/compacted.historical.uses.cached.key.then.live.after.offset.too.low.and.null.message/client",
-            "${server}/compacted.historical.uses.cached.key.then.live.after.offset.too.low.and.null.message/server"})
+    @Specification({
+        "${route}/client/controller",
+        "${client}/compacted.historical.uses.cached.key.then.live.after.offset.too.low.and.null.message/client",
+        "${server}/compacted.historical.uses.cached.key.then.live.after.offset.too.low.and.null.message/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldReceiveCompactedMessagesFromLiveStreamAfterOffsetTooLowAndCachedKeyRemovedByNullMessage()
             throws Exception
@@ -1444,8 +1446,8 @@ public class FetchIT
         "${client}/zero.offset.message.two.topics/client",
         "${server}/live.fetch.error.recovered/server" })
     @ScriptProperty({
-    "networkAccept \"nukleus://streams/target#0\"",
-    "errorCode 6s"
+        "networkAccept \"nukleus://streams/target#0\"",
+        "errorCode 6s"
     })
     public void shouldContinueReceivingMessagesAfterLeadershipElection() throws Exception
     {
@@ -1475,7 +1477,7 @@ public class FetchIT
         "${client}/zero.offset.message.two.topics/client",
         "${server}/live.fetch.error.then.metadata.error/server" })
     @ScriptProperty({
-    "networkAccept \"nukleus://streams/target#0\""
+        "networkAccept \"nukleus://streams/target#0\""
     })
     public void shouldHandleFetchErrorFollowedByMetadataRefreshError() throws Exception
     {
@@ -1632,36 +1634,36 @@ public class FetchIT
     }
 
     @Test
-    @Configure(name=KAFKA_READ_IDLE_TIMEOUT_NAME, value="2000")
     @Specification({
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${server}/metadata.idle/server" })
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @Configure(name = KAFKA_READ_IDLE_TIMEOUT_NAME, value = "5000")
     public void shouldTimeoutMetadataResponse() throws Exception
     {
         k3po.finish();
     }
 
     @Test
-    @Configure(name=KAFKA_READ_IDLE_TIMEOUT_NAME, value="2000")
     @Specification({
         "${route}/client/controller",
         "${client}/zero.offset/client",
         "${server}/describe.configs.idle/server" })
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @Configure(name = KAFKA_READ_IDLE_TIMEOUT_NAME, value = "5000")
     public void shouldTimeoutDescribeConfigsResponse() throws Exception
     {
         k3po.finish();
     }
 
     @Test
-    @Configure(name=KAFKA_READ_IDLE_TIMEOUT_NAME, value="2000")
     @Specification({
         "${route}/client/controller",
         "${client}/zero.offset.message/client",
         "${server}/fetch.idle/server" })
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @Configure(name = KAFKA_READ_IDLE_TIMEOUT_NAME, value = "5000")
     public void shouldTimeoutFetchResponse() throws Exception
     {
         k3po.start();

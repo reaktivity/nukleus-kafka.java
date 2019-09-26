@@ -15,10 +15,10 @@
  */
 package org.reaktivity.nukleus.kafka.internal;
 
+import static java.lang.String.format;
+
 import java.util.function.Function;
 import java.util.function.LongSupplier;
-
-import static java.lang.String.format;
 
 public class KafkaRefCounters
 {
