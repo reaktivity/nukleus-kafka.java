@@ -41,8 +41,8 @@ import org.junit.runners.model.Statement;
 import org.reaktivity.nukleus.kafka.internal.cache.CompactedPartitionIndex.EntryImpl;
 import org.reaktivity.nukleus.kafka.internal.cache.PartitionIndex.Entry;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
+import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.HeaderFW;
 
@@ -97,8 +97,8 @@ public final class CompactedPartitionIndexTest
     private HeadersFW noMatchHeaders = new HeadersFW().wrap(noMatchMessage.headers());
 
     private MutableDirectBuffer matchHeaderConditionBuffer = new UnsafeBuffer(new byte[100]);
-    private ListFW<KafkaHeaderFW> matchHeaderCondition =
-        new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+    private ArrayFW<KafkaHeaderFW> matchHeaderCondition =
+        new ArrayFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
             .wrap(matchHeaderConditionBuffer, 0, matchHeaderConditionBuffer.capacity())
             .item(b -> b.key("header1").value(asOctets("match")))
             .build();

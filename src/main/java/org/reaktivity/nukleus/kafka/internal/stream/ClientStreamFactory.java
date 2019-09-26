@@ -56,7 +56,6 @@ import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.Varint64FW;
@@ -205,7 +204,7 @@ public final class ClientStreamFactory implements StreamFactory
         {
             final KafkaBeginExFW beginEx = extension.get(beginExRO::wrap);
             String topicName = beginEx.topicName().asString();
-            ListFW<KafkaHeaderFW> headers = beginEx.headers();
+            ArrayFW<KafkaHeaderFW> headers = beginEx.headers();
 
             final RouteFW route = resolveRoute(applicationRouteId, authorization, topicName, headers);
             if (route != null)
@@ -247,19 +246,19 @@ public final class ClientStreamFactory implements StreamFactory
         long routeId,
         long authorization,
         final String topicName,
-        final ListFW<KafkaHeaderFW> headers)
+        final ArrayFW<KafkaHeaderFW> headers)
     {
         final MessagePredicate filter = (t, b, o, l) ->
         {
             final RouteFW route = routeRO.wrap(b, o, o + l);
             final OctetsFW extension = route.extension();
             Predicate<String> topicMatch = s -> true;
-            Predicate<ListFW<KafkaHeaderFW>> headersMatch = h -> true;
+            Predicate<ArrayFW<KafkaHeaderFW>> headersMatch = h -> true;
             if (extension.sizeof() > 0)
             {
                 final KafkaRouteExFW routeEx = extension.get(routeExRO::wrap);
                 final String routeTopic = routeEx.topicName().asString();
-                final ListFW<KafkaHeaderFW> routeHeaders = routeEx.headers();
+                final ArrayFW<KafkaHeaderFW> routeHeaders = routeEx.headers();
 
                 if (routeTopic != null)
                 {
@@ -331,7 +330,7 @@ public final class ClientStreamFactory implements StreamFactory
         private long progressEndOffset;
 
         private String topicName;
-        private ListFW<KafkaHeaderFW> headers;
+        private ArrayFW<KafkaHeaderFW> headers;
         private OctetsFW fetchKey;
         private int hashCode;
 
@@ -926,12 +925,12 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 else
                 {
-                    ListFW<KafkaHeaderFW> headers = beginEx.headers();
+                    ArrayFW<KafkaHeaderFW> headers = beginEx.headers();
                     if (headers != null && !headers.isEmpty())
                     {
                         MutableDirectBuffer headersBuffer = new UnsafeBuffer(new byte[headers.sizeof()]);
                         headersBuffer.putBytes(0, headers.buffer(),  headers.offset(), headers.sizeof());
-                        this.headers = new ListFW<KafkaHeaderFW>(
+                        this.headers = new ArrayFW<KafkaHeaderFW>(
                                 new KafkaHeaderFW()).wrap(headersBuffer, 0, headersBuffer.capacity());
                     }
                     if (fetchKey != null)

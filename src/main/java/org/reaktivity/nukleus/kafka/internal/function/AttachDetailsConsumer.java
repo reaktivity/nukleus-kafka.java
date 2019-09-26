@@ -19,8 +19,8 @@ import java.util.function.IntSupplier;
 
 import org.agrona.collections.Long2LongHashMap;
 import org.reaktivity.nukleus.kafka.internal.stream.MessageDispatcher;
+import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 @FunctionalInterface
@@ -30,7 +30,7 @@ public interface AttachDetailsConsumer
         long streamId,
         Long2LongHashMap fetchOffsets,
         OctetsFW fetchKey,
-        ListFW<KafkaHeaderFW> headers,
+        ArrayFW<KafkaHeaderFW> headers,
         MessageDispatcher dispatcher,
         IntSupplier supplyWindow);
 }

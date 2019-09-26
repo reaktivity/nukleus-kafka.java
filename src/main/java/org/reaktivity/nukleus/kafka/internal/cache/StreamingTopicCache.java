@@ -21,8 +21,8 @@ import java.util.Iterator;
 import org.agrona.DirectBuffer;
 import org.agrona.collections.Long2LongHashMap;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
+import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
@@ -101,7 +101,7 @@ public final class StreamingTopicCache implements TopicCache
     public Iterator<MessageRef> getMessages(
         Long2LongHashMap fetchOffsets,
         OctetsFW fetchKey,
-        ListFW<KafkaHeaderFW> headers)
+        ArrayFW<KafkaHeaderFW> headers)
     {
         return EMPTY_ITERATOR;
     }
@@ -126,7 +126,7 @@ public final class StreamingTopicCache implements TopicCache
     public boolean hasMessages(
         Long2LongHashMap fetchOffsets,
         OctetsFW fetchKey,
-        ListFW<KafkaHeaderFW> headers)
+        ArrayFW<KafkaHeaderFW> headers)
     {
         return false;
     }

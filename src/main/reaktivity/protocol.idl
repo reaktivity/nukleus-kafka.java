@@ -183,7 +183,7 @@ scope protocol
             struct ListOffsetsRequest // version 2
             {
 				int32 replicaId = -1;
-				protocol::codec::offset::IsolationLevel isolationLevel;
+				IsolationLevel isolationLevel;
 				int32 topicCount;
             }
             
