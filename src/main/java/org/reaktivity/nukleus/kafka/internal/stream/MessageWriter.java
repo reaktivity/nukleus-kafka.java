@@ -85,7 +85,7 @@ public final class MessageWriter
         final MessageConsumer receiver,
         final long routeId,
         final long streamId,
-        final int padding,
+        final int reserved,
         final OctetsFW payload)
     {
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
@@ -93,7 +93,7 @@ public final class MessageWriter
                 .streamId(streamId)
                 .trace(supplyTrace.getAsLong())
                 .groupId(0)
-                .padding(padding)
+                .reserved(reserved)
                 .payload(p -> p.set(payload.buffer(), payload.offset(), payload.sizeof()))
                 .build();
 
@@ -209,7 +209,7 @@ public final class MessageWriter
         final long routeId,
         final long streamId,
         final long traceId,
-        final int padding,
+        final int reserved,
         final byte flags,
         final DirectBuffer messageKey,
         final long timestamp,
@@ -217,15 +217,15 @@ public final class MessageWriter
         final int messageValueLimit,
         final Long2LongHashMap fetchOffsets)
     {
-        OctetsFW key = messageKey == null ? null : messageKeyRO.wrap(messageKey, 0, messageKey.capacity());
-        OctetsFW value = messageValue == null ? null : messageValueRO.wrap(messageValue, 0, messageValueLimit);
+        final OctetsFW key = messageKey == null ? null : messageKeyRO.wrap(messageKey, 0, messageKey.capacity());
+        final OctetsFW value = messageValue == null ? null : messageValueRO.wrap(messageValue, 0, messageValueLimit);
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
                 .trace(traceId)
                 .flags(flags)
                 .groupId(0)
-                .padding(padding)
+                .reserved(reserved)
                 .payload(value)
                 .extension(e -> e.set(visitKafkaDataEx(timestamp, fetchOffsets, key)))
                 .build();
@@ -238,7 +238,7 @@ public final class MessageWriter
         final long routeId,
         final long streamId,
         final long traceId,
-        final int padding,
+        final int reserved,
         final byte flags,
         final DirectBuffer messageValue,
         final int messageValueOffset,
@@ -252,7 +252,7 @@ public final class MessageWriter
                 .trace(traceId)
                 .flags(flags)
                 .groupId(0)
-                .padding(padding)
+                .reserved(reserved)
                 .payload(value)
                 .build();
 
