@@ -840,10 +840,9 @@ public final class NetworkConnectionPool
         {
             timerId = scheduler.rescheduleTimeout(readIdleTimeout, timerId);
 
-            final OctetsFW payload = data.payload();
             final long networkTraceId = data.trace();
 
-            networkResponseBudget -= payload.sizeof() + data.padding();
+            networkResponseBudget -= data.reserved();
 
             if (networkResponseBudget < 0)
             {
@@ -853,6 +852,8 @@ public final class NetworkConnectionPool
             {
                 try
                 {
+                    final OctetsFW payload = data.payload();
+
                     DirectBuffer networkBuffer = payload.buffer();
                     int networkOffset = payload.offset();
                     int networkLimit = payload.limit();
@@ -1156,7 +1157,7 @@ public final class NetworkConnectionPool
                 fetchRequests.getAsLong();
 
                 writer.doData(networkInitial, networkRouteId, networkInitialId,
-                        networkRequestPadding, payload);
+                        payload.sizeof() + networkRequestPadding, payload);
                 networkRequestBudget -= payload.sizeof() + networkRequestPadding;
 
                 timerId = scheduler.rescheduleTimeout(readIdleTimeout, timerId, this::fetchRequestIdle);
@@ -1253,7 +1254,7 @@ public final class NetworkConnectionPool
                         .build();
 
                 writer.doData(networkInitial, networkRouteId, networkInitialId,
-                        networkRequestPadding, payload);
+                        payload.sizeof() + networkRequestPadding, payload);
                 networkRequestBudget -= payload.sizeof() + networkRequestPadding;
 
                 timerId = scheduler.rescheduleTimeout(readIdleTimeout, timerId, this::listOffsetsRequestIdle);
@@ -1277,12 +1278,12 @@ public final class NetworkConnectionPool
             {
                 timerId = scheduler.rescheduleTimeout(readIdleTimeout, timerId);
 
-                final OctetsFW payload = data.payload();
-                networkResponseBudget -= payload.sizeof() + data.padding();
+                networkResponseBudget -= data.reserved();
                 if (networkResponseBudget < 0)
                 {
                     writer.doReset(networkReplyThrottle, networkRouteId, networkReplyId);
                 }
+                final OctetsFW payload = data.payload();
                 int excessBytes = fetchResponseDecoder.decode(payload, data.trace());
                 doOfferResponseBudget();
                 if (excessBytes >= 0) // response complete
@@ -1799,7 +1800,7 @@ public final class NetworkConnectionPool
                             .build();
 
                     writer.doData(networkInitial, networkRouteId, networkInitialId,
-                            networkRequestPadding, payload);
+                            payload.sizeof() + networkRequestPadding, payload);
                     networkRequestBudget -= payload.sizeof() + networkRequestPadding;
                     pendingRequest = MetadataRequestType.DESCRIBE_CONFIGS;
 
@@ -1858,7 +1859,7 @@ public final class NetworkConnectionPool
                             .build();
 
                     writer.doData(networkInitial, networkRouteId, networkInitialId,
-                            networkRequestPadding, payload);
+                            payload.sizeof() + networkRequestPadding, payload);
                     networkRequestBudget -= payload.sizeof() + networkRequestPadding;
                     pendingRequest = MetadataRequestType.METADATA;
 

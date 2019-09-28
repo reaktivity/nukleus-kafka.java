@@ -500,6 +500,7 @@ public final class ClientStreamFactory implements StreamFactory
                         traceId,
                         key,
                         timestamp,
+                        requiredBudget,
                         value,
                         fragmentedMessageBytesWritten,
                         fragmentedMessageBytesWritten + bytesToWrite);
@@ -789,6 +790,7 @@ public final class ClientStreamFactory implements StreamFactory
                 long traceId,
                 DirectBuffer key,
                 long timestamp,
+                int reserved,
                 DirectBuffer value,
                 int valueOffset,
                 int valueLimit)
@@ -804,7 +806,7 @@ public final class ClientStreamFactory implements StreamFactory
 
                 final long oldFetchOffset = this.fetchOffsets.put(partition, nextOffset);
                 writer.doKafkaData(applicationReply, applicationRouteId, applicationReplyId, traceId,
-                                   applicationReplyPadding, flags,
+                                   reserved, flags,
                                    compacted ? key : null,
                                    timestamp, value, valueLimit, fetchOffsets);
                 this.fetchOffsets.put(partition, oldFetchOffset);
@@ -812,8 +814,7 @@ public final class ClientStreamFactory implements StreamFactory
             else
             {
                 writer.doKafkaDataContinuation(applicationReply, applicationRouteId, applicationReplyId, traceId,
-                        applicationReplyPadding, flags, value, valueOffset,
-                        valueLimit);
+                        reserved, flags, value, valueOffset, valueLimit);
             }
 
             if (Flags.fin(flags))
