@@ -1086,7 +1086,10 @@ public final class ClientStreamFactory implements StreamFactory
         private void onMetadataError(
             KafkaError errorCode)
         {
-            writer.doReset(applicationReply, applicationRouteId, applicationId);
+            if (!errorCode.isRecoverable())
+            {
+                writer.doReset(applicationReply, applicationRouteId, applicationId);
+            }
         }
 
         private void handleThrottle(

@@ -369,6 +369,7 @@ public final class NetworkConnectionPool
         case INVALID_TOPIC_EXCEPTION:
         case UNKNOWN_TOPIC_OR_PARTITION:
         case PARTITION_COUNT_CHANGED:
+        case NOT_LEADER_FOR_PARTITION:
             onMetadataError.accept(errorCode);
             break;
         case NONE:
@@ -1499,6 +1500,11 @@ public final class NetworkConnectionPool
                 // metadata may be null if all clients have detached
                 if (metadata != null)
                 {
+                    if (errorCode == KafkaError.NOT_LEADER_FOR_PARTITION)
+                    {
+                        metadata.invalidate();
+                    }
+
                     metadata.setErrorCode(errorCode);
                     metadata.scheduleRefresh(
                             scheduler,
