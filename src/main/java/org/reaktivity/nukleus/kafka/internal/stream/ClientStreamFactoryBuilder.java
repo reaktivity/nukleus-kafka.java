@@ -48,7 +48,7 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     private MutableDirectBuffer writeBuffer;
     private LongUnaryOperator supplyInitialId;
     private LongUnaryOperator supplyReplyId;
-    private LongSupplier supplyTrace;
+    private LongSupplier supplyTraceId;
     private Supplier<BufferPool> supplyBufferPool;
     private Function<String, LongSupplier> supplyCounter;
     private Function<String, LongConsumer> supplyAccumulator;
@@ -103,10 +103,10 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
-    public ClientStreamFactoryBuilder setTraceSupplier(
-        LongSupplier supplyTrace)
+    public ClientStreamFactoryBuilder setTraceIdSupplier(
+        LongSupplier supplyTraceId)
     {
-        this.supplyTrace = supplyTrace;
+        this.supplyTraceId = supplyTraceId;
         return this;
     }
 
@@ -161,7 +161,7 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
                 memoryManager,
                 supplyInitialId,
                 supplyReplyId,
-                supplyTrace,
+                supplyTraceId,
                 supplyTypeId,
                 supplyCounter,
                 correlations,

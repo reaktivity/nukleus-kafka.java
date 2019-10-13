@@ -369,6 +369,7 @@ public final class NetworkConnectionPool
         case INVALID_TOPIC_EXCEPTION:
         case UNKNOWN_TOPIC_OR_PARTITION:
         case PARTITION_COUNT_CHANGED:
+        case NOT_LEADER_FOR_PARTITION:
             onMetadataError.accept(errorCode);
             break;
         case NONE:
@@ -840,7 +841,7 @@ public final class NetworkConnectionPool
         {
             timerId = scheduler.rescheduleTimeout(readIdleTimeout, timerId);
 
-            final long networkTraceId = data.trace();
+            final long networkTraceId = data.traceId();
 
             networkResponseBudget -= data.reserved();
 
@@ -972,7 +973,7 @@ public final class NetworkConnectionPool
             if (networkResponseCredit > 0)
             {
                 writer.doWindow(
-                        networkReplyThrottle, networkRouteId, networkReplyId, networkResponseCredit, 0, 0);
+                        networkReplyThrottle, networkRouteId, networkReplyId, 0, networkResponseCredit, 0);
 
                 this.networkResponseBudget += networkResponseCredit;
             }
@@ -1284,7 +1285,7 @@ public final class NetworkConnectionPool
                     writer.doReset(networkReplyThrottle, networkRouteId, networkReplyId);
                 }
                 final OctetsFW payload = data.payload();
-                int excessBytes = fetchResponseDecoder.decode(payload, data.trace());
+                int excessBytes = fetchResponseDecoder.decode(payload, data.traceId());
                 doOfferResponseBudget();
                 if (excessBytes >= 0) // response complete
                 {
@@ -1499,6 +1500,11 @@ public final class NetworkConnectionPool
                 // metadata may be null if all clients have detached
                 if (metadata != null)
                 {
+                    if (errorCode == KafkaError.NOT_LEADER_FOR_PARTITION)
+                    {
+                        metadata.invalidate();
+                    }
+
                     metadata.setErrorCode(errorCode);
                     metadata.scheduleRefresh(
                             scheduler,
