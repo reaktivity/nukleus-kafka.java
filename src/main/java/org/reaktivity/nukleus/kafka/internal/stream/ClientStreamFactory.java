@@ -136,7 +136,7 @@ public final class ClientStreamFactory implements StreamFactory
         MemoryManager memoryManager,
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
-        LongSupplier supplyTrace,
+        LongSupplier supplyTraceId,
         ToIntFunction<String> supplyTypeId,
         Function<String, LongSupplier> supplyCounter,
         Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations,
@@ -154,7 +154,7 @@ public final class ClientStreamFactory implements StreamFactory
         this.connectionPools = connectionPools;
         this.scheduler = scheduler;
         this.counters = counters;
-        this.writer = new MessageWriter(writeBuffer, supplyTrace, supplyTypeId);
+        this.writer = new MessageWriter(writeBuffer, supplyTraceId, supplyTypeId);
 
         final DefaultMessageCache messageCache = new DefaultMessageCache(requireNonNull(memoryManager));
         this.connectionPoolFactory = networkRouteId ->
@@ -308,7 +308,7 @@ public final class ClientStreamFactory implements StreamFactory
         private byte[] applicationBeginExtension;
         private long applicationReplyId;
         private int applicationReplyPadding;
-        private long groupId;
+        private long budgetId;
         private Budget budget = NO_BUDGET;
 
         private int networkAttachId = UNATTACHED;
@@ -1121,11 +1121,11 @@ public final class ClientStreamFactory implements StreamFactory
             final WindowFW window)
         {
             applicationReplyPadding = window.padding();
-            groupId = window.groupId();
+            budgetId = window.budgetId();
 
             if (budget == NO_BUDGET)
             {
-                budget = budgetManager.createBudget(groupId);
+                budget = budgetManager.createBudget(budgetId);
             }
 
             budget.incBudget(applicationReplyId, window.credit(), dispatchUsingCurrentState);
