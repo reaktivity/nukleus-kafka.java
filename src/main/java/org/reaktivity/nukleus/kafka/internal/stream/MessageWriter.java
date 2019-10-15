@@ -211,6 +211,7 @@ public final class MessageWriter
         final long routeId,
         final long streamId,
         final long traceId,
+        final long budgetId,
         final int reserved,
         final byte flags,
         final DirectBuffer messageKey,
@@ -226,7 +227,7 @@ public final class MessageWriter
                 .streamId(streamId)
                 .traceId(traceId)
                 .flags(flags)
-                .budgetId(0L)
+                .budgetId(budgetId)
                 .reserved(reserved)
                 .payload(value)
                 .extension(e -> e.set(visitKafkaDataEx(timestamp, fetchOffsets, key)))
@@ -240,6 +241,7 @@ public final class MessageWriter
         final long routeId,
         final long streamId,
         final long traceId,
+        final long budgetId,
         final int reserved,
         final byte flags,
         final DirectBuffer messageValue,
@@ -253,7 +255,7 @@ public final class MessageWriter
                 .streamId(streamId)
                 .traceId(traceId)
                 .flags(flags)
-                .budgetId(0L)
+                .budgetId(budgetId)
                 .reserved(reserved)
                 .payload(value)
                 .build();
