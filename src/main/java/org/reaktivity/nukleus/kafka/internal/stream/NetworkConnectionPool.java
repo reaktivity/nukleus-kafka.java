@@ -76,9 +76,9 @@ import org.reaktivity.nukleus.kafka.internal.cache.TopicCache;
 import org.reaktivity.nukleus.kafka.internal.function.Attachable;
 import org.reaktivity.nukleus.kafka.internal.function.IntLongConsumer;
 import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
+import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.RequestHeaderFW;
@@ -289,7 +289,7 @@ public final class NetworkConnectionPool
 
     private final Map<String, TopicMetadata> topicMetadataByName;
     private final Map<String, NetworkTopic> topicsByName;
-    private final Map<String, List<ListFW<KafkaHeaderFW>>> routeHeadersByTopic;
+    private final Map<String, List<ArrayFW<KafkaHeaderFW>>> routeHeadersByTopic;
 
     private final List<NetworkTopicPartition> partitionsWorkList = new ArrayList<NetworkTopicPartition>();
     private final LongArrayList offsetsWorkList = new LongArrayList();
@@ -369,6 +369,7 @@ public final class NetworkConnectionPool
         case INVALID_TOPIC_EXCEPTION:
         case UNKNOWN_TOPIC_OR_PARTITION:
         case PARTITION_COUNT_CHANGED:
+        case NOT_LEADER_FOR_PARTITION:
             onMetadataError.accept(errorCode);
             break;
         case NONE:
@@ -394,7 +395,7 @@ public final class NetworkConnectionPool
 
     public void addRoute(
         String topicName,
-        ListFW<KafkaHeaderFW> routeHeaders,
+        ArrayFW<KafkaHeaderFW> routeHeaders,
         boolean proactive,
         BiConsumer<KafkaError, String> onMetadataError)
     {
@@ -415,14 +416,14 @@ public final class NetworkConnectionPool
         else
         {
             // apply route header filtering later during first subscribe
-            routeHeadersByTopic.computeIfAbsent(topicName, t -> new ArrayList<ListFW<KafkaHeaderFW>>())
+            routeHeadersByTopic.computeIfAbsent(topicName, t -> new ArrayList<ArrayFW<KafkaHeaderFW>>())
                 .add(routeHeaders);
         }
     }
 
     private void addRoute(
         String topicName,
-        ListFW<KafkaHeaderFW> routeHeaders,
+        ArrayFW<KafkaHeaderFW> routeHeaders,
         boolean proactive,
         BiConsumer<KafkaError, String> onMetadataError,
         TopicMetadata topicMetadata)
@@ -840,10 +841,9 @@ public final class NetworkConnectionPool
         {
             timerId = scheduler.rescheduleTimeout(readIdleTimeout, timerId);
 
-            final OctetsFW payload = data.payload();
-            final long networkTraceId = data.trace();
+            final long networkTraceId = data.traceId();
 
-            networkResponseBudget -= payload.sizeof() + data.padding();
+            networkResponseBudget -= data.reserved();
 
             if (networkResponseBudget < 0)
             {
@@ -853,6 +853,8 @@ public final class NetworkConnectionPool
             {
                 try
                 {
+                    final OctetsFW payload = data.payload();
+
                     DirectBuffer networkBuffer = payload.buffer();
                     int networkOffset = payload.offset();
                     int networkLimit = payload.limit();
@@ -971,7 +973,7 @@ public final class NetworkConnectionPool
             if (networkResponseCredit > 0)
             {
                 writer.doWindow(
-                        networkReplyThrottle, networkRouteId, networkReplyId, networkResponseCredit, 0, 0);
+                        networkReplyThrottle, networkRouteId, networkReplyId, 0, networkResponseCredit, 0);
 
                 this.networkResponseBudget += networkResponseCredit;
             }
@@ -1156,7 +1158,7 @@ public final class NetworkConnectionPool
                 fetchRequests.getAsLong();
 
                 writer.doData(networkInitial, networkRouteId, networkInitialId,
-                        networkRequestPadding, payload);
+                        payload.sizeof() + networkRequestPadding, payload);
                 networkRequestBudget -= payload.sizeof() + networkRequestPadding;
 
                 timerId = scheduler.rescheduleTimeout(readIdleTimeout, timerId, this::fetchRequestIdle);
@@ -1253,7 +1255,7 @@ public final class NetworkConnectionPool
                         .build();
 
                 writer.doData(networkInitial, networkRouteId, networkInitialId,
-                        networkRequestPadding, payload);
+                        payload.sizeof() + networkRequestPadding, payload);
                 networkRequestBudget -= payload.sizeof() + networkRequestPadding;
 
                 timerId = scheduler.rescheduleTimeout(readIdleTimeout, timerId, this::listOffsetsRequestIdle);
@@ -1277,13 +1279,13 @@ public final class NetworkConnectionPool
             {
                 timerId = scheduler.rescheduleTimeout(readIdleTimeout, timerId);
 
-                final OctetsFW payload = data.payload();
-                networkResponseBudget -= payload.sizeof() + data.padding();
+                networkResponseBudget -= data.reserved();
                 if (networkResponseBudget < 0)
                 {
                     writer.doReset(networkReplyThrottle, networkRouteId, networkReplyId);
                 }
-                int excessBytes = fetchResponseDecoder.decode(payload, data.trace());
+                final OctetsFW payload = data.payload();
+                int excessBytes = fetchResponseDecoder.decode(payload, data.traceId());
                 doOfferResponseBudget();
                 if (excessBytes >= 0) // response complete
                 {
@@ -1498,6 +1500,11 @@ public final class NetworkConnectionPool
                 // metadata may be null if all clients have detached
                 if (metadata != null)
                 {
+                    if (errorCode == KafkaError.NOT_LEADER_FOR_PARTITION)
+                    {
+                        metadata.invalidate();
+                    }
+
                     metadata.setErrorCode(errorCode);
                     metadata.scheduleRefresh(
                             scheduler,
@@ -1799,7 +1806,7 @@ public final class NetworkConnectionPool
                             .build();
 
                     writer.doData(networkInitial, networkRouteId, networkInitialId,
-                            networkRequestPadding, payload);
+                            payload.sizeof() + networkRequestPadding, payload);
                     networkRequestBudget -= payload.sizeof() + networkRequestPadding;
                     pendingRequest = MetadataRequestType.DESCRIBE_CONFIGS;
 
@@ -1858,7 +1865,7 @@ public final class NetworkConnectionPool
                             .build();
 
                     writer.doData(networkInitial, networkRouteId, networkInitialId,
-                            networkRequestPadding, payload);
+                            payload.sizeof() + networkRequestPadding, payload);
                     networkRequestBudget -= payload.sizeof() + networkRequestPadding;
                     pendingRequest = MetadataRequestType.METADATA;
 
@@ -2221,7 +2228,7 @@ public final class NetworkConnectionPool
                     partitionCount);
 
             // Cache only messages matching route header conditions
-            List<ListFW<KafkaHeaderFW>> routeHeadersList = routeHeadersByTopic.remove(topicName);
+            List<ArrayFW<KafkaHeaderFW>> routeHeadersList = routeHeadersByTopic.remove(topicName);
 
             if (routeHeadersList != null)
             {
@@ -2240,7 +2247,7 @@ public final class NetworkConnectionPool
         }
 
         void addRoute(
-            ListFW<KafkaHeaderFW> routeHeaders)
+            ArrayFW<KafkaHeaderFW> routeHeaders)
         {
             // Cache only messages matching route conditions
             if (routeHeaders != null && !routeHeaders.isEmpty())
@@ -2262,7 +2269,7 @@ public final class NetworkConnectionPool
             long streamId,
             Long2LongHashMap fetchOffsets,
             OctetsFW fetchKey,
-            ListFW<KafkaHeaderFW> headers,
+            ArrayFW<KafkaHeaderFW> headers,
             MessageDispatcher dispatcher,
             IntSupplier supplyWindow)
         {
@@ -2354,7 +2361,7 @@ public final class NetworkConnectionPool
             long streamId,
             Long2LongHashMap fetchOffsets,
             OctetsFW fetchKey,
-            ListFW<KafkaHeaderFW> headers,
+            ArrayFW<KafkaHeaderFW> headers,
             MessageDispatcher dispatcher,
             IntSupplier supplyWindow)
         {
@@ -3116,11 +3123,11 @@ public final class NetworkConnectionPool
         private final KafkaHeaderFW headerRO = new KafkaHeaderFW();
         private final IntArrayList offsets = new IntArrayList();
 
-        private ListFW<KafkaHeaderFW> headers;
+        private ArrayFW<KafkaHeaderFW> headers;
         private int position;
 
         private Iterator<KafkaHeaderFW> wrap(
-                ListFW<KafkaHeaderFW> headers)
+                ArrayFW<KafkaHeaderFW> headers)
         {
             this.headers = headers;
             offsets.clear();

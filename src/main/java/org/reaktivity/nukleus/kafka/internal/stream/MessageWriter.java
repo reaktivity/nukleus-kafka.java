@@ -52,16 +52,16 @@ public final class MessageWriter
     private final OctetsFW messageValueRO = new OctetsFW();
 
     private final MutableDirectBuffer writeBuffer;
-    private final LongSupplier supplyTrace;
+    private final LongSupplier supplyTraceId;
     private final int kafkaTypeId;
 
     public MessageWriter(
         MutableDirectBuffer writeBuffer,
-        LongSupplier supplyTrace,
+        LongSupplier supplyTraceId,
         ToIntFunction<String> supplyTypeId)
     {
         this.writeBuffer = requireNonNull(writeBuffer);
-        this.supplyTrace = requireNonNull(supplyTrace);
+        this.supplyTraceId = requireNonNull(supplyTraceId);
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
     }
 
@@ -74,7 +74,8 @@ public final class MessageWriter
         final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
-                .trace(supplyTrace.getAsLong())
+                .traceId(supplyTraceId.getAsLong())
+                .affinity(0L)
                 .extension(b -> b.set(visitor))
                 .build();
 
@@ -85,15 +86,15 @@ public final class MessageWriter
         final MessageConsumer receiver,
         final long routeId,
         final long streamId,
-        final int padding,
+        final int reserved,
         final OctetsFW payload)
     {
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
-                .trace(supplyTrace.getAsLong())
-                .groupId(0)
-                .padding(padding)
+                .traceId(supplyTraceId.getAsLong())
+                .budgetId(0L)
+                .reserved(reserved)
                 .payload(p -> p.set(payload.buffer(), payload.offset(), payload.sizeof()))
                 .build();
 
@@ -109,7 +110,7 @@ public final class MessageWriter
         final EndFW end = endRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
-                .trace(supplyTrace.getAsLong())
+                .traceId(supplyTraceId.getAsLong())
                 .extension(b -> b.set(visitKafkaEndEx(offsets)))
                 .build();
 
@@ -148,7 +149,7 @@ public final class MessageWriter
         final AbortFW abort = abortRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
-                .trace(supplyTrace.getAsLong())
+                .traceId(supplyTraceId.getAsLong())
                 .build();
 
         receiver.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());
@@ -158,17 +159,17 @@ public final class MessageWriter
         final MessageConsumer sender,
         final long routeId,
         final long streamId,
+        final long budgetId,
         final int credit,
-        final int padding,
-        final long groupId)
+        final int padding)
     {
         final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
-                .trace(supplyTrace.getAsLong())
+                .traceId(supplyTraceId.getAsLong())
+                .budgetId(budgetId)
                 .credit(credit)
                 .padding(padding)
-                .groupId(groupId)
                 .build();
 
         sender.accept(window.typeId(), window.buffer(), window.offset(), window.sizeof());
@@ -182,7 +183,7 @@ public final class MessageWriter
         final ResetFW reset = resetRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
-                .trace(supplyTrace.getAsLong())
+                .traceId(supplyTraceId.getAsLong())
                 .build();
 
         sender.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
@@ -197,7 +198,8 @@ public final class MessageWriter
         final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
-                .trace(supplyTrace.getAsLong())
+                .traceId(supplyTraceId.getAsLong())
+                .affinity(0L)
                 .extension(b -> b.set(extension))
                 .build();
 
@@ -209,7 +211,8 @@ public final class MessageWriter
         final long routeId,
         final long streamId,
         final long traceId,
-        final int padding,
+        final long budgetId,
+        final int reserved,
         final byte flags,
         final DirectBuffer messageKey,
         final long timestamp,
@@ -217,15 +220,15 @@ public final class MessageWriter
         final int messageValueLimit,
         final Long2LongHashMap fetchOffsets)
     {
-        OctetsFW key = messageKey == null ? null : messageKeyRO.wrap(messageKey, 0, messageKey.capacity());
-        OctetsFW value = messageValue == null ? null : messageValueRO.wrap(messageValue, 0, messageValueLimit);
+        final OctetsFW key = messageKey == null ? null : messageKeyRO.wrap(messageKey, 0, messageKey.capacity());
+        final OctetsFW value = messageValue == null ? null : messageValueRO.wrap(messageValue, 0, messageValueLimit);
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
-                .trace(traceId)
+                .traceId(traceId)
                 .flags(flags)
-                .groupId(0)
-                .padding(padding)
+                .budgetId(budgetId)
+                .reserved(reserved)
                 .payload(value)
                 .extension(e -> e.set(visitKafkaDataEx(timestamp, fetchOffsets, key)))
                 .build();
@@ -238,7 +241,8 @@ public final class MessageWriter
         final long routeId,
         final long streamId,
         final long traceId,
-        final int padding,
+        final long budgetId,
+        final int reserved,
         final byte flags,
         final DirectBuffer messageValue,
         final int messageValueOffset,
@@ -249,10 +253,10 @@ public final class MessageWriter
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
-                .trace(traceId)
+                .traceId(traceId)
                 .flags(flags)
-                .groupId(0)
-                .padding(padding)
+                .budgetId(budgetId)
+                .reserved(reserved)
                 .payload(value)
                 .build();
 

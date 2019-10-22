@@ -33,8 +33,8 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.LongArrayList;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.stream.HeadersFW;
+import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
@@ -202,7 +202,7 @@ public class CompactedPartitionIndex implements PartitionIndex
     @Override
     public Iterator<Entry> entries(
         long requestOffset,
-        ListFW<KafkaHeaderFW> headerConditions)
+        ArrayFW<KafkaHeaderFW> headerConditions)
     {
         Iterator<Entry> result;
         int position = locate(requestOffset);
@@ -502,7 +502,7 @@ public class CompactedPartitionIndex implements PartitionIndex
 
         private int position;
         private boolean hasNext;
-        private ListFW<KafkaHeaderFW> headerConditions;
+        private ArrayFW<KafkaHeaderFW> headerConditions;
 
         @Override
         public boolean hasNext()
@@ -546,7 +546,7 @@ public class CompactedPartitionIndex implements PartitionIndex
         }
 
         Iterator<Entry> reset(
-            ListFW<KafkaHeaderFW> headerConditions,
+            ArrayFW<KafkaHeaderFW> headerConditions,
             int position)
         {
             this.headerConditions = headerConditions;

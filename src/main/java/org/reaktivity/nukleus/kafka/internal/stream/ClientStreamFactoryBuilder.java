@@ -17,7 +17,6 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.IntUnaryOperator;
 import java.util.function.LongConsumer;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
@@ -49,7 +48,7 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     private MutableDirectBuffer writeBuffer;
     private LongUnaryOperator supplyInitialId;
     private LongUnaryOperator supplyReplyId;
-    private LongSupplier supplyTrace;
+    private LongSupplier supplyTraceId;
     private Supplier<BufferPool> supplyBufferPool;
     private Function<String, LongSupplier> supplyCounter;
     private Function<String, LongConsumer> supplyAccumulator;
@@ -104,10 +103,10 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
-    public ClientStreamFactoryBuilder setTraceSupplier(
-        LongSupplier supplyTrace)
+    public ClientStreamFactoryBuilder setTraceIdSupplier(
+        LongSupplier supplyTraceId)
     {
-        this.supplyTrace = supplyTrace;
+        this.supplyTraceId = supplyTraceId;
         return this;
     }
 
@@ -116,20 +115,6 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
         ToIntFunction<String> supplyTypeId)
     {
         this.supplyTypeId = supplyTypeId;
-        return this;
-    }
-
-    @Override
-    public ClientStreamFactoryBuilder setGroupBudgetClaimer(
-        LongFunction<IntUnaryOperator> groupBudgetClaimer)
-    {
-        return this;
-    }
-
-    @Override
-    public ClientStreamFactoryBuilder setGroupBudgetReleaser(
-        LongFunction<IntUnaryOperator> groupBudgetReleaser)
-    {
         return this;
     }
 
@@ -176,7 +161,7 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
                 memoryManager,
                 supplyInitialId,
                 supplyReplyId,
-                supplyTrace,
+                supplyTraceId,
                 supplyTypeId,
                 supplyCounter,
                 correlations,

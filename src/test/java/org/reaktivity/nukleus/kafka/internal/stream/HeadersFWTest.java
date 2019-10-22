@@ -28,8 +28,8 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.Test;
 import org.reaktivity.nukleus.kafka.internal.test.TestUtil;
+import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.HeaderFW;
 
 public final class HeadersFWTest
@@ -88,8 +88,8 @@ public final class HeadersFWTest
     {
         headersRO.wrap(rawHeaders,  offset, position);
         MutableDirectBuffer buffer = new UnsafeBuffer(new byte[100]);
-        ListFW<KafkaHeaderFW> headerConditions =
-            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+        ArrayFW<KafkaHeaderFW> headerConditions =
+            new ArrayFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
                 .wrap(buffer, 0, buffer.capacity())
                 .item(b -> b.key("header1").value(asOctets("value1")))
                 .build();
@@ -100,8 +100,8 @@ public final class HeadersFWTest
     public void shouldMatchSingleHeaderConditionOnSinglelyOccuringHeader()
     {
         headersRO.wrap(rawHeaders,  offset, position);
-        ListFW<KafkaHeaderFW> headerConditions =
-            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+        ArrayFW<KafkaHeaderFW> headerConditions =
+            new ArrayFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
                 .wrap(new UnsafeBuffer(new byte[100]), 0, 100)
                 .item(b -> b.key("header2").value(asOctets("value1")))
                 .build();
@@ -113,8 +113,8 @@ public final class HeadersFWTest
     {
         headersRO.wrap(rawHeaders,  offset, position);
         MutableDirectBuffer buffer = new UnsafeBuffer(new byte[100]);
-        ListFW<KafkaHeaderFW> emptyHeaderConditions =
-            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+        ArrayFW<KafkaHeaderFW> emptyHeaderConditions =
+            new ArrayFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
                 .wrap(buffer, 0, buffer.capacity())
                 .build();
         assertTrue(headersRO.matches(emptyHeaderConditions));
@@ -132,8 +132,8 @@ public final class HeadersFWTest
     {
         headersRO.wrap(rawHeaders,  offset, position);
         MutableDirectBuffer buffer = new UnsafeBuffer(new byte[100]);
-        ListFW<KafkaHeaderFW> headerConditions =
-            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+        ArrayFW<KafkaHeaderFW> headerConditions =
+            new ArrayFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
                 .wrap(buffer, 0, buffer.capacity())
                 .item(b -> b.key("header1").value(asOctets("value2")))
                 .item(b -> b.key("header2").value(asOctets("value1")))
@@ -146,8 +146,8 @@ public final class HeadersFWTest
     {
         headersRO.wrap(rawHeaders,  offset, position);
         MutableDirectBuffer buffer = new UnsafeBuffer(new byte[100]);
-        ListFW<KafkaHeaderFW> headerConditions =
-            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+        ArrayFW<KafkaHeaderFW> headerConditions =
+            new ArrayFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
                 .wrap(buffer, 0, buffer.capacity())
                 .item(b -> b.key("header1").value(asOctets("value2")))
                 .item(b -> b.key("header2").value(asOctets("junk")))
@@ -160,8 +160,8 @@ public final class HeadersFWTest
     {
         headersRO.wrap(rawHeaders,  offset, position);
         MutableDirectBuffer buffer = new UnsafeBuffer(new byte[100]);
-        ListFW<KafkaHeaderFW> headerConditions =
-            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+        ArrayFW<KafkaHeaderFW> headerConditions =
+            new ArrayFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
                 .wrap(buffer, 0, buffer.capacity())
                 .item(b -> b.key("header1").value(asOctets("junk")))
                 .item(b -> b.key("header2").value(asOctets("junk")))
@@ -174,8 +174,8 @@ public final class HeadersFWTest
     {
         headersRO.wrap(rawHeaders,  offset, position);
         MutableDirectBuffer buffer = new UnsafeBuffer(new byte[100]);
-        ListFW<KafkaHeaderFW> headerConditions =
-            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+        ArrayFW<KafkaHeaderFW> headerConditions =
+            new ArrayFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
                 .wrap(buffer, 0, buffer.capacity())
                 .item(b -> b.key("header1").value(asOctets("value1")))
                 .item(b -> b.key("header1").value(asOctets("value2")))
@@ -188,8 +188,8 @@ public final class HeadersFWTest
     {
         headersRO.wrap(rawHeaders,  offset, position);
         MutableDirectBuffer buffer = new UnsafeBuffer(new byte[100]);
-        ListFW<KafkaHeaderFW> headerConditions =
-            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+        ArrayFW<KafkaHeaderFW> headerConditions =
+            new ArrayFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
                 .wrap(buffer, 0, buffer.capacity())
                 .item(b -> b.key("header1").value(asOctets("value1")))
                 .item(b -> b.key("header1").value(asOctets("junk")))
@@ -202,8 +202,8 @@ public final class HeadersFWTest
     {
         headersRO.wrap(rawHeaders,  offset, position);
         MutableDirectBuffer buffer = new UnsafeBuffer(new byte[100]);
-        ListFW<KafkaHeaderFW> headerConditions =
-            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+        ArrayFW<KafkaHeaderFW> headerConditions =
+            new ArrayFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
                 .wrap(buffer, 0, buffer.capacity())
                 .item(b -> b.key("header1").value(asOctets("nope")))
                 .build();
@@ -215,8 +215,8 @@ public final class HeadersFWTest
     {
         headersRO.wrap(rawHeaders,  offset, position);
         MutableDirectBuffer buffer = new UnsafeBuffer(new byte[100]);
-        ListFW<KafkaHeaderFW> headerConditions =
-            new ListFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+        ArrayFW<KafkaHeaderFW> headerConditions =
+            new ArrayFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
                 .wrap(buffer, 0, buffer.capacity())
                 .item(b -> b.key("header2").value(asOctets("nope")))
                 .build();

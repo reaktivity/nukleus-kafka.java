@@ -56,7 +56,6 @@ import org.reaktivity.nukleus.kafka.internal.function.PartitionProgressHandler;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.MessageFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.Varint64FW;
@@ -137,7 +136,7 @@ public final class ClientStreamFactory implements StreamFactory
         MemoryManager memoryManager,
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
-        LongSupplier supplyTrace,
+        LongSupplier supplyTraceId,
         ToIntFunction<String> supplyTypeId,
         Function<String, LongSupplier> supplyCounter,
         Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations,
@@ -155,7 +154,7 @@ public final class ClientStreamFactory implements StreamFactory
         this.connectionPools = connectionPools;
         this.scheduler = scheduler;
         this.counters = counters;
-        this.writer = new MessageWriter(writeBuffer, supplyTrace, supplyTypeId);
+        this.writer = new MessageWriter(writeBuffer, supplyTraceId, supplyTypeId);
 
         final DefaultMessageCache messageCache = new DefaultMessageCache(requireNonNull(memoryManager));
         this.connectionPoolFactory = networkRouteId ->
@@ -205,7 +204,7 @@ public final class ClientStreamFactory implements StreamFactory
         {
             final KafkaBeginExFW beginEx = extension.get(beginExRO::wrap);
             String topicName = beginEx.topicName().asString();
-            ListFW<KafkaHeaderFW> headers = beginEx.headers();
+            ArrayFW<KafkaHeaderFW> headers = beginEx.headers();
 
             final RouteFW route = resolveRoute(applicationRouteId, authorization, topicName, headers);
             if (route != null)
@@ -247,19 +246,19 @@ public final class ClientStreamFactory implements StreamFactory
         long routeId,
         long authorization,
         final String topicName,
-        final ListFW<KafkaHeaderFW> headers)
+        final ArrayFW<KafkaHeaderFW> headers)
     {
         final MessagePredicate filter = (t, b, o, l) ->
         {
             final RouteFW route = routeRO.wrap(b, o, o + l);
             final OctetsFW extension = route.extension();
             Predicate<String> topicMatch = s -> true;
-            Predicate<ListFW<KafkaHeaderFW>> headersMatch = h -> true;
+            Predicate<ArrayFW<KafkaHeaderFW>> headersMatch = h -> true;
             if (extension.sizeof() > 0)
             {
                 final KafkaRouteExFW routeEx = extension.get(routeExRO::wrap);
                 final String routeTopic = routeEx.topicName().asString();
-                final ListFW<KafkaHeaderFW> routeHeaders = routeEx.headers();
+                final ArrayFW<KafkaHeaderFW> routeHeaders = routeEx.headers();
 
                 if (routeTopic != null)
                 {
@@ -309,7 +308,7 @@ public final class ClientStreamFactory implements StreamFactory
         private byte[] applicationBeginExtension;
         private long applicationReplyId;
         private int applicationReplyPadding;
-        private long groupId;
+        private long budgetId;
         private Budget budget = NO_BUDGET;
 
         private int networkAttachId = UNATTACHED;
@@ -331,7 +330,7 @@ public final class ClientStreamFactory implements StreamFactory
         private long progressEndOffset;
 
         private String topicName;
-        private ListFW<KafkaHeaderFW> headers;
+        private ArrayFW<KafkaHeaderFW> headers;
         private OctetsFW fetchKey;
         private int hashCode;
 
@@ -501,6 +500,7 @@ public final class ClientStreamFactory implements StreamFactory
                         traceId,
                         key,
                         timestamp,
+                        requiredBudget,
                         value,
                         fragmentedMessageBytesWritten,
                         fragmentedMessageBytesWritten + bytesToWrite);
@@ -790,6 +790,7 @@ public final class ClientStreamFactory implements StreamFactory
                 long traceId,
                 DirectBuffer key,
                 long timestamp,
+                int reserved,
                 DirectBuffer value,
                 int valueOffset,
                 int valueLimit)
@@ -805,7 +806,7 @@ public final class ClientStreamFactory implements StreamFactory
 
                 final long oldFetchOffset = this.fetchOffsets.put(partition, nextOffset);
                 writer.doKafkaData(applicationReply, applicationRouteId, applicationReplyId, traceId,
-                                   applicationReplyPadding, flags,
+                                   budgetId, reserved, flags,
                                    compacted ? key : null,
                                    timestamp, value, valueLimit, fetchOffsets);
                 this.fetchOffsets.put(partition, oldFetchOffset);
@@ -813,8 +814,7 @@ public final class ClientStreamFactory implements StreamFactory
             else
             {
                 writer.doKafkaDataContinuation(applicationReply, applicationRouteId, applicationReplyId, traceId,
-                        applicationReplyPadding, flags, value, valueOffset,
-                        valueLimit);
+                        budgetId, reserved, flags, value, valueOffset, valueLimit);
             }
 
             if (Flags.fin(flags))
@@ -926,12 +926,12 @@ public final class ClientStreamFactory implements StreamFactory
                 }
                 else
                 {
-                    ListFW<KafkaHeaderFW> headers = beginEx.headers();
+                    ArrayFW<KafkaHeaderFW> headers = beginEx.headers();
                     if (headers != null && !headers.isEmpty())
                     {
                         MutableDirectBuffer headersBuffer = new UnsafeBuffer(new byte[headers.sizeof()]);
                         headersBuffer.putBytes(0, headers.buffer(),  headers.offset(), headers.sizeof());
-                        this.headers = new ListFW<KafkaHeaderFW>(
+                        this.headers = new ArrayFW<KafkaHeaderFW>(
                                 new KafkaHeaderFW()).wrap(headersBuffer, 0, headersBuffer.capacity());
                     }
                     if (fetchKey != null)
@@ -1086,7 +1086,10 @@ public final class ClientStreamFactory implements StreamFactory
         private void onMetadataError(
             KafkaError errorCode)
         {
-            writer.doReset(applicationReply, applicationRouteId, applicationId);
+            if (!errorCode.isRecoverable())
+            {
+                writer.doReset(applicationReply, applicationRouteId, applicationId);
+            }
         }
 
         private void handleThrottle(
@@ -1118,11 +1121,11 @@ public final class ClientStreamFactory implements StreamFactory
             final WindowFW window)
         {
             applicationReplyPadding = window.padding();
-            groupId = window.groupId();
+            budgetId = window.budgetId();
 
             if (budget == NO_BUDGET)
             {
-                budget = budgetManager.createBudget(groupId);
+                budget = budgetManager.createBudget(budgetId);
             }
 
             budget.incBudget(applicationReplyId, window.credit(), dispatchUsingCurrentState);

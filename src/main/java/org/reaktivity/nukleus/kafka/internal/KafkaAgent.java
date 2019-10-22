@@ -33,8 +33,8 @@ import org.reaktivity.nukleus.kafka.internal.memory.MemoryLayout;
 import org.reaktivity.nukleus.kafka.internal.memory.MemoryManager;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaError;
 import org.reaktivity.nukleus.kafka.internal.stream.NetworkConnectionPool;
+import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.ListFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
@@ -127,7 +127,7 @@ final class KafkaAgent implements Agent
             {
                 final KafkaRouteExFW routeEx = extension.get(routeExRO::wrap);
                 final String topicName = routeEx.topicName().asString();
-                final ListFW<KafkaHeaderFW> headers = routeEx.headers();
+                final ArrayFW<KafkaHeaderFW> headers = routeEx.headers();
 
                 final long networkRouteId = route.correlationId();
                 final long networkRemoteId = (int)(networkRouteId >> 32) & 0xffff;
@@ -138,7 +138,7 @@ final class KafkaAgent implements Agent
 
                 if (topicName != null)
                 {
-                    ListFW<KafkaHeaderFW> headersCopy = new ListFW<KafkaHeaderFW>(new KafkaHeaderFW());
+                    ArrayFW<KafkaHeaderFW> headersCopy = new ArrayFW<KafkaHeaderFW>(new KafkaHeaderFW());
                     headersCopy.wrap(headers.buffer(), headers.offset(), headers.limit());
                     connectionPool.addRoute(topicName, headersCopy, config.topicBootstrapEnabled(),
                             this::onKafkaError);

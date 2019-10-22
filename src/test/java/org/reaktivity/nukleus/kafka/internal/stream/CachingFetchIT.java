@@ -902,11 +902,11 @@ public class CachingFetchIT
     @Test
     @Specification({
             "${route}/client/controller",
-            "${client}/zero.offset.messages.group.budget/client",
-            "${server}/zero.offset.messages.group.budget/server" })
+            "${client}/zero.offset.messages.shared.budget/client",
+            "${server}/zero.offset.messages.shared.budget/server" })
     @ScriptProperty({"networkAccept \"nukleus://streams/target#0\"",
                      "applicationConnectWindow 24"})
-    public void shouldFanoutMessagesAtZeroOffsetUsingGroupBudget() throws Exception
+    public void shouldFanoutMessagesAtZeroOffsetUsingSharedBudget() throws Exception
     {
         k3po.start();
         k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
@@ -921,11 +921,11 @@ public class CachingFetchIT
     @Test
     @Specification({
             "${route}/client/controller",
-            "${client}/zero.offset.messages.group.budget.reset/client",
-            "${server}/zero.offset.messages.group.budget/server" })
+            "${client}/zero.offset.messages.shared.budget.reset/client",
+            "${server}/zero.offset.messages.shared.budget/server" })
     @ScriptProperty({"networkAccept \"nukleus://streams/target#0\"",
             "applicationConnectWindow 24"})
-    public void shouldFanoutMessagesAtZeroOffsetUsingGroupBudgetReset() throws Exception
+    public void shouldFanoutMessagesAtZeroOffsetUsingSharedBudgetReset() throws Exception
     {
         k3po.start();
         k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
