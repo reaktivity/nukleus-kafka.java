@@ -2819,6 +2819,7 @@ public final class NetworkConnectionPool
             MetadataConnection connection)
         {
             state = State.GET_REQUIRED;
+            retryTimerId = DeadlineTimerWheel.NULL_TIMER;
             retries++;
             connection.doRequestIfNeeded();
         }
