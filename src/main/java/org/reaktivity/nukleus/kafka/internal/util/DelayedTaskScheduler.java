@@ -45,7 +45,8 @@ public class DelayedTaskScheduler
         final long nowMillis = System.currentTimeMillis();
         final long timerId = timerWheel.scheduleTimer(nowMillis + delay);
 
-        tasksByTimerId.put(timerId, task);
+        final Runnable oldTask = tasksByTimerId.put(timerId, task);
+        assert oldTask == null;
 
         return timerId;
     }
