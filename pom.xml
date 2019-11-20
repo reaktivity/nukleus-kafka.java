@@ -54,8 +54,8 @@
 
     <nukleus.plugin.version>0.42</nukleus.plugin.version>
 
-    <nukleus.kafka.spec.version>0.119</nukleus.kafka.spec.version>
-    <reaktor.version>0.104</reaktor.version>
+    <nukleus.kafka.spec.version>0.120</nukleus.kafka.spec.version>
+    <reaktor.version>0.112</reaktor.version>
 
     <kafka.clients.version>1.0.0</kafka.clients.version>
   </properties>
@@ -280,6 +280,11 @@
             <artifactId>reaktor</artifactId>
             <version>${reaktor.version}</version>
             <type>test-jar</type>
+          </dependency>
+          <dependency>
+            <groupId>org.reaktivity</groupId>
+            <artifactId>reaktor</artifactId>
+            <version>${reaktor.version}</version>
           </dependency>
         </dependencies>
       </plugin>
