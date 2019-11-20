@@ -78,6 +78,7 @@ import org.reaktivity.nukleus.kafka.internal.util.DelayedTaskScheduler;
 import org.reaktivity.nukleus.kafka.internal.util.Flags;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
+import org.reaktivity.reaktor.internal.types.stream.FlushFW;
 
 public final class ClientStreamFactory implements StreamFactory
 {
@@ -110,6 +111,7 @@ public final class ClientStreamFactory implements StreamFactory
 
     final WindowFW windowRO = new WindowFW();
     final ResetFW resetRO = new ResetFW();
+    final FlushFW flushRO = new FlushFW();
 
     final PartitionResponseFW partitionResponseRO = new PartitionResponseFW();
     final RecordSetFW recordSetRO = new RecordSetFW();
@@ -1135,6 +1137,10 @@ public final class ClientStreamFactory implements StreamFactory
                     handleReset(reset);
                 }
                 break;
+            case FlushFW.TYPE_ID:
+                final FlushFW flush = flushRO.wrap(buffer, index, index + length);
+                handleFlush(flush);
+                break;
             default:
                 // ignore
                 break;
@@ -1168,6 +1174,14 @@ public final class ClientStreamFactory implements StreamFactory
             networkAttachId = UNATTACHED;
 
             cleanupResponseIfNecessary();
+        }
+
+        private void handleFlush(
+            final FlushFW flush)
+        {
+            final long traceId = flush.traceId();
+
+            dispatchMessages.accept(traceId);
         }
 
         private void cleanupResponseIfNecessary()
