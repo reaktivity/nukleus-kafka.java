@@ -26,6 +26,7 @@ import java.util.function.ToIntFunction;
 
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
+import org.reaktivity.nukleus.budget.BudgetDebitor;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaCounters;
@@ -52,6 +53,7 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     private Supplier<BufferPool> supplyBufferPool;
     private Function<String, LongSupplier> supplyCounter;
     private Function<String, LongConsumer> supplyAccumulator;
+    private LongFunction<BudgetDebitor> supplyDebitor;
     private KafkaCounters counters;
     private ToIntFunction<String> supplyTypeId;
 
@@ -143,6 +145,14 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
+    public StreamFactoryBuilder setBudgetDebitorSupplier(
+        LongFunction<BudgetDebitor> supplyDebitor)
+    {
+        this.supplyDebitor = supplyDebitor;
+        return this;
+    }
+
+    @Override
     public StreamFactory build()
     {
         if (counters == null)
@@ -164,6 +174,7 @@ public final class ClientStreamFactoryBuilder implements StreamFactoryBuilder
                 supplyTraceId,
                 supplyTypeId,
                 supplyCounter,
+                supplyDebitor,
                 correlations,
                 connectionPools,
                 connectPoolFactoryConsumer,

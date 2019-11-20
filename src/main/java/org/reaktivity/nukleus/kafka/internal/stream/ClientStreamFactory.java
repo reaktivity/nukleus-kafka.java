@@ -19,9 +19,9 @@ import static java.lang.Integer.toHexString;
 import static java.lang.String.format;
 import static java.lang.System.identityHashCode;
 import static java.util.Objects.requireNonNull;
+import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.DEBUG;
 import static org.reaktivity.nukleus.kafka.internal.cache.TopicCache.NO_OFFSET;
-import static org.reaktivity.nukleus.kafka.internal.stream.BudgetManager.NO_BUDGET;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.EMPTY_BYTE_ARRAY;
 import static org.reaktivity.nukleus.kafka.internal.util.BufferUtil.wrap;
 import static org.reaktivity.nukleus.kafka.internal.util.Flags.FIN;
@@ -32,6 +32,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.IntSupplier;
 import java.util.function.IntToLongFunction;
+import java.util.function.LongConsumer;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
@@ -43,6 +44,7 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.reaktivity.nukleus.budget.BudgetDebitor;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessagePredicate;
@@ -139,6 +141,7 @@ public final class ClientStreamFactory implements StreamFactory
         LongSupplier supplyTraceId,
         ToIntFunction<String> supplyTypeId,
         Function<String, LongSupplier> supplyCounter,
+        LongFunction<BudgetDebitor> supplyDebitor,
         Long2ObjectHashMap<NetworkConnectionPool.AbstractNetworkConnection> correlations,
         Long2ObjectHashMap<NetworkConnectionPool> connectionPools,
         Consumer<LongFunction<NetworkConnectionPool>> setConnectionPoolFactory,
@@ -159,7 +162,7 @@ public final class ClientStreamFactory implements StreamFactory
         final DefaultMessageCache messageCache = new DefaultMessageCache(requireNonNull(memoryManager));
         this.connectionPoolFactory = networkRouteId ->
             new NetworkConnectionPool(router, correlations, writer, scheduler, counters, networkRouteId, config,
-                    bufferPool, messageCache, supplyInitialId, supplyReplyId, supplyTypeId);
+                    bufferPool, messageCache, supplyInitialId, supplyReplyId, supplyTypeId, supplyDebitor);
 
         setConnectionPoolFactory.accept(connectionPoolFactory);
     }
@@ -305,11 +308,13 @@ public final class ClientStreamFactory implements StreamFactory
 
         private boolean subscribedByKey;
 
-        private byte[] applicationBeginExtension;
-        private long applicationReplyId;
-        private int applicationReplyPadding;
-        private long budgetId;
-        private Budget budget = NO_BUDGET;
+        private byte[] beginExtension;
+        private long replyId;
+        private int replyBudget;
+        private int replyPadding;
+
+        private long replyDebitorIndex = NO_DEBITOR_INDEX;
+        private BudgetDebitor replyDebitor;
 
         private int networkAttachId = UNATTACHED;
         private boolean compacted;
@@ -337,17 +342,19 @@ public final class ClientStreamFactory implements StreamFactory
         private AttachDetailsConsumer attacher;
         private AttachDetailsConsumer detacher;
 
-        private Runnable deferredDetach;
         private ImmutableTopicCache historicalCache;
 
         private final Runnable dispatchFromCacheState = this::dispatchMessagesFromCache;
         private final Runnable dispatchFragmentedFromCacheState = this::dispatchFragmentedMessageFromCache;
         private final Runnable dispatchFromPoolState = this::dispatchMessagesFromPool;
+        private final LongConsumer dispatchMessages = this::dispatchMessages;
+
         private Runnable dispatchState = NOOP;
 
-        private final Runnable dispatchUsingCurrentState = this::dispatchMessages;
-
         private final IntSupplier writeableBytes = this::writeableBytes;
+
+        private long replyDebitorId;
+
 
         private ClientAcceptStream(
             MessageConsumer applicationReply,
@@ -399,15 +406,14 @@ public final class ClientStreamFactory implements StreamFactory
                 networkPool.doDetach(topicName, networkAttachId);
             }
             networkAttachId = UNATTACHED;
-            budget.closing(applicationReplyId, 0);
-            Runnable detach = reattach ? this::doDeferredDetachWithReattach : this::doDeferredDetach;
-            if (budget.hasUnackedBudget(applicationReplyId))
+
+            if (reattach)
             {
-                deferredDetach = detach;
+                doDeferredDetachWithReattach();
             }
             else
             {
-                detach.run();
+                doDeferredDetach();
             }
         }
 
@@ -477,33 +483,46 @@ public final class ClientStreamFactory implements StreamFactory
                 assert payloadLength >= 0 : format("fragmentedMessageBytesWritten = %d payloadLength = %d",
                         fragmentedMessageBytesWritten, payloadLength);
 
-                int applicationReplyBudget = budget.getBudget();
-                int writeableBytes = applicationReplyBudget - applicationReplyPadding;
-                if (writeableBytes > 0)
+                int writeableBytes = Math.min(payloadLength, replyBudget - replyPadding);
+                if (writeableBytes >= 0 || value == null)
                 {
-                    int bytesToWrite = Math.min(payloadLength, writeableBytes);
-                    int requiredBudget = bytesToWrite + applicationReplyPadding;
-                    budget.decBudget(applicationReplyId, requiredBudget);
+                    final int maximum = writeableBytes + replyPadding;
+                    final int minimum = Math.min(maximum, 1024);
 
-                    if (bytesToWrite < payloadLength)
+                    int claimed = maximum;
+                    if (replyDebitorIndex != NO_DEBITOR_INDEX)
                     {
-                        dispatchBlocked = true;
+                        claimed = replyDebitor.claim(replyDebitorIndex, replyId, minimum, maximum);
+                    }
+
+                    final int reserved = claimed;
+                    final int writableMax = reserved - replyPadding;
+                    if (writableMax > 0 || (writableMax == 0 && payloadLength == 0) || value == null)
+                    {
+                        if (writableMax < payloadLength)
+                        {
+                            dispatchBlocked = true;
+                        }
+                        else
+                        {
+                            result |= MessageDispatcher.FLAGS_DELIVERED;
+                        }
+
+                        writeMessage(
+                            partition,
+                            messageOffset,
+                            traceId,
+                            key,
+                            timestamp,
+                            reserved,
+                            value,
+                            fragmentedMessageBytesWritten,
+                            fragmentedMessageBytesWritten + writableMax);
                     }
                     else
                     {
-                        result |= MessageDispatcher.FLAGS_DELIVERED;
+                        dispatchBlocked = true;
                     }
-
-                    writeMessage(
-                        partition,
-                        messageOffset,
-                        traceId,
-                        key,
-                        timestamp,
-                        requiredBudget,
-                        value,
-                        fragmentedMessageBytesWritten,
-                        fragmentedMessageBytesWritten + bytesToWrite);
                 }
                 else
                 {
@@ -582,7 +601,7 @@ public final class ClientStreamFactory implements StreamFactory
             return format("%s@%s(topic=\"%s\", subscribedByKey=%b, fetchOffsets=%s, progressOffsets=%s, " +
                        "fragmentedMessageOffset=%d, " +
                        "fragmentedMessagePartition=%d, fragmentedMessageLength=%d, fragmentedMessageBytesWritten=%d, " +
-                       "applicationId=%x, applicationReplyId=%x, dispatchState=%s, budget=%s)",
+                       "applicationId=%x, applicationReplyId=%x, dispatchState=%s, debitor=%s)",
                 getClass().getSimpleName(),
                 Integer.toHexString(System.identityHashCode(ClientAcceptStream.this)),
                 topicName,
@@ -594,10 +613,10 @@ public final class ClientStreamFactory implements StreamFactory
                 fragmentedMessageLength,
                 fragmentedMessageBytesWritten,
                 applicationId,
-                applicationReplyId,
+                replyId,
                 dispatchState == dispatchFragmentedFromCacheState ? "fragmentedFromCache" :
                 dispatchState == dispatchFromCacheState ? "cache" : "pool",
-                budget);
+                replyDebitor);
         }
 
         private void detachFromNetworkPool()
@@ -613,7 +632,8 @@ public final class ClientStreamFactory implements StreamFactory
             networkAttachId = UNATTACHED;
         }
 
-        private void dispatchMessages()
+        private void dispatchMessages(
+            long traceId)
         {
             dispatchState.run();
         }
@@ -765,14 +785,14 @@ public final class ClientStreamFactory implements StreamFactory
 
         private void doDeferredDetach()
         {
-            budget.closed(applicationReplyId);
-            writer.doAbort(applicationReply, applicationRouteId, applicationReplyId);
+            writer.doAbort(applicationReply, applicationRouteId, replyId);
+            cleanupResponseIfNecessary();
         }
 
         private void doDeferredDetachWithReattach()
         {
-            budget.closed(applicationReplyId);
-            writer.doEnd(applicationReply, applicationRouteId, applicationReplyId, ZERO_OFFSETS);
+            writer.doEnd(applicationReply, applicationRouteId, replyId, ZERO_OFFSETS);
+            cleanupResponseIfNecessary();
         }
 
         private String toString(
@@ -805,17 +825,21 @@ public final class ClientStreamFactory implements StreamFactory
                 flags |= INIT;
 
                 final long oldFetchOffset = this.fetchOffsets.put(partition, nextOffset);
-                writer.doKafkaData(applicationReply, applicationRouteId, applicationReplyId, traceId,
-                                   budgetId, reserved, flags,
+                writer.doKafkaData(applicationReply, applicationRouteId, replyId, traceId,
+                                   replyDebitorId, reserved, flags,
                                    compacted ? key : null,
                                    timestamp, value, valueLimit, fetchOffsets);
                 this.fetchOffsets.put(partition, oldFetchOffset);
             }
             else
             {
-                writer.doKafkaDataContinuation(applicationReply, applicationRouteId, applicationReplyId, traceId,
-                        budgetId, reserved, flags, value, valueOffset, valueLimit);
+                writer.doKafkaDataContinuation(applicationReply, applicationRouteId, replyId, traceId,
+                        replyDebitorId, reserved, flags, value, valueOffset, valueLimit);
             }
+
+            replyBudget -= reserved;
+
+            assert replyBudget >= 0;
 
             if (Flags.fin(flags))
             {
@@ -904,8 +928,8 @@ public final class ClientStreamFactory implements StreamFactory
             }
             else
             {
-                applicationBeginExtension = new byte[extension.sizeof()];
-                extension.buffer().getBytes(extension.offset(), applicationBeginExtension);
+                beginExtension = new byte[extension.sizeof()];
+                extension.buffer().getBytes(extension.offset(), beginExtension);
 
                 final KafkaBeginExFW beginEx = extension.get(beginExRO::wrap);
 
@@ -955,11 +979,11 @@ public final class ClientStreamFactory implements StreamFactory
                     final long newReplyId = supplyReplyId.applyAsLong(applicationId);
 
                     writer.doKafkaBegin(applicationReply, applicationRouteId, newReplyId,
-                            applicationBeginExtension);
+                            beginExtension);
                     router.setThrottle(newReplyId, this::handleThrottle);
 
                     writer.doWindow(applicationReply, applicationRouteId, applicationId, 0, 0, 0);
-                    this.applicationReplyId = newReplyId;
+                    this.replyId = newReplyId;
                 }
             }
         }
@@ -1120,20 +1144,19 @@ public final class ClientStreamFactory implements StreamFactory
         private void handleWindow(
             final WindowFW window)
         {
-            applicationReplyPadding = window.padding();
-            budgetId = window.budgetId();
+            final long traceId = window.traceId();
 
-            if (budget == NO_BUDGET)
+            replyDebitorId = window.budgetId();
+            replyPadding = window.padding();
+            replyBudget += window.credit();
+
+            if (replyDebitorId != 0L && replyDebitorIndex == NO_DEBITOR_INDEX)
             {
-                budget = budgetManager.createBudget(budgetId);
+                replyDebitor = networkPool.supplyDebitor.apply(replyDebitorId);
+                replyDebitorIndex = replyDebitor.acquire(replyDebitorId, replyId, dispatchMessages);
             }
 
-            budget.incBudget(applicationReplyId, window.credit(), dispatchUsingCurrentState);
-
-            if (deferredDetach != null && !budget.hasUnackedBudget(applicationReplyId))
-            {
-                deferredDetach.run();
-            }
+            dispatchMessages.accept(traceId);
         }
 
         private void handleReset(
@@ -1143,12 +1166,23 @@ public final class ClientStreamFactory implements StreamFactory
             progressHandler = NOOP_PROGRESS_HANDLER;
             detachFromNetworkPool();
             networkAttachId = UNATTACHED;
-            budget.closed(applicationReplyId);
+
+            cleanupResponseIfNecessary();
+        }
+
+        private void cleanupResponseIfNecessary()
+        {
+            if (replyDebitorIndex != NO_DEBITOR_INDEX)
+            {
+                replyDebitor.release(replyDebitorIndex, replyId);
+                replyDebitorIndex = NO_DEBITOR_INDEX;
+                replyDebitor = null;
+            }
         }
 
         private int writeableBytes()
         {
-            return Math.max(0, budget.getBudget() - applicationReplyPadding);
+            return Math.max(0, replyBudget - replyPadding);
         }
 
     }
