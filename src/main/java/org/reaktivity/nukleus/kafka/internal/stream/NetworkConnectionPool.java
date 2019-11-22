@@ -1000,6 +1000,7 @@ public final class NetworkConnectionPool
             nextRequestId = 0;
             nextResponseId = 0;
             streamState = this::beforeBegin;
+            timerId = DeadlineTimerWheel.NULL_TIMER;
         }
     }
 
