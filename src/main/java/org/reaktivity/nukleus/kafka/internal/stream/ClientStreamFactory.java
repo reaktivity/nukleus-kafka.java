@@ -499,7 +499,7 @@ public final class ClientStreamFactory implements StreamFactory
 
                     final int reserved = claimed;
                     final int writableMax = reserved - replyPadding;
-                    if (writableMax > 0 || (writableMax == 0 && payloadLength == 0) || value == null)
+                    if (writableMax > 0 || (writableMax == 0 && payloadLength == 0))
                     {
                         if (writableMax < payloadLength)
                         {
