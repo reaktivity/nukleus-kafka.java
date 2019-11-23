@@ -1162,7 +1162,17 @@ public final class ClientStreamFactory implements StreamFactory
                 replyDebitorIndex = replyDebitor.acquire(replyDebitorId, replyId, dispatchMessages);
             }
 
-            dispatchMessages.accept(traceId);
+            if (replyDebitorId != 0L && replyDebitorIndex == NO_DEBITOR_INDEX)
+            {
+                progressHandler = NOOP_PROGRESS_HANDLER;
+                detachFromNetworkPool();
+                networkAttachId = UNATTACHED;
+                doDeferredDetach();
+            }
+            else
+            {
+                dispatchMessages.accept(traceId);
+            }
         }
 
         private void handleReset(
