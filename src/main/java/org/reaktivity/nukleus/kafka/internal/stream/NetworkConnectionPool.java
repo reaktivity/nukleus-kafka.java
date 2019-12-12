@@ -575,7 +575,7 @@ public final class NetworkConnectionPool
     abstract class AbstractNetworkConnection
     {
         MessageConsumer networkInitial;
-        long timerId = DeadlineTimerWheel.NULL_TIMER;
+        long timerId = DeadlineTimerWheel.NULL_DEADLINE;
 
         long networkInitialId;
         long networkCorrelationId;
@@ -1000,7 +1000,7 @@ public final class NetworkConnectionPool
             nextRequestId = 0;
             nextResponseId = 0;
             streamState = this::beforeBegin;
-            timerId = DeadlineTimerWheel.NULL_TIMER;
+            timerId = DeadlineTimerWheel.NULL_DEADLINE;
         }
     }
 
@@ -2787,7 +2787,7 @@ public final class NetworkConnectionPool
         private Int2ObjectHashMap<Consumer<TopicMetadata>> consumers = new Int2ObjectHashMap<>();
         private MetadataRequestType nextRequiredRequestType = MetadataRequestType.METADATA;
         private int retries;
-        private long retryTimerId = DeadlineTimerWheel.NULL_TIMER;
+        private long retryTimerId = DeadlineTimerWheel.NULL_DEADLINE;
 
         TopicMetadata(String topicName)
         {
@@ -2836,7 +2836,7 @@ public final class NetworkConnectionPool
             MetadataConnection connection)
         {
             state = State.GET_REQUIRED;
-            retryTimerId = DeadlineTimerWheel.NULL_TIMER;
+            retryTimerId = DeadlineTimerWheel.NULL_DEADLINE;
             retries++;
             connection.doRequestIfNeeded();
         }
