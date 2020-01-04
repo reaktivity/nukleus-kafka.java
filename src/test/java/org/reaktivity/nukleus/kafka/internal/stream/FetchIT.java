@@ -19,6 +19,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_READ_IDLE_TIMEOUT;
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
+import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Ignore;
@@ -30,7 +31,6 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
-import org.reaktivity.reaktor.ReaktorConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
 public class FetchIT
@@ -49,7 +49,7 @@ public class FetchIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(8192)
         .configure(KAFKA_READ_IDLE_TIMEOUT, 86400)
-        .configure(ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE, false)
+        .configure(REAKTOR_DRAIN_ON_CLOSE, false)
         .configure(REAKTOR_BUFFER_SLOT_CAPACITY, 8192)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
@@ -243,6 +243,17 @@ public class FetchIT
         "${server}/message.value.10k/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageValue10k() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/message.value.100k/client",
+        "${server}/message.value.100k/server"})
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessageValue100k() throws Exception
     {
         k3po.finish();
     }

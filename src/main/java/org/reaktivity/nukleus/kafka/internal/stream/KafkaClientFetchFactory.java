@@ -1013,8 +1013,9 @@ public final class KafkaClientFetchFactory implements StreamFactory
                     final RecordTrailerFW recordTrailer = recordTrailerRO.wrap(buffer, trailerOffset, recordLimit);
                     final int headerCount = recordTrailer.headerCount();
                     final int headersOffset = recordTrailer.limit();
+                    final int headersLength = recordLimit - headersOffset;
                     final DirectBuffer headers = headersRO;
-                    headers.wrap(buffer, headersOffset, recordLimit);
+                    headers.wrap(buffer, headersOffset, headersLength);
 
                     progress += sizeofRecord;
 
@@ -1138,8 +1139,9 @@ public final class KafkaClientFetchFactory implements StreamFactory
             final RecordTrailerFW recordTrailer = recordTrailerRO.wrap(buffer, valueLimit, recordLimit);
             final int headerCount = recordTrailer.headerCount();
             final int headersOffset = recordTrailer.limit();
+            final int headersLength = recordLimit - headersOffset;
             final DirectBuffer headers = headersRO;
-            headers.wrap(buffer, headersOffset, recordLimit);
+            headers.wrap(buffer, headersOffset, headersLength);
 
             progress += recordProgress;
 
