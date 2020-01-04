@@ -15,33 +15,18 @@
  */
 package org.reaktivity.nukleus.kafka.internal;
 
-import static org.reaktivity.nukleus.route.RouteKind.CLIENT;
-
-import java.util.Collections;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
-
 import org.reaktivity.nukleus.Nukleus;
-import org.reaktivity.nukleus.function.MessagePredicate;
-import org.reaktivity.nukleus.route.RouteKind;
 
 public final class KafkaNukleus implements Nukleus
 {
     public static final String NAME = "kafka";
 
     private final KafkaConfiguration config;
-    private final KafkaAgent agent;
-    private final Map<RouteKind, MessagePredicate> routeHandlers;
-
-    private final AtomicInteger elektrons;
 
     KafkaNukleus(
         KafkaConfiguration config)
     {
         this.config = config;
-        this.agent = new KafkaAgent(config);
-        this.routeHandlers = Collections.singletonMap(CLIENT, agent::handleRoute);
-        this.elektrons = new AtomicInteger();
     }
 
     @Override
@@ -57,20 +42,8 @@ public final class KafkaNukleus implements Nukleus
     }
 
     @Override
-    public MessagePredicate routeHandler(
-        RouteKind kind)
-    {
-        return routeHandlers.get(kind);
-    }
-
-    @Override
     public KafkaElektron supplyElektron()
     {
-        if (elektrons.incrementAndGet() > 1)
-        {
-            throw new IllegalStateException("multiple KafkaElektrons not yet supported");
-        }
-
-        return new KafkaElektron(config, agent);
+        return new KafkaElektron(config);
     }
 }

@@ -15,29 +15,32 @@
  */
 package org.reaktivity.nukleus.kafka.internal;
 
-import static java.util.Collections.singletonMap;
+import static org.reaktivity.nukleus.route.RouteKind.CACHE_CLIENT;
+import static org.reaktivity.nukleus.route.RouteKind.CACHE_SERVER;
 import static org.reaktivity.nukleus.route.RouteKind.CLIENT;
 
+import java.util.EnumMap;
 import java.util.Map;
 
 import org.reaktivity.nukleus.Elektron;
-import org.reaktivity.nukleus.kafka.internal.stream.ClientStreamFactoryBuilder;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheClientFactoryBuilder;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheServerFactoryBuilder;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaClientFactoryBuilder;
 import org.reaktivity.nukleus.route.RouteKind;
 import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 
 final class KafkaElektron implements Elektron
 {
-    private final KafkaAgent agent;
     private final Map<RouteKind, StreamFactoryBuilder> streamFactoryBuilders;
 
     KafkaElektron(
-        KafkaConfiguration config,
-        KafkaAgent agent)
+        KafkaConfiguration config)
     {
-        this.agent = agent;
-        this.streamFactoryBuilders = singletonMap(CLIENT, new ClientStreamFactoryBuilder(config,
-                agent::supplyMemoryManager, agent.connectionPools, agent::setConnectionPoolFactory,
-                agent.scheduler));
+        Map<RouteKind, StreamFactoryBuilder> streamFactoryBuilders = new EnumMap<>(RouteKind.class);
+        streamFactoryBuilders.put(CLIENT, new KafkaClientFactoryBuilder(config));
+        streamFactoryBuilders.put(CACHE_SERVER, new KafkaCacheServerFactoryBuilder(config));
+        streamFactoryBuilders.put(CACHE_CLIENT, new KafkaCacheClientFactoryBuilder(config));
+        this.streamFactoryBuilders = streamFactoryBuilders;
     }
 
     @Override
@@ -45,12 +48,6 @@ final class KafkaElektron implements Elektron
         RouteKind kind)
     {
         return streamFactoryBuilders.get(kind);
-    }
-
-    @Override
-    public KafkaAgent agent()
-    {
-        return agent;
     }
 
     @Override

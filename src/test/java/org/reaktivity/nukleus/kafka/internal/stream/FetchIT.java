@@ -17,10 +17,8 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_CAPACITY;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_READ_IDLE_TIMEOUT;
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_TOPIC_BOOTSTRAP_ENABLED;
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfigurationTest.KAFKA_READ_IDLE_TIMEOUT_NAME;
+import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Ignore;
@@ -32,17 +30,14 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
+import org.reaktivity.reaktor.ReaktorConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
-import org.reaktivity.reaktor.test.annotation.Configure;
 
 public class FetchIT
 {
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
-            .addScriptRoot("routeAnyTopic", "org/reaktivity/specification/nukleus/kafka/control/route")
-            .addScriptRoot("control", "org/reaktivity/specification/nukleus/kafka/control")
             .addScriptRoot("server", "org/reaktivity/specification/kafka/fetch.v5")
-            .addScriptRoot("metadata", "org/reaktivity/specification/kafka/metadata.v5")
             .addScriptRoot("client", "org/reaktivity/specification/nukleus/kafka/streams/fetch");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(10, SECONDS));
@@ -53,9 +48,9 @@ public class FetchIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(8192)
-        .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, false)
-        .configure(KAFKA_MESSAGE_CACHE_CAPACITY, 0L)
         .configure(KAFKA_READ_IDLE_TIMEOUT, 86400)
+        .configure(ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE, false)
+        .configure(REAKTOR_BUFFER_SLOT_CAPACITY, 8192)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 
@@ -65,862 +60,17 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/begin.ext.missing/client"})
-    public void shouldRejectWhenBeginExtMissing() throws Exception
+        "${client}/topic.missing/client"})
+    public void shouldRejectWhenTopicMissing() throws Exception
     {
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/invalid.topic.name/client",
-        "${metadata}/one.topic.error.invalid.topic/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldRejectWhenTopicNameContainsDisallowedCharacters() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/partition.count.changed/client",
-        "${metadata}/one.topic.error.partition.count.changed/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void partitionCountChanged() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/invalid.fetch.key.and.multiple.offsets/client"})
-    public void shouldRejectInvalidBeginExWithFetchKeyAndMultipleOffsets() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/invalid.missing.fetch.key/client"})
-    public void shouldRejectInvalidBeginExWithMissingFetchKey() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/invalid.more.than.one.fetch.key.hash/client"})
-    public void shouldRejectInvalidBeginExWithMoreThanOneFetchKeyHash() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.multiple.headers/client/controller",
-        "${client}/invalid.no.route.matching.headers/client"})
-    public void shouldRejectWhenBeginHeadersDoNotMatchHeadersOnRoutes() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/topic.name.not.equals.route.ext/client"})
-    @ScriptProperty("routedTopicName \"not_test\"")
-    public void shouldRejectTopicNameNotEqualToRoutedTopic() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.header.messages.and.tombstone/client",
-        "${server}/compacted.header.matches.removed.in.subsequent.response/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageAndTombstoneWithHeaderRemovedInSubsequentResponse() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.header.messages.and.tombstone/client",
-        "${server}/compacted.header.matches.then.updated/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageAndTombstoneWithHeaderUpdated() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.header.repeated.tombstone/client",
-        "${server}/compacted.header.repeated.tombstone/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageAndTombstoneWithMultivaluedHeaderUpdated() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("DELIVER_FIRST_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.historical.uses.cached.key.after.unsubscribe/client",
-        "${server}/compacted.historical.uses.cached.key.after.unsubscribe/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveCompactedMessageUsingCachedKeyAfterAllClientsUnsubscribe() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_ONE_UNSUBSCRIBED");
-        k3po.awaitBarrier("SECOND_LIVE_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        k3po.notifyBarrier("DELIVER_SECOND_LIVE_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.historical.uses.cached.key.then.latest.offset/client",
-        "${server}/compacted.historical.uses.cached.key.then.latest.offset/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveCompactedMessagesWithUncachedKeyUsingLatestOffset() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_THREE_CONNECTED");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("DELIVER_SECOND_LIVE_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.historical.uses.cached.key.then.live/client",
-        "${server}/compacted.historical.uses.cached.key.then.live/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveCompactedMessageUsingCachedKeyOffsetThenCatchUpToLiveStream() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_ONE_RECEIVED_FIRST_MESSAGE");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.awaitBarrier("CLIENT_TWO_RECEIVED_FIRST_MESSAGE");
-        k3po.notifyBarrier("DELIVER_SECOND_LIVE_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.historical.uses.cached.key.then.live.after.null.message/client",
-        "${server}/compacted.historical.uses.cached.key.then.live.after.null.message/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveCompactedMessagesFromLiveStreamAfterCachedKeyRemovedByNullMessage() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.historical.uses.cached.key.then.live.after.offset.too.low.and.null.message/client",
-        "${server}/compacted.historical.uses.cached.key.then.live.after.offset.too.low.and.null.message/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveCompactedMessagesFromLiveStreamAfterOffsetTooLowAndCachedKeyRemovedByNullMessage()
-            throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.historical.uses.cached.key.then.zero.offset/client",
-        "${server}/compacted.historical.uses.cached.key.then.zero.offset/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveCompactedMessagesWithUncachedKeyUsingZeroOffset() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_THREE_CONNECTED");
-        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_THREE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.message/client",
-        "${server}/compacted.message/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveCompactedMessage() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CLIENT");
-        k3po.notifyBarrier("CONNECT_CLIENT");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.message.fanout/client",
-        "${server}/compacted.message.delayed.describe.response/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveCompactedMessageWithMessageKeyAndLastOffset() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("DESCRIBE_REQUEST_RECEIVED");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.notifyBarrier("DELIVER_DESCRIBE_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.messages.with.null.key/client",
-        "${server}/compacted.messages.with.null.key/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveCompactedMessagesWithNullKey() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.messages.tombstone.repeated/client",
-        "${server}/compacted.messages.tombstone.repeated/server"})
-    @ScriptProperty({ "networkAccept \"nukleus://streams/target#0\"",
-                      "newTimestamp 0L" })
-    public void shouldReceiveCompactedAdjacentRepeatedTombstoneMessages() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CLIENT");
-        k3po.awaitBarrier("RECEIVED_NEXT_FETCH_REQUEST");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.header/client/controller",
-        "${client}/compacted.messages.header/client",
-        "${server}/compacted.messages.header/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldMatchRouteAndReceiveCompactedMessagesFilteredByHeaderOnBegin() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.header/client/controller",
-        "${client}/compacted.messages.headers/client",
-        "${server}/compacted.messages.headers/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldMatchRouteAndReceiveCompactedMessagesFilteredByHeadersOnBegin() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.header/client/controller",
-        "${client}/compacted.messages.header/client",
-        "${server}/compacted.messages.header/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveCompactedMessagesFilteredByHeaderOnRoute() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.messages.historical/client",
-        "${server}/compacted.messages.historical/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveCompactedHistoricalMessages() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/compacted.messages.multiple.nodes/client",
-        "${server}/compacted.messages.multiple.nodes/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveCompactedMessagesFromMultipleNodes() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Ignore("May fail due to unpredicable read ordering of window frames from clients and first fetch response")
-    @Test
-    @Specification({
-        "${control}/route.ext.multiple.topics/client/controller",
-        "${client}/compacted.message.multiple.topics/client",
-        "${server}/compacted.message.multiple.topics/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessagesFromMultipleTopics() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        k3po.awaitBarrier("CLIENT_THREE_CONNECTED");
-        k3po.awaitBarrier("ALL_METADATA_RESPONSES_WRITTEN");
-        k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
-        k3po.notifyBarrier("WRITE_SECOND_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/unspecified.offset/client",
-        "${server}/compacted.zero.offset/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldStartFetchingAtOffsetZeroForCompactedTopicClientOffsetUnspecified() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/distinct.offset.messagesets.fanout/client",
-        "${server}/distinct.offset.messagesets.fanout/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldFanoutMessageSetsAtDistinctOffsets() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
-        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_ONE");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_TWO");
-        k3po.notifyBarrier("SERVER_DELIVER_HISTORICAL_RESPONSE");
-        k3po.awaitBarrier("CLIENT_ONE_RECEIVED_THIRD_MESSAGE");
-        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_THREE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/distinct.offset.messagesets.fanout/client",
-        "${server}/distinct.offset.messagesets.fanout/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldFanoutMessageSetsAtDistinctOffsetsWithoutDeliveringLiveMessageOutOfOrder() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
-        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_ONE");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_TWO");
-        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_THREE");
-        k3po.awaitBarrier("CLIENT_ONE_RECEIVED_THIRD_MESSAGE");
-        k3po.notifyBarrier("SERVER_DELIVER_HISTORICAL_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/distinct.offsets.message.fanout/client",
-        "${server}/distinct.offsets.message.fanout/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldHandleParallelSubscribesAtDistinctOffsets() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
-        k3po.awaitBarrier("SERVER_LIVE_REQUEST_RECEIVED");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("SERVER_DELIVER_LIVE_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fanout.with.historical.message/client",
-        "${server}/fanout.with.historical.message/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldFanoutUsingHistoricalConnection() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fanout.with.historical.messages/client",
-        "${server}/fanout.with.historical.messages/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldFanoutDiscardingHistoricalMessageToJoinLiveStream() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fanout.with.slow.consumer/client",
-        "${server}/fanout.with.slow.consumer/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldFanoutWithSlowConsumer() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_TWO_RECEIVED_SECOND_MESSAGE");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("SERVER_DELIVER_LIVE_RESPONSE_TWO");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fetch.key.and.hash.code.picks.partition.zero/client",
-        "${server}/fetch.key.and.hash.code.picks.partition.zero/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageUsingFetchKeyAndExplicitHashCode() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fetch.key.and.no.key.messages/client",
-        "${server}/fetch.key.and.no.key.multiple.partitions/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageOnSubscribesWithAndWithoutKeyFromMultiplePartitions() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fetch.key.and.no.key.unsubscribe/client",
-        "${server}/fetch.key.and.no.key.multiple.partitions.unsubscribe/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldNotGiveAssertionErrorWhenUnsubscribeLeavingConsumerOnAnotherPartition() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_TWO_HAS_WRITTEN_RESET");
-        k3po.notifyBarrier("CLIENT_TWO_UNSUBSCRIBED");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fetch.key.default.partitioner.picks.partition.one/client",
-        "${server}/fetch.key.default.partitioner.picks.partition.one/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageUsingFetchKeyAndDefaultPartitioner() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fetch.key.historical.does.not.use.cached.key/client",
-        "${server}/fetch.key.historical.does.not.use.cached.key/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageFromNonCompactedTopicWithoutCachingKeyOffset() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fetch.key.zero.offset.messages/client",
-        "${server}/fetch.key.multiple.matches.flow.controlled/server"})
-    @ScriptProperty({"networkAccept \"nukleus://streams/target#0\"",
-                     "applicationConnectWindow 15"})
-    public void shouldReceiveMultipleMessagesMatchingFetchKeyFlowControlled() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fetch.key.zero.offset.message/client",
-        "${server}/fetch.key.multiple.record.batches.first.matches/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageMatchingFetchKeyWithLastOffsetWithMultipleRecordBatches() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fetch.key.zero.offset.no.messages/client",
-        "${server}/fetch.key.multiple.record.batches.no.matches/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveNoMessagesMatchingFetchKeyWithMultipleRecordBatches() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fetch.key.zero.offset.no.messages/client",
-        "${server}/fetch.key.no.matches/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveNoMessagesMatchingFetchKey() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fetch.key.zero.offset.three.messages/client",
-        "${server}/fetch.key.three.matches.flow.controlled/server"})
-    @ScriptProperty({"networkAccept \"nukleus://streams/target#0\"",
-                     "applicationConnectWindow 15"})
-    public void shouldReceiveMessagesThreeMatchingFetchKeyFlowControlled() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fetch.key.nonzero.offset.message/client",
-        "${server}/fetch.key.nonzero.offset.first.matches/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageMatchingFetchKeyFirstNonZeroOffset() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fetch.key.nonzero.offset.too.low.message/client",
-        "${server}/fetch.key.nonzero.offset.too.low.first.matches/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldUseFirstAvailableOffsetIfGreaterThanRequestedOffset() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fetch.key.zero.offset.message/client",
-        "${server}/fetch.key.zero.offset.first.matches/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageMatchingFetchKeyFirst() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fetch.key.unspecified.offset.message/client",
-        "${server}/fetch.key.high.water.mark.offset.first.matches/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveLiveMessageMatchingFetchKey() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fetch.key.zero.offset.message/client",
-        "${server}/fetch.key.zero.offset.last.matches/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageMatchingFetchKeyLast() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fetch.key.zero.offset.messages/client",
-        "${server}/fetch.key.zero.offset.multiple.matches/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMultipleMessagesMatchingFetchKey() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fetch.key.zero.offset.messages.historical/client",
-        "${server}/fetch.key.zero.offset.multiple.matches.historical/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMultipleHistoricalMessagesMatchingFetchKey() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/header.and.fetch.key.zero.offset.message/client",
-        "${server}/header.and.fetch.key.zero.offset.first.matches/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageMatchingFetchKeyAndHeader() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/header.empty.value.message/client",
-        "${server}/header.first.message.has.empty.header.value/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageMatchingEmptyHeaderValue() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/header.zero.offset.message/client",
-        "${server}/header.zero.offset.first.matches/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageMatchingHeaderFirst() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/header.zero.offset.message/client",
-        "${server}/header.zero.offset.last.matches/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageMatchingHeaderLast() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/header.zero.offset.messages/client",
-        "${server}/header.zero.offset.multiple.matches/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMultipleMessagesMatchingHeader() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/header.zero.offset.repeated/client",
-        "${server}/header.zero.offset.repeated/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageMatchingAnyOccurrenceOfARepeatedHeader() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/headers.and.fetch.key.zero.offset.message/client",
-        "${server}/headers.and.fetch.key.zero.offset.first.matches/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageMatchingFetchKeyAndHeaders() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/headers.zero.offset.messages.historical/client",
-        "${server}/headers.zero.offset.multiple.matches.historical/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveHistoricalMessagesMatchingHeaders() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/nonzero.offset/client",
-        "${server}/nonzero.offset/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldRequestMessagesAtNonZeroOffset() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/nonzero.offset.message/client",
-        "${server}/nonzero.offset.message/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageAtNonZeroOffset() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/nonzero.offset.messages/client",
-        "${server}/nonzero.offset.messages/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessagesAtNonZeroOffset() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/zero.offset.two.topics.one.reset/client",
-        "${server}/two.topics.one.offset.too.low/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldHandleMetadataGoneWhenReceiveListOffsetsResponse() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("LIST_OFFSETS_REQUEST_RECEIVED");
-        k3po.notifyBarrier("DO_RESET");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("WRITE_LIST_OFFSETS_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/offset.too.low.message/client",
-        "${server}/offset.too.low.message/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldRefetchUsingReportedFirstOffset() throws Exception
-    {
-        k3po.start();
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/offset.too.low.multiple.nodes/client",
-        "${server}/offset.too.low.multiple.nodes/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldRefetchUsingReportedFirstOffsetOnMultipleNodes() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/offset.too.low.multiple.topics/client",
-        "${server}/offset.too.low.multiple.topics/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldRefetchUsingReportedFirstOffsetOnMultipleTopics() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        k3po.notifyBarrier("WRITE_FIRST_METADATA_RESPONSE");
-        k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("WRITE_SECOND_DESCRIBE_CONFIGS_RESPONSE");
-        k3po.awaitBarrier("CLIENT_TWO_SUBSCRIBED");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/nonzero.offset.reattach.message/client",
-        "${server}/offset.too.high.message/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReattachAndRefetchUsingLowerReportedFirstOffset() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/record.batch.ends.with.deleted.record/client",
-        "${server}/record.batch.ends.with.deleted.record/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldDeliverFromRecordBatchEndingWithDeletedRecord() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/record.batch.truncated/client",
-        "${server}/record.batch.ends.with.truncated.record/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageWithTruncatedRecord() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/record.batch.ends.with.truncated.record.length/client",
-        "${server}/record.batch.ends.with.truncated.record.length/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageWithTruncatedRecordLength() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
         "${route}/client/controller",
-        "${client}/record.batch.truncated/client",
-        "${server}/record.batch.truncated/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageRecordSetEndsWithTruncatedRecordBatch() throws Exception
+        "${client}/topic.not.routed/client"})
+    public void shouldRejectWhenTopicNotRouted() throws Exception
     {
         k3po.finish();
     }
@@ -928,10 +78,8 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/record.batch.truncated/client",
-        "${server}/record.batch.truncated.at.record.boundary/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageRecordBatchTruncatedOnRecordBoundary() throws Exception
+        "${client}/partition.offset.missing/client"})
+    public void shouldRejectWhenPartitionOffsetMissing() throws Exception
     {
         k3po.finish();
     }
@@ -939,10 +87,8 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset/client",
-        "${server}/zero.offset/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldRequestMessagesAtZeroOffset() throws Exception
+        "${client}/partition.offset.repeated/client"})
+    public void shouldRejectWhenPartitionOffsetRepeated() throws Exception
     {
         k3po.finish();
     }
@@ -950,10 +96,10 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset/client",
-        "${server}/zero.offset.no.messages/server" })
+        "${client}/partition.unknown/client",
+        "${server}/partition.unknown/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldNotSkipZeroLenthRecordBatchIfAtHighWatermark() throws Exception
+    public void shouldRejectWhenPartitionUnknown() throws Exception
     {
         k3po.finish();
     }
@@ -961,10 +107,10 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset/client",
-        "${server}/zero.offset.no.messages.fragmented/server" })
+        "${client}/partition.not.leader/client",
+        "${server}/partition.not.leader/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldDecodeFragmentedFetchResponseHeader() throws Exception
+    public void shouldRejectPartitionNotLeader() throws Exception
     {
         k3po.finish();
     }
@@ -972,110 +118,76 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.message/client",
-        "${server}/zero.offset.message/server" })
+        "${client}/partition.offset/client",
+        "${server}/partition.offset/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageAtZeroOffset() throws Exception
+    public void shouldRequestPartitionOffset() throws Exception
     {
-        k3po.start();
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/gzip.compressed.record.batch/client",
-        "${server}/gzip.compressed.record.batch/server" })
+        "${client}/partition.offset.earliest/client",
+        "${server}/partition.offset.earliest/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldSkipGzipCompressedRecordBatch() throws Exception
+    public void shouldRequestPartitionOffsetEarliest() throws Exception
     {
-        k3po.start();
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/snappy.compressed.record.batch/client",
-        "${server}/snappy.compressed.record.batch/server" })
+        "${client}/partition.offset.latest/client",
+        "${server}/partition.offset.latest/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldSkipSnappyCompressedRecordBatch() throws Exception
+    public void shouldRequestPartitionOffsetLatest() throws Exception
     {
-        k3po.start();
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.message/client",
-        "${server}/zero.offset.message.topic.not.found.initially/server" })
+        "${client}/message.key/client",
+        "${server}/message.key/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldRequeryMetadataUntilFoundThenReceiveMessageAtZeroOffset() throws Exception
+    public void shouldReceiveMessageKey() throws Exception
     {
-        k3po.start();
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.and.reset/client",
-        "${server}/zero.offset.message/server" })
+        "${client}/message.key.null/client",
+        "${server}/message.key.null/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldHandleFetchResponseAfterUnsubscribe() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("DO_CLIENT_RESET");
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/zero.offset.two.topics.one.reset/client",
-        "${server}/two.topics.single.partition.one.fetched/server" })
-    @ScriptProperty({
-        "networkAccept \"nukleus://streams/target#0\""
-    })
-    public void shouldHandleResetFromClientWithoutCausingNPEInDoFetchRequest() throws Exception
+    public void shouldReceiveMessageKeyNull() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("KNOWN_TOPIC_METADATA_REQUEST_RECEIVED");
-        k3po.notifyBarrier("DO_RESET");
-        k3po.awaitBarrier("CONNECT_CLIENT_TWO");
-        k3po.notifyBarrier("SEND_METADATA_RESPONSE");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.and.reset/client",
-        "${server}/zero.offset.messages.multiple.partitions/server" })
+        "${client}/message.key.with.value.null/client",
+        "${server}/message.key.with.value.null/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldHandleFetchResponseMultiplePartitionsAfterUnsubscribe() throws Exception
+    public void shouldReceiveMessageKeyWithValueNull() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("DO_CLIENT_RESET");
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.message/client",
-        "${server}/zero.offset.message.single.partition.multiple.nodes/server" })
+        "${client}/message.key.with.value.distinct/client",
+        "${server}/message.key.with.value.distinct/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldNotFetchFromNodeWithNoPartitions() throws Exception
+    public void shouldReceiveMessageKeyWithValueDistinct() throws Exception
     {
         k3po.finish();
     }
@@ -1083,10 +195,10 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.messages/client",
-        "${server}/zero.offset.messages/server" })
+        "${client}/message.key.with.header/client",
+        "${server}/message.key.with.header/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessagesAtZeroOffset() throws Exception
+    public void shouldReceiveMessageKeyWithHeader() throws Exception
     {
         k3po.finish();
     }
@@ -1094,229 +206,79 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/live.then.specified.offset.then.live.messages/client",
-        "${server}/live.then.specified.offset.then.live.messages/server"})
+        "${client}/message.key.distinct/client",
+        "${server}/message.key.distinct/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveLiveHistoricalThenLiveMessagesFromStreamingTopic() throws Exception
+    public void shouldReceiveMessageKeyDistinct() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.awaitBarrier("HISTORICAL_REQUEST_RECEIVED");
-        k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
-        k3po.awaitBarrier("CLIENT_ONE_DETACHED");
-        k3po.notifyBarrier("WRITE_HISTORICAL_RESPONSE");
-        k3po.awaitBarrier("CLIENT_TWO_RECEIVED_MESSAGE");
-        k3po.notifyBarrier("WRITE_SECOND_FETCH_RESPONSE");
-        k3po.awaitBarrier("THIRD_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("CONNECT_CLIENT_THREE");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("WRITE_THIRD_FETCH_RESPONSE");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/specified.offset.then.live.messages/client",
-        "${server}/specified.offset.then.live.messages/server"})
+        "${client}/message.value/client",
+        "${server}/message.value/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveHistoricalThenLiveMessagesFromStreamingTopic() throws Exception
+    public void shouldReceiveMessageValue() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        awaitWindowFromClient();
-        k3po.awaitBarrier("HISTORICAL_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
-        k3po.notifyBarrier("WRITE_HISTORICAL_FETCH_RESPONSE");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/unspecified.offset/client",
-        "${server}/high.water.mark.offset/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldFetchFromHighWaterMarkOffsetForStreamingTopic() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-            "${route}/client/controller",
-            "${client}/unspecified.offset.detached/client",
-            "${server}/high.water.mark.offset.detached/server"})
+        "${client}/message.value.null/client",
+        "${server}/message.value.null/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldFetchFromHighWaterMarkOffsetForStreamingTopicDetached() throws Exception
+    public void shouldReceiveMessageValueNull() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("SERVER_DETACH_NOW");
-        k3po.notifyBarrier("CLIENT_DETACH_NOW");
-        k3po.awaitBarrier("CLIENT_START_LIST_OFFSETS_RESPONSE");
-        k3po.notifyBarrier("SERVER_START_LIST_OFFSETS_RESPONSE");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/unspecified.offset.fanout.messages/client",
-        "${server}/high.water.mark.offset.messages/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldFanoutStreamingMessagesWithSingleListOffsetsRequest() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("WRITE_SECOND_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/unspecified.offset.multiple.topics/client",
-        "${server}/high.water.mark.offset.multiple.topics/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldAttachAtHighWaterMarkOffsetForStreamingTopics() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.awaitBarrier("CLIENT_THREE_CONNECTED");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("UNSUBSCRIBE_CLIENT_ONE");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-
-    @Test
-    @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/unspecified.offset.multiple.streaming.topics/client",
-        "${server}/high.water.mark.offset.multiple.streaming.topics/server"})
+        "${client}/message.value.10k/client",
+        "${server}/message.value.10k/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldFetchFromHighWaterMarkOffsetForMultipleStreamingTopics() throws Exception
+    public void shouldReceiveMessageValue10k() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("CONNECTED_CLIENT_TWO");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("SEND_FETCH_RESPONSE_ONE");
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/fanout.with.historical.messages/client",
-        "${server}/historical.connection.aborted/server" })
+        "${client}/message.value.gzip/client",
+        "${server}/message.value.gzip/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReconnectRequeryPartitionMetadataAndContinueReceivingMessagesWhenHistoricalFetchConnectionIsAborted()
-            throws Exception
+    public void shouldReceiveMessageValueGzip() throws Exception
     {
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/fanout.with.historical.messages/client",
-        "${server}/historical.connection.closed/server" })
+        "${client}/message.value.snappy/client",
+        "${server}/message.value.snappy/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReconnectAndReceiveMessagesWhenHistoricalFetchConnectionIsClosed() throws Exception
+    public void shouldReceiveMessageValueSnappy() throws Exception
     {
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/fanout.with.historical.messages/client",
-        "${server}/historical.connection.reset/server" })
+        "${client}/message.value.lz4/client",
+        "${server}/message.value.lz4/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReconnectRequeryPartitionMetadataAndContinueReceivingMessagesWhenHistoricalFetchConnectionIsReset()
-            throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/header.large.then.small.messages.multiple.partitions/client",
-        "${server}/header.large.exceeding.window.then.small.messages.multiple.partitions/server" })
-    @ScriptProperty({
-        "networkAccept \"nukleus://streams/target#0\"",
-        "applicationConnectWindow \"200\""
-    })
-    public void shouldAdvanceFetchOffsetForNonMatchingMessagesOnPartitionDifferentFromFragmentedMessage()
-            throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/header.large.then.small.messages.multiple.partitions/client",
-        "${server}/header.large.equals.window.then.small.messages.multiple.partitions/server" })
-    @ScriptProperty({
-        "networkAccept \"nukleus://streams/target#0\"",
-        "applicationConnectWindow \"266\""
-    })
-    public void shouldAdvanceFetchOffsetForNonMatchingMessagesOnPartitionDifferentFromMessageExhaustingWindow()
-            throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/large.then.small.messages.multiple.partitions/client",
-        "${server}/large.equals.window.then.small.messages.multiple.partitions/server" })
-    @ScriptProperty({
-        "networkAccept \"nukleus://streams/target#0\"",
-        "applicationConnectWindow \"266\""
-    })
-    public void shouldDeliverLargeMessageFillingWindowThenSmallMessagesFromMultiplePartitions()
-            throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/large.then.small.messages.multiple.partitions/client",
-        "${server}/large.exceeding.window.then.small.messages.multiple.partitions/server" })
-    @ScriptProperty({
-        "networkAccept \"nukleus://streams/target#0\"",
-        "applicationConnectWindow \"200\""
-    })
-    public void shouldNotDeliverMessageFromPartitionDifferentFromFragmentedMessageUntilFragmentedFullyWritten()
-            throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/large.then.small.messages.multiple.partitions/client",
-        "${server}/large.then.small.other.partition.first.in.next.response/server" })
-    @ScriptProperty({
-        "networkAccept \"nukleus://streams/target#0\"",
-        "applicationConnectWindow \"200\""
-    })
-    public void shouldNotDeliverSecondFragmentFromADifferentMessageFromAnotherPartition()
-            throws Exception
+    public void shouldReceiveMessageValueLz4() throws Exception
     {
         k3po.finish();
     }
@@ -1324,42 +286,21 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.message.reattach.message/client",
-        "${server}/live.fetch.broker.restarted.with.recreated.topic/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessagesAcrossBrokerRestartWithRecreatedTopic() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_RECEIVED_FIRST_MESSAGE");
-        k3po.notifyBarrier("SHUTDOWN_BROKER");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/zero.offset.message.two.topics.multiple.partitions/client",
-        "${server}/live.fetch.connection.aborted/server" })
+        "${client}/message.value.distinct/client",
+        "${server}/message.value.distinct/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReconnectRequeryPartitionMetadataAndContinueReceivingMessagesWhenLiveFetchConnectionIsAborted()
-            throws Exception
+    public void shouldReceiveMessageValueDistinct() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.messages/client",
-        "${server}/live.fetch.connection.closed/server" })
+        "${client}/message.header/client",
+        "${server}/message.header/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReconnectAndReceiveMessagesWhenLiveFetchConnectionIsClosed() throws Exception
+    public void shouldReceiveMessageHeader() throws Exception
     {
         k3po.finish();
     }
@@ -1367,153 +308,10 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.messages/client",
-        "${server}/live.fetch.connection.closed.then.reset/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldRefreshMetadataAndReceiveMessagesWhenLiveFetchConnectionIsClosedThenResetThenReconnected() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/zero.offset.messages.multiple.partitions/client",
-        "${server}/live.fetch.connection.fails.during.metadata.refresh/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldHandleFetchConnectionFailureDuringMetadataRefresh() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("DESCRIBE_CONFIGS_REQUEST_RECEIVED");
-        k3po.notifyBarrier("ABORT_CONNECTION_TWO");
-        k3po.awaitBarrier("CONNECTION_TWO_ABORTED");
-
-        //  Give time for the broker 2 to be removed from the metadata
-        awaitWindowFromClient();
-
-        k3po.notifyBarrier("WRITE_DESCRIBE_CONFIGS_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/zero.offset.message.multiple.partitions/client",
-        "${server}/live.fetch.connection.reset/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldRefreshAllConnectionsToABrokerWhichFails()
-            throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
-        k3po.awaitBarrier("LIVE_ONE_FETCH_REQUEST_RECEIVED");
-        k3po.awaitBarrier("READY_TO_FAIL_LIVE_TWO");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.awaitBarrier("HISTORICAL_TWO_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("FAIL_LIVE_TWO");
-        k3po.awaitBarrier("METADATA_REFRESH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("WRITE_METADATA_REFRESH_RESPONSE");
-        k3po.awaitBarrier("RECONNECTED_LIVE_TWO_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("WRITE_LIVE_ONE_FETCH_RESPONSE");
-        k3po.awaitBarrier("RECONNECTED_HISTORICAL_TWO_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("WRITE_RECONNECTED_HISTORICAL_TWO_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/zero.offset.message.two.topics.multiple.partitions/client",
-        "${server}/live.fetch.connection.reset.two.topics/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReconnectRequeryPartitionMetadataAndContinueReceivingMessagesWhenLiveFetchConnectionIsReset()
-            throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
-        k3po.awaitBarrier("FETCH_STREAM_ONE_REQUEST_THREE_RECEIVED");
-        k3po.notifyBarrier("WRITE_METADATA_REFRESH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/zero.offset.message.two.topics/client",
-        "${server}/live.fetch.error.recovered/server" })
-    @ScriptProperty({
-        "networkAccept \"nukleus://streams/target#0\"",
-        "errorCode 6s"
-    })
-    public void shouldContinueReceivingMessagesAfterLeadershipElection() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/zero.offset.messages.partition.added/client",
-        "${server}/live.fetch.error.recovered.partition.added/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldBeDetachedReattachAndContinueReceivingMessagesWhenPartitionCountChanges() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/zero.offset.message.two.topics/client",
-        "${server}/live.fetch.error.then.metadata.error/server" })
-    @ScriptProperty({
-        "networkAccept \"nukleus://streams/target#0\""
-    })
-    public void shouldHandleFetchErrorFollowedByMetadataRefreshError() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/zero.offset.message.two.topics/client",
-        "${server}/live.fetch.topic.not.found.permanently/server" })
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldNotDetachClientsWhenTopicIsPermanentlyDeleted() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("FIRST_FETCH_REQUEST_RECEIVED");
-        k3po.notifyBarrier("CONNECT_CLIENT_TWO");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("WRITE_FIRST_FETCH_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${routeAnyTopic}/client/controller",
-        "${client}/zero.offset.message.reattach.message/client",
-        "${server}/live.fetch.topic.not.found.recovered/server" })
+        "${client}/message.header/client",
+        "${server}/message.header/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldEndWithOffsetZeroWhenTopicIsDeletedThenRecreated() throws Exception
+    public void shouldReceiveMessageHeaderNull() throws Exception
     {
         k3po.finish();
     }
@@ -1521,10 +319,10 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.messagesets/client",
-        "${server}/zero.offset.messagesets/server" })
+        "${client}/message.headers.distinct/client",
+        "${server}/message.headers.distinct/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessageSetsAtZeroOffset() throws Exception
+    public void shouldReceiveMessageHeadersDistinct() throws Exception
     {
         k3po.finish();
     }
@@ -1532,156 +330,94 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.messages.fanout/client",
-        "${server}/zero.offset.messages.fanout/server" })
+        "${client}/message.headers.repeated/client",
+        "${server}/message.headers.repeated/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldFanoutMessagesAtZeroOffset() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-            "${route}/client/controller",
-            "${client}/zero.offset.messages.shared.budget/client",
-            "${server}/zero.offset.messages.shared.budget/server" })
-    @ScriptProperty({"networkAccept \"nukleus://streams/target#0\"",
-                     "applicationConnectWindow 24"})
-    public void shouldFanoutMessagesAtZeroOffsetUsingSharedBudget() throws Exception
+    public void shouldReceiveMessageHeadersRepeated() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_ONE");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_TWO");
         k3po.finish();
     }
 
     @Test
     @Specification({
-            "${route}/client/controller",
-            "${client}/zero.offset.messages.shared.budget.reset/client",
-            "${server}/zero.offset.messages.shared.budget/server" })
-    @ScriptProperty({"networkAccept \"nukleus://streams/target#0\"",
-            "applicationConnectWindow 24"})
-    public void shouldFanoutMessagesAtZeroOffsetUsingSharedBudgetReset() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_ONE");
-        awaitWindowFromClient();
-        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_TWO");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.messages.multiple.partitions/client",
-        "${server}/zero.offset.messages.multiple.nodes/server" })
+        "${client}/filter.none/client",
+        "${server}/filter.none/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessagesFromMultipleNodes() throws Exception
+    public void shouldReceiveMessagesWithNoFilter() throws Exception
     {
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.messages.multiple.partitions/client",
-        "${server}/zero.offset.messages.multiple.partitions/server" })
+        "${client}/filter.key/client",
+        "${server}/filter.key/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessagesFromMultiplePartitions() throws Exception
+    public void shouldReceiveMessagesWithKeyFilter() throws Exception
     {
-        k3po.start();
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.messages.multiple.partitions.partition.1/client",
-        "${server}/zero.offset.messages.multiple.partitions.partition.1/server" })
+        "${client}/filter.key.and.header/client",
+        "${server}/filter.key.and.header/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldCleanUpStateWhenUnsubscribeAfterReceiveMessageFromSecondPartition() throws Exception
+    public void shouldReceiveMessagesWithKeyAndHeaderFilter() throws Exception
     {
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.messagesets.fanout/client",
-        "${server}/zero.offset.messagesets.fanout/server" })
+        "${client}/filter.key.or.header/client",
+        "${server}/filter.key.or.header/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldFanoutMessageSetsAtZeroOffset() throws Exception
+    public void shouldReceiveMessagesWithKeyOrHeaderFilter() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("CLIENT_ONE_CONNECTED");
-        k3po.awaitBarrier("CLIENT_TWO_CONNECTED");
-        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_ONE");
-        k3po.notifyBarrier("SERVER_DELIVER_RESPONSE_TWO");
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset/client",
-        "${server}/metadata.idle/server" })
+        "${client}/filter.header/client",
+        "${server}/filter.header/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    @Configure(name = KAFKA_READ_IDLE_TIMEOUT_NAME, value = "5000")
-    public void shouldTimeoutMetadataResponse() throws Exception
+    public void shouldReceiveMessagesWithHeaderFilter() throws Exception
     {
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset/client",
-        "${server}/describe.configs.idle/server" })
+        "${client}/filter.header.and.header/client",
+        "${server}/filter.header.and.header/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    @Configure(name = KAFKA_READ_IDLE_TIMEOUT_NAME, value = "5000")
-    public void shouldTimeoutDescribeConfigsResponse() throws Exception
+    public void shouldReceiveMessagesWithHeaderAndHeaderFilter() throws Exception
     {
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/zero.offset.message/client",
-        "${server}/fetch.idle/server" })
+        "${client}/filter.header.or.header/client",
+        "${server}/filter.header.or.header/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    @Configure(name = KAFKA_READ_IDLE_TIMEOUT_NAME, value = "5000")
-    public void shouldTimeoutFetchResponse() throws Exception
+    public void shouldReceiveMessagesWithHeaderOrHeaderFilter() throws Exception
     {
-        k3po.start();
-        k3po.notifyBarrier("WRITE_FETCH_RESPONSE");
         k3po.finish();
-    }
-
-    private void awaitWindowFromClient()
-    {
-        // Allow the reaktor process loop to process Window frame from client (and any other frames)
-        try
-        {
-            Thread.sleep(200);
-        }
-        catch (InterruptedException e)
-        {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-        }
     }
 }

@@ -16,7 +16,6 @@
 package org.reaktivity.nukleus.kafka.internal;
 
 import static org.junit.Assert.assertEquals;
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_MESSAGE_CACHE_PROACTIVE;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_READ_IDLE_TIMEOUT;
 
 import org.junit.Test;
@@ -24,13 +23,11 @@ import org.junit.Test;
 public class KafkaConfigurationTest
 {
     // needed by test annotations
-    public static final String KAFKA_MESSAGE_CACHE_PROACTIVE_NAME = "nukleus.kafka.message.cache.proactive";
     public static final String KAFKA_READ_IDLE_TIMEOUT_NAME = "nukleus.kafka.read.idle.timeout";
 
     @Test
     public void shouldVerifyConstants() throws Exception
     {
-        assertEquals(KAFKA_MESSAGE_CACHE_PROACTIVE.name(), KAFKA_MESSAGE_CACHE_PROACTIVE_NAME);
         assertEquals(KAFKA_READ_IDLE_TIMEOUT.name(), KAFKA_READ_IDLE_TIMEOUT_NAME);
     }
 }

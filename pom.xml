@@ -54,8 +54,8 @@
 
     <nukleus.plugin.version>0.45</nukleus.plugin.version>
 
-    <nukleus.kafka.spec.version>0.121</nukleus.kafka.spec.version>
-    <reaktor.version>0.115</reaktor.version>
+    <nukleus.kafka.spec.version>develop-SNAPSHOT</nukleus.kafka.spec.version>
+    <reaktor.version>0.116</reaktor.version>
 
     <kafka.clients.version>1.0.0</kafka.clients.version>
   </properties>

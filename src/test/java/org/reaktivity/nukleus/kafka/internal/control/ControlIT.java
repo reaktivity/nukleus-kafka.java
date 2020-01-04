@@ -17,7 +17,6 @@ package org.reaktivity.nukleus.kafka.internal.control;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_TOPIC_BOOTSTRAP_ENABLED;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -46,8 +45,7 @@ public class ControlIT
             .directory("target/nukleus-itests")
             .commandBufferCapacity(1024)
             .responseBufferCapacity(1024)
-            .counterValuesBufferCapacity(4096)
-            .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, false);
+            .counterValuesBufferCapacity(4096);
 
     @Rule
     public final TestRule chain = outerRule(k3po).around(timeout).around(reaktor);
@@ -66,51 +64,6 @@ public class ControlIT
         "${routeEx}/client/controller"
     })
     public void shouldRouteClientWithExtension() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.header/client/controller"
-    })
-    public void shouldRouteClientWithHeaderCondition() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.headers/client/controller"
-    })
-    public void shouldRouteClientWithHeaderConditions() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.multiple.headers/client/controller"
-    })
-    public void shouldRouteClientWithMultipleRoutesDifferingOnlyInHeaderValue() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.multiple.networks/client/controller"
-    })
-    public void shouldRouteClientWithMultipleRoutesDifferentNetworks() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.multiple.topics/client/controller"
-    })
-    public void shouldRouteClientWithMultipleRoutesDifferentTopics() throws Exception
     {
         k3po.finish();
     }
