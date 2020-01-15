@@ -54,9 +54,17 @@ public class CacheDescribeIT
 
     @Test
     @Specification({
-        "${route}/client/controller" })
+        "${route}/cache.client/controller",
+        "${route}/cache.server/controller",
+        "${client}/topic.unknown/client",
+        "${client}/topic.unknown/server" })
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldRejectWhenTopicUnknown() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
+        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
+        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 

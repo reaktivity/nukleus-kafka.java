@@ -70,9 +70,8 @@ public final class KafkaCacheClientFactory implements StreamFactory
                 supplyTraceId, supplyTypeId, correlations));
 
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_FETCH, new KafkaCacheClientFetchFactory(
-                config, router, signaler, writeBuffer, bufferPool,
-                supplyInitialId, supplyReplyId, supplyTraceId,
-                supplyTypeId, correlations));
+                config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
+                supplyTraceId, supplyTypeId, correlations));
 
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.correlations = correlations;
