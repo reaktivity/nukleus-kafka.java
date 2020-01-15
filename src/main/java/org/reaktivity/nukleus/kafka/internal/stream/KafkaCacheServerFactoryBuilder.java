@@ -15,16 +15,15 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
-import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
 
 import org.agrona.MutableDirectBuffer;
-import org.reaktivity.nukleus.budget.BudgetDebitor;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
@@ -32,6 +31,7 @@ import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 public final class KafkaCacheServerFactoryBuilder implements StreamFactoryBuilder
 {
     private final KafkaConfiguration config;
+    private final KafkaCache cache;
 
     private RouteManager router;
     private MutableDirectBuffer writeBuffer;
@@ -39,13 +39,14 @@ public final class KafkaCacheServerFactoryBuilder implements StreamFactoryBuilde
     private LongUnaryOperator supplyReplyId;
     private LongSupplier supplyTraceId;
     private Supplier<BufferPool> supplyBufferPool;
-    private LongFunction<BudgetDebitor> supplyDebitor;
     private ToIntFunction<String> supplyTypeId;
 
     public KafkaCacheServerFactoryBuilder(
-        KafkaConfiguration config)
+        KafkaConfiguration config,
+        KafkaCache cache)
     {
         this.config = config;
+        this.cache = cache;
     }
 
     @Override
@@ -105,27 +106,19 @@ public final class KafkaCacheServerFactoryBuilder implements StreamFactoryBuilde
     }
 
     @Override
-    public StreamFactoryBuilder setBudgetDebitorSupplier(
-        LongFunction<BudgetDebitor> supplyDebitor)
-    {
-        this.supplyDebitor = supplyDebitor;
-        return this;
-    }
-
-    @Override
     public StreamFactory build()
     {
         final BufferPool bufferPool = supplyBufferPool.get();
 
         return new KafkaCacheServerFactory(
                 config,
+                cache,
                 router,
                 writeBuffer,
                 bufferPool,
                 supplyInitialId,
                 supplyReplyId,
                 supplyTraceId,
-                supplyTypeId,
-                supplyDebitor);
+                supplyTypeId);
     }
 }

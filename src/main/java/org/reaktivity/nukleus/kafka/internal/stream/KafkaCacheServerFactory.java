@@ -15,34 +15,65 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
-import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
 import java.util.function.ToIntFunction;
 
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
-import org.reaktivity.nukleus.budget.BudgetDebitor;
+import org.agrona.collections.Int2ObjectHashMap;
+import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
+import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
+import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.ExtensionFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class KafkaCacheServerFactory implements StreamFactory
 {
-    public KafkaCacheServerFactory(
+    private final BeginFW beginRO = new BeginFW();
+    private final ExtensionFW extensionRO = new ExtensionFW();
+    private final KafkaBeginExFW kafkaBeginExRO = new KafkaBeginExFW();
+
+    private final int kafkaTypeId;
+    private final Long2ObjectHashMap<MessageConsumer> correlations;
+    private final Int2ObjectHashMap<StreamFactory> streamFactoriesByKind;
+
+    KafkaCacheServerFactory(
         KafkaConfiguration config,
+        KafkaCache cache,
         RouteManager router,
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTraceId,
-        ToIntFunction<String> supplyTypeId,
-        LongFunction<BudgetDebitor> supplyDebitor)
+        ToIntFunction<String> supplyTypeId)
     {
-        // TODO Auto-generated constructor stub
+        final Long2ObjectHashMap<MessageConsumer> correlations = new Long2ObjectHashMap<>();
+        final Int2ObjectHashMap<StreamFactory> streamFactoriesByKind = new Int2ObjectHashMap<>();
+
+        streamFactoriesByKind.put(KafkaBeginExFW.KIND_META, new KafkaCacheMetaFactory(
+                config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
+                supplyTraceId, supplyTypeId, correlations));
+
+        streamFactoriesByKind.put(KafkaBeginExFW.KIND_DESCRIBE, new KafkaCacheDescribeFactory(
+                config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
+                supplyTraceId, supplyTypeId, correlations));
+
+        streamFactoriesByKind.put(KafkaBeginExFW.KIND_FETCH, new KafkaCacheServerFetchFactory(
+                config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
+                supplyTraceId, supplyTypeId, correlations));
+
+        this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
+        this.correlations = correlations;
+        this.streamFactoriesByKind = streamFactoriesByKind;
     }
 
     @Override
@@ -53,6 +84,52 @@ public final class KafkaCacheServerFactory implements StreamFactory
         int length,
         MessageConsumer sender)
     {
-        return null;
+        final BeginFW begin = beginRO.wrap(buffer, index, index + length);
+        final long streamId = begin.streamId();
+
+        MessageConsumer newStream = null;
+
+        if ((streamId & 0x0000_0000_0000_0001L) != 0L)
+        {
+            newStream = newInitialStream(begin, sender);
+        }
+        else
+        {
+            newStream = newReplyStream(begin, sender);
+        }
+
+        return newStream;
+    }
+
+    private MessageConsumer newInitialStream(
+        BeginFW begin,
+        MessageConsumer sender)
+    {
+        final OctetsFW extension = begin.extension();
+        final ExtensionFW beginEx = extensionRO.tryWrap(extension.buffer(), extension.offset(), extension.limit());
+        final KafkaBeginExFW kafkaBeginEx = beginEx != null && beginEx.typeId() == kafkaTypeId ?
+                kafkaBeginExRO.tryWrap(extension.buffer(), extension.offset(), extension.limit()) : null;
+
+        MessageConsumer newStream = null;
+
+        if (kafkaBeginEx != null)
+        {
+            final StreamFactory streamFactory = streamFactoriesByKind.get(kafkaBeginEx.kind());
+            if (streamFactory != null)
+            {
+                newStream = streamFactory.newStream(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof(), sender);
+            }
+        }
+
+        return newStream;
+    }
+
+    private MessageConsumer newReplyStream(
+        BeginFW begin,
+        MessageConsumer sender)
+    {
+        final long streamId = begin.streamId();
+
+        return correlations.remove(streamId);
     }
 }

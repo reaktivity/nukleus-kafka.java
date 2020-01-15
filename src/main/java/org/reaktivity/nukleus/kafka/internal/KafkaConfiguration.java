@@ -15,6 +15,9 @@
  */
 package org.reaktivity.nukleus.kafka.internal;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
 import org.reaktivity.nukleus.Configuration;
 
 public class KafkaConfiguration extends Configuration
@@ -26,6 +29,8 @@ public class KafkaConfiguration extends Configuration
     public static final IntPropertyDef KAFKA_FETCH_MAX_BYTES;
     public static final IntPropertyDef KAFKA_FETCH_PARTITION_MAX_BYTES;
     public static final IntPropertyDef KAFKA_READ_IDLE_TIMEOUT;
+    public static final PropertyDef<String> KAFKA_CACHE_DIRECTORY;
+    public static final IntPropertyDef KAFKA_CACHE_SEGMENT_BYTES;
 
     private static final ConfigurationDef KAFKA_CONFIG;
 
@@ -38,6 +43,8 @@ public class KafkaConfiguration extends Configuration
         // maximum record batch size, corresponding to Kafka broker and topic configuration property "max.message.bytes"
         KAFKA_FETCH_PARTITION_MAX_BYTES = config.property("fetch.partition.max.bytes", 1 * 1024 * 1024);
         KAFKA_READ_IDLE_TIMEOUT = config.property("read.idle.timeout", 5000);
+        KAFKA_CACHE_DIRECTORY = config.property("cache.directory", String.format("./%s/cache", KafkaNukleus.NAME));
+        KAFKA_CACHE_SEGMENT_BYTES = config.property("cache.segment.bytes", 1 * 1024 * 1024);
         KAFKA_CONFIG = config;
     }
 
@@ -70,5 +77,15 @@ public class KafkaConfiguration extends Configuration
     public int readIdleTimeout()
     {
         return KAFKA_READ_IDLE_TIMEOUT.getAsInt(this);
+    }
+
+    public Path cacheDirectory()
+    {
+        return Paths.get(KAFKA_CACHE_DIRECTORY.get(this));
+    }
+
+    public int cacheSegmentBytes()
+    {
+        return KAFKA_CACHE_SEGMENT_BYTES.getAsInt(this);
     }
 }

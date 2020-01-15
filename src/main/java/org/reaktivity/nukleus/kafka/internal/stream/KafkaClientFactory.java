@@ -122,7 +122,10 @@ public final class KafkaClientFactory implements StreamFactory
         if (kafkaBeginEx != null)
         {
             final StreamFactory streamFactory = streamFactoriesByKind.get(kafkaBeginEx.kind());
-            newStream = streamFactory.newStream(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof(), application);
+            if (streamFactory != null)
+            {
+                newStream = streamFactory.newStream(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof(), application);
+            }
         }
 
         return newStream;

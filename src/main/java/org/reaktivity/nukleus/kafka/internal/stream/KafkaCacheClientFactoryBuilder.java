@@ -15,16 +15,17 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
-import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
 
 import org.agrona.MutableDirectBuffer;
-import org.reaktivity.nukleus.budget.BudgetDebitor;
 import org.reaktivity.nukleus.buffer.BufferPool;
+import org.reaktivity.nukleus.concurrent.Signaler;
+import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
@@ -32,20 +33,26 @@ import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 public final class KafkaCacheClientFactoryBuilder implements StreamFactoryBuilder
 {
     private final KafkaConfiguration config;
+    private final KafkaCache cache;
+    private final int index;
 
     private RouteManager router;
+    private Signaler signaler;
     private MutableDirectBuffer writeBuffer;
     private LongUnaryOperator supplyInitialId;
     private LongUnaryOperator supplyReplyId;
     private LongSupplier supplyTraceId;
     private Supplier<BufferPool> supplyBufferPool;
-    private LongFunction<BudgetDebitor> supplyDebitor;
     private ToIntFunction<String> supplyTypeId;
 
     public KafkaCacheClientFactoryBuilder(
-        KafkaConfiguration config)
+        KafkaConfiguration config,
+        KafkaCache cache,
+        int index)
     {
         this.config = config;
+        this.cache = cache;
+        this.index = index;
     }
 
     @Override
@@ -53,6 +60,14 @@ public final class KafkaCacheClientFactoryBuilder implements StreamFactoryBuilde
         RouteManager router)
     {
         this.router = router;
+        return this;
+    }
+
+    @Override
+    public StreamFactoryBuilder setSignaler(
+        Signaler signaler)
+    {
+        this.signaler = signaler;
         return this;
     }
 
@@ -105,27 +120,25 @@ public final class KafkaCacheClientFactoryBuilder implements StreamFactoryBuilde
     }
 
     @Override
-    public StreamFactoryBuilder setBudgetDebitorSupplier(
-        LongFunction<BudgetDebitor> supplyDebitor)
-    {
-        this.supplyDebitor = supplyDebitor;
-        return this;
-    }
-
-    @Override
     public StreamFactory build()
     {
         final BufferPool bufferPool = supplyBufferPool.get();
 
-        return new KafkaCacheClientFactory(
+        final KafkaCacheClientFactory clientFactory = new KafkaCacheClientFactory(
                 config,
+                cache,
                 router,
+                signaler,
                 writeBuffer,
                 bufferPool,
                 supplyInitialId,
                 supplyReplyId,
                 supplyTraceId,
-                supplyTypeId,
-                supplyDebitor);
+                supplyTypeId);
+
+        final MessageConsumer client = router.supplyWriter(index);
+        cache.register(client);
+
+        return clientFactory;
     }
 }

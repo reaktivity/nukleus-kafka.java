@@ -80,6 +80,48 @@ public class ControlIT
 
     @Test
     @Specification({
+        "${route}/cache.client/controller"
+    })
+    public void shouldRouteCacheClient() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache.client/controller",
+        "${unroute}/cache.client/controller"
+    })
+    public void shouldUnrouteCacheClient() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache.server/controller"
+    })
+    public void shouldRouteCacheServer() throws Exception
+    {
+        k3po.start();
+        k3po.notifyBarrier("ROUTED_CACHE_CLIENT");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache.server/controller",
+        "${unroute}/cache.server/controller"
+    })
+    public void shouldUnrouteCacheServer() throws Exception
+    {
+        k3po.start();
+        k3po.notifyBarrier("ROUTED_CACHE_CLIENT");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
         "${freeze}/controller",
     })
     @ScriptProperty("nameF00C \"kafka\"")

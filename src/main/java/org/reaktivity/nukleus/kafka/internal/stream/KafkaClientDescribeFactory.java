@@ -607,7 +607,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
             final long traceId = end.traceId();
             final long authorization = end.authorization();
 
-            state = KafkaState.closeInitial(state);
+            state = KafkaState.closedInitial(state);
 
             client.doNetworkEnd(traceId, authorization);
         }
@@ -617,7 +617,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
         {
             final long traceId = abort.traceId();
 
-            state = KafkaState.closeInitial(state);
+            state = KafkaState.closedInitial(state);
 
             client.doNetworkAbortIfNecessary(traceId);
         }
@@ -639,7 +639,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
         {
             final long traceId = reset.traceId();
 
-            state = KafkaState.closeInitial(state);
+            state = KafkaState.closedInitial(state);
 
             client.doNetworkResetIfNecessary(traceId);
         }
@@ -692,7 +692,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
         private void doApplicationEnd(
             long traceId)
         {
-            state = KafkaState.closeReply(state);
+            state = KafkaState.closedReply(state);
             //client.stream = nullIfClosed(state, client.stream);
             doEnd(application, routeId, replyId, traceId, client.authorization, EMPTY_EXTENSION);
         }
@@ -700,7 +700,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
         private void doApplicationAbort(
             long traceId)
         {
-            state = KafkaState.closeReply(state);
+            state = KafkaState.closedReply(state);
             //client.stream = nullIfClosed(state, client.stream);
             doAbort(application, routeId, replyId, traceId, client.authorization, EMPTY_EXTENSION);
         }
@@ -717,13 +717,13 @@ public final class KafkaClientDescribeFactory implements StreamFactory
                         budgetId, credit, padding);
             }
 
-            state = KafkaState.openInitial(state);
+            state = KafkaState.openedInitial(state);
         }
 
         private void doApplicationReset(
             long traceId)
         {
-            state = KafkaState.closeInitial(state);
+            state = KafkaState.closedInitial(state);
             //client.stream = nullIfClosed(state, client.stream);
 
             doReset(application, routeId, initialId, traceId, client.authorization);
@@ -846,7 +846,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
                 final long traceId = begin.traceId();
 
                 authorization = begin.authorization();
-                state = KafkaState.openReply(state);
+                state = KafkaState.openedReply(state);
 
                 doNetworkWindow(traceId, 0L, decodePool.slotCapacity(), 0);
             }
@@ -901,7 +901,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
             {
                 final long traceId = end.traceId();
 
-                state = KafkaState.closeReply(state);
+                state = KafkaState.closedReply(state);
 
                 doApplicationEnd(traceId);
             }
@@ -911,7 +911,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
             {
                 final long traceId = abort.traceId();
 
-                state = KafkaState.closeReply(state);
+                state = KafkaState.closedReply(state);
 
                 cleanupNetwork(traceId);
             }
@@ -921,7 +921,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
             {
                 final long traceId = reset.traceId();
 
-                state = KafkaState.closeInitial(state);
+                state = KafkaState.closedInitial(state);
 
                 cleanupNetwork(traceId);
             }
@@ -940,7 +940,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
                 initialBudget += credit;
                 initialPadding = padding;
 
-                state = KafkaState.openInitial(state);
+                state = KafkaState.openedInitial(state);
 
                 if (encodeSlot != NO_SLOT)
                 {
@@ -1003,7 +1003,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
                 long traceId,
                 long authorization)
             {
-                state = KafkaState.closeInitial(state);
+                state = KafkaState.closedInitial(state);
 
                 doEnd(network, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
             }
@@ -1014,7 +1014,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
                 if (!KafkaState.initialClosed(state))
                 {
                     doAbort(network, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
-                    state = KafkaState.closeInitial(state);
+                    state = KafkaState.closedInitial(state);
                 }
 
                 cleanupEncodeSlotIfNecessary();
@@ -1026,7 +1026,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
                 if (!KafkaState.replyClosed(state))
                 {
                     doReset(network, routeId, replyId, traceId, authorization);
-                    state = KafkaState.closeReply(state);
+                    state = KafkaState.closedReply(state);
                 }
 
                 cleanupDecodeSlotIfNecessary();

@@ -23,6 +23,7 @@ import java.util.EnumMap;
 import java.util.Map;
 
 import org.reaktivity.nukleus.Elektron;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheClientFactoryBuilder;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheServerFactoryBuilder;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaClientFactoryBuilder;
@@ -32,15 +33,19 @@ import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 final class KafkaElektron implements Elektron
 {
     private final Map<RouteKind, StreamFactoryBuilder> streamFactoryBuilders;
+    private final KafkaCacheAgent agent;
 
     KafkaElektron(
-        KafkaConfiguration config)
+        KafkaConfiguration config,
+        KafkaCache cache,
+        int index)
     {
         Map<RouteKind, StreamFactoryBuilder> streamFactoryBuilders = new EnumMap<>(RouteKind.class);
         streamFactoryBuilders.put(CLIENT, new KafkaClientFactoryBuilder(config));
-        streamFactoryBuilders.put(CACHE_SERVER, new KafkaCacheServerFactoryBuilder(config));
-        streamFactoryBuilders.put(CACHE_CLIENT, new KafkaCacheClientFactoryBuilder(config));
+        streamFactoryBuilders.put(CACHE_SERVER, new KafkaCacheServerFactoryBuilder(config, cache));
+        streamFactoryBuilders.put(CACHE_CLIENT, new KafkaCacheClientFactoryBuilder(config, cache, index));
         this.streamFactoryBuilders = streamFactoryBuilders;
+        this.agent = new KafkaCacheAgent(cache);
     }
 
     @Override
@@ -48,6 +53,12 @@ final class KafkaElektron implements Elektron
         RouteKind kind)
     {
         return streamFactoryBuilders.get(kind);
+    }
+
+    @Override
+    public KafkaCacheAgent agent()
+    {
+        return agent;
     }
 
     @Override

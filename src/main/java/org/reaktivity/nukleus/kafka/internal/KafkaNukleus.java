@@ -15,18 +15,36 @@
  */
 package org.reaktivity.nukleus.kafka.internal;
 
+import java.util.Objects;
+
+import org.agrona.DirectBuffer;
+import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.Nukleus;
+import org.reaktivity.nukleus.function.MessagePredicate;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
+import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
+import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
+import org.reaktivity.nukleus.kafka.internal.types.control.UnrouteFW;
+import org.reaktivity.nukleus.route.RouteKind;
 
 public final class KafkaNukleus implements Nukleus
 {
     public static final String NAME = "kafka";
 
+    private final RouteFW routeRO = new RouteFW();
+    private final UnrouteFW unrouteRO = new UnrouteFW();
+    private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
+
     private final KafkaConfiguration config;
+    private final KafkaCache cache;
+    private final Long2ObjectHashMap<KafkaBootstrap> bootstrapByRouteId;
 
     KafkaNukleus(
         KafkaConfiguration config)
     {
         this.config = config;
+        this.cache = new KafkaCache(config);
+        this.bootstrapByRouteId = new Long2ObjectHashMap<>();
     }
 
     @Override
@@ -42,8 +60,142 @@ public final class KafkaNukleus implements Nukleus
     }
 
     @Override
-    public KafkaElektron supplyElektron()
+    public KafkaElektron supplyElektron(
+        int index)
     {
-        return new KafkaElektron(config);
+        return new KafkaElektron(config, cache, index);
+    }
+
+    public MessagePredicate routeHandler(
+        RouteKind kind)
+    {
+        MessagePredicate routeHandler;
+
+        switch (kind)
+        {
+        case CACHE_SERVER:
+            routeHandler = this::handleCacheServer;
+            break;
+        case CACHE_CLIENT:
+            routeHandler = this::handleCacheClient;
+            break;
+        default:
+            routeHandler = null;
+            break;
+        }
+
+        return routeHandler;
+    }
+
+    private boolean handleCacheServer(
+        int msgTypeId,
+        DirectBuffer buffer,
+        int index,
+        int length)
+    {
+        switch (msgTypeId)
+        {
+        case RouteFW.TYPE_ID:
+            RouteFW route = routeRO.wrap(buffer, index, index + length);
+            onRouteCacheServer(route);
+            break;
+        case UnrouteFW.TYPE_ID:
+            final UnrouteFW unroute = unrouteRO.wrap(buffer, index, index + length);
+            onUnrouteCacheServer(unroute);
+            break;
+        }
+
+        return true;
+    }
+
+    private void onRouteCacheServer(
+        RouteFW route)
+    {
+        // TODO
+    }
+
+    private void onUnrouteCacheServer(
+        UnrouteFW route)
+    {
+        // TODO
+    }
+
+    private boolean handleCacheClient(
+        int msgTypeId,
+        DirectBuffer buffer,
+        int index,
+        int length)
+    {
+        switch (msgTypeId)
+        {
+        case RouteFW.TYPE_ID:
+            final RouteFW route = routeRO.wrap(buffer, index, index + length);
+            onRouteCacheClient(route);
+            break;
+        case UnrouteFW.TYPE_ID:
+            final UnrouteFW unroute = unrouteRO.wrap(buffer, index, index + length);
+            onUnrouteCacheClient(unroute);
+            break;
+        }
+
+        return true;
+    }
+
+    private void onRouteCacheClient(
+        RouteFW route)
+    {
+        final String clusterName = route.localAddress().asString();
+        String topicName = null;
+
+        final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
+        if (routeEx != null)
+        {
+            topicName = routeEx.topic().asString();
+        }
+
+        if (topicName != null)
+        {
+            final KafkaBootstrap bootstrap = new KafkaBootstrap(clusterName, topicName);
+            final long routeId = route.correlationId();
+            bootstrapByRouteId.put(routeId, bootstrap);
+
+            bootstrap.resume();
+        }
+    }
+
+    private void onUnrouteCacheClient(
+        UnrouteFW unroute)
+    {
+        final long routeId = unroute.correlationId();
+
+        final KafkaBootstrap bootstrap = bootstrapByRouteId.remove(routeId);
+        if (bootstrap != null)
+        {
+            bootstrap.suspend();
+        }
+    }
+
+    private final class KafkaBootstrap
+    {
+        final String clusterName;
+        final String topicName;
+
+        KafkaBootstrap(
+            String clusterName,
+            String topicName)
+        {
+            this.clusterName = Objects.requireNonNull(clusterName);
+            this.topicName = Objects.requireNonNull(topicName);
+        }
+
+        void resume()
+        {
+            cache.resume(clusterName, topicName);
+        }
+
+        void suspend()
+        {
+            cache.suspend(clusterName, topicName);
+        }
     }
 }
