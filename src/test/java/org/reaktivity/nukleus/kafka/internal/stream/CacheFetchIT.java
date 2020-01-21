@@ -188,7 +188,7 @@ public class CacheFetchIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/message.key.with.value.distinct/client",
         "${server}/message.key.with.value.distinct/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -199,7 +199,7 @@ public class CacheFetchIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/message.key.with.header/client",
         "${server}/message.key.with.header/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -210,7 +210,7 @@ public class CacheFetchIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/message.key.distinct/client",
         "${server}/message.key.distinct/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -221,7 +221,7 @@ public class CacheFetchIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/message.value/client",
         "${server}/message.value/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -232,7 +232,7 @@ public class CacheFetchIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/message.value.null/client",
         "${server}/message.value.null/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -243,7 +243,7 @@ public class CacheFetchIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/message.value.10k/client",
         "${server}/message.value.10k/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -254,7 +254,7 @@ public class CacheFetchIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/message.value.100k/client",
         "${server}/message.value.100k/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -266,7 +266,7 @@ public class CacheFetchIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/message.value.gzip/client",
         "${server}/message.value.gzip/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -278,7 +278,7 @@ public class CacheFetchIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/message.value.snappy/client",
         "${server}/message.value.snappy/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -290,7 +290,7 @@ public class CacheFetchIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/message.value.lz4/client",
         "${server}/message.value.lz4/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -301,7 +301,7 @@ public class CacheFetchIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/message.value.distinct/client",
         "${server}/message.value.distinct/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -312,7 +312,7 @@ public class CacheFetchIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/message.header/client",
         "${server}/message.header/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -323,7 +323,7 @@ public class CacheFetchIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/message.header/client",
         "${server}/message.header/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -334,7 +334,7 @@ public class CacheFetchIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/message.headers.distinct/client",
         "${server}/message.headers.distinct/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -345,7 +345,7 @@ public class CacheFetchIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/message.headers.repeated/client",
         "${server}/message.headers.repeated/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -356,7 +356,7 @@ public class CacheFetchIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/filter.none/client",
         "${server}/filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -368,7 +368,7 @@ public class CacheFetchIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/filter.key/client",
         "${server}/filter.key/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -380,7 +380,7 @@ public class CacheFetchIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/filter.key.and.header/client",
         "${server}/filter.key.and.header/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -392,7 +392,7 @@ public class CacheFetchIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/filter.key.or.header/client",
         "${server}/filter.key.or.header/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -404,7 +404,7 @@ public class CacheFetchIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/filter.header/client",
         "${server}/filter.header/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -416,7 +416,7 @@ public class CacheFetchIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/filter.header.and.header/client",
         "${server}/filter.header.and.header/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -428,7 +428,7 @@ public class CacheFetchIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${client}/filter.header.or.header/client",
         "${server}/filter.header.or.header/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")

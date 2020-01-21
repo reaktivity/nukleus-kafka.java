@@ -56,7 +56,7 @@ public class CacheFetchAllIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${scripts}/merged.filter.header/client",
         "${scripts}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -67,7 +67,7 @@ public class CacheFetchAllIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${scripts}/merged.filter.header.and.header/client",
         "${scripts}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -78,7 +78,7 @@ public class CacheFetchAllIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${scripts}/merged.filter.header.or.header/client",
         "${scripts}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -89,7 +89,7 @@ public class CacheFetchAllIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${scripts}/merged.filter.key/client",
         "${scripts}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -100,7 +100,7 @@ public class CacheFetchAllIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${scripts}/merged.filter.key.and.header/client",
         "${scripts}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -111,7 +111,7 @@ public class CacheFetchAllIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${scripts}/merged.filter.key.or.header/client",
         "${scripts}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -122,7 +122,7 @@ public class CacheFetchAllIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${scripts}/merged.filter.none/client",
         "${scripts}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -133,7 +133,7 @@ public class CacheFetchAllIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
+        "${route}/cache/controller",
         "${scripts}/merged.message.values/client",
         "${scripts}/unmerged.message.values/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
