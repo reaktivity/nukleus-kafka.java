@@ -54,49 +54,34 @@ public class CacheDescribeIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
+        "${route}/cache/controller",
         "${client}/topic.unknown/client",
         "${client}/topic.unknown/server" })
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldRejectWhenTopicUnknown() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
+        "${route}/cache/controller",
         "${client}/topic.config.info/client",
         "${server}/topic.config.info/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveTopicConfigInfo() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
+        "${route}/cache/controller",
         "${client}/topic.config.info.changed/client",
         "${server}/topic.config.info.changed/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveTopicConfigInfoChanged() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 }

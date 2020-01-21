@@ -56,305 +56,210 @@ public class CacheFetchIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
+        "${route}/cache/controller",
         "${client}/topic.missing/client",
         "${client}/topic.missing/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldRejectWhenTopicMissing() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
+        "${route}/cache/controller",
         "${client}/topic.not.routed/client",
         "${client}/topic.not.routed/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldRejectWhenTopicNotRouted() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
+        "${route}/cache/controller",
         "${client}/partition.offset.missing/client",
         "${client}/partition.offset.missing/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldRejectWhenPartitionOffsetMissing() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
+        "${route}/cache/controller",
         "${client}/partition.offset.repeated/client",
         "${client}/partition.offset.repeated/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldRejectWhenPartitionOffsetRepeated() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
+        "${route}/cache/controller",
         "${client}/partition.unknown/client",
         "${server}/partition.unknown/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldRejectWhenPartitionUnknown() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
+        "${route}/cache/controller",
         "${client}/partition.not.leader/client",
         "${server}/partition.not.leader/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldRejectPartitionNotLeader() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
+        "${route}/cache/controller",
         "${client}/partition.offset/client",
         "${server}/partition.offset/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldRequestPartitionOffset() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
+        "${route}/cache/controller",
         "${client}/partition.offset.earliest/client",
         "${server}/partition.offset.earliest/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldRequestPartitionOffsetEarliest() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
+        "${route}/cache/controller",
         "${client}/partition.offset.latest/client",
         "${server}/partition.offset.latest/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldRequestPartitionOffsetLatest() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
+        "${route}/cache/controller",
         "${client}/message.key/client",
         "${server}/message.key/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageKey() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
+        "${route}/cache/controller",
         "${client}/message.key.null/client",
         "${server}/message.key.null/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageKeyNull() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
+        "${route}/cache/controller",
         "${client}/message.key.with.value.null/client",
         "${server}/message.key.with.value.null/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageKeyWithValueNull() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/message.key.with.value.distinct/client",
         "${server}/message.key.with.value.distinct/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageKeyWithValueDistinct() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/message.key.with.header/client",
         "${server}/message.key.with.header/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageKeyWithHeader() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/message.key.distinct/client",
         "${server}/message.key.distinct/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageKeyDistinct() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/message.value/client",
         "${server}/message.value/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageValue() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/message.value.null/client",
         "${server}/message.value.null/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageValueNull() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/message.value.10k/client",
         "${server}/message.value.10k/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageValue10k() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/message.value.100k/client",
         "${server}/message.value.100k/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageValue100k() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
@@ -362,16 +267,11 @@ public class CacheFetchIT
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/message.value.gzip/client",
         "${server}/message.value.gzip/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageValueGzip() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
@@ -379,16 +279,11 @@ public class CacheFetchIT
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/message.value.snappy/client",
         "${server}/message.value.snappy/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageValueSnappy() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
@@ -396,112 +291,77 @@ public class CacheFetchIT
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/message.value.lz4/client",
         "${server}/message.value.lz4/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageValueLz4() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/message.value.distinct/client",
         "${server}/message.value.distinct/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageValueDistinct() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/message.header/client",
         "${server}/message.header/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageHeader() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/message.header/client",
         "${server}/message.header/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageHeaderNull() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/message.headers.distinct/client",
         "${server}/message.headers.distinct/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageHeadersDistinct() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/message.headers.repeated/client",
         "${server}/message.headers.repeated/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageHeadersRepeated() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/filter.none/client",
         "${server}/filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithNoFilter() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
@@ -509,16 +369,11 @@ public class CacheFetchIT
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/filter.key/client",
         "${server}/filter.key/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithKeyFilter() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
@@ -526,16 +381,11 @@ public class CacheFetchIT
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/filter.key.and.header/client",
         "${server}/filter.key.and.header/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithKeyAndHeaderFilter() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
@@ -543,16 +393,11 @@ public class CacheFetchIT
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/filter.key.or.header/client",
         "${server}/filter.key.or.header/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithKeyOrHeaderFilter() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
@@ -560,16 +405,11 @@ public class CacheFetchIT
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/filter.header/client",
         "${server}/filter.header/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithHeaderFilter() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
@@ -577,16 +417,11 @@ public class CacheFetchIT
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/filter.header.and.header/client",
         "${server}/filter.header.and.header/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithHeaderAndHeaderFilter() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
@@ -594,16 +429,11 @@ public class CacheFetchIT
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${client}/filter.header.or.header/client",
         "${server}/filter.header.or.header/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithHeaderOrHeaderFilter() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 }

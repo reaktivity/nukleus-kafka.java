@@ -57,128 +57,88 @@ public class CacheFetchAllIT
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${scripts}/merged.filter.header/client",
         "${scripts}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMergedMessagesWithHeaderFilter() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${scripts}/merged.filter.header.and.header/client",
         "${scripts}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMergedMessagesWithHeaderAndHeaderFilter() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${scripts}/merged.filter.header.or.header/client",
         "${scripts}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMergedMessagesWithHeaderOrHeaderFilter() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${scripts}/merged.filter.key/client",
         "${scripts}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMergedMessagesWithKeyFilter() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${scripts}/merged.filter.key.and.header/client",
         "${scripts}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMergedMessagesWithKeyAndHeaderFilter() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${scripts}/merged.filter.key.or.header/client",
         "${scripts}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMergedMessagesWithKeyOrHeaderFilter() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${scripts}/merged.filter.none/client",
         "${scripts}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMergedMessagesWithNoFilter() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
         "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
         "${scripts}/merged.message.values/client",
         "${scripts}/unmerged.message.values/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMergedMessageValues() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 }

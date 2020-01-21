@@ -52,66 +52,46 @@ public class CacheMetaIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
+        "${route}/cache/controller",
         "${client}/topic.unknown/client",
         "${client}/topic.unknown/server" })
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldRejectWhenTopicUnknown() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
+        "${route}/cache/controller",
         "${client}/topic.invalid/client",
         "${server}/topic.invalid/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldRejectWhenTopicInvalid() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
+        "${route}/cache/controller",
         "${client}/topic.partition.info/client",
         "${server}/topic.partition.info/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveTopicPartitionInfo() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${route}/cache.server/controller",
+        "${route}/cache/controller",
         "${client}/topic.partition.info.changed/client",
         "${server}/topic.partition.info.changed/server"
         })
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveTopicPartitionInfoChanged() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("ROUTED_CACHE_CLIENT");
-        k3po.awaitBarrier("ROUTED_CACHE_SERVER");
-        k3po.notifyBarrier("ROUTED_CLIENT");
         k3po.finish();
     }
 }

@@ -80,43 +80,29 @@ public class ControlIT
 
     @Test
     @Specification({
-        "${route}/cache.client/controller"
+        "${route}/cache/controller"
     })
-    public void shouldRouteCacheClient() throws Exception
+    public void shouldRouteCache() throws Exception
     {
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${route}/cache.client/controller",
-        "${unroute}/cache.client/controller"
+        "${routeEx}/cache/controller"
     })
-    public void shouldUnrouteCacheClient() throws Exception
+    public void shouldRouteCacheWithExtension() throws Exception
     {
         k3po.finish();
     }
 
     @Test
     @Specification({
-        "${route}/cache.server/controller"
+        "${route}/cache/controller",
+        "${unroute}/cache/controller"
     })
-    public void shouldRouteCacheServer() throws Exception
+    public void shouldUnrouteCache() throws Exception
     {
-        k3po.start();
-        k3po.notifyBarrier("ROUTED_CACHE_CLIENT");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/cache.server/controller",
-        "${unroute}/cache.server/controller"
-    })
-    public void shouldUnrouteCacheServer() throws Exception
-    {
-        k3po.start();
-        k3po.notifyBarrier("ROUTED_CACHE_CLIENT");
         k3po.finish();
     }
 
