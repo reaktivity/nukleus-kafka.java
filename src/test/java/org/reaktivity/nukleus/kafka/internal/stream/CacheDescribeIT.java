@@ -34,6 +34,7 @@ public class CacheDescribeIT
 {
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route")
+            .addScriptRoot("routeEx", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
             .addScriptRoot("server", "org/reaktivity/specification/nukleus/kafka/streams/describe")
             .addScriptRoot("client", "org/reaktivity/specification/nukleus/kafka/streams/describe");
 
@@ -55,9 +56,7 @@ public class CacheDescribeIT
     @Test
     @Specification({
         "${route}/cache/controller",
-        "${client}/topic.unknown/client",
-        "${client}/topic.unknown/server" })
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${client}/topic.unknown/client" })
     public void shouldRejectWhenTopicUnknown() throws Exception
     {
         k3po.finish();
@@ -65,7 +64,7 @@ public class CacheDescribeIT
 
     @Test
     @Specification({
-        "${route}/cache/controller",
+        "${routeEx}/cache/controller",
         "${client}/topic.config.info/client",
         "${server}/topic.config.info/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -76,7 +75,7 @@ public class CacheDescribeIT
 
     @Test
     @Specification({
-        "${route}/cache/controller",
+        "${routeEx}/cache/controller",
         "${client}/topic.config.info.changed/client",
         "${server}/topic.config.info.changed/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")

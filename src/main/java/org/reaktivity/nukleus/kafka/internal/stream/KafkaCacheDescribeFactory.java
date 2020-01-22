@@ -153,7 +153,7 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
                 final RouteFW route = wrapRoute.apply(t, b, i, l);
                 final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
                 final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
-                return routeTopic == null || Objects.equals(routeTopic, beginTopic);
+                return routeTopic != null && Objects.equals(routeTopic, beginTopic);
             };
 
             final RouteFW route = router.resolve(routeId, authorization, filter, wrapRoute);
