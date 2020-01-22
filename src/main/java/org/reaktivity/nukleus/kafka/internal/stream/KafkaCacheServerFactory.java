@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
 import java.util.function.ToIntFunction;
@@ -54,18 +55,19 @@ public final class KafkaCacheServerFactory implements StreamFactory
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTraceId,
-        ToIntFunction<String> supplyTypeId)
+        ToIntFunction<String> supplyTypeId,
+        LongFunction<KafkaCacheRoute> supplyCacheRoute)
     {
         final Long2ObjectHashMap<MessageConsumer> correlations = new Long2ObjectHashMap<>();
         final Int2ObjectHashMap<StreamFactory> streamFactoriesByKind = new Int2ObjectHashMap<>();
 
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_META, new KafkaCacheMetaFactory(
                 config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
-                supplyTraceId, supplyTypeId, correlations));
+                supplyTraceId, supplyTypeId, supplyCacheRoute, correlations));
 
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_DESCRIBE, new KafkaCacheDescribeFactory(
                 config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
-                supplyTraceId, supplyTypeId, correlations));
+                supplyTraceId, supplyTypeId, supplyCacheRoute, correlations));
 
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_FETCH, new KafkaCacheServerFetchFactory(
                 config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,

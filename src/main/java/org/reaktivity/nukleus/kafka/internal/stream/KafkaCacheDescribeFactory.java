@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
 import java.util.function.Consumer;
+import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
 import java.util.function.ToIntFunction;
@@ -93,7 +94,7 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
     private final BufferPool bufferPool;
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
-    private final Map<String, KafkaCacheDescribeFanout> fanoutsByTopic;
+    private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
 
     public KafkaCacheDescribeFactory(
@@ -105,6 +106,7 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTraceId,
         ToIntFunction<String> supplyTypeId,
+        LongFunction<KafkaCacheRoute> supplyCacheRoute,
         Long2ObjectHashMap<MessageConsumer> correlations)
     {
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
@@ -114,8 +116,8 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
         this.bufferPool = bufferPool;
         this.supplyInitialId = supplyInitialId;
         this.supplyReplyId = supplyReplyId;
+        this.supplyCacheRoute = supplyCacheRoute;
         this.correlations = correlations;
-        this.fanoutsByTopic = new TreeMap<>();
     }
 
     @Override
@@ -127,9 +129,12 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
         MessageConsumer sender)
     {
         final BeginFW begin = beginRO.wrap(buffer, index, index + length);
-        final long streamId = begin.streamId();
+        final long routeId = begin.routeId();
+        final long initialId = begin.streamId();
+        final long authorization = begin.authorization();
+        final long affinity = begin.affinity();
 
-        assert (streamId & 0x0000_0000_0000_0001L) != 0L;
+        assert (initialId & 0x0000_0000_0000_0001L) != 0L;
 
         final OctetsFW extension = begin.extension();
         final ExtensionFW beginEx = extensionRO.tryWrap(extension.buffer(), extension.offset(), extension.limit());
@@ -142,38 +147,43 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
         final String16FW beginTopic = kafkaDescribeBeginEx.topic();
         final String topic = beginTopic != null ? beginTopic.asString() : null;
 
-        KafkaCacheDescribeFanout fanout = fanoutsByTopic.get(topic);
-        if (fanout == null)
+        final MessagePredicate filter = (t, b, i, l) ->
         {
-            final long routeId = begin.routeId();
-            final long authorization = begin.authorization();
+            final RouteFW route = wrapRoute.apply(t, b, i, l);
+            final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
+            final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
+            return routeTopic != null && Objects.equals(routeTopic, beginTopic);
+        };
 
-            final MessagePredicate filter = (t, b, i, l) ->
-            {
-                final RouteFW route = wrapRoute.apply(t, b, i, l);
-                final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
-                final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
-                return routeTopic != null && Objects.equals(routeTopic, beginTopic);
-            };
+        MessageConsumer newStream = null;
 
-            final RouteFW route = router.resolve(routeId, authorization, filter, wrapRoute);
-            if (route != null)
+        final RouteFW route = router.resolve(routeId, authorization, filter, wrapRoute);
+        if (route != null)
+        {
+            final long resolvedId = route.correlationId();
+            final KafkaCacheRoute cacheRoute = supplyCacheRoute.apply(resolvedId);
+            KafkaCacheDescribeFanout fanout = cacheRoute.describeFanoutsByTopic.get(topic);
+            if (fanout == null)
             {
-                final long resolvedId = route.correlationId();
                 final List<String> configNames = new ArrayList<>();
                 kafkaDescribeBeginEx.configs().forEach(c -> configNames.add(c.asString()));
                 final KafkaCacheDescribeFanout newFanout =
                         new KafkaCacheDescribeFanout(resolvedId, authorization, topic, configNames);
 
-                fanoutsByTopic.put(topic, newFanout);
+                cacheRoute.describeFanoutsByTopic.put(topic, newFanout);
                 fanout = newFanout;
             }
-        }
 
-        MessageConsumer newStream = null;
-        if (fanout != null)
-        {
-            newStream = fanout.newMemberInitialStream(begin, sender);
+            if (fanout != null)
+            {
+                newStream = new KafkaCacheDescribeStream(
+                        fanout,
+                        sender,
+                        routeId,
+                        initialId,
+                        affinity,
+                        authorization)::onInitial;
+            }
         }
 
         return newStream;
@@ -301,7 +311,7 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
         sender.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
     }
 
-    private final class KafkaCacheDescribeFanout
+    final class KafkaCacheDescribeFanout
     {
         private final long routeId;
         private final long authorization;
@@ -327,24 +337,6 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
             this.topic = topic;
             this.configNames = configNames;
             this.members = new ArrayList<>();
-        }
-
-        private MessageConsumer newMemberInitialStream(
-            BeginFW begin,
-            MessageConsumer application)
-        {
-            final long routeId = begin.routeId();
-            final long initialId = begin.streamId();
-            final long affinity = begin.affinity();
-            final long authorization = begin.authorization();
-
-            return new KafkaCacheDescribeStream(
-                    this,
-                    application,
-                    routeId,
-                    initialId,
-                    affinity,
-                    authorization)::onInitial;
         }
 
         private void onMemberOpening(

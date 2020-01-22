@@ -22,9 +22,11 @@ import static org.reaktivity.nukleus.route.RouteKind.CLIENT;
 import java.util.EnumMap;
 import java.util.Map;
 
+import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.Elektron;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheClientFactoryBuilder;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheRoute;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheServerFactoryBuilder;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaClientFactoryBuilder;
 import org.reaktivity.nukleus.route.RouteKind;
@@ -32,6 +34,7 @@ import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 
 final class KafkaElektron implements Elektron
 {
+    private final Long2ObjectHashMap<KafkaCacheRoute> cacheRoutesById;
     private final Map<RouteKind, StreamFactoryBuilder> streamFactoryBuilders;
     private final KafkaCacheAgent agent;
 
@@ -40,10 +43,11 @@ final class KafkaElektron implements Elektron
         KafkaCache cache,
         int index)
     {
+        this.cacheRoutesById = new Long2ObjectHashMap<>();
         Map<RouteKind, StreamFactoryBuilder> streamFactoryBuilders = new EnumMap<>(RouteKind.class);
         streamFactoryBuilders.put(CLIENT, new KafkaClientFactoryBuilder(config));
-        streamFactoryBuilders.put(CACHE_SERVER, new KafkaCacheServerFactoryBuilder(config, cache));
-        streamFactoryBuilders.put(CACHE_CLIENT, new KafkaCacheClientFactoryBuilder(config, cache, index));
+        streamFactoryBuilders.put(CACHE_SERVER, new KafkaCacheServerFactoryBuilder(config, cache, this::supplyCacheRoute));
+        streamFactoryBuilders.put(CACHE_CLIENT, new KafkaCacheClientFactoryBuilder(config, cache, index, this::supplyCacheRoute));
         this.streamFactoryBuilders = streamFactoryBuilders;
         this.agent = new KafkaCacheAgent(cache);
     }
@@ -65,5 +69,11 @@ final class KafkaElektron implements Elektron
     public String toString()
     {
         return String.format("%s %s", getClass().getSimpleName(), streamFactoryBuilders);
+    }
+
+    private KafkaCacheRoute supplyCacheRoute(
+        long routeId)
+    {
+        return cacheRoutesById.computeIfAbsent(routeId, KafkaCacheRoute::new);
     }
 }

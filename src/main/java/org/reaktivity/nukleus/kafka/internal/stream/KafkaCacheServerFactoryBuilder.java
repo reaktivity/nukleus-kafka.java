@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
@@ -32,6 +33,7 @@ public final class KafkaCacheServerFactoryBuilder implements StreamFactoryBuilde
 {
     private final KafkaConfiguration config;
     private final KafkaCache cache;
+    private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
 
     private RouteManager router;
     private MutableDirectBuffer writeBuffer;
@@ -43,10 +45,12 @@ public final class KafkaCacheServerFactoryBuilder implements StreamFactoryBuilde
 
     public KafkaCacheServerFactoryBuilder(
         KafkaConfiguration config,
-        KafkaCache cache)
+        KafkaCache cache,
+        LongFunction<KafkaCacheRoute> supplyCacheRoute)
     {
         this.config = config;
         this.cache = cache;
+        this.supplyCacheRoute = supplyCacheRoute;
     }
 
     @Override
@@ -119,6 +123,7 @@ public final class KafkaCacheServerFactoryBuilder implements StreamFactoryBuilde
                 supplyInitialId,
                 supplyReplyId,
                 supplyTraceId,
-                supplyTypeId);
+                supplyTypeId,
+                supplyCacheRoute);
     }
 }
