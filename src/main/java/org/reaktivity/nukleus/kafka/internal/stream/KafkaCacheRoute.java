@@ -18,14 +18,18 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import java.util.Map;
 import java.util.TreeMap;
 
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheClientFetchFactory.KafkaCacheClientFetchFanout;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheDescribeFactory.KafkaCacheDescribeFanout;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheMetaFactory.KafkaCacheMetaFanout;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheServerFetchFactory.KafkaCacheServerFetchFanout;
 
 public final class KafkaCacheRoute
 {
     public final long routeId;
     public final Map<String, KafkaCacheDescribeFanout> describeFanoutsByTopic;
     public final Map<String, KafkaCacheMetaFanout> metaFanoutsByTopic;
+    public final Map<String, KafkaCacheClientFetchFanout> clientFetchFanoutsByTopic;
+    public final Map<String, KafkaCacheServerFetchFanout> serverFetchFanoutsByTopic;
 
     public KafkaCacheRoute(
         long routeId)
@@ -33,5 +37,7 @@ public final class KafkaCacheRoute
         this.routeId = routeId;
         this.describeFanoutsByTopic = new TreeMap<>();
         this.metaFanoutsByTopic = new TreeMap<>();
+        this.clientFetchFanoutsByTopic = new TreeMap<>();
+        this.serverFetchFanoutsByTopic = new TreeMap<>();
     }
 }
