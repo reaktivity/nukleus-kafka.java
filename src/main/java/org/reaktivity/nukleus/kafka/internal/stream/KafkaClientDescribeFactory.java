@@ -151,7 +151,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.router = router;
         this.signaler = signaler;
-        this.writeBuffer = writeBuffer;
+        this.writeBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
         this.extBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
         this.decodePool = bufferPool;
         this.encodePool = bufferPool;

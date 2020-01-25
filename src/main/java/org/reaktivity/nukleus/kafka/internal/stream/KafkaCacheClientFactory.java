@@ -24,11 +24,13 @@ import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
+import org.reaktivity.nukleus.budget.BudgetDebitor;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
+import org.reaktivity.nukleus.kafka.internal.budget.KafkaMergedBudgetAccountant;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
@@ -58,22 +60,36 @@ public final class KafkaCacheClientFactory implements StreamFactory
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTraceId,
         ToIntFunction<String> supplyTypeId,
+        LongSupplier supplyBudgetId,
+        LongFunction<BudgetDebitor> supplyDebitor,
         LongFunction<KafkaCacheRoute> supplyCacheRoute)
     {
         final Long2ObjectHashMap<MessageConsumer> correlations = new Long2ObjectHashMap<>();
+        final KafkaMergedBudgetAccountant accountant = new KafkaMergedBudgetAccountant(supplyBudgetId, supplyDebitor);
+
+        final KafkaCacheMetaFactory cacheMetaFactory = new KafkaCacheMetaFactory(
+                config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
+                supplyTraceId, supplyTypeId, supplyCacheRoute, correlations);
+
+        final KafkaCacheDescribeFactory cacheDescribeFactory = new KafkaCacheDescribeFactory(
+                config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
+                supplyTraceId, supplyTypeId, supplyCacheRoute, correlations);
+
+        final KafkaCacheClientFetchFactory cacheFetchFactory = new KafkaCacheClientFetchFactory(
+                config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
+                supplyTraceId, supplyTypeId, supplyCacheRoute, correlations);
+
+        final KafkaMergedFetchFactory mergedCacheFetchFactory = new KafkaMergedFetchFactory(
+                config, router, writeBuffer, supplyInitialId, supplyReplyId, supplyTraceId,
+                supplyTypeId, correlations, accountant.creditor());
+
+        final KafkaMergeableFetchFactory mergeableCacheFetchFactory = new KafkaMergeableFetchFactory(
+                supplyTypeId, cacheFetchFactory, mergedCacheFetchFactory);
+
         final Int2ObjectHashMap<StreamFactory> streamFactoriesByKind = new Int2ObjectHashMap<>();
-
-        streamFactoriesByKind.put(KafkaBeginExFW.KIND_META, new KafkaCacheMetaFactory(
-                config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
-                supplyTraceId, supplyTypeId, supplyCacheRoute, correlations));
-
-        streamFactoriesByKind.put(KafkaBeginExFW.KIND_DESCRIBE, new KafkaCacheDescribeFactory(
-                config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
-                supplyTraceId, supplyTypeId, supplyCacheRoute, correlations));
-
-        streamFactoriesByKind.put(KafkaBeginExFW.KIND_FETCH, new KafkaCacheClientFetchFactory(
-                config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
-                supplyTraceId, supplyTypeId, supplyCacheRoute, correlations));
+        streamFactoriesByKind.put(KafkaBeginExFW.KIND_META, cacheMetaFactory);
+        streamFactoriesByKind.put(KafkaBeginExFW.KIND_DESCRIBE, cacheDescribeFactory);
+        streamFactoriesByKind.put(KafkaBeginExFW.KIND_FETCH, mergeableCacheFetchFactory);
 
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.correlations = correlations;

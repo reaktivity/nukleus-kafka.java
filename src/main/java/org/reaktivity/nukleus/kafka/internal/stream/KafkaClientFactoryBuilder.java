@@ -43,6 +43,7 @@ public final class KafkaClientFactoryBuilder implements StreamFactoryBuilder
     private Supplier<BufferPool> supplyBufferPool;
     private LongFunction<BudgetDebitor> supplyDebitor;
     private ToIntFunction<String> supplyTypeId;
+    private LongSupplier supplyBudgetId;
 
     public KafkaClientFactoryBuilder(
         KafkaConfiguration config)
@@ -115,6 +116,14 @@ public final class KafkaClientFactoryBuilder implements StreamFactoryBuilder
     }
 
     @Override
+    public StreamFactoryBuilder setBudgetIdSupplier(
+        LongSupplier supplyBudgetId)
+    {
+        this.supplyBudgetId = supplyBudgetId;
+        return this;
+    }
+
+    @Override
     public StreamFactoryBuilder setBudgetDebitorSupplier(
         LongFunction<BudgetDebitor> supplyDebitor)
     {
@@ -137,6 +146,7 @@ public final class KafkaClientFactoryBuilder implements StreamFactoryBuilder
                 supplyReplyId,
                 supplyTraceId,
                 supplyTypeId,
+                supplyBudgetId,
                 supplyDebitor);
     }
 }

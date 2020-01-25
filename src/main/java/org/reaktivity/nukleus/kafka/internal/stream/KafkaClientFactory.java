@@ -30,6 +30,7 @@ import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
+import org.reaktivity.nukleus.kafka.internal.budget.KafkaMergedBudgetAccountant;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ExtensionFW;
@@ -57,26 +58,39 @@ public final class KafkaClientFactory implements StreamFactory
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTraceId,
         ToIntFunction<String> supplyTypeId,
+        LongSupplier supplyBudgetId,
         LongFunction<BudgetDebitor> supplyDebitor)
     {
         final Long2ObjectHashMap<MessageConsumer> correlations = new Long2ObjectHashMap<>();
         final Long2ObjectHashMap<Long2ObjectHashMap<KafkaBrokerInfo>> brokersByRouteId = new Long2ObjectHashMap<>();
+        final KafkaMergedBudgetAccountant accountant = new KafkaMergedBudgetAccountant(supplyBudgetId, supplyDebitor);
+
+        final KafkaClientMetaFactory clientMetaFactory = new KafkaClientMetaFactory(
+                config, router, signaler, writeBuffer, bufferPool,
+                supplyInitialId, supplyReplyId, supplyTraceId,
+                supplyTypeId, accountant::supplyDebitor, correlations, brokersByRouteId);
+
+        final KafkaClientDescribeFactory clientDescribeFactory = new KafkaClientDescribeFactory(
+                config, router, signaler, writeBuffer, bufferPool,
+                supplyInitialId, supplyReplyId, supplyTraceId,
+                supplyTypeId, accountant::supplyDebitor, correlations);
+
+        final KafkaClientFetchFactory clientFetchFactory = new KafkaClientFetchFactory(
+                config, router, signaler, writeBuffer, bufferPool,
+                supplyInitialId, supplyReplyId, supplyTraceId,
+                supplyTypeId, accountant::supplyDebitor, correlations, brokersByRouteId);
+
+        final KafkaMergedFetchFactory mergedClientFetchFactory = new KafkaMergedFetchFactory(
+                config, router, writeBuffer, supplyInitialId, supplyReplyId, supplyTraceId,
+                supplyTypeId, correlations, accountant.creditor());
+
+        final KafkaMergeableFetchFactory mergeableClientFetchFactory = new KafkaMergeableFetchFactory(
+                supplyTypeId, clientFetchFactory, mergedClientFetchFactory);
+
         final Int2ObjectHashMap<StreamFactory> streamFactoriesByKind = new Int2ObjectHashMap<>();
-
-        streamFactoriesByKind.put(KafkaBeginExFW.KIND_META, new KafkaClientMetaFactory(
-                config, router, signaler, writeBuffer, bufferPool,
-                supplyInitialId, supplyReplyId, supplyTraceId,
-                supplyTypeId, supplyDebitor, correlations, brokersByRouteId));
-
-        streamFactoriesByKind.put(KafkaBeginExFW.KIND_DESCRIBE, new KafkaClientDescribeFactory(
-                config, router, signaler, writeBuffer, bufferPool,
-                supplyInitialId, supplyReplyId, supplyTraceId,
-                supplyTypeId, supplyDebitor, correlations));
-
-        streamFactoriesByKind.put(KafkaBeginExFW.KIND_FETCH, new KafkaClientFetchFactory(
-                config, router, signaler, writeBuffer, bufferPool,
-                supplyInitialId, supplyReplyId, supplyTraceId,
-                supplyTypeId, supplyDebitor, correlations, brokersByRouteId));
+        streamFactoriesByKind.put(KafkaBeginExFW.KIND_META, clientMetaFactory);
+        streamFactoriesByKind.put(KafkaBeginExFW.KIND_DESCRIBE, clientDescribeFactory);
+        streamFactoriesByKind.put(KafkaBeginExFW.KIND_FETCH, mergeableClientFetchFactory);
 
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.correlations = correlations;

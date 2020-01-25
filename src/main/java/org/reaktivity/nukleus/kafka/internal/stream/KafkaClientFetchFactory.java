@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.Objects.requireNonNull;
+import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.kafka.internal.types.codec.offsets.IsolationLevel.READ_UNCOMMITTED;
 
@@ -189,6 +190,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
     private final Signaler signaler;
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
+    private final LongFunction<BudgetDebitor> supplyDebitor;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
     private final Long2ObjectHashMap<Long2ObjectHashMap<KafkaBrokerInfo>> brokersByRouteId;
     private final int decodeMaxBytes;
@@ -213,12 +215,13 @@ public final class KafkaClientFetchFactory implements StreamFactory
         this.tcpTypeId = supplyTypeId.applyAsInt("tcp");
         this.router = router;
         this.signaler = signaler;
-        this.writeBuffer = writeBuffer;
+        this.writeBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
         this.extBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
         this.decodePool = bufferPool;
         this.encodePool = bufferPool;
         this.supplyInitialId = supplyInitialId;
         this.supplyReplyId = supplyReplyId;
+        this.supplyDebitor = supplyDebitor;
         this.correlations = correlations;
         this.brokersByRouteId = brokersByRouteId;
         this.decodeMaxBytes = decodePool.slotCapacity();
@@ -984,6 +987,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
     {
         final int length = limit - progress;
 
+        decode:
         if (length != 0)
         {
             final RecordHeaderFW recordHeader = recordHeaderRO.tryWrap(buffer, progress, limit);
@@ -1006,34 +1010,62 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
                 if (sizeofRecord <= length && valueReserved <= client.stream.replyBudget)
                 {
-                    final OctetsFW value =
-                            valueLength != -1 ? valueRO.wrap(buffer, valueOffset, valueOffset + valueLength) : null;
+                    final int maximum = valueReserved;
+                    final int minimum = Math.min(maximum, 1024);
 
-                    final int trailerOffset = valueOffset + Math.max(valueLength, 0);
-                    final RecordTrailerFW recordTrailer = recordTrailerRO.wrap(buffer, trailerOffset, recordLimit);
-                    final int headerCount = recordTrailer.headerCount();
-                    final int headersOffset = recordTrailer.limit();
-                    final int headersLength = recordLimit - headersOffset;
-                    final DirectBuffer headers = headersRO;
-                    headers.wrap(buffer, headersOffset, headersLength);
+                    int valueClaimed = maximum;
+                    if (valueClaimed != 0 && client.stream.replyDebitorIndex != NO_DEBITOR_INDEX)
+                    {
+                        valueClaimed = client.stream.replyDebitor.claim(client.stream.replyDebitorIndex,
+                                client.stream.replyId, minimum, maximum);
 
-                    progress += sizeofRecord;
+                        if (valueClaimed == 0)
+                        {
+                            break decode;
+                        }
+                    }
 
-                    client.onDecodeFetchRecord(traceId, valueReserved, offsetAbs, timestamp, key, value, headerCount, headers);
+                    if (valueClaimed < valueReserved)
+                    {
+                        final int valueLengthMax = valueClaimed - client.stream.replyBudget;
+                        final int limitMax = valueOffset + valueLengthMax;
 
-                    client.decodableRecords--;
-                    assert client.decodableRecords >= 0;
+                        // TODO: shared budget for fragmented decode too
+                        progress = decodeFetchRecordInit(client, traceId, authorization, budgetId, valueReserved,
+                                buffer, offset, progress, limitMax);
+                    }
+                    else
+                    {
+                        final OctetsFW value =
+                                valueLength != -1 ? valueRO.wrap(buffer, valueOffset, valueOffset + valueLength) : null;
 
-                    client.decodableResponseBytes -= sizeofRecord;
-                    assert client.decodableResponseBytes >= 0;
+                        final int trailerOffset = valueOffset + Math.max(valueLength, 0);
+                        final RecordTrailerFW recordTrailer = recordTrailerRO.wrap(buffer, trailerOffset, recordLimit);
+                        final int headerCount = recordTrailer.headerCount();
+                        final int headersOffset = recordTrailer.limit();
+                        final int headersLength = recordLimit - headersOffset;
+                        final DirectBuffer headers = headersRO;
+                        headers.wrap(buffer, headersOffset, headersLength);
 
-                    client.decodableRecordBatchBytes -= sizeofRecord;
-                    assert client.decodableRecordBatchBytes >= 0;
+                        progress += sizeofRecord;
 
-                    client.decodableRecordSetBytes -= sizeofRecord;
-                    assert client.decodableRecordSetBytes >= 0;
+                        client.onDecodeFetchRecord(traceId, valueReserved, offsetAbs, timestamp,
+                                key, value, headerCount, headers);
 
-                    client.decoder = decodeFetchRecordLength;
+                        client.decodableRecords--;
+                        assert client.decodableRecords >= 0;
+
+                        client.decodableResponseBytes -= sizeofRecord;
+                        assert client.decodableResponseBytes >= 0;
+
+                        client.decodableRecordBatchBytes -= sizeofRecord;
+                        assert client.decodableRecordBatchBytes >= 0;
+
+                        client.decodableRecordSetBytes -= sizeofRecord;
+                        assert client.decodableRecordSetBytes >= 0;
+
+                        client.decoder = decodeFetchRecordLength;
+                    }
                 }
             }
         }
@@ -1243,9 +1275,11 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
         private int state;
 
-        private long replyBudgetId;
         private int replyBudget;
         private int replyPadding;
+        private long replyDebitorId;
+        private BudgetDebitor replyDebitor;
+        private long replyDebitorIndex = NO_DEBITOR_INDEX;
 
         KafkaFetchStream(
             MessageConsumer application,
@@ -1328,7 +1362,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
             state = KafkaState.closedInitial(state);
 
-            client.doNetworkEnd(traceId, authorization);
+            client.doNetworkEndAfterFlush(traceId, authorization);
         }
 
         private void onApplicationAbort(
@@ -1349,9 +1383,15 @@ public final class KafkaClientFetchFactory implements StreamFactory
             final int credit = window.credit();
             final int padding = window.padding();
 
-            replyBudgetId = budgetId;
+            replyDebitorId = budgetId;
             replyBudget += credit;
             replyPadding = padding;
+
+            if (replyDebitorId != 0L && replyDebitor == null)
+            {
+                replyDebitor = supplyDebitor.apply(replyDebitorId);
+                replyDebitorIndex = replyDebitor.acquire(replyDebitorId, replyId, client::decodeNetworkIfNecessary);
+            }
 
             client.decodeNetworkIfNecessary(traceId);
         }
@@ -1415,12 +1455,14 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
             assert replyBudget >= 0;
 
-            doData(application, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved, payload, extension);
+            doData(application, routeId, replyId, traceId, authorization, flags, replyDebitorId, reserved, payload, extension);
         }
 
         private void doApplicationEnd(
             long traceId)
         {
+            cleanupApplicationDebitorIfNecessary();
+
             state = KafkaState.closedReply(state);
             //client.stream = nullIfClosed(state, client.stream);
             doEnd(application, routeId, replyId, traceId, client.authorization, EMPTY_EXTENSION);
@@ -1429,6 +1471,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
         private void doApplicationAbort(
             long traceId)
         {
+            cleanupApplicationDebitorIfNecessary();
+
             state = KafkaState.closedReply(state);
             //client.stream = nullIfClosed(state, client.stream);
             doAbort(application, routeId, replyId, traceId, client.authorization, EMPTY_EXTENSION);
@@ -1481,6 +1525,16 @@ public final class KafkaClientFetchFactory implements StreamFactory
         {
             doApplicationAbortIfNecessary(traceId);
             doApplicationResetIfNecessary(traceId);
+        }
+
+        private void cleanupApplicationDebitorIfNecessary()
+        {
+            if (replyDebitorIndex != NO_DEBITOR_INDEX)
+            {
+                replyDebitor.release(replyDebitorIndex, replyId);
+                replyDebitorIndex = NO_DEBITOR_INDEX;
+                replyDebitor = null;
+            }
         }
 
         private final class KafkaFetchClient
@@ -1653,7 +1707,10 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
                 state = KafkaState.closedReply(state);
 
-                doApplicationEnd(traceId);
+                if (decodeSlot == NO_SLOT)
+                {
+                    doApplicationEnd(traceId);
+                }
             }
 
             private void onNetworkAbort(
@@ -1771,13 +1828,26 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 encodeNetwork(traceId, authorization, budgetId, buffer, offset, limit);
             }
 
+            private void doNetworkEndAfterFlush(
+                long traceId,
+                long authorization)
+            {
+                state = KafkaState.closingInitial(state);
+
+                if (encodeSlot == NO_SLOT)
+                {
+                    doNetworkEnd(traceId, authorization);
+                }
+            }
+
             private void doNetworkEnd(
                 long traceId,
                 long authorization)
             {
                 state = KafkaState.closedInitial(state);
-
                 doEnd(network, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
+
+                cleanupEncodeSlotIfNecessary();
             }
 
             private void doNetworkAbortIfNecessary(
@@ -2017,6 +2087,11 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 else
                 {
                     cleanupEncodeSlotIfNecessary();
+
+                    if (KafkaState.initialClosing(state))
+                    {
+                        doNetworkEnd(traceId, authorization);
+                    }
                 }
             }
 

@@ -22,6 +22,7 @@ import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
 
 import org.agrona.MutableDirectBuffer;
+import org.reaktivity.nukleus.budget.BudgetDebitor;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
@@ -46,6 +47,8 @@ public final class KafkaCacheClientFactoryBuilder implements StreamFactoryBuilde
     private LongSupplier supplyTraceId;
     private Supplier<BufferPool> supplyBufferPool;
     private ToIntFunction<String> supplyTypeId;
+    private LongSupplier supplyBudgetId;
+    private LongFunction<BudgetDebitor> supplyDebitor;
 
     public KafkaCacheClientFactoryBuilder(
         KafkaConfiguration config,
@@ -116,6 +119,22 @@ public final class KafkaCacheClientFactoryBuilder implements StreamFactoryBuilde
     }
 
     @Override
+    public KafkaCacheClientFactoryBuilder setBudgetIdSupplier(
+        LongSupplier supplyBudgetId)
+    {
+        this.supplyBudgetId = supplyBudgetId;
+        return this;
+    }
+
+    @Override
+    public KafkaCacheClientFactoryBuilder setBudgetDebitorSupplier(
+        LongFunction<BudgetDebitor> supplyDebitor)
+    {
+        this.supplyDebitor = supplyDebitor;
+        return this;
+    }
+
+    @Override
     public StreamFactoryBuilder setBufferPoolSupplier(
         Supplier<BufferPool> supplyBufferPool)
     {
@@ -139,6 +158,8 @@ public final class KafkaCacheClientFactoryBuilder implements StreamFactoryBuilde
                 supplyReplyId,
                 supplyTraceId,
                 supplyTypeId,
+                supplyBudgetId,
+                supplyDebitor,
                 supplyCacheRoute);
 
         final MessageConsumer client = router.supplyWriter(index);
