@@ -664,17 +664,25 @@ public final class KafkaMergedFetchFactory implements StreamFactory
             final int partitionId = partition.partitionId();
             final int leaderId = partition.leaderId();
 
-            KafkaUnmergedFetchStream oldLeader = partitionId < fetchStreams.size() ? fetchStreams.get(partitionId) : null;
+            KafkaUnmergedFetchStream oldLeader = null;
+            for (int index = 0; index < fetchStreams.size(); index++)
+            {
+                final KafkaUnmergedFetchStream fetchStream = fetchStreams.get(index);
+                if (fetchStream.partitionId == partitionId && fetchStream.leaderId == leaderId)
+                {
+                    oldLeader = fetchStream;
+                    break;
+                }
+            }
             assert oldLeader == null || oldLeader.partitionId == partitionId;
 
             if (oldLeader != null && oldLeader.leaderId != leaderId)
             {
                 oldLeader.doFetchInitialEndIfNecessary(traceId);
                 //oldLeader.doFetchReplyResetIfNecessary(traceId);
-                oldLeader = null;
             }
 
-            if (oldLeader == null)
+            if (oldLeader == null || oldLeader.leaderId != leaderId)
             {
                 long partitionOffset = nextOffsetsById.get(partitionId);
                 if (partitionOffset == nextOffsetsById.missingValue())
@@ -701,6 +709,11 @@ public final class KafkaMergedFetchFactory implements StreamFactory
             if (nextOffsetsById.size() == fetchStreams.size())
             {
                 doMergedReplyBeginIfNecessary(traceId);
+
+                if (KafkaState.initialClosed(state))
+                {
+                    doMergedReplyEndIfNecessary(traceId);
+                }
             }
         }
     }
@@ -856,6 +869,7 @@ public final class KafkaMergedFetchFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
+            mergedFetch.doMergedReplyBeginIfNecessary(traceId);
             mergedFetch.doMergedReplyEndIfNecessary(traceId);
 
             doMetaInitialEndIfNecessary(traceId);
@@ -1152,7 +1166,7 @@ public final class KafkaMergedFetchFactory implements StreamFactory
         private void doFetchReplyWindowIfNecessary(
             long traceId)
         {
-            if (KafkaState.replyOpening(state))
+            if (KafkaState.replyOpening(state) && !KafkaState.replyClosing(state))
             {
                 state = KafkaState.openedReply(state);
 
