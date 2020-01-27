@@ -281,7 +281,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 final OctetsFW routeEx = route.extension();
                 final KafkaRouteExFW kafkaRouteEx = routeEx.get(kafkaRouteExRO::tryWrap);
                 final String16FW routeTopic = kafkaRouteEx.topic();
-                return Objects.equals(routeTopic, beginTopic);
+                return !route.localAddress().equals(route.remoteAddress()) &&
+                        Objects.equals(routeTopic, beginTopic);
             };
 
             final RouteFW route = router.resolve(routeId, authorization, filter, wrapRoute);
