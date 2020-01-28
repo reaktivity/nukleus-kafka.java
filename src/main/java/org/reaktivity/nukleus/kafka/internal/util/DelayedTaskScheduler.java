@@ -17,7 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.util;
 
 import static java.lang.System.currentTimeMillis;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static org.agrona.DeadlineTimerWheel.NULL_TIMER;
+import static org.agrona.DeadlineTimerWheel.NULL_DEADLINE;
 
 import java.util.concurrent.TimeUnit;
 
@@ -45,7 +45,8 @@ public class DelayedTaskScheduler
         final long nowMillis = System.currentTimeMillis();
         final long timerId = timerWheel.scheduleTimer(nowMillis + delay);
 
-        tasksByTimerId.put(timerId, task);
+        final Runnable oldTask = tasksByTimerId.put(timerId, task);
+        assert oldTask == null;
 
         return timerId;
     }
@@ -54,7 +55,7 @@ public class DelayedTaskScheduler
         long delay,
         long timerId)
     {
-        if (timerId != NULL_TIMER)
+        if (timerId != NULL_DEADLINE)
         {
             final Runnable task = tasksByTimerId.remove(timerId);
             assert task != null;
@@ -84,7 +85,7 @@ public class DelayedTaskScheduler
             tasksByTimerId.remove(timerId);
         }
 
-        return NULL_TIMER;
+        return NULL_DEADLINE;
     }
 
     public int process()

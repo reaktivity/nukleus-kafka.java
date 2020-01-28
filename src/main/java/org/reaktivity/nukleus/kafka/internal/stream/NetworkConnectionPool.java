@@ -47,6 +47,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.IntSupplier;
 import java.util.function.IntToLongFunction;
+import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
@@ -64,6 +65,7 @@ import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.collections.LongArrayList;
 import org.agrona.collections.LongHashSet;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.reaktivity.nukleus.budget.BudgetDebitor;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
@@ -263,6 +265,7 @@ public final class NetworkConnectionPool
     final ListOffsetsPartitionResponseFW listOffsetsPartitionResponseRO = new ListOffsetsPartitionResponseFW();
 
     final MutableDirectBuffer encodeBuffer;
+    final LongFunction<BudgetDebitor> supplyDebitor;
 
     private final MessageWriter writer;
     private final Long2ObjectHashMap<AbstractNetworkConnection> correlations;
@@ -299,6 +302,7 @@ public final class NetworkConnectionPool
     private int nextAttachId;
     private int nestedDoFlushCalls = 0;
 
+
     NetworkConnectionPool(
         RouteManager router,
         Long2ObjectHashMap<AbstractNetworkConnection> correlations,
@@ -311,7 +315,8 @@ public final class NetworkConnectionPool
         MessageCache messageCache,
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
-        ToIntFunction<String> supplyTypeId)
+        ToIntFunction<String> supplyTypeId,
+        LongFunction<BudgetDebitor> supplyDebitor)
     {
         this.router = router;
         this.writer = writer;
@@ -328,6 +333,7 @@ public final class NetworkConnectionPool
         this.messageCache = requireNonNull(messageCache);
         this.supplyInitialId = supplyInitialId;
         this.supplyReplyId = supplyReplyId;
+        this.supplyDebitor = requireNonNull(supplyDebitor);
         this.routeCounters = counters.supplyRef(networkRouteId);
         this.encodeBuffer = new UnsafeBuffer(new byte[bufferPool.slotCapacity()]);
         this.topicsByName = new LinkedHashMap<>();
@@ -569,7 +575,7 @@ public final class NetworkConnectionPool
     abstract class AbstractNetworkConnection
     {
         MessageConsumer networkInitial;
-        long timerId = DeadlineTimerWheel.NULL_TIMER;
+        long timerId = DeadlineTimerWheel.NULL_DEADLINE;
 
         long networkInitialId;
         long networkCorrelationId;
@@ -767,7 +773,11 @@ public final class NetworkConnectionPool
             }
             else
             {
-                writer.doReset(networkReplyThrottle, networkRouteId, networkReplyId);
+                final FrameFW frame = frameRO.wrap(buffer, index, index + length);
+                final long streamId = frame.streamId();
+                final long routeId = frame.routeId();
+
+                writer.doReset(networkReplyThrottle, routeId, streamId);
             }
         }
 
@@ -990,6 +1000,7 @@ public final class NetworkConnectionPool
             nextRequestId = 0;
             nextResponseId = 0;
             streamState = this::beforeBegin;
+            timerId = DeadlineTimerWheel.NULL_DEADLINE;
         }
     }
 
@@ -2776,7 +2787,7 @@ public final class NetworkConnectionPool
         private Int2ObjectHashMap<Consumer<TopicMetadata>> consumers = new Int2ObjectHashMap<>();
         private MetadataRequestType nextRequiredRequestType = MetadataRequestType.METADATA;
         private int retries;
-        private long retryTimerId = DeadlineTimerWheel.NULL_TIMER;
+        private long retryTimerId = DeadlineTimerWheel.NULL_DEADLINE;
 
         TopicMetadata(String topicName)
         {
@@ -2825,6 +2836,7 @@ public final class NetworkConnectionPool
             MetadataConnection connection)
         {
             state = State.GET_REQUIRED;
+            retryTimerId = DeadlineTimerWheel.NULL_DEADLINE;
             retries++;
             connection.doRequestIfNeeded();
         }
