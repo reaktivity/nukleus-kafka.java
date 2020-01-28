@@ -79,6 +79,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.ExtensionFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchBeginExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaResetExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.SignalFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.TcpBeginExFW;
@@ -1495,7 +1496,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
         }
 
         private void doApplicationReset(
-            long traceId)
+            long traceId,
+            Flyweight extension)
         {
             state = KafkaState.closedInitial(state);
             //client.stream = nullIfClosed(state, client.stream);
@@ -1513,19 +1515,21 @@ public final class KafkaClientFetchFactory implements StreamFactory
         }
 
         private void doApplicationResetIfNecessary(
-            long traceId)
+            long traceId,
+            Flyweight extension)
         {
             if (KafkaState.initialOpening(state) && !KafkaState.initialClosed(state))
             {
-                doApplicationReset(traceId);
+                doApplicationReset(traceId, extension);
             }
         }
 
         private void cleanupApplication(
-            long traceId)
+            long traceId,
+            Flyweight extension)
         {
             doApplicationAbortIfNecessary(traceId);
-            doApplicationResetIfNecessary(traceId);
+            doApplicationResetIfNecessary(traceId, extension);
         }
 
         private void cleanupApplicationDebitorIfNecessary()
@@ -1587,6 +1591,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
             private KafkaFetchClientDecoder decoder;
             private LongLongConsumer encoder;
+            private final KafkaResetExFW.Builder resetExRW = new KafkaResetExFW.Builder();
 
             KafkaFetchClient(
                 long routeId,
@@ -2185,7 +2190,11 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 }
                 else
                 {
-                    cleanupApplication(traceId);
+                    final KafkaResetExFW resetEx = resetExRW.wrap(extBuffer, 0, extBuffer.capacity())
+                                                            .typeId(kafkaTypeId)
+                                                            .error(errorCode)
+                                                            .build();
+                    cleanupApplication(traceId, resetEx);
                     doNetworkEnd(traceId, authorization);
                 }
             }
@@ -2203,7 +2212,11 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 }
                 else
                 {
-                    cleanupApplication(traceId);
+                    final KafkaResetExFW resetEx = resetExRW.wrap(extBuffer, 0, extBuffer.capacity())
+                                                            .typeId(kafkaTypeId)
+                                                            .error(errorCode)
+                                                            .build();
+                    cleanupApplication(traceId, resetEx);
                     doNetworkEnd(traceId, authorization);
                 }
             }
@@ -2307,7 +2320,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 doNetworkResetIfNecessary(traceId);
                 doNetworkAbortIfNecessary(traceId);
 
-                cleanupApplication(traceId);
+                cleanupApplication(traceId, EMPTY_OCTETS);
             }
 
             private void cleanupDecodeSlotIfNecessary()
