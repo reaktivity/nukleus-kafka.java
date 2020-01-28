@@ -74,14 +74,21 @@ final class KafkaMergedBudget
             claimed = debitor.claim(debitorIndex, mergedWatcherId, minimum, maximum);
         }
 
+        final int watcherAt = watchers.indexOf(watcherId);
         if (claimed >= minimum)
         {
-            watchers.removeLong(watcherId);
+            if (watcherAt != -1)
+            {
+                watchers.remove(watcherAt);
+            }
             budget -= claimed;
         }
         else
         {
-            watchers.addLong(watcherId);
+            if (watcherAt == -1)
+            {
+                watchers.addLong(watcherId);
+            }
             claimed = 0;
         }
 
@@ -122,19 +129,23 @@ final class KafkaMergedBudget
     private void flush(
         long traceId)
     {
-        final int watcherCount = watchers.size();
-        if (watcherCount > 0)
+        if (!watchers.isEmpty())
         {
-            if (watcherIndex >= watcherCount)
+            if (watcherIndex >= watchers.size())
             {
                 watcherIndex = 0;
             }
 
-            for (int index = watcherIndex; index < watcherCount; index++)
+            for (int index = watcherIndex; index < watchers.size(); index++)
             {
                 final long watcherId = watchers.getLong(index);
                 final LongConsumer flusher = flushers.get(watcherId);
                 flusher.accept(traceId);
+            }
+
+            if (watcherIndex >= watchers.size())
+            {
+                watcherIndex = 0;
             }
 
             for (int index = 0; index < watcherIndex; index++)
