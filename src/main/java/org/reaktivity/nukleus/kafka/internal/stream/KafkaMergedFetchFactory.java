@@ -56,6 +56,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaMetaDataExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaResetExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.route.RouteManager;
@@ -63,6 +64,8 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class KafkaMergedFetchFactory implements StreamFactory
 {
+    private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
+
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
 
     private final RouteFW routeRO = new RouteFW();
@@ -77,6 +80,7 @@ public final class KafkaMergedFetchFactory implements StreamFactory
     private final ExtensionFW extensionRO = new ExtensionFW();
     private final KafkaBeginExFW kafkaBeginExRO = new KafkaBeginExFW();
     private final KafkaDataExFW kafkaDataExRO = new KafkaDataExFW();
+    private final KafkaResetExFW kafkaResetExRO = new KafkaResetExFW();
 
     private final BeginFW.Builder beginRW = new BeginFW.Builder();
     private final DataFW.Builder dataRW = new DataFW.Builder();
@@ -1141,13 +1145,19 @@ public final class KafkaMergedFetchFactory implements StreamFactory
             ResetFW reset)
         {
             final long traceId = reset.traceId();
+            final OctetsFW extension = reset.extension();
 
             state = KafkaState.closedInitial(state);
 
-            // TODO: ignore when error code is NOT_LEADER_FOR_PARTITION (self-healing)
-            mergedFetch.doMergedInitialResetIfNecessary(traceId);
+            final KafkaResetExFW kafkaResetEx = extension.get(kafkaResetExRO::wrap);
+            final int error = kafkaResetEx != null ? kafkaResetEx.error() : 0;
 
             doFetchReplyResetIfNecessary(traceId);
+
+            if (error != ERROR_NOT_LEADER_FOR_PARTITION)
+            {
+                mergedFetch.doMergedInitialResetIfNecessary(traceId);
+            }
         }
 
         private void onFetchInitialWindow(
