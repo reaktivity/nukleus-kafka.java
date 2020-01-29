@@ -91,6 +91,9 @@ public final class KafkaClientFetchFactory implements StreamFactory
 {
     private static final int FIELD_LIMIT_RECORD_BATCH_LENGTH = RecordBatchFW.FIELD_OFFSET_LEADER_EPOCH;
 
+    private static final int ERROR_NONE = 0;
+    private static final int ERROR_OFFSET_OUT_OF_RANGE = 1;
+
     private static final int FLAG_CONT = 0x00;
     private static final int FLAG_FIN = 0x01;
     private static final int FLAG_INIT = 0x02;
@@ -2184,18 +2187,19 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 int partitionId,
                 long partitionOffset)
             {
-                if (errorCode == 0)
+                switch (errorCode)
                 {
+                case ERROR_NONE:
                     progress.put(partitionId, partitionOffset);
-                }
-                else
-                {
+                    break;
+                default:
                     final KafkaResetExFW resetEx = resetExRW.wrap(extBuffer, 0, extBuffer.capacity())
                                                             .typeId(kafkaTypeId)
                                                             .error(errorCode)
                                                             .build();
                     cleanupApplication(traceId, resetEx);
                     doNetworkEnd(traceId, authorization);
+                    break;
                 }
             }
 
@@ -2205,19 +2209,27 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 int partitionId,
                 int errorCode)
             {
-                if (errorCode == 0)
+                switch (errorCode)
                 {
+                case ERROR_NONE:
                     doApplicationWindow(traceId, 0L, 0, 0);
                     doApplicationBeginIfNecessary(traceId, authorization, topic, progress);
-                }
-                else
-                {
+                    break;
+                case ERROR_OFFSET_OUT_OF_RANGE:
+                    // TODO: recover at EARLIEST or LATEST ?
+                    progress.put(partitionId, OFFSET_EARLIEST);
+                    client.encoder = client.encodeOffsetsRequest;
+                    client.decoder = decodeOffsetsResponse;
+                    doEncodeRequestIfNecessary(traceId, initialBudgetId);
+                    break;
+                default:
                     final KafkaResetExFW resetEx = resetExRW.wrap(extBuffer, 0, extBuffer.capacity())
                                                             .typeId(kafkaTypeId)
                                                             .error(errorCode)
                                                             .build();
                     cleanupApplication(traceId, resetEx);
                     doNetworkEnd(traceId, authorization);
+                    break;
                 }
             }
 
