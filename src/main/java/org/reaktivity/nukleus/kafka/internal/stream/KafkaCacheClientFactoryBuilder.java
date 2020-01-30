@@ -25,7 +25,6 @@ import org.agrona.MutableDirectBuffer;
 import org.reaktivity.nukleus.budget.BudgetDebitor;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.concurrent.Signaler;
-import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
 import org.reaktivity.nukleus.route.RouteManager;
@@ -36,7 +35,6 @@ public final class KafkaCacheClientFactoryBuilder implements StreamFactoryBuilde
 {
     private final KafkaConfiguration config;
     private final KafkaCache cache;
-    private final int index;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
 
     private RouteManager router;
@@ -53,12 +51,10 @@ public final class KafkaCacheClientFactoryBuilder implements StreamFactoryBuilde
     public KafkaCacheClientFactoryBuilder(
         KafkaConfiguration config,
         KafkaCache cache,
-        int index,
         LongFunction<KafkaCacheRoute> supplyCacheRoute)
     {
         this.config = config;
         this.cache = cache;
-        this.index = index;
         this.supplyCacheRoute = supplyCacheRoute;
     }
 
@@ -147,7 +143,7 @@ public final class KafkaCacheClientFactoryBuilder implements StreamFactoryBuilde
     {
         final BufferPool bufferPool = supplyBufferPool.get();
 
-        final KafkaCacheClientFactory clientFactory = new KafkaCacheClientFactory(
+        return new KafkaCacheClientFactory(
                 config,
                 cache,
                 router,
@@ -161,10 +157,5 @@ public final class KafkaCacheClientFactoryBuilder implements StreamFactoryBuilde
                 supplyBudgetId,
                 supplyDebitor,
                 supplyCacheRoute);
-
-        final MessageConsumer client = router.supplyWriter(index);
-        cache.register(client);
-
-        return clientFactory;
     }
 }

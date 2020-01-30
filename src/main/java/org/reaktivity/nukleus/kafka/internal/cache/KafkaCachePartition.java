@@ -21,15 +21,25 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.function.LongPredicate;
+import java.util.function.LongSupplier;
 
 import org.agrona.LangUtil;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
+import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
+import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
+import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 
 public final class KafkaCachePartition
 {
     private final Path path;
     private final int segmentBytes;
+    private final int partitionId;
     private final NavigableMap<Integer, KafkaCacheSegment> segmentsByOffset;
+
+    private LongSupplier progressOffset;
 
     public KafkaCachePartition(
         KafkaConfiguration config,
@@ -39,10 +49,71 @@ public final class KafkaCachePartition
     {
         this.path = initDirectory(config.cacheDirectory(), clusterName, topicName, partitionId);
         this.segmentBytes = config.cacheSegmentBytes();
+        this.partitionId = partitionId;
         this.segmentsByOffset = new ConcurrentSkipListMap<>();
+
+        // TODO: sync with file system to progress
+        this.progressOffset = () -> -2; // EARLIEST
     }
 
-    public KafkaCacheSegment seekSegment(
+    public int id()
+    {
+        return partitionId;
+    }
+
+    public long progressOffset()
+    {
+        return progressOffset.getAsLong();
+    }
+
+    public KafkaCacheEntryFW readEntry(
+        long nextOffset)
+    {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    public KafkaCacheEntryFW readEntry(
+        long nextOffset,
+        LongPredicate filter)
+    {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    public void writeEntry(
+        long offset,
+        long timestamp,
+        KafkaKeyFW key,
+        ArrayFW<KafkaHeaderFW> headers,
+        OctetsFW payload)
+    {
+        writeEntryStart(timestamp, key);
+        writeEntryContinue(payload);
+        writeEntryFinish(headers, offset);
+    }
+
+    public void writeEntryStart(
+        long timestamp,
+        KafkaKeyFW key)
+    {
+        // append timestamp and key to partition cache
+    }
+
+    public void writeEntryContinue(
+        OctetsFW payload)
+    {
+        // append payload to partition cache
+    }
+
+    public void writeEntryFinish(
+        ArrayFW<KafkaHeaderFW> headers,
+        long offset)
+    {
+        // append headers to partition cache
+    }
+
+    private KafkaCacheSegment seekSegment(
         int offset)
     {
         Map.Entry<Integer, KafkaCacheSegment> entry = segmentsByOffset.floorEntry(offset);
@@ -56,7 +127,7 @@ public final class KafkaCachePartition
         return entry.getValue();
     }
 
-    public KafkaCacheSegment nextSegment(
+    private KafkaCacheSegment nextSegment(
         int offset)
     {
         assert segmentsByOffset.isEmpty() || offset > segmentsByOffset.lastKey();

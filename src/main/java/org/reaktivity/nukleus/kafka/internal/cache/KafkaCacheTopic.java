@@ -38,13 +38,18 @@ public final class KafkaCacheTopic
         this.partitionsById = new ConcurrentHashMap<>();
     }
 
+    public String name()
+    {
+        return topicName;
+    }
+
     public KafkaCachePartition supplyPartition(
         int partitionId)
     {
         return partitionsById.computeIfAbsent(partitionId, this::newPartition);
     }
 
-    public KafkaCachePartition newPartition(
+    private KafkaCachePartition newPartition(
         int partitionId)
     {
         return new KafkaCachePartition(config, clusterName, topicName, partitionId);

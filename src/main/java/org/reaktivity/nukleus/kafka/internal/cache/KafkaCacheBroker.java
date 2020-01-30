@@ -24,15 +24,23 @@ public final class KafkaCacheBroker
 {
     private final KafkaConfiguration config;
     private final String clusterName;
+    private final long brokerId;
     private final Map<String, KafkaCacheTopic> topicsByName;
 
     KafkaCacheBroker(
         KafkaConfiguration config,
-        String clusterName)
+        String clusterName,
+        long brokerId)
     {
         this.config = config;
         this.clusterName = clusterName;
+        this.brokerId = brokerId;
         this.topicsByName = new ConcurrentHashMap<>();
+    }
+
+    public long brokerId()
+    {
+        return brokerId;
     }
 
     public KafkaCacheTopic supplyTopic(
@@ -41,7 +49,7 @@ public final class KafkaCacheBroker
         return topicsByName.computeIfAbsent(topicName, this::newTopic);
     }
 
-    public KafkaCacheTopic newTopic(
+    private KafkaCacheTopic newTopic(
         String topicName)
     {
         return new KafkaCacheTopic(config, clusterName, topicName);

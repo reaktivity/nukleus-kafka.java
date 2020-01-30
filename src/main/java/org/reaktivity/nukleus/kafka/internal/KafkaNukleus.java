@@ -60,10 +60,9 @@ public final class KafkaNukleus implements Nukleus
     }
 
     @Override
-    public KafkaElektron supplyElektron(
-        int index)
+    public KafkaElektron supplyElektron()
     {
-        return new KafkaElektron(config, cache, index);
+        return new KafkaElektron(config, cache);
     }
 
     public MessagePredicate routeHandler(
@@ -159,7 +158,7 @@ public final class KafkaNukleus implements Nukleus
             final long routeId = route.correlationId();
             bootstrapByRouteId.put(routeId, bootstrap);
 
-            bootstrap.resume();
+            //bootstrap.resume();
         }
     }
 

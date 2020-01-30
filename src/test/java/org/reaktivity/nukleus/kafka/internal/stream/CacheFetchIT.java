@@ -29,9 +29,9 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
+import org.reaktivity.reaktor.ReaktorConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
-@Ignore
 public class CacheFetchIT
 {
     private final K3poRule k3po = new K3poRule()
@@ -48,6 +48,7 @@ public class CacheFetchIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(8192)
         .configure(REAKTOR_BUFFER_SLOT_CAPACITY, 8192)
+        .configure(ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE, false)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 
@@ -57,9 +58,7 @@ public class CacheFetchIT
     @Test
     @Specification({
         "${route}/cache/controller",
-        "${client}/topic.missing/client",
-        "${client}/topic.missing/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${client}/topic.missing/client"})
     public void shouldRejectWhenTopicMissing() throws Exception
     {
         k3po.finish();
@@ -68,9 +67,7 @@ public class CacheFetchIT
     @Test
     @Specification({
         "${route}/cache/controller",
-        "${client}/topic.not.routed/client",
-        "${client}/topic.not.routed/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${client}/topic.not.routed/client"})
     public void shouldRejectWhenTopicNotRouted() throws Exception
     {
         k3po.finish();
@@ -79,9 +76,7 @@ public class CacheFetchIT
     @Test
     @Specification({
         "${route}/cache/controller",
-        "${client}/partition.offset.missing/client",
-        "${client}/partition.offset.missing/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${client}/partition.offset.missing/client"})
     public void shouldRejectWhenPartitionOffsetMissing() throws Exception
     {
         k3po.finish();
@@ -90,9 +85,7 @@ public class CacheFetchIT
     @Test
     @Specification({
         "${route}/cache/controller",
-        "${client}/partition.offset.repeated/client",
-        "${client}/partition.offset.repeated/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${client}/partition.offset.repeated/client"})
     public void shouldRejectWhenPartitionOffsetRepeated() throws Exception
     {
         k3po.finish();
@@ -120,6 +113,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -142,6 +136,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -153,6 +148,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -164,6 +160,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -175,6 +172,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -186,6 +184,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -197,6 +196,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -208,6 +208,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -219,6 +220,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -230,6 +232,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -241,6 +244,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -252,6 +256,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -299,6 +304,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -310,6 +316,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -321,6 +328,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -332,6 +340,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -343,6 +352,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -354,6 +364,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",

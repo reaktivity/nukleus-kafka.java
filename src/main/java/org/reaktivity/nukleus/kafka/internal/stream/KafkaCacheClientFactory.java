@@ -76,8 +76,8 @@ public final class KafkaCacheClientFactory implements StreamFactory
                 supplyTraceId, supplyTypeId, supplyCacheRoute, correlations);
 
         final KafkaCacheClientFetchFactory cacheFetchFactory = new KafkaCacheClientFetchFactory(
-                config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
-                supplyTraceId, supplyTypeId, supplyCacheRoute, correlations);
+                config, cache, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
+                supplyTraceId, supplyTypeId, accountant::supplyDebitor, supplyCacheRoute, correlations);
 
         final KafkaMergedFetchFactory mergedCacheFetchFactory = new KafkaMergedFetchFactory(
                 config, router, writeBuffer, supplyInitialId, supplyReplyId, supplyTraceId,

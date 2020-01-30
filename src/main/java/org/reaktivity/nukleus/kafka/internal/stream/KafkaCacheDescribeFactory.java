@@ -137,15 +137,12 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
         assert (initialId & 0x0000_0000_0000_0001L) != 0L;
 
         final OctetsFW extension = begin.extension();
-        final ExtensionFW beginEx = extensionRO.tryWrap(extension.buffer(), extension.offset(), extension.limit());
-        final KafkaBeginExFW kafkaBeginEx = beginEx != null && beginEx.typeId() == kafkaTypeId ?
-                kafkaBeginExRO.tryWrap(extension.buffer(), extension.offset(), extension.limit()) : null;
-
-        assert kafkaBeginEx != null;
+        final ExtensionFW beginEx = extension.get(extensionRO::tryWrap);
+        assert beginEx != null && beginEx.typeId() == kafkaTypeId;
+        final KafkaBeginExFW kafkaBeginEx = extension.get(kafkaBeginExRO::tryWrap);
         assert kafkaBeginEx.kind() == KafkaBeginExFW.KIND_DESCRIBE;
         final KafkaDescribeBeginExFW kafkaDescribeBeginEx = kafkaBeginEx.describe();
         final String16FW beginTopic = kafkaDescribeBeginEx.topic();
-        final String topic = beginTopic != null ? beginTopic.asString() : null;
 
         final MessagePredicate filter = (t, b, i, l) ->
         {
@@ -161,16 +158,18 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
         if (route != null)
         {
             final long resolvedId = route.correlationId();
+            final String topicName = beginTopic.asString();
             final KafkaCacheRoute cacheRoute = supplyCacheRoute.apply(resolvedId);
-            KafkaCacheDescribeFanout fanout = cacheRoute.describeFanoutsByTopic.get(topic);
+            final int topicKey = cacheRoute.topicKey(topicName);
+            KafkaCacheDescribeFanout fanout = cacheRoute.describeFanoutsByTopic.get(topicKey);
             if (fanout == null)
             {
                 final List<String> configNames = new ArrayList<>();
                 kafkaDescribeBeginEx.configs().forEach(c -> configNames.add(c.asString()));
                 final KafkaCacheDescribeFanout newFanout =
-                        new KafkaCacheDescribeFanout(resolvedId, authorization, topic, configNames);
+                        new KafkaCacheDescribeFanout(resolvedId, authorization, topicName, configNames);
 
-                cacheRoute.describeFanoutsByTopic.put(topic, newFanout);
+                cacheRoute.describeFanoutsByTopic.put(topicKey, newFanout);
                 fanout = newFanout;
             }
 
@@ -182,7 +181,7 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
                         routeId,
                         initialId,
                         affinity,
-                        authorization)::onInitial;
+                        authorization)::onDescribeMessage;
             }
         }
 
@@ -339,7 +338,7 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
             this.members = new ArrayList<>();
         }
 
-        private void onMemberOpening(
+        private void onDescribeFanoutMemberOpening(
             long traceId,
             KafkaCacheDescribeStream member)
         {
@@ -347,20 +346,20 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
 
             assert !members.isEmpty();
 
-            doInitialBeginIfNecessary(traceId);
+            doDescribeFanoutInitialBeginIfNecessary(traceId);
 
             if (KafkaState.initialOpened(state))
             {
-                member.doInitialWindowIfNecessary(traceId, 0L, 0, 0);
+                member.doDescribeInitialWindowIfNecessary(traceId, 0L, 0, 0);
             }
 
             if (KafkaState.replyOpened(state))
             {
-                member.doReplyBeginIfNecessary(traceId);
+                member.doDescribeReplyBeginIfNecessary(traceId);
             }
         }
 
-        private void onMemberOpened(
+        private void onDescribeFanoutMemberOpened(
             long traceId,
             KafkaCacheDescribeStream member)
         {
@@ -371,11 +370,11 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
                                      .typeId(kafkaTypeId)
                                      .describe(d -> configValues.forEach((n, v) -> d.configsItem(i -> i.name(n).value(v))))
                                      .build();
-                member.doReplyData(traceId, kafkaDataEx);
+                member.doDescribeReplyDataIfNecessary(traceId, kafkaDataEx);
             }
         }
 
-        private void onMemberClosed(
+        private void onDescribeFanoutMemberClosed(
             long traceId,
             KafkaCacheDescribeStream member)
         {
@@ -384,11 +383,11 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
             if (members.isEmpty())
             {
                 correlations.remove(replyId);
-                doInitialEndIfNecessary(traceId);
+                doDescribeFanoutInitialEndIfNecessary(traceId);
             }
         }
 
-        private void doInitialBeginIfNecessary(
+        private void doDescribeFanoutInitialBeginIfNecessary(
             long traceId)
         {
             if (KafkaState.initialClosed(state) &&
@@ -399,11 +398,11 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
 
             if (!KafkaState.initialOpening(state))
             {
-                doInitialBegin(traceId);
+                doDescribeFanoutInitialBegin(traceId);
             }
         }
 
-        private void doInitialBegin(
+        private void doDescribeFanoutInitialBegin(
             long traceId)
         {
             assert state == 0;
@@ -412,8 +411,8 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
             this.replyId = supplyReplyId.applyAsLong(initialId);
             this.receiver = router.supplyReceiver(initialId);
 
-            correlations.put(replyId, this::onReply);
-            router.setThrottle(initialId, this::onReply);
+            correlations.put(replyId, this::onDescribeFanoutMessage);
+            router.setThrottle(initialId, this::onDescribeFanoutMessage);
             doBegin(receiver, routeId, initialId, traceId, authorization, 0L,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
@@ -423,16 +422,16 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
             state = KafkaState.openingInitial(state);
         }
 
-        private void doInitialEndIfNecessary(
+        private void doDescribeFanoutInitialEndIfNecessary(
             long traceId)
         {
             if (!KafkaState.initialClosed(state))
             {
-                doInitialEnd(traceId);
+                doDescribeFanoutInitialEnd(traceId);
             }
         }
 
-        private void doInitialEnd(
+        private void doDescribeFanoutInitialEnd(
             long traceId)
         {
             doEnd(receiver, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
@@ -440,7 +439,32 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
             state = KafkaState.closedInitial(state);
         }
 
-        private void onReply(
+        private void onDescribeFanoutInitialReset(
+            ResetFW reset)
+        {
+            final long traceId = reset.traceId();
+
+            members.forEach(s -> s.doDescribeInitialResetIfNecessary(traceId));
+
+            state = KafkaState.closedInitial(state);
+
+            doDescribeFanoutReplyResetIfNecessary(traceId);
+        }
+
+        private void onDescribeFanoutInitialWindow(
+            WindowFW window)
+        {
+            if (!KafkaState.initialOpened(state))
+            {
+                final long traceId = window.traceId();
+
+                state = KafkaState.openedInitial(state);
+
+                members.forEach(s -> s.doDescribeInitialWindowIfNecessary(traceId, 0L, 0, 0));
+            }
+        }
+
+        private void onDescribeFanoutMessage(
             int msgTypeId,
             DirectBuffer buffer,
             int index,
@@ -450,45 +474,46 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
             {
             case BeginFW.TYPE_ID:
                 final BeginFW begin = beginRO.wrap(buffer, index, index + length);
-                onReplyBegin(begin);
+                onDescribeFanoutReplyBegin(begin);
                 break;
             case DataFW.TYPE_ID:
                 final DataFW data = dataRO.wrap(buffer, index, index + length);
-                onReplyData(data);
+                onDescribeFanoutReplyData(data);
                 break;
             case EndFW.TYPE_ID:
                 final EndFW end = endRO.wrap(buffer, index, index + length);
-                onReplyEnd(end);
+                onDescribeFanoutReplyEnd(end);
                 break;
             case AbortFW.TYPE_ID:
                 final AbortFW abort = abortRO.wrap(buffer, index, index + length);
-                onReplyAbort(abort);
+                onDescribeFanoutReplyAbort(abort);
                 break;
             case ResetFW.TYPE_ID:
                 final ResetFW reset = resetRO.wrap(buffer, index, index + length);
-                onInitialReset(reset);
+                onDescribeFanoutInitialReset(reset);
                 break;
             case WindowFW.TYPE_ID:
                 final WindowFW window = windowRO.wrap(buffer, index, index + length);
-                onInitialWindow(window);
+                onDescribeFanoutInitialWindow(window);
                 break;
             default:
                 break;
             }
         }
 
-        private void onReplyBegin(
+        private void onDescribeFanoutReplyBegin(
             BeginFW begin)
         {
             final long traceId = begin.traceId();
-            doReplyWindow(traceId, bufferPool.slotCapacity());
 
             state = KafkaState.openedReply(state);
 
-            members.forEach(s -> s.doReplyBeginIfNecessary(traceId));
+            members.forEach(s -> s.doDescribeReplyBeginIfNecessary(traceId));
+
+            doDescribeFanoutReplyWindow(traceId, bufferPool.slotCapacity());
         }
 
-        private void onReplyData(
+        private void onDescribeFanoutReplyData(
             DataFW data)
         {
             final long traceId = data.traceId();
@@ -510,67 +535,42 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
                 configValues.clear();
                 configs.forEach(c -> configValues.put(c.name().asString(), c.value().asString()));
 
-                members.forEach(s -> s.doReplyData(traceId, kafkaDataEx));
+                members.forEach(s -> s.doDescribeReplyDataIfNecessary(traceId, kafkaDataEx));
             }
 
-            doReplyWindow(traceId, reserved);
+            doDescribeFanoutReplyWindow(traceId, reserved);
         }
 
-        private void onReplyEnd(
+        private void onDescribeFanoutReplyEnd(
             EndFW end)
         {
             final long traceId = end.traceId();
 
-            members.forEach(s -> s.doReplyEndIfNecessary(traceId));
+            members.forEach(s -> s.doDescribeReplyEndIfNecessary(traceId));
 
             state = KafkaState.closedReply(state);
         }
 
-        private void onReplyAbort(
+        private void onDescribeFanoutReplyAbort(
             AbortFW abort)
         {
             final long traceId = abort.traceId();
 
-            members.forEach(s -> s.doReplyAbortIfNecessary(traceId));
+            members.forEach(s -> s.doDescribeReplyAbortIfNecessary(traceId));
 
             state = KafkaState.closedReply(state);
         }
 
-        private void onInitialReset(
-            ResetFW reset)
-        {
-            final long traceId = reset.traceId();
-
-            members.forEach(s -> s.doInitialResetIfNecessary(traceId));
-
-            state = KafkaState.closedInitial(state);
-
-            doReplyResetIfNecessary(traceId);
-        }
-
-        private void onInitialWindow(
-            WindowFW window)
-        {
-            if (!KafkaState.initialOpened(state))
-            {
-                final long traceId = window.traceId();
-
-                state = KafkaState.openedInitial(state);
-
-                members.forEach(s -> s.doInitialWindowIfNecessary(traceId, 0L, 0, 0));
-            }
-        }
-
-        private void doReplyResetIfNecessary(
+        private void doDescribeFanoutReplyResetIfNecessary(
             long traceId)
         {
             if (!KafkaState.replyClosed(state))
             {
-                doReplyReset(traceId);
+                doDescribeFanoutReplyReset(traceId);
             }
         }
 
-        private void doReplyReset(
+        private void doDescribeFanoutReplyReset(
             long traceId)
         {
             doReset(receiver, routeId, replyId, traceId, authorization);
@@ -578,13 +578,13 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
             state = KafkaState.closedReply(state);
         }
 
-        private void doReplyWindow(
+        private void doDescribeFanoutReplyWindow(
             long traceId,
             int credit)
         {
             doWindow(receiver, routeId, replyId, traceId, authorization, 0L, credit, 0);
 
-            state = KafkaState.closedInitial(state);
+            state = KafkaState.openedReply(state);
         }
     }
 
@@ -621,7 +621,7 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
             this.authorization = authorization;
         }
 
-        private void onInitial(
+        private void onDescribeMessage(
             int msgTypeId,
             DirectBuffer buffer,
             int index,
@@ -631,64 +631,196 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
             {
             case BeginFW.TYPE_ID:
                 final BeginFW begin = beginRO.wrap(buffer, index, index + length);
-                onInitialBegin(begin);
+                onDescribeInitialBegin(begin);
                 break;
             case EndFW.TYPE_ID:
                 final EndFW end = endRO.wrap(buffer, index, index + length);
-                onInitialEnd(end);
+                onDescribeInitialEnd(end);
                 break;
             case AbortFW.TYPE_ID:
                 final AbortFW abort = abortRO.wrap(buffer, index, index + length);
-                onInitialAbort(abort);
+                onDescribeInitialAbort(abort);
                 break;
             case WindowFW.TYPE_ID:
                 final WindowFW window = windowRO.wrap(buffer, index, index + length);
-                onReplyWindow(window);
+                onDescribeReplyWindow(window);
                 break;
             case ResetFW.TYPE_ID:
                 final ResetFW reset = resetRO.wrap(buffer, index, index + length);
-                onReplyReset(reset);
+                onDescribeReplyReset(reset);
                 break;
             default:
                 break;
             }
         }
 
-        private void onInitialBegin(
+        private void onDescribeInitialBegin(
             BeginFW begin)
         {
             final long traceId = begin.traceId();
 
             state = KafkaState.openingInitial(state);
 
-            group.onMemberOpening(traceId, this);
+            group.onDescribeFanoutMemberOpening(traceId, this);
         }
 
-        private void onInitialEnd(
+        private void onDescribeInitialEnd(
             EndFW end)
         {
             final long traceId = end.traceId();
 
             state = KafkaState.closedInitial(state);
 
-            group.onMemberClosed(traceId, this);
+            group.onDescribeFanoutMemberClosed(traceId, this);
 
-            doReplyEndIfNecessary(traceId);
+            doDescribeReplyEndIfNecessary(traceId);
         }
 
-        private void onInitialAbort(
+        private void onDescribeInitialAbort(
             AbortFW abort)
         {
             final long traceId = abort.traceId();
 
             state = KafkaState.closedInitial(state);
 
-            group.onMemberClosed(traceId, this);
+            group.onDescribeFanoutMemberClosed(traceId, this);
 
-            doReplyAbortIfNecessary(traceId);
+            doDescribeReplyAbortIfNecessary(traceId);
         }
 
-        private void onReplyWindow(
+        private void doDescribeInitialResetIfNecessary(
+            long traceId)
+        {
+            if (KafkaState.initialOpening(state) && !KafkaState.initialClosed(state))
+            {
+                doDescribeInitialReset(traceId);
+            }
+        }
+
+        private void doDescribeInitialReset(
+            long traceId)
+        {
+            state = KafkaState.closedInitial(state);
+
+            doReset(sender, routeId, initialId, traceId, authorization);
+        }
+
+        private void doDescribeInitialWindowIfNecessary(
+            long traceId,
+            long budgetId,
+            int credit,
+            int padding)
+        {
+            if (!KafkaState.initialOpened(state) || credit > 0)
+            {
+                doDescribeInitialWindow(traceId, budgetId, credit, padding);
+            }
+        }
+
+        private void doDescribeInitialWindow(
+            long traceId,
+            long budgetId,
+            int credit,
+            int padding)
+        {
+            doWindow(sender, routeId, initialId, traceId, authorization,
+                    budgetId, credit, padding);
+
+            state = KafkaState.openedInitial(state);
+        }
+
+        private void doDescribeReplyBeginIfNecessary(
+            long traceId)
+        {
+            if (!KafkaState.replyOpening(state))
+            {
+                doDescribeReplyBegin(traceId);
+            }
+        }
+
+        private void doDescribeReplyBegin(
+            long traceId)
+        {
+            state = KafkaState.openingReply(state);
+
+            router.setThrottle(replyId, this::onDescribeMessage);
+            doBegin(sender, routeId, replyId, traceId, authorization, affinity,
+                ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
+                        .typeId(kafkaTypeId)
+                        .describe(m -> m.topic(group.topic)
+                                        .configs(cs -> group.configNames.forEach(c -> cs.item(i -> i.set(c, UTF_8)))))
+                        .build()
+                        .sizeof()));
+        }
+
+        private void doDescribeReplyDataIfNecessary(
+            long traceId,
+            KafkaDataExFW extension)
+        {
+            if (KafkaState.replyOpened(state))
+            {
+                doDescribeReplyData(traceId, extension);
+            }
+        }
+
+        private void doDescribeReplyData(
+            long traceId,
+            KafkaDataExFW extension)
+        {
+            final int reserved = replyPadding;
+
+            replyBudget -= reserved;
+
+            assert replyBudget >= 0;
+
+            doDataNull(sender, routeId, replyId, traceId, authorization, replyBudgetId, reserved, extension);
+        }
+
+        private void doDescribeReplyEndIfNecessary(
+            long traceId)
+        {
+            if (KafkaState.replyOpening(state) && !KafkaState.replyClosed(state))
+            {
+                doDescribeReplyEnd(traceId);
+            }
+        }
+
+        private void doDescribeReplyEnd(
+            long traceId)
+        {
+            state = KafkaState.closedReply(state);
+            doEnd(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
+        }
+
+        private void doDescribeReplyAbortIfNecessary(
+            long traceId)
+        {
+            if (KafkaState.replyOpening(state) && !KafkaState.replyClosed(state))
+            {
+                doDescribeReplyAbort(traceId);
+            }
+        }
+
+        private void doDescribeReplyAbort(
+            long traceId)
+        {
+            state = KafkaState.closedReply(state);
+            doAbort(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
+        }
+
+        private void onDescribeReplyReset(
+            ResetFW reset)
+        {
+            final long traceId = reset.traceId();
+
+            state = KafkaState.closedInitial(state);
+
+            group.onDescribeFanoutMemberClosed(traceId, this);
+
+            doDescribeInitialResetIfNecessary(traceId);
+        }
+
+        private void onDescribeReplyWindow(
             WindowFW window)
         {
             final long budgetId = window.budgetId();
@@ -704,129 +836,7 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
                 state = KafkaState.openedReply(state);
 
                 final long traceId = window.traceId();
-                group.onMemberOpened(traceId, this);
-            }
-        }
-
-        private void onReplyReset(
-            ResetFW reset)
-        {
-            final long traceId = reset.traceId();
-
-            state = KafkaState.closedInitial(state);
-
-            group.onMemberClosed(traceId, this);
-
-            doInitialResetIfNecessary(traceId);
-        }
-
-        private void doReplyBeginIfNecessary(
-            long traceId)
-        {
-            if (!KafkaState.replyOpening(state))
-            {
-                doReplyBegin(traceId);
-            }
-        }
-
-        private void doReplyBegin(
-            long traceId)
-        {
-            state = KafkaState.openingReply(state);
-
-            router.setThrottle(replyId, this::onInitial);
-            doBegin(sender, routeId, replyId, traceId, authorization, affinity,
-                ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
-                        .typeId(kafkaTypeId)
-                        .describe(m -> m.topic(group.topic)
-                                        .configs(cs -> group.configNames.forEach(c -> cs.item(i -> i.set(c, UTF_8)))))
-                        .build()
-                        .sizeof()));
-        }
-
-        private void doReplyData(
-            long traceId,
-            KafkaDataExFW extension)
-        {
-            final int reserved = replyPadding;
-
-            replyBudget -= reserved;
-
-            assert replyBudget >= 0;
-
-            doDataNull(sender, routeId, replyId, traceId, authorization, replyBudgetId, reserved, extension);
-        }
-
-        private void doReplyEnd(
-            long traceId)
-        {
-            state = KafkaState.closedReply(state);
-            doEnd(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
-        }
-
-        private void doReplyAbort(
-            long traceId)
-        {
-            state = KafkaState.closedReply(state);
-            doAbort(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
-        }
-
-        private void doInitialWindowIfNecessary(
-            long traceId,
-            long budgetId,
-            int credit,
-            int padding)
-        {
-            if (!KafkaState.initialOpened(state) || credit > 0)
-            {
-                doInitialWindow(traceId, budgetId, credit, padding);
-            }
-        }
-
-        private void doInitialWindow(
-            long traceId,
-            long budgetId,
-            int credit,
-            int padding)
-        {
-            doWindow(sender, routeId, initialId, traceId, authorization,
-                    budgetId, credit, padding);
-
-            state = KafkaState.openedInitial(state);
-        }
-
-        private void doInitialReset(
-            long traceId)
-        {
-            state = KafkaState.closedInitial(state);
-
-            doReset(sender, routeId, initialId, traceId, authorization);
-        }
-
-        private void doReplyEndIfNecessary(
-            long traceId)
-        {
-            if (KafkaState.replyOpening(state) && !KafkaState.replyClosed(state))
-            {
-                doReplyEnd(traceId);
-            }
-        }
-
-        private void doReplyAbortIfNecessary(
-            long traceId)
-        {
-            if (KafkaState.replyOpening(state) && !KafkaState.replyClosed(state))
-            {
-                doReplyAbort(traceId);
-            }
-        }
-
-        private void doInitialResetIfNecessary(
-            long traceId)
-        {
-            if (KafkaState.initialOpening(state) && !KafkaState.initialClosed(state))
-            {
-                doInitialReset(traceId);
+                group.onDescribeFanoutMemberOpened(traceId, this);
             }
         }
     }

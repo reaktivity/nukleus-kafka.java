@@ -30,7 +30,8 @@ public final class KafkaCacheCluster
     private final String clusterName;
     private final IntFunction<MessageConsumer> supplyWriter;
     private final Supplier<MessageConsumer> supplyAnyWriter;
-    private final Map<Integer, KafkaCacheBroker> brokersById;
+    private final Map<Long, KafkaCacheBroker> brokersById;
+    private final Map<String, KafkaCacheTopic> topicsByName;
     private final Map<String, KafkaCacheBootstrapMetaClient> clientsByTopicName;
 
     int refs;
@@ -46,20 +47,35 @@ public final class KafkaCacheCluster
         this.supplyWriter = supplyWriter;
         this.supplyAnyWriter = supplyAnyWriter;
         this.brokersById = new ConcurrentHashMap<>();
+        this.topicsByName = new ConcurrentHashMap<>();
         this.clientsByTopicName = new ConcurrentHashMap<>();
     }
 
     public KafkaCacheBroker supplyBroker(
-        int brokerId)
+        long brokerId)
     {
         return brokersById.computeIfAbsent(brokerId, this::newBroker);
     }
 
-    public KafkaCacheBroker newBroker(
-        int brokerId)
+    public KafkaCacheTopic supplyTopic(
+        String topicName)
     {
-        return new KafkaCacheBroker(config, clusterName);
+        return topicsByName.computeIfAbsent(topicName, this::newTopic);
     }
+
+    private KafkaCacheBroker newBroker(
+        long brokerId)
+    {
+        return new KafkaCacheBroker(config, clusterName, brokerId);
+    }
+
+    private KafkaCacheTopic newTopic(
+        String topicName)
+    {
+        return new KafkaCacheTopic(config, clusterName, topicName);
+    }
+
+    //////////
 
     public void acquireTopic(
         String topicName)

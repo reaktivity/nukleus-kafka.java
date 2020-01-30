@@ -63,11 +63,9 @@ public final class KafkaMergeableFetchFactory implements StreamFactory
         assert (initialId & 0x0000_0000_0000_0001L) != 0L;
 
         final OctetsFW extension = begin.extension();
-        final ExtensionFW beginEx = extensionRO.tryWrap(extension.buffer(), extension.offset(), extension.limit());
-        final KafkaBeginExFW kafkaBeginEx = beginEx != null && beginEx.typeId() == kafkaTypeId ?
-                kafkaBeginExRO.tryWrap(extension.buffer(), extension.offset(), extension.limit()) : null;
-
-        assert kafkaBeginEx != null;
+        final ExtensionFW beginEx = extension.get(extensionRO::tryWrap);
+        assert beginEx != null && beginEx.typeId() == kafkaTypeId;
+        final KafkaBeginExFW kafkaBeginEx = extension.get(kafkaBeginExRO::tryWrap);
         assert kafkaBeginEx.kind() == KafkaBeginExFW.KIND_FETCH;
         final KafkaFetchBeginExFW kafkaFetchBeginEx = kafkaBeginEx.fetch();
         final ArrayFW<KafkaOffsetFW> progress = kafkaFetchBeginEx.progress();

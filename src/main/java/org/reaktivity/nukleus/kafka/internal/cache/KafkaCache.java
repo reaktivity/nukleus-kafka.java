@@ -24,12 +24,14 @@ import java.util.concurrent.ThreadLocalRandom;
 import org.agrona.collections.Hashing;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
+import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 
 public final class KafkaCache
 {
     private final KafkaConfiguration config;
     private final Map<String, KafkaCacheCluster> clustersByName;
     private final List<MessageConsumer> clients;
+    public static final String TYPE_NAME = String.format("%s/cache", KafkaNukleus.NAME);
 
     public KafkaCache(
         KafkaConfiguration config)
@@ -37,6 +39,12 @@ public final class KafkaCache
         this.config = config;
         this.clustersByName = new ConcurrentHashMap<>();
         this.clients = new CopyOnWriteArrayList<>();
+    }
+
+    public KafkaCacheCluster supplyCluster(
+        String clusterName)
+    {
+        return clustersByName.computeIfAbsent(clusterName, this::newCluster);
     }
 
     public void register(
@@ -59,6 +67,12 @@ public final class KafkaCache
         clustersByName.computeIfPresent(clusterName, (k, v) -> releaseTopic(v, topicName));
     }
 
+    private KafkaCacheCluster newCluster(
+        String clusterName)
+    {
+        return new KafkaCacheCluster(config, clusterName, this::resolveWriter, this::resolveAnyWriter);
+    }
+
     private KafkaCacheCluster acquireTopic(
         String clusterName,
         KafkaCacheCluster cluster,
@@ -66,7 +80,7 @@ public final class KafkaCache
     {
         if (cluster == null)
         {
-            cluster = new KafkaCacheCluster(config, clusterName, this::resolveWriter, this::resolveAnyWriter);
+            cluster = newCluster(clusterName);
         }
 
         cluster.acquireTopic(topicName);

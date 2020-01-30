@@ -49,6 +49,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ExtensionFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaMetaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaMetaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
@@ -133,14 +134,12 @@ public final class KafkaCacheMetaFactory implements StreamFactory
         assert (initialId & 0x0000_0000_0000_0001L) != 0L;
 
         final OctetsFW extension = begin.extension();
-        final ExtensionFW beginEx = extensionRO.tryWrap(extension.buffer(), extension.offset(), extension.limit());
-        final KafkaBeginExFW kafkaBeginEx = beginEx != null && beginEx.typeId() == kafkaTypeId ?
-                kafkaBeginExRO.tryWrap(extension.buffer(), extension.offset(), extension.limit()) : null;
-
-        assert kafkaBeginEx != null;
+        final ExtensionFW beginEx = extension.get(extensionRO::tryWrap);
+        assert beginEx != null && beginEx.typeId() == kafkaTypeId;
+        final KafkaBeginExFW kafkaBeginEx = extension.get(kafkaBeginExRO::wrap);
         assert kafkaBeginEx.kind() == KafkaBeginExFW.KIND_META;
-        final String16FW beginTopic = kafkaBeginEx.meta().topic();
-        final String topic = beginTopic != null ? beginTopic.asString() : null;
+        final KafkaMetaBeginExFW kafkaMetaBeginEx = kafkaBeginEx.meta();
+        final String16FW beginTopic = kafkaMetaBeginEx.topic();
 
         final MessagePredicate filter = (t, b, i, l) ->
         {
@@ -156,13 +155,15 @@ public final class KafkaCacheMetaFactory implements StreamFactory
         if (route != null)
         {
             final long resolvedId = route.correlationId();
+            final String topicName = beginTopic.asString();
             final KafkaCacheRoute cacheRoute = supplyCacheRoute.apply(resolvedId);
-            KafkaCacheMetaFanout fanout = cacheRoute.metaFanoutsByTopic.get(topic);
+            final int topicKey = cacheRoute.topicKey(topicName);
+            KafkaCacheMetaFanout fanout = cacheRoute.metaFanoutsByTopic.get(topicKey);
             if (fanout == null)
             {
-                final KafkaCacheMetaFanout newFanout = new KafkaCacheMetaFanout(resolvedId, authorization, topic);
+                final KafkaCacheMetaFanout newFanout = new KafkaCacheMetaFanout(resolvedId, authorization, topicName);
 
-                cacheRoute.metaFanoutsByTopic.put(topic, newFanout);
+                cacheRoute.metaFanoutsByTopic.put(topicKey, newFanout);
                 fanout = newFanout;
             }
 
@@ -174,7 +175,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
                         routeId,
                         initialId,
                         affinity,
-                        authorization)::onInitial;
+                        authorization)::onMetaMessage;
             }
         }
 
@@ -328,7 +329,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             this.members = new ArrayList<>();
         }
 
-        private void onMemberOpening(
+        private void onMetaFanoutMemberOpening(
             long traceId,
             KafkaCacheMetaStream member)
         {
@@ -336,20 +337,20 @@ public final class KafkaCacheMetaFactory implements StreamFactory
 
             assert !members.isEmpty();
 
-            doInitialBeginIfNecessary(traceId);
+            doMetaFanoutInitialBeginIfNecessary(traceId);
 
             if (KafkaState.initialOpened(state))
             {
-                member.doInitialWindowIfNecessary(traceId, 0L, 0, 0);
+                member.doMetaInitialWindowIfNecessary(traceId, 0L, 0, 0);
             }
 
             if (KafkaState.replyOpened(state))
             {
-                member.doReplyBeginIfNecessary(traceId);
+                member.doMetaReplyBeginIfNecessary(traceId);
             }
         }
 
-        private void onMemberOpened(
+        private void onMetaFanoutMemberOpened(
             long traceId,
             KafkaCacheMetaStream member)
         {
@@ -361,11 +362,11 @@ public final class KafkaCacheMetaFactory implements StreamFactory
                                      .meta(m -> leadersByPartitionId.forEach((p, l) -> m.partitionsItem(i -> i.partitionId(p)
                                                                                                               .leaderId(l))))
                                      .build();
-                member.doReplyData(traceId, kafkaDataEx);
+                member.doMetaReplyDataIfNecessary(traceId, kafkaDataEx);
             }
         }
 
-        private void onMemberClosed(
+        private void onMetaFanoutMemberClosed(
             long traceId,
             KafkaCacheMetaStream member)
         {
@@ -374,11 +375,11 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             if (members.isEmpty())
             {
                 correlations.remove(replyId);
-                doInitialEndIfNecessary(traceId);
+                doMetaFanoutInitialEndIfNecessary(traceId);
             }
         }
 
-        private void doInitialBeginIfNecessary(
+        private void doMetaFanoutInitialBeginIfNecessary(
             long traceId)
         {
             if (KafkaState.initialClosed(state) &&
@@ -389,11 +390,11 @@ public final class KafkaCacheMetaFactory implements StreamFactory
 
             if (!KafkaState.initialOpening(state))
             {
-                doInitialBegin(traceId);
+                doMetaFanoutInitialBegin(traceId);
             }
         }
 
-        private void doInitialBegin(
+        private void doMetaFanoutInitialBegin(
             long traceId)
         {
             assert state == 0;
@@ -402,8 +403,8 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             this.replyId = supplyReplyId.applyAsLong(initialId);
             this.receiver = router.supplyReceiver(initialId);
 
-            correlations.put(replyId, this::onReply);
-            router.setThrottle(initialId, this::onReply);
+            correlations.put(replyId, this::onMetaFanoutMessage);
+            router.setThrottle(initialId, this::onMetaFanoutMessage);
             doBegin(receiver, routeId, initialId, traceId, authorization, 0L,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
@@ -413,16 +414,16 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             state = KafkaState.openingInitial(state);
         }
 
-        private void doInitialEndIfNecessary(
+        private void doMetaFanoutInitialEndIfNecessary(
             long traceId)
         {
             if (!KafkaState.initialClosed(state))
             {
-                doInitialEnd(traceId);
+                doMetaFanoutInitialEnd(traceId);
             }
         }
 
-        private void doInitialEnd(
+        private void doMetaFanoutInitialEnd(
             long traceId)
         {
             doEnd(receiver, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
@@ -430,7 +431,32 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             state = KafkaState.closedInitial(state);
         }
 
-        private void onReply(
+        private void onMetaFanoutInitialReset(
+            ResetFW reset)
+        {
+            final long traceId = reset.traceId();
+
+            members.forEach(s -> s.doMetaInitialResetIfNecessary(traceId));
+
+            state = KafkaState.closedInitial(state);
+
+            doMetaFanoutReplyResetIfNecessary(traceId);
+        }
+
+        private void onMetaFanoutInitialWindow(
+            WindowFW window)
+        {
+            if (!KafkaState.initialOpened(state))
+            {
+                final long traceId = window.traceId();
+
+                state = KafkaState.openedInitial(state);
+
+                members.forEach(s -> s.doMetaInitialWindowIfNecessary(traceId, 0L, 0, 0));
+            }
+        }
+
+        private void onMetaFanoutMessage(
             int msgTypeId,
             DirectBuffer buffer,
             int index,
@@ -440,51 +466,52 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             {
             case BeginFW.TYPE_ID:
                 final BeginFW begin = beginRO.wrap(buffer, index, index + length);
-                onReplyBegin(begin);
+                onMetaFanoutReplyBegin(begin);
                 break;
             case DataFW.TYPE_ID:
                 final DataFW data = dataRO.wrap(buffer, index, index + length);
-                onReplyData(data);
+                onMetaFanoutReplyData(data);
                 break;
             case EndFW.TYPE_ID:
                 final EndFW end = endRO.wrap(buffer, index, index + length);
-                onReplyEnd(end);
+                onMetaFanoutReplyEnd(end);
                 break;
             case AbortFW.TYPE_ID:
                 final AbortFW abort = abortRO.wrap(buffer, index, index + length);
-                onReplyAbort(abort);
+                onMetaFanoutReplyAbort(abort);
                 break;
             case ResetFW.TYPE_ID:
                 final ResetFW reset = resetRO.wrap(buffer, index, index + length);
-                onInitialReset(reset);
+                onMetaFanoutInitialReset(reset);
                 break;
             case WindowFW.TYPE_ID:
                 final WindowFW window = windowRO.wrap(buffer, index, index + length);
-                onInitialWindow(window);
+                onMetaFanoutInitialWindow(window);
                 break;
             default:
                 break;
             }
         }
 
-        private void onReplyBegin(
+        private void onMetaFanoutReplyBegin(
             BeginFW begin)
         {
             final long traceId = begin.traceId();
-            doReplyWindow(traceId, bufferPool.slotCapacity());
 
-            state = KafkaState.openedReply(state);
+            state = KafkaState.openingReply(state);
 
-            members.forEach(s -> s.doReplyBeginIfNecessary(traceId));
+            members.forEach(s -> s.doMetaReplyBeginIfNecessary(traceId));
+
+            doMetaFanoutReplyWindow(traceId, bufferPool.slotCapacity());
         }
 
-        private void onReplyData(
+        private void onMetaFanoutReplyData(
             DataFW data)
         {
             final long traceId = data.traceId();
             final int reserved = data.reserved();
             final OctetsFW extension = data.extension();
-            final ExtensionFW dataEx = extensionRO.tryWrap(extension.buffer(), extension.offset(), extension.limit());
+            final ExtensionFW dataEx = extension.get(extensionRO::tryWrap);
             final KafkaDataExFW kafkaDataEx = dataEx.typeId() == kafkaTypeId ? extension.get(kafkaDataExRO::tryWrap) : null;
             assert kafkaDataEx == null || kafkaDataEx.kind() == KafkaBeginExFW.KIND_META;
             final KafkaMetaDataExFW kafkaMetaDataEx = kafkaDataEx != null ? kafkaDataEx.meta() : null;
@@ -500,67 +527,42 @@ public final class KafkaCacheMetaFactory implements StreamFactory
                 leadersByPartitionId.clear();
                 partitions.forEach(p -> leadersByPartitionId.put(p.partitionId(), p.leaderId()));
 
-                members.forEach(s -> s.doReplyData(traceId, kafkaDataEx));
+                members.forEach(s -> s.doMetaReplyDataIfNecessary(traceId, kafkaDataEx));
             }
 
-            doReplyWindow(traceId, reserved);
+            doMetaFanoutReplyWindow(traceId, reserved);
         }
 
-        private void onReplyEnd(
+        private void onMetaFanoutReplyEnd(
             EndFW end)
         {
             final long traceId = end.traceId();
 
-            members.forEach(s -> s.doReplyEndIfNecessary(traceId));
+            members.forEach(s -> s.doMetaReplyEndIfNecessary(traceId));
 
             state = KafkaState.closedReply(state);
         }
 
-        private void onReplyAbort(
+        private void onMetaFanoutReplyAbort(
             AbortFW abort)
         {
             final long traceId = abort.traceId();
 
-            members.forEach(s -> s.doReplyAbortIfNecessary(traceId));
+            members.forEach(s -> s.doMetaReplyAbortIfNecessary(traceId));
 
             state = KafkaState.closedReply(state);
         }
 
-        private void onInitialReset(
-            ResetFW reset)
-        {
-            final long traceId = reset.traceId();
-
-            members.forEach(s -> s.doInitialResetIfNecessary(traceId));
-
-            state = KafkaState.closedInitial(state);
-
-            doReplyResetIfNecessary(traceId);
-        }
-
-        private void onInitialWindow(
-            WindowFW window)
-        {
-            if (!KafkaState.initialOpened(state))
-            {
-                final long traceId = window.traceId();
-
-                state = KafkaState.openedInitial(state);
-
-                members.forEach(s -> s.doInitialWindowIfNecessary(traceId, 0L, 0, 0));
-            }
-        }
-
-        private void doReplyResetIfNecessary(
+        private void doMetaFanoutReplyResetIfNecessary(
             long traceId)
         {
             if (!KafkaState.replyClosed(state))
             {
-                doReplyReset(traceId);
+                doMetaFanoutReplyReset(traceId);
             }
         }
 
-        private void doReplyReset(
+        private void doMetaFanoutReplyReset(
             long traceId)
         {
             doReset(receiver, routeId, replyId, traceId, authorization);
@@ -568,13 +570,13 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             state = KafkaState.closedReply(state);
         }
 
-        private void doReplyWindow(
+        private void doMetaFanoutReplyWindow(
             long traceId,
             int credit)
         {
-            doWindow(receiver, routeId, replyId, traceId, authorization, 0L, credit, 0);
+            state = KafkaState.openedReply(state);
 
-            state = KafkaState.closedInitial(state);
+            doWindow(receiver, routeId, replyId, traceId, authorization, 0L, credit, 0);
         }
     }
 
@@ -611,7 +613,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             this.authorization = authorization;
         }
 
-        private void onInitial(
+        private void onMetaMessage(
             int msgTypeId,
             DirectBuffer buffer,
             int index,
@@ -621,64 +623,195 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             {
             case BeginFW.TYPE_ID:
                 final BeginFW begin = beginRO.wrap(buffer, index, index + length);
-                onInitialBegin(begin);
+                onMetaInitialBegin(begin);
                 break;
             case EndFW.TYPE_ID:
                 final EndFW end = endRO.wrap(buffer, index, index + length);
-                onInitialEnd(end);
+                onMetaInitialEnd(end);
                 break;
             case AbortFW.TYPE_ID:
                 final AbortFW abort = abortRO.wrap(buffer, index, index + length);
-                onInitialAbort(abort);
+                onMetaInitialAbort(abort);
                 break;
             case WindowFW.TYPE_ID:
                 final WindowFW window = windowRO.wrap(buffer, index, index + length);
-                onReplyWindow(window);
+                onMetaReplyWindow(window);
                 break;
             case ResetFW.TYPE_ID:
                 final ResetFW reset = resetRO.wrap(buffer, index, index + length);
-                onReplyReset(reset);
+                onMetaReplyReset(reset);
                 break;
             default:
                 break;
             }
         }
 
-        private void onInitialBegin(
+        private void onMetaInitialBegin(
             BeginFW begin)
         {
             final long traceId = begin.traceId();
 
             state = KafkaState.openingInitial(state);
 
-            group.onMemberOpening(traceId, this);
+            group.onMetaFanoutMemberOpening(traceId, this);
         }
 
-        private void onInitialEnd(
+        private void onMetaInitialEnd(
             EndFW end)
         {
             final long traceId = end.traceId();
 
             state = KafkaState.closedInitial(state);
 
-            group.onMemberClosed(traceId, this);
+            group.onMetaFanoutMemberClosed(traceId, this);
 
-            doReplyEndIfNecessary(traceId);
+            doMetaReplyEndIfNecessary(traceId);
         }
 
-        private void onInitialAbort(
+        private void onMetaInitialAbort(
             AbortFW abort)
         {
             final long traceId = abort.traceId();
 
             state = KafkaState.closedInitial(state);
 
-            group.onMemberClosed(traceId, this);
+            group.onMetaFanoutMemberClosed(traceId, this);
 
-            doReplyAbortIfNecessary(traceId);
+            doMetaReplyAbortIfNecessary(traceId);
         }
 
-        private void onReplyWindow(
+        private void doMetaInitialResetIfNecessary(
+            long traceId)
+        {
+            if (KafkaState.initialOpening(state) && !KafkaState.initialClosed(state))
+            {
+                doMetaInitialReset(traceId);
+            }
+        }
+
+        private void doMetaInitialReset(
+            long traceId)
+        {
+            state = KafkaState.closedInitial(state);
+
+            doReset(sender, routeId, initialId, traceId, authorization);
+        }
+
+        private void doMetaInitialWindowIfNecessary(
+            long traceId,
+            long budgetId,
+            int credit,
+            int padding)
+        {
+            if (!KafkaState.initialOpened(state) || credit > 0)
+            {
+                doMetaInitialWindow(traceId, budgetId, credit, padding);
+            }
+        }
+
+        private void doMetaInitialWindow(
+            long traceId,
+            long budgetId,
+            int credit,
+            int padding)
+        {
+            doWindow(sender, routeId, initialId, traceId, authorization,
+                    budgetId, credit, padding);
+
+            state = KafkaState.openedInitial(state);
+        }
+
+        private void doMetaReplyBeginIfNecessary(
+            long traceId)
+        {
+            if (!KafkaState.replyOpening(state))
+            {
+                doMetaReplyBegin(traceId);
+            }
+        }
+
+        private void doMetaReplyBegin(
+            long traceId)
+        {
+            state = KafkaState.openingReply(state);
+
+            router.setThrottle(replyId, this::onMetaMessage);
+            doBegin(sender, routeId, replyId, traceId, authorization, affinity,
+                ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
+                        .typeId(kafkaTypeId)
+                        .meta(m -> m.topic(group.topic))
+                        .build()
+                        .sizeof()));
+        }
+
+        private void doMetaReplyDataIfNecessary(
+            long traceId,
+            KafkaDataExFW extension)
+        {
+            if (KafkaState.replyOpened(state))
+            {
+                doMetaReplyData(traceId, extension);
+            }
+        }
+
+        private void doMetaReplyData(
+            long traceId,
+            KafkaDataExFW extension)
+        {
+            final int reserved = replyPadding;
+
+            replyBudget -= reserved;
+
+            assert replyBudget >= 0;
+
+            doDataNull(sender, routeId, replyId, traceId, authorization, replyBudgetId, reserved, extension);
+        }
+
+        private void doMetaReplyEndIfNecessary(
+            long traceId)
+        {
+            if (KafkaState.replyOpening(state) && !KafkaState.replyClosed(state))
+            {
+                doMetaReplyEnd(traceId);
+            }
+        }
+
+        private void doMetaReplyEnd(
+            long traceId)
+        {
+            state = KafkaState.closedReply(state);
+            doEnd(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
+        }
+
+        private void doMetaReplyAbortIfNecessary(
+            long traceId)
+        {
+            if (KafkaState.replyOpening(state) && !KafkaState.replyClosed(state))
+            {
+                doMetaReplyAbort(traceId);
+            }
+        }
+
+        private void doMetaReplyAbort(
+            long traceId)
+        {
+            state = KafkaState.closedReply(state);
+            doAbort(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
+        }
+
+        private void onMetaReplyReset(
+            ResetFW reset)
+        {
+            final long traceId = reset.traceId();
+
+            state = KafkaState.closedInitial(state);
+
+            group.onMetaFanoutMemberClosed(traceId, this);
+
+            doMetaInitialResetIfNecessary(traceId);
+        }
+
+        private void onMetaReplyWindow(
             WindowFW window)
         {
             final long budgetId = window.budgetId();
@@ -694,128 +827,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
                 state = KafkaState.openedReply(state);
 
                 final long traceId = window.traceId();
-                group.onMemberOpened(traceId, this);
-            }
-        }
-
-        private void onReplyReset(
-            ResetFW reset)
-        {
-            final long traceId = reset.traceId();
-
-            state = KafkaState.closedInitial(state);
-
-            group.onMemberClosed(traceId, this);
-
-            doInitialResetIfNecessary(traceId);
-        }
-
-        private void doReplyBeginIfNecessary(
-            long traceId)
-        {
-            if (!KafkaState.replyOpening(state))
-            {
-                doReplyBegin(traceId);
-            }
-        }
-
-        private void doReplyBegin(
-            long traceId)
-        {
-            state = KafkaState.openingReply(state);
-
-            router.setThrottle(replyId, this::onInitial);
-            doBegin(sender, routeId, replyId, traceId, authorization, affinity,
-                ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
-                        .typeId(kafkaTypeId)
-                        .meta(m -> m.topic(group.topic))
-                        .build()
-                        .sizeof()));
-        }
-
-        private void doReplyData(
-            long traceId,
-            KafkaDataExFW extension)
-        {
-            final int reserved = replyPadding;
-
-            replyBudget -= reserved;
-
-            assert replyBudget >= 0;
-
-            doDataNull(sender, routeId, replyId, traceId, authorization, replyBudgetId, reserved, extension);
-        }
-
-        private void doReplyEnd(
-            long traceId)
-        {
-            state = KafkaState.closedReply(state);
-            doEnd(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
-        }
-
-        private void doReplyAbort(
-            long traceId)
-        {
-            state = KafkaState.closedReply(state);
-            doAbort(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
-        }
-
-        private void doInitialWindowIfNecessary(
-            long traceId,
-            long budgetId,
-            int credit,
-            int padding)
-        {
-            if (!KafkaState.initialOpened(state) || credit > 0)
-            {
-                doInitialWindow(traceId, budgetId, credit, padding);
-            }
-        }
-
-        private void doInitialWindow(
-            long traceId,
-            long budgetId,
-            int credit,
-            int padding)
-        {
-            doWindow(sender, routeId, initialId, traceId, authorization,
-                    budgetId, credit, padding);
-
-            state = KafkaState.openedInitial(state);
-        }
-
-        private void doInitialReset(
-            long traceId)
-        {
-            state = KafkaState.closedInitial(state);
-
-            doReset(sender, routeId, initialId, traceId, authorization);
-        }
-
-        private void doReplyEndIfNecessary(
-            long traceId)
-        {
-            if (KafkaState.replyOpening(state) && !KafkaState.replyClosed(state))
-            {
-                doReplyEnd(traceId);
-            }
-        }
-
-        private void doReplyAbortIfNecessary(
-            long traceId)
-        {
-            if (KafkaState.replyOpening(state) && !KafkaState.replyClosed(state))
-            {
-                doReplyAbort(traceId);
-            }
-        }
-
-        private void doInitialResetIfNecessary(
-            long traceId)
-        {
-            if (KafkaState.initialOpening(state) && !KafkaState.initialClosed(state))
-            {
-                doInitialReset(traceId);
+                group.onMetaFanoutMemberOpened(traceId, this);
             }
         }
     }

@@ -36,20 +36,17 @@ final class KafkaElektron implements Elektron
 {
     private final Long2ObjectHashMap<KafkaCacheRoute> cacheRoutesById;
     private final Map<RouteKind, StreamFactoryBuilder> streamFactoryBuilders;
-    private final KafkaCacheAgent agent;
 
     KafkaElektron(
         KafkaConfiguration config,
-        KafkaCache cache,
-        int index)
+        KafkaCache cache)
     {
         this.cacheRoutesById = new Long2ObjectHashMap<>();
         Map<RouteKind, StreamFactoryBuilder> streamFactoryBuilders = new EnumMap<>(RouteKind.class);
         streamFactoryBuilders.put(CLIENT, new KafkaClientFactoryBuilder(config));
         streamFactoryBuilders.put(CACHE_SERVER, new KafkaCacheServerFactoryBuilder(config, cache, this::supplyCacheRoute));
-        streamFactoryBuilders.put(CACHE_CLIENT, new KafkaCacheClientFactoryBuilder(config, cache, index, this::supplyCacheRoute));
+        streamFactoryBuilders.put(CACHE_CLIENT, new KafkaCacheClientFactoryBuilder(config, cache, this::supplyCacheRoute));
         this.streamFactoryBuilders = streamFactoryBuilders;
-        this.agent = new KafkaCacheAgent(cache);
     }
 
     @Override
@@ -57,12 +54,6 @@ final class KafkaElektron implements Elektron
         RouteKind kind)
     {
         return streamFactoryBuilders.get(kind);
-    }
-
-    @Override
-    public KafkaCacheAgent agent()
-    {
-        return agent;
     }
 
     @Override
