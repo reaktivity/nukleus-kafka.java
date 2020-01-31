@@ -15,9 +15,12 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static java.nio.ByteBuffer.allocateDirect;
+
 import java.nio.file.Path;
 
 import org.agrona.DirectBuffer;
+import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 
@@ -28,17 +31,23 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
 
     private static final UnsafeBuffer EMPTY_BUFFER = new UnsafeBuffer(0, 0);
 
+    protected final MutableDirectBuffer writeBuffer;
     protected final Path directory;
-    protected final int maxCapacity;
+    protected final int logCapacity;
+    protected final int indexCapacity;
 
-    protected volatile KafkaCacheSegment nextSegment;
+    protected volatile KafkaCacheSegment.Data nextSegment;
 
     protected KafkaCacheSegment(
+        MutableDirectBuffer writeBuffer,
         Path directory,
-        int maxCapacity)
+        int messagesCapacity,
+        int indexCapacity)
     {
+        this.writeBuffer = writeBuffer;
         this.directory = directory;
-        this.maxCapacity = maxCapacity;
+        this.logCapacity = messagesCapacity;
+        this.indexCapacity = indexCapacity;
     }
 
     public int position(
@@ -80,7 +89,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         KafkaCacheEntryFW entry)
     {
         assert position >= 0;
-        final DirectBuffer buffer = messages();
+        final DirectBuffer buffer = log();
         return entry.tryWrap(buffer, position, buffer.capacity());
     }
 
@@ -106,27 +115,54 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
                  equalTo((KafkaCacheSegment) obj));
     }
 
-    public KafkaCacheSegment nextSegment()
+    public KafkaCacheSegment.Data nextSegment()
     {
         return nextSegment;
     }
 
-    public KafkaCacheSegment nextSegment(
-        int nextOffset)
+    public KafkaCacheSegment.Data nextSegment(
+        long nextOffset)
     {
-        KafkaCacheSegment nextSegment = this.nextSegment;
+        KafkaCacheSegment.Data nextSegment = this.nextSegment;
         if (nextSegment == null)
         {
-            this.nextSegment = nextSegment = new KafkaCacheSegment.Data(directory, nextOffset, maxCapacity);
+            nextSegment = new KafkaCacheSegment.Data(writeBuffer, directory, nextOffset, logCapacity, indexCapacity);
+            this.nextSegment = nextSegment;
         }
         return nextSegment;
     }
 
     public abstract long baseOffset();
 
-    protected abstract DirectBuffer messages();
+    public boolean log(
+        DirectBuffer buffer,
+        int index,
+        int length)
+    {
+        return false;
+    }
+
+    public boolean index(
+        DirectBuffer buffer,
+        int index,
+        int length)
+    {
+        return false;
+    }
+
+    protected abstract DirectBuffer log();
 
     protected abstract DirectBuffer index();
+
+    protected int logCapacity()
+    {
+        return logCapacity;
+    }
+
+    protected int indexCapacity()
+    {
+        return indexCapacity;
+    }
 
     private boolean equalTo(
         KafkaCacheSegment that)
@@ -140,7 +176,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
 
         public Candidate()
         {
-            super(null, 0);
+            super(EMPTY_BUFFER, null, 0, 0);
         }
 
         public void baseOffset(
@@ -156,7 +192,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         }
 
         @Override
-        protected DirectBuffer messages()
+        protected DirectBuffer log()
         {
             return EMPTY_BUFFER;
         }
@@ -173,7 +209,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         public Sentinel(
             Path directory)
         {
-            super(directory, 0);
+            super(new UnsafeBuffer(allocateDirect(64 * 1024)), directory, 0, 0); // TODO: configure
         }
 
         @Override
@@ -183,7 +219,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         }
 
         @Override
-        protected DirectBuffer messages()
+        protected DirectBuffer log()
         {
             return EMPTY_BUFFER;
         }
@@ -195,21 +231,23 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         }
     }
 
-    private static final class Data extends KafkaCacheSegment
+    public static final class Data extends KafkaCacheSegment
     {
         private final long baseOffset;
-        private final KafkaCacheFile messages;
-        private final KafkaCacheFile index;
+        private final KafkaCacheFile logFile;
+        private final KafkaCacheFile indexFile;
 
         private Data(
+            MutableDirectBuffer writeBuffer,
             Path directory,
             long baseOffset,
-            int capacity)
+            int logCapacity,
+            int indexCapacity)
         {
-            super(directory, capacity);
+            super(writeBuffer, directory, logCapacity, indexCapacity);
             this.baseOffset = baseOffset;
-            this.messages = new KafkaCacheFile(directory, "log", baseOffset, capacity);
-            this.index = new KafkaCacheFile(directory, "index", baseOffset, capacity);
+            this.logFile = new KafkaCacheFile(writeBuffer, directory, "log", baseOffset, logCapacity);
+            this.indexFile = new KafkaCacheFile(writeBuffer, directory, "index", baseOffset, indexCapacity);
         }
 
         @Override
@@ -219,15 +257,43 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         }
 
         @Override
-        protected DirectBuffer index()
+        public boolean log(
+            DirectBuffer buffer,
+            int index,
+            int length)
         {
-            return index.readable();
+            final boolean writable = logFile.readable().capacity() + length < logCapacity;
+            if (writable)
+            {
+                logFile.write(buffer, index, length);
+            }
+            return writable;
         }
 
         @Override
-        protected DirectBuffer messages()
+        public boolean index(
+            DirectBuffer buffer,
+            int index,
+            int length)
         {
-            return messages.readable();
+            final boolean writable = indexFile.readable().capacity() + length < indexCapacity;
+            if (writable)
+            {
+                indexFile.write(buffer, index, length);
+            }
+            return writable;
+        }
+
+        @Override
+        protected DirectBuffer index()
+        {
+            return indexFile.readable();
+        }
+
+        @Override
+        protected DirectBuffer log()
+        {
+            return logFile.readable();
         }
     }
 }

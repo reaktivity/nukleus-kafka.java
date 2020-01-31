@@ -19,6 +19,8 @@ import static java.nio.file.StandardOpenOption.APPEND;
 import static java.nio.file.StandardOpenOption.CREATE;
 import static java.nio.file.StandardOpenOption.READ;
 import static java.nio.file.StandardOpenOption.WRITE;
+import static java.util.Objects.requireNonNull;
+import static org.agrona.BufferUtil.address;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -29,26 +31,34 @@ import java.nio.file.Path;
 
 import org.agrona.DirectBuffer;
 import org.agrona.LangUtil;
+import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 
 public final class KafkaCacheFile
 {
+    private final MutableDirectBuffer writeBuffer;
+    private final ByteBuffer writeByteBuffer;
     private final MappedByteBuffer readableByteBuf;
     private final FileChannel writable;
     private final DirectBuffer readableBuf;
-
-    private volatile int capacity;
+    private final long readableAddress;
+    private final int maxCapacity;
 
     KafkaCacheFile(
+        MutableDirectBuffer writeBuffer,
         Path directory,
         String extension,
-        long offset,
-        int capacity)
+        long baseOffset,
+        int maxCapacity)
     {
-        final Path file = directory.resolve(String.format("%016x.%s", offset, extension));
-        this.readableByteBuf = readInit(file, capacity);
+        this.writeBuffer = requireNonNull(writeBuffer);
+        this.writeByteBuffer = requireNonNull(writeBuffer.byteBuffer());
+        final Path file = directory.resolve(String.format("%016x.%s", baseOffset, extension));
+        this.readableByteBuf = readInit(file, maxCapacity);
         this.readableBuf = new UnsafeBuffer(0, 0);
         this.writable = writeInit(file);
+        this.readableAddress = address(readableByteBuf);
+        this.maxCapacity = maxCapacity;
     }
 
     DirectBuffer readable()
@@ -57,10 +67,27 @@ public final class KafkaCacheFile
     }
 
     void write(
-        ByteBuffer data) throws IOException
+        DirectBuffer buffer,
+        int index,
+        int length)
     {
-        this.capacity += writable.write(data);
-        this.readableBuf.wrap(readableByteBuf, 0, capacity);
+        try
+        {
+            writeByteBuffer.clear();
+            writeBuffer.putBytes(0, buffer, index, length);
+            writeByteBuffer.limit(length);
+
+            final int written = writable.write(writeByteBuffer);
+            assert written == length;
+
+            final int newCapacity = readableBuf.capacity() + written;
+            assert newCapacity <= maxCapacity;
+            readableBuf.wrap(readableAddress, newCapacity);
+        }
+        catch (IOException ex)
+        {
+            LangUtil.rethrowUnchecked(ex);
+        }
     }
 
     private static MappedByteBuffer readInit(

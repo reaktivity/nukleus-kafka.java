@@ -15,8 +15,10 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import java.util.Objects;
+import static java.util.Objects.requireNonNull;
 
+import org.agrona.MutableDirectBuffer;
+import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
@@ -24,16 +26,21 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public final class KafkaCachePartitionWriter
 {
+    private final MutableDirectBuffer entryInfo = new UnsafeBuffer(new byte[Long.BYTES + Long.BYTES]);
+
     private final int partitionId;
 
-    private KafkaCacheSegment segment;
+    private KafkaCacheSegment entrySegment;
+    private long entryNextOffset;
+    private int entryPosition;
 
     public KafkaCachePartitionWriter(
         int partitionId,
         KafkaCacheSegment segment)
     {
         this.partitionId = partitionId;
-        this.segment = Objects.requireNonNull(segment);
+        this.entrySegment = requireNonNull(segment);
+        this.entryNextOffset = segment.baseOffset();
     }
 
     public int id()
@@ -41,40 +48,76 @@ public final class KafkaCachePartitionWriter
         return partitionId;
     }
 
-    public long progressOffset()
+    public long nextOffset()
     {
-        return -2; // EARLIEST, TODO
+        return entryNextOffset;
     }
 
     public void writeEntry(
-        long offset,
+        long entryOffset,
         long timestamp,
         KafkaKeyFW key,
         ArrayFW<KafkaHeaderFW> headers,
         OctetsFW payload)
     {
-        writeEntryStart(timestamp, key);
+        writeEntryStart(entryOffset, timestamp, key);
         writeEntryContinue(payload);
-        writeEntryFinish(headers, offset);
+        writeEntryFinish(headers);
     }
 
     public void writeEntryStart(
+        long entryOffset,
         long timestamp,
         KafkaKeyFW key)
     {
-        // append timestamp and key to partition cache
+        assert entryOffset >= 0 && entryOffset > this.entryNextOffset;
+
+        final int remaining = entrySegment.logCapacity() - entrySegment.log().capacity();
+        final int required = Long.BYTES + Long.BYTES + key.sizeof();
+        if (remaining < required)
+        {
+            entrySegment = entrySegment.nextSegment(entryOffset);
+            final int newRemaining = entrySegment.logCapacity() - entrySegment.log().capacity();
+            assert newRemaining >= required;
+        }
+
+        this.entryPosition = entrySegment.log().capacity();
+
+        entryInfo.putLong(0, entryOffset);
+        entryInfo.putLong(Long.BYTES, timestamp);
+
+        entrySegment.log(entryInfo, 0, entryInfo.capacity());
+        entrySegment.log(key.buffer(), key.offset(), key.sizeof());
     }
 
     public void writeEntryContinue(
         OctetsFW payload)
     {
-        // append payload to partition cache
+        final int remaining = entrySegment.logCapacity() - entrySegment.log().capacity();
+        final int required = payload.sizeof();
+        assert remaining >= required;
+
+        entrySegment.log(payload.buffer(), payload.offset(), payload.sizeof());
     }
 
     public void writeEntryFinish(
-        ArrayFW<KafkaHeaderFW> headers,
-        long offset)
+        ArrayFW<KafkaHeaderFW> headers)
     {
-        // append headers to partition cache
+        final int logRemaining = entrySegment.logCapacity() - entrySegment.log().capacity();
+        final int logRequired = headers.sizeof();
+        assert logRemaining >= logRequired;
+
+        entrySegment.log(headers.buffer(), headers.offset(), headers.sizeof());
+
+        entryInfo.putLong(0, entryNextOffset);
+        entryInfo.putLong(Long.BYTES, entryPosition);
+
+        final int indexRemaining = entrySegment.indexCapacity() - entrySegment.index().capacity();
+        final int indexRequired = entryInfo.capacity();
+        assert indexRemaining >= indexRequired;
+
+        entrySegment.index(entryInfo, 0, entryInfo.capacity());
+
+        this.entryNextOffset++;
     }
 }

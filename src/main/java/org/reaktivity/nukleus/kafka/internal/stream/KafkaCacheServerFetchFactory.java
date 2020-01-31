@@ -351,7 +351,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             this.authorization = authorization;
             this.topic = topic;
             this.partition = partition;
-            this.progressOffset = partition.progressOffset();
+            this.progressOffset = partition.nextOffset();
             this.members = new ArrayList<>();
         }
 
@@ -525,15 +525,6 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             {
                 final long timestamp = kafkaFetchDataEx.timestamp();
                 final KafkaKeyFW key = kafkaFetchDataEx.key();
-
-                partition.writeEntryStart(timestamp, key);
-            }
-
-            partition.writeEntryContinue(payload);
-
-            if ((flags & FLAGS_FIN) != 0x00)
-            {
-                final ArrayFW<KafkaHeaderFW> headers = kafkaFetchDataEx.headers();
                 final ArrayFW<KafkaOffsetFW> progress = kafkaFetchDataEx.progress();
                 final KafkaOffsetFW progressItem = progress.matchFirst(p -> true);
                 assert progress.limit() == progressItem.limit();
@@ -541,15 +532,23 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 final int partitionId = progressItem.partitionId();
                 final long progressOffset = progressItem.offset$();
 
-                // TODO: progress offset > partition offset
+                // TODO: progress partitionOffset > partition partitionOffset
                 //       need to add KafkaFetchDataEx { KafkaOffset partition }
                 final long partitionOffset = progressOffset - 1;
 
                 assert partitionId == partition.id();
-                assert progressOffset >= 0 && progressOffset > this.progressOffset;
-                this.progressOffset = progressOffset;
 
-                partition.writeEntryFinish(headers, partitionOffset);
+                partition.writeEntryStart(partitionOffset, timestamp, key);
+            }
+
+            partition.writeEntryContinue(payload);
+
+            if ((flags & FLAGS_FIN) != 0x00)
+            {
+                final ArrayFW<KafkaHeaderFW> headers = kafkaFetchDataEx.headers();
+                partition.writeEntryFinish(headers);
+
+                this.progressOffset = partition.nextOffset();
 
                 members.forEach(s -> s.doServerReplyFlushIfNecessary(traceId));
             }
