@@ -30,7 +30,8 @@ public class KafkaConfiguration extends Configuration
     public static final IntPropertyDef KAFKA_FETCH_PARTITION_MAX_BYTES;
     public static final IntPropertyDef KAFKA_READ_IDLE_TIMEOUT;
     public static final PropertyDef<String> KAFKA_CACHE_DIRECTORY;
-    public static final IntPropertyDef KAFKA_CACHE_SEGMENT_BYTES;
+    public static final IntPropertyDef KAFKA_CACHE_SEGMENT_LOG_BYTES;
+    public static final IntPropertyDef KAFKA_CACHE_SEGMENT_INDEX_BYTES;
 
     private static final ConfigurationDef KAFKA_CONFIG;
 
@@ -44,7 +45,8 @@ public class KafkaConfiguration extends Configuration
         KAFKA_FETCH_PARTITION_MAX_BYTES = config.property("fetch.partition.max.bytes", 1 * 1024 * 1024);
         KAFKA_READ_IDLE_TIMEOUT = config.property("read.idle.timeout", 5000);
         KAFKA_CACHE_DIRECTORY = config.property("cache.directory", String.format("./%s/cache", KafkaNukleus.NAME));
-        KAFKA_CACHE_SEGMENT_BYTES = config.property("cache.segment.bytes", 1 * 1024 * 1024);
+        KAFKA_CACHE_SEGMENT_LOG_BYTES = config.property("cache.segment.log.bytes", 1 * 1024 * 1024);
+        KAFKA_CACHE_SEGMENT_INDEX_BYTES = config.property("cache.segment.index.bytes", 16 * 1024);
         KAFKA_CONFIG = config;
     }
 
@@ -84,8 +86,13 @@ public class KafkaConfiguration extends Configuration
         return Paths.get(KAFKA_CACHE_DIRECTORY.get(this));
     }
 
-    public int cacheSegmentBytes()
+    public int cacheSegmentLogBytes()
     {
-        return KAFKA_CACHE_SEGMENT_BYTES.getAsInt(this);
+        return KAFKA_CACHE_SEGMENT_LOG_BYTES.getAsInt(this);
+    }
+
+    public int cacheSegmentIndexBytes()
+    {
+        return KAFKA_CACHE_SEGMENT_INDEX_BYTES.getAsInt(this);
     }
 }

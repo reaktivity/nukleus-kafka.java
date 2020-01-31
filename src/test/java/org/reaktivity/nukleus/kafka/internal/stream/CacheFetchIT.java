@@ -20,6 +20,8 @@ import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
+import org.agrona.MutableDirectBuffer;
+import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
@@ -29,6 +31,16 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
+import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheClusterWriter;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionWriter;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicWriter;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheWriter;
+import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
+import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.reaktor.ReaktorConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
@@ -113,7 +125,6 @@ public class CacheFetchIT
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -122,6 +133,25 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldRequestPartitionOffset() throws Exception
     {
+        final KafkaNukleus nukleus = reaktor.nukleus(KafkaNukleus.class);
+        final KafkaCache cache = nukleus.cache();
+        final KafkaCacheWriter writer = cache.newWriter();
+        final KafkaCacheClusterWriter cluster = writer.supplyCluster("kafka-cache#0");
+        final KafkaCacheTopicWriter topic = cluster.supplyTopic("test");
+        final KafkaCachePartitionWriter partition = topic.supplyPartition(0);
+
+        MutableDirectBuffer buffer = new UnsafeBuffer(new byte[128]);
+        final KafkaKeyFW key = new KafkaKeyFW.Builder()
+                .wrap(buffer, 0, buffer.capacity())
+                .build();
+        final ArrayFW<KafkaHeaderFW> headers = new ArrayFW.Builder<>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+                .wrap(buffer, key.limit(), buffer.capacity())
+                .build();
+        final OctetsFW payload = new OctetsFW.Builder()
+                .wrap(buffer, headers.limit(), buffer.capacity())
+                .build();
+        partition.writeEntry(0, 0, key, headers, payload);
+
         k3po.finish();
     }
 

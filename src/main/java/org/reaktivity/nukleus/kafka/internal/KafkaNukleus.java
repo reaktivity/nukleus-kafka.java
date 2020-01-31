@@ -49,4 +49,9 @@ public final class KafkaNukleus implements Nukleus
     {
         return new KafkaElektron(config, cache);
     }
+
+    public KafkaCache cache()
+    {
+        return cache;
+    }
 }

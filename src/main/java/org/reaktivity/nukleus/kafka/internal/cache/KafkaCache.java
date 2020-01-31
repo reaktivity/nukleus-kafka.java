@@ -15,9 +15,12 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_DIRECTORY;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -59,7 +62,15 @@ public final class KafkaCache
         final Map<Integer, KafkaCacheSegment> segmentsByPartition =
                 segmentsByTopicPartition.computeIfAbsent(topicName, t -> new ConcurrentHashMap<>());
         return segmentsByPartition.computeIfAbsent(partitionId,
-            p -> new KafkaCacheSegment.Sentinel(initDirectory(clusterName, topicName, partitionId)));
+            p -> newSegment(initDirectory(clusterName, topicName, partitionId)));
+    }
+
+    private KafkaCacheSegment newSegment(
+        Path directory)
+    {
+        final int maxLogCapacity = config.cacheSegmentLogBytes();
+        final int maxIndexCapacity = config.cacheSegmentIndexBytes();
+        return new KafkaCacheSegment.Sentinel(directory, maxLogCapacity, maxIndexCapacity);
     }
 
     private Path initDirectory(
@@ -67,7 +78,8 @@ public final class KafkaCache
         String topicName,
         int partitionId)
     {
-        final Path cacheDirectory = config.cacheDirectory();
+        final Path baseDirectory = Paths.get(REAKTOR_DIRECTORY.get(config));
+        final Path cacheDirectory = baseDirectory.resolve(config.cacheDirectory());
         final String partitionName = String.format("%s-%d", topicName, partitionId);
         final Path directory = cacheDirectory.resolve(clusterName).resolve(partitionName);
 

@@ -41,12 +41,12 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
     protected KafkaCacheSegment(
         MutableDirectBuffer writeBuffer,
         Path directory,
-        int messagesCapacity,
+        int logCapacity,
         int indexCapacity)
     {
         this.writeBuffer = writeBuffer;
         this.directory = directory;
-        this.logCapacity = messagesCapacity;
+        this.logCapacity = logCapacity;
         this.indexCapacity = indexCapacity;
     }
 
@@ -97,7 +97,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
     public int compareTo(
         KafkaCacheSegment that)
     {
-        return (int)(baseOffset() - that.baseOffset());
+        return Long.compare(baseOffset(), that.baseOffset());
     }
 
     @Override
@@ -113,6 +113,12 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         return this == obj ||
                 (obj instanceof KafkaCacheSegment &&
                  equalTo((KafkaCacheSegment) obj));
+    }
+
+    @Override
+    public String toString()
+    {
+        return String.format("%s %d", getClass().getSimpleName(), baseOffset());
     }
 
     public KafkaCacheSegment.Data nextSegment()
@@ -134,6 +140,11 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
 
     public abstract long baseOffset();
 
+    public long nextOffset()
+    {
+        return baseOffset();
+    }
+
     public boolean log(
         DirectBuffer buffer,
         int index,
@@ -150,18 +161,24 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         return false;
     }
 
+    public void nextOffset(
+        long nextOffset)
+    {
+        throw new UnsupportedOperationException();
+    }
+
     protected abstract DirectBuffer log();
 
     protected abstract DirectBuffer index();
 
-    protected int logCapacity()
+    protected int logRemaining()
     {
-        return logCapacity;
+        return logCapacity - log().capacity();
     }
 
-    protected int indexCapacity()
+    protected int indexRemaining()
     {
-        return indexCapacity;
+        return indexCapacity - index().capacity();
     }
 
     private boolean equalTo(
@@ -207,9 +224,11 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
     public static final class Sentinel extends KafkaCacheSegment
     {
         public Sentinel(
-            Path directory)
+            Path directory,
+            int maxLogCapacity,
+            int maxIndexCapacity)
         {
-            super(new UnsafeBuffer(allocateDirect(64 * 1024)), directory, 0, 0); // TODO: configure
+            super(new UnsafeBuffer(allocateDirect(64 * 1024)), directory, maxLogCapacity, maxIndexCapacity); // TODO: configure
         }
 
         @Override
@@ -229,6 +248,18 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         {
             return EMPTY_BUFFER;
         }
+
+        @Override
+        protected int logRemaining()
+        {
+            return 0;
+        }
+
+        @Override
+        protected int indexRemaining()
+        {
+            return 0;
+        }
     }
 
     public static final class Data extends KafkaCacheSegment
@@ -236,6 +267,8 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         private final long baseOffset;
         private final KafkaCacheFile logFile;
         private final KafkaCacheFile indexFile;
+
+        private volatile long nextOffset;
 
         private Data(
             MutableDirectBuffer writeBuffer,
@@ -250,10 +283,22 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
             this.indexFile = new KafkaCacheFile(writeBuffer, directory, "index", baseOffset, indexCapacity);
         }
 
+        public void nextOffset(
+            long nextOffset)
+        {
+            this.nextOffset = nextOffset;
+        }
+
         @Override
         public long baseOffset()
         {
             return baseOffset;
+        }
+
+        @Override
+        public long nextOffset()
+        {
+            return nextOffset;
         }
 
         @Override

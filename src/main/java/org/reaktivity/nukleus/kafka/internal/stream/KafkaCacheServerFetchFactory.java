@@ -351,7 +351,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             this.authorization = authorization;
             this.topic = topic;
             this.partition = partition;
-            this.progressOffset = partition.nextOffset();
+            this.progressOffset = partition.seek(Long.MAX_VALUE).nextOffset();
             this.members = new ArrayList<>();
         }
 
