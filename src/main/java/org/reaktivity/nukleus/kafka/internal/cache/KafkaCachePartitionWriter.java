@@ -15,14 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.NavigableMap;
-import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.Objects;
 
-import org.agrona.LangUtil;
-import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
@@ -30,21 +24,16 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public final class KafkaCachePartitionWriter
 {
-    private final Path path;
-    private final int segmentBytes;
     private final int partitionId;
-    private final NavigableMap<Integer, KafkaCacheSegment> segmentsByOffset;
 
-    KafkaCachePartitionWriter(
-        KafkaConfiguration config,
-        String clusterName,
-        String topicName,
-        int partitionId)
+    private KafkaCacheSegment segment;
+
+    public KafkaCachePartitionWriter(
+        int partitionId,
+        KafkaCacheSegment segment)
     {
-        this.path = initDirectory(config.cacheDirectory(), clusterName, topicName, partitionId);
-        this.segmentBytes = config.cacheSegmentBytes();
         this.partitionId = partitionId;
-        this.segmentsByOffset = new ConcurrentSkipListMap<>();
+        this.segment = Objects.requireNonNull(segment);
     }
 
     public int id()
@@ -87,26 +76,5 @@ public final class KafkaCachePartitionWriter
         long offset)
     {
         // append headers to partition cache
-    }
-
-    static Path initDirectory(
-        Path cacheDirectory,
-        String clusterName,
-        String topicName,
-        int partitionId)
-    {
-        final String partitionName = String.format("%s-%d", topicName, partitionId);
-        final Path directory = cacheDirectory.resolve(clusterName).resolve(partitionName);
-
-        try
-        {
-            Files.createDirectories(directory);
-        }
-        catch (IOException ex)
-        {
-            LangUtil.rethrowUnchecked(ex);
-        }
-
-        return directory;
     }
 }

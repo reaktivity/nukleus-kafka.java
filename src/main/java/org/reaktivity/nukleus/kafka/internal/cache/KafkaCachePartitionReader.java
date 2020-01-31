@@ -15,39 +15,27 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegment.END_OF_SEGMENT;
+import static java.util.Collections.singleton;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.NavigableSet;
 import java.util.TreeSet;
 
-import org.agrona.LangUtil;
-import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
-import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
-
 public final class KafkaCachePartitionReader
 {
-    private final Path directory;
-    private final int segmentBytes;
+    private final KafkaCacheSegment.Candidate candidate = new KafkaCacheSegment.Candidate();
+
     private final int partitionId;
     private final NavigableSet<KafkaCacheSegment> segments;
 
-    private long progressOffset;
-    private KafkaCacheSegment progressSegment;
+    private KafkaCacheSegment latest;
 
     KafkaCachePartitionReader(
-        KafkaConfiguration config,
-        String clusterName,
-        String topicName,
-        int partitionId)
+        int partitionId,
+        KafkaCacheSegment segment)
     {
-        this.directory = initDirectory(config.cacheDirectory(), clusterName, topicName, partitionId);
-        this.segmentBytes = config.cacheSegmentBytes();
         this.partitionId = partitionId;
-        this.segments = new TreeSet<>();
-        this.progressOffset = -2L; // EARLIEST
+        this.segments = new TreeSet<>(singleton(segment));
+        this.latest = segment;
     }
 
     public int id()
@@ -55,106 +43,18 @@ public final class KafkaCachePartitionReader
         return partitionId;
     }
 
-    public long progressOffset()
+    public KafkaCacheSegment seek(
+        long offset)
     {
-        return progressOffset;
-    }
-
-    public KafkaCacheEntryFW readEntry(
-        long nextOffset)
-    {
-        KafkaCacheEntryFW entry = null;
-
-        int position = END_OF_SEGMENT;
-        if (progressSegment != null)
+        KafkaCacheSegment nextSegment = latest.nextSegment();
+        while (nextSegment != null)
         {
-            position = progressSegment.position(nextOffset);
-            if (position >= 0)
-            {
-                entry = progressSegment.entryAt(position);
-            }
+            segments.add(nextSegment);
+            latest = nextSegment;
+            nextSegment = latest.nextSegment();
         }
 
-        if (position == END_OF_SEGMENT)
-        {
-            KafkaCacheSegment nextSegment = nextSegment();
-
-            if (nextSegment == null)
-            {
-                try
-                {
-                    Files.list(directory)
-                         .filter(Files::isRegularFile)
-                         .filter(Files::isReadable)
-                         .map(Path::toString)
-                         .filter(n -> n.endsWith(".log"))
-                         .map(n -> n.substring(0, n.length() - ".log".length()))
-                         .mapToInt(n -> Integer.parseInt(n, 16))
-                         .filter(o -> o > progressOffset)
-                         .forEach(this::initSegment);
-                }
-                catch (IOException ex)
-                {
-                    LangUtil.rethrowUnchecked(ex);
-                }
-
-                nextSegment = nextSegment();
-            }
-
-            if (nextSegment != null)
-            {
-                progressSegment = nextSegment;
-            }
-        }
-
-        if (entry != null)
-        {
-            progressOffset = entry.offset$() + 1;
-        }
-
-        return entry;
-    }
-
-    private KafkaCacheSegment nextSegment()
-    {
-        KafkaCacheSegment nextSegment = null;
-
-        if (progressSegment != null)
-        {
-            nextSegment = segments.higher(progressSegment);
-        }
-        else if (!segments.isEmpty())
-        {
-            nextSegment = segments.first();
-        }
-
-        return nextSegment;
-    }
-
-    private KafkaCacheSegment initSegment(
-        int baseOffset)
-    {
-        return new KafkaCacheSegment(directory, baseOffset, segmentBytes);
-    }
-
-    static Path initDirectory(
-        Path cacheDirectory,
-        String clusterName,
-        String topicName,
-        int partitionId)
-    {
-        final String partitionName = String.format("%s-%d", topicName, partitionId);
-        final Path directory = cacheDirectory.resolve(clusterName).resolve(partitionName);
-
-        try
-        {
-            Files.createDirectories(directory);
-        }
-        catch (IOException ex)
-        {
-            LangUtil.rethrowUnchecked(ex);
-        }
-
-        return directory;
+        candidate.baseOffset(offset);
+        return segments.floor(candidate);
     }
 }

@@ -15,27 +15,25 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
-import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 
 public final class KafkaCacheBrokerWriter
 {
-    private final KafkaConfiguration config;
     private final String clusterName;
     private final long brokerId;
+    private final KafkaCacheSegmentSupplier segmentSupplier;
     private final Map<String, KafkaCacheTopicWriter> topicsByName;
 
     KafkaCacheBrokerWriter(
-        KafkaConfiguration config,
         String clusterName,
-        long brokerId)
+        long brokerId,
+        KafkaCacheSegmentSupplier segmentSupplier)
     {
-        this.config = config;
         this.clusterName = clusterName;
         this.brokerId = brokerId;
-        this.topicsByName = new ConcurrentHashMap<>();
+        this.segmentSupplier = segmentSupplier;
+        this.topicsByName = new LinkedHashMap<>();
     }
 
     public long brokerId()
@@ -52,6 +50,6 @@ public final class KafkaCacheBrokerWriter
     private KafkaCacheTopicWriter newTopic(
         String topicName)
     {
-        return new KafkaCacheTopicWriter(config, clusterName, topicName);
+        return new KafkaCacheTopicWriter(clusterName, topicName, segmentSupplier);
     }
 }

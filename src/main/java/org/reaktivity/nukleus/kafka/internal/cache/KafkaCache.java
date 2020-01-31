@@ -15,6 +15,13 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+import org.agrona.LangUtil;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 
@@ -23,20 +30,56 @@ public final class KafkaCache
     public static final String TYPE_NAME = String.format("%s/cache", KafkaNukleus.NAME);
 
     private final KafkaConfiguration config;
+    private final Map<String, Map<String, Map<Integer, KafkaCacheSegment>>> segmentsByClusterTopicPartition;
 
     public KafkaCache(
         KafkaConfiguration config)
     {
         this.config = config;
+        this.segmentsByClusterTopicPartition = new ConcurrentHashMap<>();
     }
 
     public KafkaCacheReader newReader()
     {
-        return new KafkaCacheReader(config);
+        return new KafkaCacheReader(this::supplySegment);
     }
 
     public KafkaCacheWriter newWriter()
     {
-        return new KafkaCacheWriter(config);
+        return new KafkaCacheWriter(this::supplySegment);
+    }
+
+    private KafkaCacheSegment supplySegment(
+        String clusterName,
+        String topicName,
+        int partitionId)
+    {
+        final Map<String, Map<Integer, KafkaCacheSegment>> segmentsByTopicPartition =
+                segmentsByClusterTopicPartition.computeIfAbsent(clusterName, c -> new ConcurrentHashMap<>());
+        final Map<Integer, KafkaCacheSegment> segmentsByPartition =
+                segmentsByTopicPartition.computeIfAbsent(topicName, t -> new ConcurrentHashMap<>());
+        return segmentsByPartition.computeIfAbsent(partitionId,
+            p -> new KafkaCacheSegment.Sentinel(initDirectory(clusterName, topicName, partitionId)));
+    }
+
+    private Path initDirectory(
+        String clusterName,
+        String topicName,
+        int partitionId)
+    {
+        final Path cacheDirectory = config.cacheDirectory();
+        final String partitionName = String.format("%s-%d", topicName, partitionId);
+        final Path directory = cacheDirectory.resolve(clusterName).resolve(partitionName);
+
+        try
+        {
+            Files.createDirectories(directory);
+        }
+        catch (IOException ex)
+        {
+            LangUtil.rethrowUnchecked(ex);
+        }
+
+        return directory;
     }
 }

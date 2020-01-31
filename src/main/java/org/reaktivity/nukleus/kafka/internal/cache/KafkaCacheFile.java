@@ -21,10 +21,10 @@ import static java.nio.file.StandardOpenOption.READ;
 import static java.nio.file.StandardOpenOption.WRITE;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
-import java.nio.channels.WritableByteChannel;
 import java.nio.file.Path;
 
 import org.agrona.DirectBuffer;
@@ -37,15 +37,17 @@ public final class KafkaCacheFile
     private final FileChannel writable;
     private final DirectBuffer readableBuf;
 
+    private volatile int capacity;
+
     KafkaCacheFile(
         Path directory,
         String extension,
-        int offset,
+        long offset,
         int capacity)
     {
-        final Path file = directory.resolve(String.format("%08x.%s", offset, extension));
+        final Path file = directory.resolve(String.format("%016x.%s", offset, extension));
         this.readableByteBuf = readInit(file, capacity);
-        this.readableBuf = new UnsafeBuffer(readableByteBuf);
+        this.readableBuf = new UnsafeBuffer(0, 0);
         this.writable = writeInit(file);
     }
 
@@ -54,9 +56,11 @@ public final class KafkaCacheFile
         return readableBuf;
     }
 
-    WritableByteChannel writable()
+    void write(
+        ByteBuffer data) throws IOException
     {
-        return writable;
+        this.capacity += writable.write(data);
+        this.readableBuf.wrap(readableByteBuf, 0, capacity);
     }
 
     private static MappedByteBuffer readInit(

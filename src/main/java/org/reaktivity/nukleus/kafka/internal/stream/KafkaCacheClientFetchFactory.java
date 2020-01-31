@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegment.END_OF_SEGMENT;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -40,6 +41,7 @@ import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheClusterReader;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionReader;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheReader;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegment;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicReader;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheWriter;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
@@ -101,6 +103,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
     private final KafkaCacheBeginExFW.Builder kafkaCacheBeginExRW = new KafkaCacheBeginExFW.Builder();
 
     private final MessageFunction<RouteFW> wrapRoute = (t, b, i, l) -> routeRO.wrap(b, i, i + l);
+
+    private final KafkaCacheEntryFW entryRO = new KafkaCacheEntryFW();
 
     private final int kafkaTypeId;
     private final int kafkaCacheTypeId;
@@ -374,7 +378,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.authorization = authorization;
             this.topic = topic;
             this.partition = partition;
-            this.progressOffset = partition.progressOffset();
+            this.progressOffset = partition.seek(Long.MAX_VALUE).baseOffset();
             this.members = new ArrayList<>();
         }
 
@@ -640,6 +644,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private int replyBudget;
         private int replyPadding;
 
+        private KafkaCacheSegment currentSegment;
         private long progressOffset;
         private int messageOffset;
 
@@ -809,9 +814,23 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void doClientReplyData(
             long traceId)
         {
-            final KafkaCacheEntryFW entry = group.partition.readEntry(progressOffset);
-            if (entry != null)
+            assert currentSegment != null;
+
+            int position = currentSegment.position(progressOffset);
+            while (position == END_OF_SEGMENT)
             {
+                final KafkaCacheSegment nextSegment = currentSegment.nextSegment();
+                if (nextSegment == null)
+                {
+                    break;
+                }
+
+                currentSegment = nextSegment;
+            }
+
+            if (position >= 0)
+            {
+                final KafkaCacheEntryFW entry = currentSegment.read(position, entryRO);
                 final long partitionOffset = entry.offset$();
                 final long timestamp = entry.timestamp();
                 final KafkaCacheKeyFW key = entry.key();
@@ -851,7 +870,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     }
 
                     final int partitionId = group.partition.id();
-                    final long progressOffset = partitionOffset + 1;
+                    final long nextOffset = partitionOffset + 1;
                     switch (flags)
                     {
                     case FLAG_INIT | FLAG_FIN:
@@ -864,7 +883,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                                                  .headers(hs -> headers.forEach(h -> hs.item(i -> i.name(h.name())
                                                                                                    .value(h.value()))))
                                                  .progressItem(pi -> pi.partitionId(partitionId)
-                                                                       .offset$(progressOffset)))
+                                                                       .offset$(nextOffset)))
                                     .build()
                                     .sizeof()));
                         break;
@@ -891,7 +910,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                                     .fetch(f -> f.headers(hs -> headers.forEach(h -> hs.item(i -> i.name(h.name())
                                                                                                    .value(h.value()))))
                                                  .progressItem(pi -> pi.partitionId(partitionId)
-                                                                       .offset$(progressOffset)))
+                                                                       .offset$(nextOffset)))
                                     .build()
                                     .sizeof()));
                         break;
@@ -903,8 +922,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     }
                     else
                     {
+                        this.progressOffset = nextOffset;
                         this.messageOffset = 0;
-                        this.progressOffset = progressOffset;
                     }
                 }
             }
@@ -964,6 +983,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     replyDebitor = supplyDebitor.apply(replyBudgetId);
                     replyDebitorIndex = replyDebitor.acquire(replyBudgetId, replyId, this::doClientReplyDataIfNecessary);
                 }
+
+                currentSegment = group.partition.seek(progressOffset);
 
                 final long traceId = window.traceId();
                 group.onClientFanoutMemberOpened(traceId, this);
