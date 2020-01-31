@@ -24,14 +24,18 @@ import java.io.IOException;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
+import java.nio.channels.WritableByteChannel;
 import java.nio.file.Path;
 
+import org.agrona.DirectBuffer;
 import org.agrona.LangUtil;
+import org.agrona.concurrent.UnsafeBuffer;
 
 public final class KafkaCacheFile
 {
-    private final MappedByteBuffer readable;
+    private final MappedByteBuffer readableByteBuf;
     private final FileChannel writable;
+    private final DirectBuffer readableBuf;
 
     KafkaCacheFile(
         Path directory,
@@ -40,8 +44,19 @@ public final class KafkaCacheFile
         int capacity)
     {
         final Path file = directory.resolve(String.format("%08x.%s", offset, extension));
-        this.readable = readInit(file, capacity);
+        this.readableByteBuf = readInit(file, capacity);
+        this.readableBuf = new UnsafeBuffer(readableByteBuf);
         this.writable = writeInit(file);
+    }
+
+    DirectBuffer readable()
+    {
+        return readableBuf;
+    }
+
+    WritableByteChannel writable()
+    {
+        return writable;
     }
 
     private static MappedByteBuffer readInit(

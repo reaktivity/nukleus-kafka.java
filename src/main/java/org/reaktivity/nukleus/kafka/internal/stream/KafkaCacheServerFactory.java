@@ -28,7 +28,7 @@ import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheWriter;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
@@ -51,7 +51,7 @@ public final class KafkaCacheServerFactory implements StreamFactory
 
     KafkaCacheServerFactory(
         KafkaConfiguration config,
-        KafkaCache cache,
+        KafkaCacheWriter cache,
         RouteManager router,
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
@@ -77,7 +77,7 @@ public final class KafkaCacheServerFactory implements StreamFactory
                 supplyTraceId, supplyTypeId, supplyCacheRoute, correlations));
 
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
-        this.kafkaCacheTypeId = supplyTypeId.applyAsInt(KafkaCache.TYPE_NAME);
+        this.kafkaCacheTypeId = supplyTypeId.applyAsInt(KafkaCacheWriter.TYPE_NAME);
         this.correlations = correlations;
         this.streamFactoriesByKind = streamFactoriesByKind;
     }

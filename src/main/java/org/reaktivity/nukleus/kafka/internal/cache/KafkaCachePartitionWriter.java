@@ -18,11 +18,8 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Map;
 import java.util.NavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.function.LongPredicate;
-import java.util.function.LongSupplier;
 
 import org.agrona.LangUtil;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
@@ -30,18 +27,15 @@ import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
-import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 
-public final class KafkaCachePartition
+public final class KafkaCachePartitionWriter
 {
     private final Path path;
     private final int segmentBytes;
     private final int partitionId;
     private final NavigableMap<Integer, KafkaCacheSegment> segmentsByOffset;
 
-    private LongSupplier progressOffset;
-
-    public KafkaCachePartition(
+    public KafkaCachePartitionWriter(
         KafkaConfiguration config,
         String clusterName,
         String topicName,
@@ -51,9 +45,6 @@ public final class KafkaCachePartition
         this.segmentBytes = config.cacheSegmentBytes();
         this.partitionId = partitionId;
         this.segmentsByOffset = new ConcurrentSkipListMap<>();
-
-        // TODO: sync with file system to progress
-        this.progressOffset = () -> -2; // EARLIEST
     }
 
     public int id()
@@ -63,22 +54,7 @@ public final class KafkaCachePartition
 
     public long progressOffset()
     {
-        return progressOffset.getAsLong();
-    }
-
-    public KafkaCacheEntryFW readEntry(
-        long nextOffset)
-    {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    public KafkaCacheEntryFW readEntry(
-        long nextOffset,
-        LongPredicate filter)
-    {
-        // TODO Auto-generated method stub
-        return null;
+        return -2; // EARLIEST, TODO
     }
 
     public void writeEntry(
@@ -111,31 +87,6 @@ public final class KafkaCachePartition
         long offset)
     {
         // append headers to partition cache
-    }
-
-    private KafkaCacheSegment seekSegment(
-        int offset)
-    {
-        Map.Entry<Integer, KafkaCacheSegment> entry = segmentsByOffset.floorEntry(offset);
-        if (entry == null)
-        {
-            entry = segmentsByOffset.firstEntry();
-        }
-
-        assert entry != null;
-
-        return entry.getValue();
-    }
-
-    private KafkaCacheSegment nextSegment(
-        int offset)
-    {
-        assert segmentsByOffset.isEmpty() || offset > segmentsByOffset.lastKey();
-
-        final KafkaCacheSegment segment = new KafkaCacheSegment(path, offset, segmentBytes);
-        segmentsByOffset.put(offset, segment);
-
-        return segment;
     }
 
     static Path initDirectory(

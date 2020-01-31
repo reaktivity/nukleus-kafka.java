@@ -15,28 +15,35 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
-import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 
-public final class KafkaCache
+public final class KafkaCacheClusterReader
 {
-    public static final String TYPE_NAME = String.format("%s/cache", KafkaNukleus.NAME);
-
     private final KafkaConfiguration config;
+    private final String clusterName;
+    private final Map<String, KafkaCacheTopicReader> topicsByName;
 
-    public KafkaCache(
-        KafkaConfiguration config)
+    public KafkaCacheClusterReader(
+        KafkaConfiguration config,
+        String clusterName)
     {
         this.config = config;
+        this.clusterName = clusterName;
+        this.topicsByName = new LinkedHashMap<>();
     }
 
-    public KafkaCacheReader newReader()
+    public KafkaCacheTopicReader supplyTopic(
+        String topicName)
     {
-        return new KafkaCacheReader(config);
+        return topicsByName.computeIfAbsent(topicName, this::newTopic);
     }
 
-    public KafkaCacheWriter newWriter()
+    private KafkaCacheTopicReader newTopic(
+        String topicName)
     {
-        return new KafkaCacheWriter(config);
+        return new KafkaCacheTopicReader(config, clusterName, topicName);
     }
 }

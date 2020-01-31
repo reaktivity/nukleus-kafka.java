@@ -27,6 +27,7 @@ import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheReader;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
@@ -34,7 +35,7 @@ import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 public final class KafkaCacheClientFactoryBuilder implements StreamFactoryBuilder
 {
     private final KafkaConfiguration config;
-    private final KafkaCache cache;
+    private final KafkaCacheReader cache;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
 
     private RouteManager router;
@@ -54,7 +55,7 @@ public final class KafkaCacheClientFactoryBuilder implements StreamFactoryBuilde
         LongFunction<KafkaCacheRoute> supplyCacheRoute)
     {
         this.config = config;
-        this.cache = cache;
+        this.cache = cache.newReader();
         this.supplyCacheRoute = supplyCacheRoute;
     }
 

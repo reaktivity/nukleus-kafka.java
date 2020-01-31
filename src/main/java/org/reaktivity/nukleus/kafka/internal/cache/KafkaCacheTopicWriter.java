@@ -15,28 +15,41 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import org.agrona.collections.Int2ObjectHashMap;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
-import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 
-public final class KafkaCache
+public final class KafkaCacheTopicWriter
 {
-    public static final String TYPE_NAME = String.format("%s/cache", KafkaNukleus.NAME);
-
     private final KafkaConfiguration config;
+    private final String clusterName;
+    private final String topicName;
+    private final Int2ObjectHashMap<KafkaCachePartitionWriter> partitionsById;
 
-    public KafkaCache(
-        KafkaConfiguration config)
+    KafkaCacheTopicWriter(
+        KafkaConfiguration config,
+        String clusterName,
+        String topicName)
     {
         this.config = config;
+        this.clusterName = clusterName;
+        this.topicName = topicName;
+        this.partitionsById = new Int2ObjectHashMap<>();
     }
 
-    public KafkaCacheReader newReader()
+    public String name()
     {
-        return new KafkaCacheReader(config);
+        return topicName;
     }
 
-    public KafkaCacheWriter newWriter()
+    public KafkaCachePartitionWriter supplyPartition(
+        int partitionId)
     {
-        return new KafkaCacheWriter(config);
+        return partitionsById.computeIfAbsent(partitionId, this::newPartition);
+    }
+
+    private KafkaCachePartitionWriter newPartition(
+        int partitionId)
+    {
+        return new KafkaCachePartitionWriter(config, clusterName, topicName, partitionId);
     }
 }

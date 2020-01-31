@@ -42,6 +42,7 @@ final class KafkaElektron implements Elektron
         KafkaCache cache)
     {
         this.cacheRoutesById = new Long2ObjectHashMap<>();
+
         Map<RouteKind, StreamFactoryBuilder> streamFactoryBuilders = new EnumMap<>(RouteKind.class);
         streamFactoryBuilders.put(CLIENT, new KafkaClientFactoryBuilder(config));
         streamFactoryBuilders.put(CACHE_SERVER, new KafkaCacheServerFactoryBuilder(config, cache, this::supplyCacheRoute));

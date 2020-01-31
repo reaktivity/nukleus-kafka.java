@@ -33,11 +33,11 @@ import org.reaktivity.nukleus.function.MessageFunction;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheBroker;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCluster;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopic;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheBrokerWriter;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheClusterWriter;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionWriter;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicWriter;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheWriter;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
@@ -98,7 +98,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
     private final int kafkaTypeId;
     private final int kafkaCacheTypeId;
-    private final KafkaCache cache;
+    private final KafkaCacheWriter cache;
     private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
     private final BufferPool bufferPool;
@@ -109,7 +109,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
     public KafkaCacheServerFetchFactory(
         KafkaConfiguration config,
-        KafkaCache cache,
+        KafkaCacheWriter cache,
         RouteManager router,
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
@@ -121,7 +121,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         Long2ObjectHashMap<MessageConsumer> correlations)
     {
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
-        this.kafkaCacheTypeId = supplyTypeId.applyAsInt(KafkaCache.TYPE_NAME);
+        this.kafkaCacheTypeId = supplyTypeId.applyAsInt(KafkaCacheWriter.TYPE_NAME);
         this.cache = cache;
         this.router = router;
         this.writeBuffer = writeBuffer;
@@ -178,10 +178,10 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             if (fanout == null)
             {
                 final String clusterName = route.localAddress().asString();
-                final KafkaCacheCluster cluster = cache.supplyCluster(clusterName);
-                final KafkaCacheBroker broker = cluster.supplyBroker(affinity);
-                final KafkaCacheTopic topic = broker.supplyTopic(topicName);
-                final KafkaCachePartition partition = topic.supplyPartition(partitionId);
+                final KafkaCacheClusterWriter cluster = cache.supplyCluster(clusterName);
+                final KafkaCacheBrokerWriter broker = cluster.supplyBroker(affinity);
+                final KafkaCacheTopicWriter topic = broker.supplyTopic(topicName);
+                final KafkaCachePartitionWriter partition = topic.supplyPartition(partitionId);
                 final KafkaCacheServerFetchFanout newFanout =
                         new KafkaCacheServerFetchFanout(resolvedId, authorization, topic, partition);
 
@@ -329,8 +329,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
     {
         private final long routeId;
         private final long authorization;
-        private final KafkaCacheTopic topic;
-        private final KafkaCachePartition partition;
+        private final KafkaCacheTopicWriter topic;
+        private final KafkaCachePartitionWriter partition;
         private final List<KafkaCacheServerFetchStream> members;
 
         private long initialId;
@@ -344,8 +344,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         private KafkaCacheServerFetchFanout(
             long routeId,
             long authorization,
-            KafkaCacheTopic topic,
-            KafkaCachePartition partition)
+            KafkaCacheTopicWriter topic,
+            KafkaCachePartitionWriter partition)
         {
             this.routeId = routeId;
             this.authorization = authorization;

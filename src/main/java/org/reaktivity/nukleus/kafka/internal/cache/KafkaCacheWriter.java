@@ -19,39 +19,31 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
+import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 
-public final class KafkaCacheTopic
+public final class KafkaCacheWriter
 {
-    private final KafkaConfiguration config;
-    private final String clusterName;
-    private final String topicName;
-    private final Map<Integer, KafkaCachePartition> partitionsById;
+    public static final String TYPE_NAME = String.format("%s/cache", KafkaNukleus.NAME);
 
-    KafkaCacheTopic(
-        KafkaConfiguration config,
-        String clusterName,
-        String topicName)
+    private final KafkaConfiguration config;
+    private final Map<String, KafkaCacheClusterWriter> clustersByName;
+
+    public KafkaCacheWriter(
+        KafkaConfiguration config)
     {
         this.config = config;
-        this.clusterName = clusterName;
-        this.topicName = topicName;
-        this.partitionsById = new ConcurrentHashMap<>();
+        this.clustersByName = new ConcurrentHashMap<>();
     }
 
-    public String name()
+    public KafkaCacheClusterWriter supplyCluster(
+        String clusterName)
     {
-        return topicName;
+        return clustersByName.computeIfAbsent(clusterName, this::newCluster);
     }
 
-    public KafkaCachePartition supplyPartition(
-        int partitionId)
+    private KafkaCacheClusterWriter newCluster(
+        String clusterName)
     {
-        return partitionsById.computeIfAbsent(partitionId, this::newPartition);
-    }
-
-    private KafkaCachePartition newPartition(
-        int partitionId)
-    {
-        return new KafkaCachePartition(config, clusterName, topicName, partitionId);
+        return new KafkaCacheClusterWriter(config, clusterName);
     }
 }

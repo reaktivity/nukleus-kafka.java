@@ -37,10 +37,11 @@ import org.reaktivity.nukleus.function.MessageFunction;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCluster;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopic;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheClusterReader;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionReader;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheReader;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicReader;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheWriter;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW;
@@ -103,7 +104,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
     private final int kafkaTypeId;
     private final int kafkaCacheTypeId;
-    private final KafkaCache cache;
+    private final KafkaCacheReader cacheReader;
     private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
     private final BufferPool bufferPool;
@@ -115,7 +116,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
     public KafkaCacheClientFetchFactory(
         KafkaConfiguration config,
-        KafkaCache cache,
+        KafkaCacheReader cacheReader,
         RouteManager router,
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
@@ -128,8 +129,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         Long2ObjectHashMap<MessageConsumer> correlations)
     {
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
-        this.kafkaCacheTypeId = supplyTypeId.applyAsInt(KafkaCache.TYPE_NAME);
-        this.cache = cache;
+        this.kafkaCacheTypeId = supplyTypeId.applyAsInt(KafkaCacheWriter.TYPE_NAME);
+        this.cacheReader = cacheReader;
         this.router = router;
         this.writeBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
         this.bufferPool = bufferPool;
@@ -194,9 +195,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 if (fanout == null)
                 {
                     final String clusterName = route.remoteAddress().asString();
-                    final KafkaCacheCluster cluster = cache.supplyCluster(clusterName);
-                    final KafkaCacheTopic topic = cluster.supplyTopic(topicName);
-                    final KafkaCachePartition partition = topic.supplyPartition(partitionId);
+                    final KafkaCacheClusterReader cluster = cacheReader.supplyCluster(clusterName);
+                    final KafkaCacheTopicReader topic = cluster.supplyTopic(topicName);
+                    final KafkaCachePartitionReader partition = topic.supplyPartition(partitionId);
                     final KafkaCacheClientFetchFanout newFanout =
                             new KafkaCacheClientFetchFanout(resolvedId, authorization, topic, partition);
 
@@ -351,8 +352,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
     {
         private final long routeId;
         private final long authorization;
-        private final KafkaCacheTopic topic;
-        private final KafkaCachePartition partition;
+        private final KafkaCacheTopicReader topic;
+        private final KafkaCachePartitionReader partition;
         private final List<KafkaCacheClientFetchStream> members;
 
         private long initialId;
@@ -366,8 +367,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private KafkaCacheClientFetchFanout(
             long routeId,
             long authorization,
-            KafkaCacheTopic topic,
-            KafkaCachePartition partition)
+            KafkaCacheTopicReader topic,
+            KafkaCachePartitionReader partition)
         {
             this.routeId = routeId;
             this.authorization = authorization;

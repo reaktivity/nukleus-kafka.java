@@ -15,28 +15,43 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
-import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 
-public final class KafkaCache
+public final class KafkaCacheBrokerWriter
 {
-    public static final String TYPE_NAME = String.format("%s/cache", KafkaNukleus.NAME);
-
     private final KafkaConfiguration config;
+    private final String clusterName;
+    private final long brokerId;
+    private final Map<String, KafkaCacheTopicWriter> topicsByName;
 
-    public KafkaCache(
-        KafkaConfiguration config)
+    KafkaCacheBrokerWriter(
+        KafkaConfiguration config,
+        String clusterName,
+        long brokerId)
     {
         this.config = config;
+        this.clusterName = clusterName;
+        this.brokerId = brokerId;
+        this.topicsByName = new ConcurrentHashMap<>();
     }
 
-    public KafkaCacheReader newReader()
+    public long brokerId()
     {
-        return new KafkaCacheReader(config);
+        return brokerId;
     }
 
-    public KafkaCacheWriter newWriter()
+    public KafkaCacheTopicWriter supplyTopic(
+        String topicName)
     {
-        return new KafkaCacheWriter(config);
+        return topicsByName.computeIfAbsent(topicName, this::newTopic);
+    }
+
+    private KafkaCacheTopicWriter newTopic(
+        String topicName)
+    {
+        return new KafkaCacheTopicWriter(config, clusterName, topicName);
     }
 }

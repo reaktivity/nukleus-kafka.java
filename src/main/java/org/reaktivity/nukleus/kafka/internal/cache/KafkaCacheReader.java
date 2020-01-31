@@ -15,43 +15,32 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 
-public final class KafkaCacheBroker
+public final class KafkaCacheReader
 {
     private final KafkaConfiguration config;
-    private final String clusterName;
-    private final long brokerId;
-    private final Map<String, KafkaCacheTopic> topicsByName;
+    private final Map<String, KafkaCacheClusterReader> clustersByName;
 
-    KafkaCacheBroker(
-        KafkaConfiguration config,
-        String clusterName,
-        long brokerId)
+    KafkaCacheReader(
+        KafkaConfiguration config)
     {
         this.config = config;
-        this.clusterName = clusterName;
-        this.brokerId = brokerId;
-        this.topicsByName = new ConcurrentHashMap<>();
+        this.clustersByName = new LinkedHashMap<>();
     }
 
-    public long brokerId()
+    public KafkaCacheClusterReader supplyCluster(
+        String clusterName)
     {
-        return brokerId;
+        return clustersByName.computeIfAbsent(clusterName, this::newCluster);
     }
 
-    public KafkaCacheTopic supplyTopic(
-        String topicName)
+    private KafkaCacheClusterReader newCluster(
+        String clusterName)
     {
-        return topicsByName.computeIfAbsent(topicName, this::newTopic);
-    }
-
-    private KafkaCacheTopic newTopic(
-        String topicName)
-    {
-        return new KafkaCacheTopic(config, clusterName, topicName);
+        return new KafkaCacheClusterReader(config, clusterName);
     }
 }

@@ -31,7 +31,7 @@ import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.budget.KafkaMergedBudgetAccountant;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheReader;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ExtensionFW;
@@ -51,7 +51,7 @@ public final class KafkaCacheClientFactory implements StreamFactory
 
     KafkaCacheClientFactory(
         KafkaConfiguration config,
-        KafkaCache cache,
+        KafkaCacheReader cacheReader,
         RouteManager router,
         Signaler signaler,
         MutableDirectBuffer writeBuffer,
@@ -76,7 +76,7 @@ public final class KafkaCacheClientFactory implements StreamFactory
                 supplyTraceId, supplyTypeId, supplyCacheRoute, correlations);
 
         final KafkaCacheClientFetchFactory cacheFetchFactory = new KafkaCacheClientFetchFactory(
-                config, cache, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
+                config, cacheReader, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
                 supplyTraceId, supplyTypeId, accountant::supplyDebitor, supplyCacheRoute, correlations);
 
         final KafkaMergedFetchFactory mergedCacheFetchFactory = new KafkaMergedFetchFactory(
