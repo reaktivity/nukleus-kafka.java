@@ -37,7 +37,7 @@ public final class KafkaCachePartitionReader
     private long progressOffset;
     private KafkaCacheSegment progressSegment;
 
-    public KafkaCachePartitionReader(
+    KafkaCachePartitionReader(
         KafkaConfiguration config,
         String clusterName,
         String topicName,

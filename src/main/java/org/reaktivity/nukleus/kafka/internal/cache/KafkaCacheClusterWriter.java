@@ -27,7 +27,7 @@ public final class KafkaCacheClusterWriter
     private final Map<Long, KafkaCacheBrokerWriter> brokersById;
     private final Map<String, KafkaCacheTopicWriter> topicsByName;
 
-    public KafkaCacheClusterWriter(
+    KafkaCacheClusterWriter(
         KafkaConfiguration config,
         String clusterName)
     {

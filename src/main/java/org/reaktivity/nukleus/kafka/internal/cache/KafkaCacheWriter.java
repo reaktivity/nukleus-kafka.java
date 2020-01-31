@@ -28,7 +28,7 @@ public final class KafkaCacheWriter
     private final KafkaConfiguration config;
     private final Map<String, KafkaCacheClusterWriter> clustersByName;
 
-    public KafkaCacheWriter(
+    KafkaCacheWriter(
         KafkaConfiguration config)
     {
         this.config = config;

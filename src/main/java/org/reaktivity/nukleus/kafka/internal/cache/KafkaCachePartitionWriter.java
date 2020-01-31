@@ -35,7 +35,7 @@ public final class KafkaCachePartitionWriter
     private final int partitionId;
     private final NavigableMap<Integer, KafkaCacheSegment> segmentsByOffset;
 
-    public KafkaCachePartitionWriter(
+    KafkaCachePartitionWriter(
         KafkaConfiguration config,
         String clusterName,
         String topicName,

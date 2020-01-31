@@ -26,7 +26,7 @@ public final class KafkaCacheClusterReader
     private final String clusterName;
     private final Map<String, KafkaCacheTopicReader> topicsByName;
 
-    public KafkaCacheClusterReader(
+    KafkaCacheClusterReader(
         KafkaConfiguration config,
         String clusterName)
     {
