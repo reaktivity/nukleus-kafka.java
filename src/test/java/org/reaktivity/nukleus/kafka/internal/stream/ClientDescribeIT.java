@@ -17,7 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_META_MAX_AGE;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_DESCRIBE_MAX_AGE;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_READ_IDLE_TIMEOUT;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
@@ -31,12 +31,12 @@ import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
-public class MetaIT
+public class ClientDescribeIT
 {
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
-            .addScriptRoot("server", "org/reaktivity/specification/kafka/metadata.v5")
-            .addScriptRoot("client", "org/reaktivity/specification/nukleus/kafka/streams/meta");
+            .addScriptRoot("server", "org/reaktivity/specification/kafka/describe.configs.v0")
+            .addScriptRoot("client", "org/reaktivity/specification/nukleus/kafka/streams/describe");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(15, SECONDS));
 
@@ -46,7 +46,7 @@ public class MetaIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(8192)
-        .configure(KAFKA_META_MAX_AGE, 0)
+        .configure(KAFKA_DESCRIBE_MAX_AGE, 0)
         .configure(KAFKA_READ_IDLE_TIMEOUT, 86400)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
@@ -65,10 +65,10 @@ public class MetaIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/topic.invalid/client",
-        "${server}/topic.invalid/server"})
+        "${client}/topic.config.info/client",
+        "${server}/topic.config.info/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldRejectWhenTopicInvalid() throws Exception
+    public void shouldReceiveTopicConfigInfo() throws Exception
     {
         k3po.finish();
     }
@@ -76,21 +76,10 @@ public class MetaIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/topic.partition.info/client",
-        "${server}/topic.partition.info/server"})
+        "${client}/topic.config.info.changed/client",
+        "${server}/topic.config.info.changed/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveTopicPartitionInfo() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/topic.partition.info.changed/client",
-        "${server}/topic.partition.info.changed/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveTopicPartitionInfoChanged() throws Exception
+    public void shouldReceiveTopicConfigInfoChanged() throws Exception
     {
         k3po.finish();
     }
