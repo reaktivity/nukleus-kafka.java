@@ -52,7 +52,7 @@ public final class KafkaCache
         return new KafkaCacheWriter(this::supplySegment);
     }
 
-    private KafkaCacheSegment supplySegment(
+    public KafkaCacheSegment supplySegment(
         String clusterName,
         String topicName,
         int partitionId)

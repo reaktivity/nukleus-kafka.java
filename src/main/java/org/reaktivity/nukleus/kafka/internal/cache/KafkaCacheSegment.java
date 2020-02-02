@@ -279,6 +279,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         {
             super(writeBuffer, directory, logCapacity, indexCapacity);
             this.baseOffset = baseOffset;
+            this.nextOffset = baseOffset;
             this.logFile = new KafkaCacheFile(writeBuffer, directory, "log", baseOffset, logCapacity);
             this.indexFile = new KafkaCacheFile(writeBuffer, directory, "index", baseOffset, indexCapacity);
         }

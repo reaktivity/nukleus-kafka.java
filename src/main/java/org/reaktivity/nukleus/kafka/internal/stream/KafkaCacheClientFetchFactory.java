@@ -43,15 +43,12 @@ import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionReader;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheReader;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegment;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicReader;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheWriter;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
-import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
-import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheFlushExFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
@@ -65,6 +62,8 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.FlushFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchBeginExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchFlushExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFlushExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.route.RouteManager;
@@ -89,8 +88,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
     private final WindowFW windowRO = new WindowFW();
     private final ExtensionFW extensionRO = new ExtensionFW();
     private final KafkaBeginExFW kafkaBeginExRO = new KafkaBeginExFW();
-    private final KafkaCacheBeginExFW kafkaCacheBeginExRO = new KafkaCacheBeginExFW();
-    private final KafkaCacheFlushExFW kafkaCacheFlushExRO = new KafkaCacheFlushExFW();
+    private final KafkaFlushExFW kafkaFlushExRO = new KafkaFlushExFW();
 
     private final BeginFW.Builder beginRW = new BeginFW.Builder();
     private final DataFW.Builder dataRW = new DataFW.Builder();
@@ -100,14 +98,12 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
     private final WindowFW.Builder windowRW = new WindowFW.Builder();
     private final KafkaBeginExFW.Builder kafkaBeginExRW = new KafkaBeginExFW.Builder();
     private final KafkaDataExFW.Builder kafkaDataExRW = new KafkaDataExFW.Builder();
-    private final KafkaCacheBeginExFW.Builder kafkaCacheBeginExRW = new KafkaCacheBeginExFW.Builder();
 
     private final MessageFunction<RouteFW> wrapRoute = (t, b, i, l) -> routeRO.wrap(b, i, i + l);
 
     private final KafkaCacheEntryFW entryRO = new KafkaCacheEntryFW();
 
     private final int kafkaTypeId;
-    private final int kafkaCacheTypeId;
     private final KafkaCacheReader cacheReader;
     private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
@@ -133,7 +129,6 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         Long2ObjectHashMap<MessageConsumer> correlations)
     {
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
-        this.kafkaCacheTypeId = supplyTypeId.applyAsInt(KafkaCacheWriter.TYPE_NAME);
         this.cacheReader = cacheReader;
         this.router = router;
         this.writeBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
@@ -168,14 +163,12 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         assert kafkaBeginEx.kind() == KafkaBeginExFW.KIND_FETCH;
         final KafkaFetchBeginExFW kafkaFetchBeginEx = kafkaBeginEx.fetch();
         final String16FW beginTopic = kafkaFetchBeginEx.topic();
-        final ArrayFW<KafkaOffsetFW> progress = kafkaFetchBeginEx.progress();
+        final KafkaOffsetFW progress = kafkaFetchBeginEx.partition();
         final ArrayFW<KafkaFilterFW> filters = kafkaFetchBeginEx.filters();
-        final KafkaOffsetFW progressItem = progress.matchFirst(pi -> true);
 
         MessageConsumer newStream = null;
 
-        if (filters.isEmpty() &&
-            progressItem != null && progressItem.limit() == progress.limit())
+        if (filters.isEmpty())
         {
             final MessagePredicate filter = (t, b, i, l) ->
             {
@@ -191,8 +184,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             {
                 final long resolvedId = route.correlationId();
                 final String topicName = beginTopic.asString();
-                final int partitionId = progressItem.partitionId();
-                final long partitionOffset = progressItem.offset$();
+                final int partitionId = progress.partitionId();
+                final long partitionOffset = progress.offset$();
                 final KafkaCacheRoute cacheRoute = supplyCacheRoute.apply(resolvedId);
                 final long partitionKey = cacheRoute.topicPartitionKey(topicName, partitionId);
                 KafkaCacheClientFetchFanout fanout = cacheRoute.clientFetchFanoutsByTopicPartition.get(partitionKey);
@@ -366,7 +359,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
         private int state;
 
-        private long progressOffset;
+        private long partitionOffset;
 
         private KafkaCacheClientFetchFanout(
             long routeId,
@@ -378,7 +371,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.authorization = authorization;
             this.topic = topic;
             this.partition = partition;
-            this.progressOffset = partition.seek(Long.MAX_VALUE).nextOffset();
+            this.partitionOffset = partition.seek(Long.MAX_VALUE).nextOffset();
             this.members = new ArrayList<>();
         }
 
@@ -453,11 +446,11 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             correlations.put(replyId, this::onClientFanoutMessage);
             router.setThrottle(initialId, this::onClientFanoutMessage);
             doBegin(receiver, routeId, initialId, traceId, authorization, 0L,
-                ex -> ex.set((b, o, l) -> kafkaCacheBeginExRW.wrap(b, o, l)
-                        .typeId(kafkaCacheTypeId)
-                        .topic(topic.name())
-                        .partitionId(partition.id())
-                        .progressOffset(progressOffset)
+                ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
+                        .typeId(kafkaTypeId)
+                        .fetch(f -> f.topic(topic.name())
+                                     .partition(p -> p.partitionId(partition.id())
+                                                      .offset$(partitionOffset)))
                         .build()
                         .sizeof()));
             state = KafkaState.openingInitial(state);
@@ -522,17 +515,20 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             final long traceId = begin.traceId();
             final OctetsFW extension = begin.extension();
-            final KafkaCacheBeginExFW kafkaCacheBeginEx = extension.get(kafkaCacheBeginExRO::wrap);
-            final String topicName = kafkaCacheBeginEx.topic().asString();
-            final int partitionId = kafkaCacheBeginEx.partitionId();
-            final long progressOffset = kafkaCacheBeginEx.progressOffset();
+            final ExtensionFW beginEx = extension.get(extensionRO::tryWrap);
+            assert beginEx != null && beginEx.typeId() == kafkaTypeId;
+            final KafkaBeginExFW kafkaBeginEx = extension.get(kafkaBeginExRO::wrap);
+            assert kafkaBeginEx.kind() == KafkaBeginExFW.KIND_FETCH;
+            final KafkaFetchBeginExFW kafkaFetchBeginEx = kafkaBeginEx.fetch();
+            final KafkaOffsetFW progress = kafkaFetchBeginEx.partition();
+            final int partitionId = progress.partitionId();
+            final long progressOffset = progress.offset$();
 
             state = KafkaState.openedReply(state);
 
-            assert topic.name().equals(topicName);
             assert partitionId == partition.id();
-            assert progressOffset >= 0 && progressOffset >= this.progressOffset;
-            this.progressOffset = progressOffset;
+            assert progressOffset >= 0 && progressOffset >= this.partitionOffset;
+            this.partitionOffset = progressOffset;
 
             members.forEach(s -> s.doClientReplyBeginIfNecessary(traceId));
 
@@ -544,11 +540,13 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             final long traceId = flush.traceId();
             final OctetsFW extension = flush.extension();
-            final KafkaCacheFlushExFW kafkaCacheFlushEx = extension.get(kafkaCacheFlushExRO::wrap);
-            final long progressOffset = kafkaCacheFlushEx.progressOffset();
+            final KafkaFlushExFW kafkaFlushEx = extension.get(kafkaFlushExRO::wrap);
+            final KafkaFetchFlushExFW kafkaFetchFlushEx = kafkaFlushEx.fetch();
+            final KafkaOffsetFW partition = kafkaFetchFlushEx.partition();
+            final long partitionOffset = partition.offset$();
 
-            assert progressOffset > this.progressOffset;
-            this.progressOffset = progressOffset;
+            assert partitionOffset > this.partitionOffset;
+            this.partitionOffset = partitionOffset;
 
             members.forEach(s -> s.doClientReplyDataIfNecessary(traceId));
         }
@@ -645,7 +643,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private int replyPadding;
 
         private KafkaCacheSegment currentSegment;
-        private long progressOffset;
+        private long partitionOffset;
         private int messageOffset;
 
         KafkaCacheClientFetchStream(
@@ -664,7 +662,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.replyId = supplyReplyId.applyAsLong(initialId);
             this.affinity = affinity;
             this.authorization = authorization;
-            this.progressOffset = partitionOffset;
+            this.partitionOffset = partitionOffset;
         }
 
         private void onClientMessage(
@@ -789,15 +787,15 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             state = KafkaState.openingReply(state);
 
-            this.progressOffset = Math.max(progressOffset, group.progressOffset);
+            this.partitionOffset = Math.max(partitionOffset, group.partitionOffset);
 
             router.setThrottle(replyId, this::onClientMessage);
             doBegin(sender, routeId, replyId, traceId, authorization, affinity,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(group.topic.name())
-                                     .progressItem(pi -> pi.partitionId(group.partition.id())
-                                                           .offset$(progressOffset)))
+                                     .partition(p -> p.partitionId(group.partition.id())
+                                                      .offset$(partitionOffset)))
                         .build()
                         .sizeof()));
         }
@@ -805,7 +803,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void doClientReplyDataIfNecessary(
             long traceId)
         {
-            if (progressOffset < group.progressOffset)
+            if (KafkaState.replyOpened(state) &&
+                partitionOffset <= group.partitionOffset)
             {
                 doClientReplyData(traceId);
             }
@@ -816,7 +815,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             assert currentSegment != null;
 
-            int position = currentSegment.position(progressOffset);
+            int position = currentSegment.position(partitionOffset);
             while (position == END_OF_SEGMENT)
             {
                 final KafkaCacheSegment nextSegment = currentSegment.nextSegment();
@@ -841,7 +840,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 final int reservedMax = remaining + replyPadding;
                 final int reservedMin = lengthMin + replyPadding;
 
-                assert partitionOffset >= progressOffset;
+                assert partitionOffset >= this.partitionOffset;
 
                 flush:
                 if (replyBudget >= reservedMin)
@@ -870,49 +869,20 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     }
 
                     final int partitionId = group.partition.id();
-                    final long nextOffset = partitionOffset + 1;
                     switch (flags)
                     {
                     case FLAG_INIT | FLAG_FIN:
-                        doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved,
-                            p -> p.set(value),
-                            ex -> ex.set((b, o, l) -> kafkaDataExRW.wrap(b, o, l)
-                                    .typeId(kafkaTypeId)
-                                    .fetch(f -> f.timestamp(timestamp)
-                                                 .key(k -> k.value(key.value()))
-                                                 .headers(hs -> headers.forEach(h -> hs.item(i -> i.name(h.name())
-                                                                                                   .value(h.value()))))
-                                                 .progressItem(pi -> pi.partitionId(partitionId)
-                                                                       .offset$(nextOffset)))
-                                    .build()
-                                    .sizeof()));
+                        doClientReplyDataFull(traceId, timestamp, key, headers, value, reserved, flags,
+                                              partitionId, partitionOffset);
                         break;
                     case FLAG_INIT:
-                        doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved,
-                            p -> p.set(value.buffer(), value.offset() + messageOffset, length),
-                            ex -> ex.set((b, o, l) -> kafkaDataExRW.wrap(b, o, l)
-                                    .typeId(kafkaTypeId)
-                                    .fetch(f -> f.timestamp(timestamp)
-                                                 .key(k -> k.value(key.value())))
-                                    .build()
-                                    .sizeof()));
+                        doClientReplyDataInit(traceId, timestamp, key, value, reserved, length, flags);
                         break;
                     case FLAG_NONE:
-                        doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved,
-                            p -> p.set(value.buffer(), value.offset() + messageOffset, length),
-                            EMPTY_EXTENSION);
+                        doClientReplyDataNone(traceId, value, reserved, length, flags);
                         break;
                     case FLAG_FIN:
-                        doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved,
-                            p -> p.set(value.buffer(), value.offset() + messageOffset, length),
-                            ex -> ex.set((b, o, l) -> kafkaDataExRW.wrap(b, o, l)
-                                    .typeId(kafkaTypeId)
-                                    .fetch(f -> f.headers(hs -> headers.forEach(h -> hs.item(i -> i.name(h.name())
-                                                                                                   .value(h.value()))))
-                                                 .progressItem(pi -> pi.partitionId(partitionId)
-                                                                       .offset$(nextOffset)))
-                                    .build()
-                                    .sizeof()));
+                        doClientReplyDataFin(traceId, headers, value, reserved, length, flags, partitionId, partitionOffset);
                         break;
                     }
 
@@ -922,11 +892,95 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     }
                     else
                     {
-                        this.progressOffset = nextOffset;
+                        this.partitionOffset = partitionOffset + 1;
                         this.messageOffset = 0;
                     }
                 }
             }
+        }
+
+        private void doClientReplyDataFull(
+            long traceId,
+            long timestamp,
+            KafkaCacheKeyFW key,
+            ArrayFW<KafkaCacheHeaderFW> headers,
+            OctetsFW value,
+            int reserved,
+            int flags,
+            int partitionId,
+            long partitionOffset)
+        {
+            doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved,
+                p -> p.set(value),
+                ex -> ex.set((b, o, l) -> kafkaDataExRW.wrap(b, o, l)
+                        .typeId(kafkaTypeId)
+                        .fetch(f -> f.timestamp(timestamp)
+                                     .partition(p -> p.partitionId(partitionId)
+                                                      .offset$(partitionOffset))
+                                     .key(k -> k.length(key.length())
+                                                .value(key.value()))
+                                     .headers(hs -> headers.forEach(h -> hs.item(i -> i.nameLen(h.nameLen())
+                                                                                       .name(h.name())
+                                                                                       .valueLen(h.valueLen())
+                                                                                       .value(h.value())))))
+                        .build()
+                        .sizeof()));
+        }
+
+        private void doClientReplyDataInit(
+            long traceId,
+            long timestamp,
+            KafkaCacheKeyFW key,
+            OctetsFW value,
+            int reserved,
+            int length,
+            int flags)
+        {
+            doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved,
+                p -> p.set(value.buffer(), value.offset() + messageOffset, length),
+                ex -> ex.set((b, o, l) -> kafkaDataExRW.wrap(b, o, l)
+                        .typeId(kafkaTypeId)
+                        .fetch(f -> f.timestamp(timestamp)
+                                     .key(k -> k.length(key.length())
+                                                .value(key.value())))
+                        .build()
+                        .sizeof()));
+        }
+
+        private void doClientReplyDataNone(
+            long traceId,
+            OctetsFW value,
+            int reserved,
+            int length,
+            int flags)
+        {
+            doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved,
+                p -> p.set(value.buffer(), value.offset() + messageOffset, length),
+                EMPTY_EXTENSION);
+        }
+
+        private void doClientReplyDataFin(
+            long traceId,
+            ArrayFW<KafkaCacheHeaderFW> headers,
+            OctetsFW value,
+            int reserved,
+            int length,
+            int flags,
+            int partitionId,
+            long partitionOffset)
+        {
+            doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved,
+                p -> p.set(value.buffer(), value.offset() + messageOffset, length),
+                ex -> ex.set((b, o, l) -> kafkaDataExRW.wrap(b, o, l)
+                        .typeId(kafkaTypeId)
+                        .fetch(f -> f.partition(p -> p.partitionId(partitionId)
+                                                      .offset$(partitionOffset))
+                                     .headers(hs -> headers.forEach(h -> hs.item(i -> i.nameLen(h.nameLen())
+                                                                                       .name(h.name())
+                                                                                       .valueLen(h.valueLen())
+                                                                                       .value(h.value())))))
+                        .build()
+                        .sizeof()));
         }
 
         private void doClientReplyEnd(
@@ -984,7 +1038,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     replyDebitorIndex = replyDebitor.acquire(replyBudgetId, replyId, this::doClientReplyDataIfNecessary);
                 }
 
-                currentSegment = group.partition.seek(progressOffset);
+                currentSegment = group.partition.seek(partitionOffset);
 
                 final long traceId = window.traceId();
                 group.onClientFanoutMemberOpened(traceId, this);

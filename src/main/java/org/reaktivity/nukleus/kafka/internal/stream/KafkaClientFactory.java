@@ -80,17 +80,15 @@ public final class KafkaClientFactory implements StreamFactory
                 supplyInitialId, supplyReplyId, supplyTraceId,
                 supplyTypeId, accountant::supplyDebitor, correlations, brokersByRouteId);
 
-        final KafkaMergedFetchFactory mergedClientFetchFactory = new KafkaMergedFetchFactory(
+        final KafkaMergedFactory clientMergedFactory = new KafkaMergedFactory(
                 config, router, writeBuffer, supplyInitialId, supplyReplyId, supplyTraceId,
                 supplyTypeId, correlations, accountant.creditor());
-
-        final KafkaMergeableFetchFactory mergeableClientFetchFactory = new KafkaMergeableFetchFactory(
-                supplyTypeId, clientFetchFactory, mergedClientFetchFactory);
 
         final Int2ObjectHashMap<StreamFactory> streamFactoriesByKind = new Int2ObjectHashMap<>();
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_META, clientMetaFactory);
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_DESCRIBE, clientDescribeFactory);
-        streamFactoriesByKind.put(KafkaBeginExFW.KIND_FETCH, mergeableClientFetchFactory);
+        streamFactoriesByKind.put(KafkaBeginExFW.KIND_FETCH, clientFetchFactory);
+        streamFactoriesByKind.put(KafkaBeginExFW.KIND_MERGED, clientMergedFactory);
 
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.correlations = correlations;

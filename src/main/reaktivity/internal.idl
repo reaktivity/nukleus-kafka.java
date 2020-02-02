@@ -17,28 +17,17 @@ scope internal
 {
     scope cache
     {
-        struct KafkaCacheBeginEx extends core::stream::Extension
-        {
-            string16 topic;
-            int32 partitionId;
-            int64 progressOffset;
-        }
-
-        struct KafkaCacheFlushEx extends core::stream::Extension
-        {
-            int64 progressOffset;
-        }
-
         struct KafkaCacheKey
         {
-            int32 length;
+            varint32 length;
             octets[length] value = null;
         }
 
         struct KafkaCacheHeader
         {
-            string16 name;
-            int32 valueLen;
+            varint32 nameLen;
+            octets[nameLen] name;  // UTF-8
+            varint32 valueLen;
             octets[valueLen] value = null;
         }
 
@@ -47,9 +36,9 @@ scope internal
           int64 offset;
           int64 timestamp;
           KafkaCacheKey key;
-          KafkaCacheHeader[] headers;
           int32 valueLen;
           octets[valueLen] value = null;
+          KafkaCacheHeader[] headers;
         }
     }
 }

@@ -53,8 +53,8 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ExtensionFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchDataExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaMergedBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaMetaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaResetExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
@@ -62,7 +62,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 
-public final class KafkaMergedFetchFactory implements StreamFactory
+public final class KafkaMergedFactory implements StreamFactory
 {
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
@@ -102,7 +102,7 @@ public final class KafkaMergedFetchFactory implements StreamFactory
     private final Long2ObjectHashMap<MessageConsumer> correlations;
     private final MergedBudgetCreditor creditor;
 
-    public KafkaMergedFetchFactory(
+    public KafkaMergedFactory(
         KafkaConfiguration config,
         RouteManager router,
         MutableDirectBuffer writeBuffer,
@@ -145,9 +145,9 @@ public final class KafkaMergedFetchFactory implements StreamFactory
                 kafkaBeginExRO.tryWrap(extension.buffer(), extension.offset(), extension.limit()) : null;
 
         assert kafkaBeginEx != null;
-        assert kafkaBeginEx.kind() == KafkaBeginExFW.KIND_FETCH;
-        final KafkaFetchBeginExFW kafkaFetchBeginEx = kafkaBeginEx.fetch();
-        final String16FW beginTopic = kafkaFetchBeginEx.topic();
+        assert kafkaBeginEx.kind() == KafkaBeginExFW.KIND_MERGED;
+        final KafkaMergedBeginExFW kafkaMergedBeginEx = kafkaBeginEx.merged();
+        final String16FW beginTopic = kafkaMergedBeginEx.topic();
         final String topic = beginTopic != null ? beginTopic.asString() : null;
 
         final MessagePredicate filter = (t, b, i, l) ->
@@ -165,13 +165,13 @@ public final class KafkaMergedFetchFactory implements StreamFactory
         if (route != null)
         {
             final long resolvedId = route.correlationId();
-            final ArrayFW<KafkaOffsetFW> progress = kafkaFetchBeginEx.progress();
+            final ArrayFW<KafkaOffsetFW> partitions = kafkaMergedBeginEx.partitions();
 
-            final KafkaOffsetFW partition = progress.matchFirst(p -> p.partitionId() == -1L);
-            final long defaultOffset = partition.offset$();
+            final KafkaOffsetFW partition = partitions.matchFirst(p -> p.partitionId() == -1L);
+            final long defaultOffset = partition != null ? partition.offset$() : -2; // EARLIEST ?
 
             final Long2LongHashMap initialOffsetsById = new Long2LongHashMap(-1L);
-            progress.forEach(p ->
+            partitions.forEach(p ->
             {
                 final long partitionId = p.partitionId();
                 if (partitionId >= 0L)
@@ -512,15 +512,7 @@ public final class KafkaMergedFetchFactory implements StreamFactory
             state = KafkaState.openingReply(state);
 
             router.setThrottle(replyId, this::onMergedInitial);
-            doBegin(sender, routeId, replyId, traceId, authorization, affinity,
-                ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
-                        .typeId(kafkaTypeId)
-                        .fetch(f -> f.topic(topic)
-                                     .progress(ps -> nextOffsetsById.longForEach((p, o$) -> ps.item(pi -> pi.partitionId((int) p)
-                                                                                                           .offset$(o$))))
-                                     .progressItem(pi -> pi.partitionId(-1).offset$(defaultOffset)))
-                        .build()
-                        .sizeof()));
+            doBegin(sender, routeId, replyId, traceId, authorization, affinity, EMPTY_EXTENSION);
         }
 
         private void doMergedReplyData(
@@ -535,27 +527,26 @@ public final class KafkaMergedFetchFactory implements StreamFactory
             assert replyBudget >= 0;
 
             final KafkaFetchDataExFW kafkaFetchDataEx = kafkaDataEx.fetch();
+            final KafkaOffsetFW partition = kafkaFetchDataEx.partition();
             final long timestamp = kafkaFetchDataEx.timestamp();
             final KafkaKeyFW key = kafkaFetchDataEx.key();
-            final ArrayFW<KafkaOffsetFW> progress = kafkaFetchDataEx.progress();
             final ArrayFW<KafkaHeaderFW> headers = kafkaFetchDataEx.headers();
 
-            final KafkaOffsetFW partition = progress.matchFirst(p -> true);
-            assert partition != null && progress.limit() == partition.limit();
-
-            final int partitionId = partition.partitionId();
-            final long partitionOffset = partition.offset$();
-
-            nextOffsetsById.put(partitionId, partitionOffset);
+            nextOffsetsById.put(partition.partitionId(), partition.offset$() + 1);
 
             final KafkaDataExFW newKafkaDataEx = kafkaDataExRW.wrap(extBuffer, 0, extBuffer.capacity())
                  .typeId(kafkaTypeId)
-                 .fetch(f -> f.timestamp(timestamp)
-                              .key(k -> k.value(key.value()))
-                              .headers(hs -> headers.forEach(h -> hs.item(i -> i.name(h.name()).value(h.value()))))
-                              .progress(ps -> nextOffsetsById.longForEach((p, o) -> ps.item(i -> i.partitionId((int) p)
-                                                                                                  .offset$(o))))
-                              .progressItem(pi -> pi.partitionId(-1).offset$(defaultOffset)))
+                 .merged(f -> f.timestamp(timestamp)
+                               .partition(p -> p.partitionId(partition.partitionId())
+                                                .offset$(partition.offset$()))
+                               .progress(ps -> nextOffsetsById.longForEach((p, o) -> ps.item(i -> i.partitionId((int) p)
+                                                                                                   .offset$(o))))
+                               .key(k -> k.length(key.length())
+                                          .value(key.value()))
+                               .headers(hs -> headers.forEach(h -> hs.item(i -> i.nameLen(h.nameLen())
+                                                                                 .name(h.name())
+                                                                                 .valueLen(h.valueLen())
+                                                                                 .value(h.value())))))
                  .build();
 
             doData(sender, routeId, replyId, traceId, authorization, replyBudgetId, reserved,
@@ -703,12 +694,9 @@ public final class KafkaMergedFetchFactory implements StreamFactory
 
         private void onPartitionReady(
             long traceId,
-            KafkaOffsetFW partition)
+            long partitionId)
         {
-            final int partitionId = partition.partitionId();
-            final long partitionOffset = partition.offset$();
-
-            nextOffsetsById.put(partitionId, partitionOffset);
+            nextOffsetsById.putIfAbsent(partitionId, defaultOffset);
 
             if (nextOffsetsById.size() == fetchStreams.size())
             {
@@ -995,7 +983,7 @@ public final class KafkaMergedFetchFactory implements StreamFactory
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(mergedFetch.topic)
-                                     .progressItem(pi -> pi.partitionId(partitionId).offset$(partitionOffset)))
+                                     .partition(p -> p.partitionId(partitionId).offset$(partitionOffset)))
                         .build()
                         .sizeof()));
         }
@@ -1077,16 +1065,8 @@ public final class KafkaMergedFetchFactory implements StreamFactory
             state = KafkaState.openingReply(state);
 
             final long traceId = begin.traceId();
-            final OctetsFW extension = begin.extension();
 
-            final KafkaBeginExFW kafkaBeginEx = extension.get(kafkaBeginExRO::wrap);
-            final KafkaFetchBeginExFW kafkaFetchBeginEx = kafkaBeginEx.fetch();
-            final ArrayFW<KafkaOffsetFW> progress = kafkaFetchBeginEx.progress();
-
-            final KafkaOffsetFW partition = progress.matchFirst(p -> true);
-            assert partition != null && progress.limit() == partition.limit();
-
-            mergedFetch.onPartitionReady(traceId, partition);
+            mergedFetch.onPartitionReady(traceId, partitionId);
 
             doFetchReplyWindowIfNecessary(traceId);
         }

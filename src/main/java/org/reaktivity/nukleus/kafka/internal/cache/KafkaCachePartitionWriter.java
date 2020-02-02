@@ -30,6 +30,8 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 public final class KafkaCachePartitionWriter
 {
     private final MutableDirectBuffer entryInfo = new UnsafeBuffer(new byte[Long.BYTES + Long.BYTES]);
+    private final MutableDirectBuffer valueInfo = new UnsafeBuffer(new byte[Integer.BYTES]);
+    private final MutableDirectBuffer indexInfo = new UnsafeBuffer(new byte[Integer.BYTES + Integer.BYTES]);
 
     private final KafkaCacheSegment.Candidate candidate = new KafkaCacheSegment.Candidate();
 
@@ -37,8 +39,8 @@ public final class KafkaCachePartitionWriter
     private final NavigableSet<KafkaCacheSegment> segments;
 
     private KafkaCacheSegment entrySegment;
-    private long entryOffset;
-    private int entryPosition;
+    private long offset;
+    private int position;
 
     KafkaCachePartitionWriter(
         int partitionId,
@@ -75,49 +77,54 @@ public final class KafkaCachePartitionWriter
     }
 
     public void writeEntry(
-        long entryOffset,
+        long offset,
         long timestamp,
         KafkaKeyFW key,
         ArrayFW<KafkaHeaderFW> headers,
-        OctetsFW payload)
+        OctetsFW value)
     {
-        writeEntryStart(entryOffset, timestamp, key);
-        writeEntryContinue(payload);
+        writeEntryStart(offset, timestamp, key, value.sizeof(), headers.sizeof());
+        writeEntryContinue(value);
         writeEntryFinish(headers);
     }
 
     public void writeEntryStart(
-        long entryOffset,
+        long offset,
         long timestamp,
-        KafkaKeyFW key)
+        KafkaKeyFW key,
+        int valueSize,
+        int headerSizeMax)
     {
-        assert entryOffset >= 0 && entryOffset >= entrySegment.nextOffset();
+        assert offset >= 0 && offset >= entrySegment.nextOffset();
 
-        final int remaining = entrySegment.logRemaining();
-        final int required = Long.BYTES + Long.BYTES + key.sizeof();
-        if (remaining < required)
+        final int logRequired = entryInfo.capacity() + key.sizeof() + valueInfo.capacity() + valueSize + headerSizeMax;
+
+        int logRemaining = entrySegment.logRemaining();
+        if (logRemaining < logRequired)
         {
-            entrySegment = entrySegment.nextSegment(entryOffset);
-            final int newRemaining = entrySegment.logRemaining();
-            assert newRemaining >= required;
+            entrySegment = entrySegment.nextSegment(offset);
+            logRemaining = entrySegment.logRemaining();
         }
+        assert logRemaining >= logRequired;
 
-        this.entryOffset = entryOffset;
-        this.entryPosition = entrySegment.log().capacity();
+        this.offset = offset;
+        this.position = entrySegment.log().capacity();
 
-        entryInfo.putLong(0, entryOffset);
+        entryInfo.putLong(0, offset);
         entryInfo.putLong(Long.BYTES, timestamp);
+        valueInfo.putInt(0, valueSize);
 
         entrySegment.log(entryInfo, 0, entryInfo.capacity());
         entrySegment.log(key.buffer(), key.offset(), key.sizeof());
+        entrySegment.log(valueInfo, 0, valueInfo.capacity());
     }
 
     public void writeEntryContinue(
         OctetsFW payload)
     {
-        final int remaining = entrySegment.logRemaining();
-        final int required = payload.sizeof();
-        assert remaining >= required;
+        final int logRemaining = entrySegment.logRemaining();
+        final int logRequired = payload.sizeof();
+        assert logRemaining >= logRequired;
 
         entrySegment.log(payload.buffer(), payload.offset(), payload.sizeof());
     }
@@ -131,15 +138,15 @@ public final class KafkaCachePartitionWriter
 
         entrySegment.log(headers.buffer(), headers.offset(), headers.sizeof());
 
-        entryInfo.putLong(0, entryOffset);
-        entryInfo.putLong(Long.BYTES, entryPosition);
+        final long offsetDelta = (int)(offset - entrySegment.baseOffset());
+        indexInfo.putLong(0, (offsetDelta << 32) | position);
 
         final int indexRemaining = entrySegment.indexRemaining();
-        final int indexRequired = entryInfo.capacity();
+        final int indexRequired = indexInfo.capacity();
         assert indexRemaining >= indexRequired;
 
-        entrySegment.index(entryInfo, 0, entryInfo.capacity());
+        entrySegment.index(indexInfo, 0, indexInfo.capacity());
 
-        entrySegment.nextOffset(entryOffset + 1);
+        entrySegment.nextOffset(offset + 1);
     }
 }

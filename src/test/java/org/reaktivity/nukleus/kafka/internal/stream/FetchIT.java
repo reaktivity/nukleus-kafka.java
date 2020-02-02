@@ -78,24 +78,6 @@ public class FetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/partition.offset.missing/client"})
-    public void shouldRejectWhenPartitionOffsetMissing() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/partition.offset.repeated/client"})
-    public void shouldRejectWhenPartitionOffsetRepeated() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/client/controller",
         "${client}/partition.unknown/client",
         "${server}/partition.unknown/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")

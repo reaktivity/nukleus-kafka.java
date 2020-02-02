@@ -30,7 +30,6 @@ import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheWriter;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
-import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ExtensionFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
@@ -42,10 +41,8 @@ public final class KafkaCacheServerFactory implements StreamFactory
     private final BeginFW beginRO = new BeginFW();
     private final ExtensionFW extensionRO = new ExtensionFW();
     private final KafkaBeginExFW kafkaBeginExRO = new KafkaBeginExFW();
-    private final KafkaCacheBeginExFW kafkaCacheBeginExRO = new KafkaCacheBeginExFW();
 
     private final int kafkaTypeId;
-    private final int kafkaCacheTypeId;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
     private final Int2ObjectHashMap<StreamFactory> streamFactoriesByKind;
 
@@ -77,7 +74,6 @@ public final class KafkaCacheServerFactory implements StreamFactory
                 supplyTraceId, supplyTypeId, supplyCacheRoute, correlations));
 
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
-        this.kafkaCacheTypeId = supplyTypeId.applyAsInt(KafkaCacheWriter.TYPE_NAME);
         this.correlations = correlations;
         this.streamFactoriesByKind = streamFactoriesByKind;
     }
@@ -115,31 +111,18 @@ public final class KafkaCacheServerFactory implements StreamFactory
         final ExtensionFW beginEx = extension.get(extensionRO::tryWrap);
         assert beginEx != null;
         final int typeId = beginEx.typeId();
-        assert beginEx != null && (typeId == kafkaTypeId || beginEx.typeId() == kafkaCacheTypeId);
+        assert beginEx != null && typeId == kafkaTypeId;
 
         MessageConsumer newStream = null;
 
-        StreamFactory streamFactory = null;
-        if (typeId == kafkaCacheTypeId)
+        final KafkaBeginExFW kafkaBeginEx = extension.get(kafkaBeginExRO::tryWrap);
+        if (kafkaBeginEx != null)
         {
-            final KafkaCacheBeginExFW kafkaCacheBeginEx = extension.get(kafkaCacheBeginExRO::tryWrap);
-            if (kafkaCacheBeginEx != null)
+            final StreamFactory streamFactory = streamFactoriesByKind.get(kafkaBeginEx.kind());
+            if (streamFactory != null)
             {
-                streamFactory = streamFactoriesByKind.get(KafkaBeginExFW.KIND_FETCH);
+                newStream = streamFactory.newStream(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof(), sender);
             }
-        }
-        else if (typeId == kafkaTypeId)
-        {
-            final KafkaBeginExFW kafkaBeginEx = extension.get(kafkaBeginExRO::tryWrap);
-            if (kafkaBeginEx != null)
-            {
-                streamFactory = streamFactoriesByKind.get(kafkaBeginEx.kind());
-            }
-        }
-
-        if (streamFactory != null)
-        {
-            newStream = streamFactory.newStream(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof(), sender);
         }
 
         return newStream;

@@ -26,6 +26,7 @@ public class KafkaConfiguration extends Configuration
 
     public static final IntPropertyDef KAFKA_META_MAX_AGE;
     public static final IntPropertyDef KAFKA_DESCRIBE_MAX_AGE;
+    public static final IntPropertyDef KAFKA_FETCH_MAX_WAIT_MILLIS;
     public static final IntPropertyDef KAFKA_FETCH_MAX_BYTES;
     public static final IntPropertyDef KAFKA_FETCH_PARTITION_MAX_BYTES;
     public static final IntPropertyDef KAFKA_READ_IDLE_TIMEOUT;
@@ -40,6 +41,7 @@ public class KafkaConfiguration extends Configuration
         final ConfigurationDef config = new ConfigurationDef("nukleus.kafka");
         KAFKA_META_MAX_AGE = config.property("meta.max.age", 300);
         KAFKA_DESCRIBE_MAX_AGE = config.property("describe.max.age", 300);
+        KAFKA_FETCH_MAX_WAIT_MILLIS = config.property("fetch.max.wait.millis", 500);
         KAFKA_FETCH_MAX_BYTES = config.property("fetch.max.bytes", 50 * 1024 * 1024);
         // maximum record batch size, corresponding to Kafka broker and topic configuration property "max.message.bytes"
         KAFKA_FETCH_PARTITION_MAX_BYTES = config.property("fetch.partition.max.bytes", 1 * 1024 * 1024);
@@ -64,6 +66,11 @@ public class KafkaConfiguration extends Configuration
     public long describeMaxAge()
     {
         return KAFKA_DESCRIBE_MAX_AGE.getAsInt(this);
+    }
+
+    public int fetchMaxWaitMillis()
+    {
+        return KAFKA_FETCH_MAX_WAIT_MILLIS.getAsInt(this);
     }
 
     public int fetchMaxBytes()

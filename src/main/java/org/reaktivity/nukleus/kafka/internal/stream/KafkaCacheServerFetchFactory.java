@@ -44,8 +44,6 @@ import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
-import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheBeginExFW;
-import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheFlushExFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.AbortFW;
@@ -58,6 +56,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchDataExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFlushExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.route.RouteManager;
@@ -82,7 +81,6 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
     private final ExtensionFW extensionRO = new ExtensionFW();
     private final KafkaBeginExFW kafkaBeginExRO = new KafkaBeginExFW();
     private final KafkaDataExFW kafkaDataExRO = new KafkaDataExFW();
-    private final KafkaCacheBeginExFW kafkaCacheBeginExRO = new KafkaCacheBeginExFW();
 
     private final BeginFW.Builder beginRW = new BeginFW.Builder();
     private final FlushFW.Builder flushRW = new FlushFW.Builder();
@@ -91,13 +89,11 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
     private final ResetFW.Builder resetRW = new ResetFW.Builder();
     private final WindowFW.Builder windowRW = new WindowFW.Builder();
     private final KafkaBeginExFW.Builder kafkaBeginExRW = new KafkaBeginExFW.Builder();
-    private final KafkaCacheBeginExFW.Builder kafkaCacheBeginExRW = new KafkaCacheBeginExFW.Builder();
-    private final KafkaCacheFlushExFW.Builder kafkaCacheFlushExRW = new KafkaCacheFlushExFW.Builder();
+    private final KafkaFlushExFW.Builder kafkaFlushExRW = new KafkaFlushExFW.Builder();
 
     private final MessageFunction<RouteFW> wrapRoute = (t, b, i, l) -> routeRO.wrap(b, i, i + l);
 
     private final int kafkaTypeId;
-    private final int kafkaCacheTypeId;
     private final KafkaCacheWriter cache;
     private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
@@ -121,7 +117,6 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         Long2ObjectHashMap<MessageConsumer> correlations)
     {
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
-        this.kafkaCacheTypeId = supplyTypeId.applyAsInt(KafkaCacheWriter.TYPE_NAME);
         this.cache = cache;
         this.router = router;
         this.writeBuffer = writeBuffer;
@@ -150,12 +145,14 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
         final OctetsFW extension = begin.extension();
         final ExtensionFW beginEx = extension.get(extensionRO::wrap);
-        assert beginEx != null && beginEx.typeId() == kafkaCacheTypeId;
-        final KafkaCacheBeginExFW kafkaCacheBeginEx = extension.get(kafkaCacheBeginExRO::wrap);
+        assert beginEx != null && beginEx.typeId() == kafkaTypeId;
+        final KafkaBeginExFW kafkaBeginEx = extension.get(kafkaBeginExRO::wrap);
+        final KafkaFetchBeginExFW kafkaFetchBeginEx = kafkaBeginEx.fetch();
 
-        final String16FW beginTopic = kafkaCacheBeginEx.topic();
-        final int partitionId = kafkaCacheBeginEx.partitionId();
-        final long progressOffset = kafkaCacheBeginEx.progressOffset();
+        final String16FW beginTopic = kafkaFetchBeginEx.topic();
+        final KafkaOffsetFW progress = kafkaFetchBeginEx.partition();
+        final int partitionId = progress.partitionId();
+        final long partitionOffset = progress.offset$();
 
         MessageConsumer newStream = null;
 
@@ -198,7 +195,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                         initialId,
                         affinity,
                         authorization,
-                        progressOffset)::onServerMessage;
+                        partitionOffset)::onServerMessage;
             }
         }
 
@@ -232,6 +229,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         long streamId,
         long traceId,
         long authorization,
+        long budgetId,
         int reserved,
         Consumer<OctetsFW.Builder> extension)
     {
@@ -240,6 +238,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 .streamId(streamId)
                 .traceId(traceId)
                 .authorization(authorization)
+                .budgetId(budgetId)
                 .reserved(reserved)
                 .extension(extension)
                 .build();
@@ -339,7 +338,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
         private int state;
 
-        private long progressOffset;
+        private long partitionOffset;
 
         private KafkaCacheServerFetchFanout(
             long routeId,
@@ -351,7 +350,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             this.authorization = authorization;
             this.topic = topic;
             this.partition = partition;
-            this.progressOffset = partition.seek(Long.MAX_VALUE).nextOffset();
+            this.partitionOffset = partition.seek(Long.MAX_VALUE).nextOffset();
             this.members = new ArrayList<>();
         }
 
@@ -419,8 +418,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(topic.name())
-                                     .progressItem(pi -> pi.partitionId(partition.id())
-                                                           .offset$(progressOffset)))
+                                     .partition(p -> p.partitionId(partition.id())
+                                                      .offset$(partitionOffset)))
                         .build()
                         .sizeof()));
             state = KafkaState.openingInitial(state);
@@ -490,17 +489,15 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             final KafkaBeginExFW kafkaBeginEx = extension.get(kafkaBeginExRO::wrap);
             assert kafkaBeginEx.kind() == KafkaBeginExFW.KIND_FETCH;
             final KafkaFetchBeginExFW kafkaFetchBeginEx = kafkaBeginEx.fetch();
-            final ArrayFW<KafkaOffsetFW> progress = kafkaFetchBeginEx.progress();
-            final KafkaOffsetFW progressItem = progress.matchFirst(p -> true);
-            assert progress.limit() == progressItem.limit();
-            final int partitionId = progressItem.partitionId();
-            final long progressOffset = progressItem.offset$();
+            final KafkaOffsetFW progress = kafkaFetchBeginEx.partition();
+            final int partitionId = progress.partitionId();
+            final long progressOffset = progress.offset$();
 
             state = KafkaState.openedReply(state);
 
             assert partitionId == partition.id();
-            assert progressOffset >= 0 && progressOffset >= this.progressOffset;
-            this.progressOffset = progressOffset;
+            assert progressOffset >= 0 && progressOffset >= this.partitionOffset;
+            this.partitionOffset = progressOffset;
 
             members.forEach(s -> s.doServerReplyBeginIfNecessary(traceId));
 
@@ -513,7 +510,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             final long traceId = data.traceId();
             final int reserved = data.reserved();
             final int flags = data.flags();
-            final OctetsFW payload = data.payload();
+            final OctetsFW valueFragment = data.payload();
             final OctetsFW extension = data.extension();
             final ExtensionFW dataEx = extension.get(extensionRO::tryWrap);
             assert dataEx.typeId() == kafkaTypeId;
@@ -523,32 +520,27 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
             if ((flags & FLAGS_INIT) != 0x00)
             {
+                final int deferred = kafkaFetchDataEx.deferred();
+                final int partitionId = kafkaFetchDataEx.partition().partitionId();
+                final long partitionOffset = kafkaFetchDataEx.partition().offset$();
+                final int headersSizeMax = kafkaFetchDataEx.headersSizeMax();
                 final long timestamp = kafkaFetchDataEx.timestamp();
                 final KafkaKeyFW key = kafkaFetchDataEx.key();
-                final ArrayFW<KafkaOffsetFW> progress = kafkaFetchDataEx.progress();
-                final KafkaOffsetFW progressItem = progress.matchFirst(p -> true);
-                assert progress.limit() == progressItem.limit();
-
-                final int partitionId = progressItem.partitionId();
-                final long progressOffset = progressItem.offset$();
-
-                // TODO: progress partitionOffset > partition partitionOffset
-                //       need to add KafkaFetchDataEx { KafkaOffset partition }
-                final long partitionOffset = progressOffset - 1;
+                final int valueSize = valueFragment != null ? valueFragment.sizeof() + deferred : 1;
 
                 assert partitionId == partition.id();
 
-                partition.writeEntryStart(partitionOffset, timestamp, key);
+                partition.writeEntryStart(partitionOffset, timestamp, key, valueSize, headersSizeMax);
             }
 
-            partition.writeEntryContinue(payload);
+            partition.writeEntryContinue(valueFragment);
 
             if ((flags & FLAGS_FIN) != 0x00)
             {
                 final ArrayFW<KafkaHeaderFW> headers = kafkaFetchDataEx.headers();
                 partition.writeEntryFinish(headers);
 
-                this.progressOffset = partition.nextOffset();
+                this.partitionOffset = kafkaFetchDataEx.partition().offset$();
 
                 members.forEach(s -> s.doServerReplyFlushIfNecessary(traceId));
             }
@@ -646,7 +638,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         private int state;
 
         private int replyBudget;
-        private long progressOffset;
+        private long partitionOffset;
 
         KafkaCacheServerFetchStream(
             KafkaCacheServerFetchFanout group,
@@ -655,7 +647,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             long initialId,
             long affinity,
             long authorization,
-            long progressOffset)
+            long partitionOffset)
         {
             this.group = group;
             this.sender = sender;
@@ -664,7 +656,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             this.replyId = supplyReplyId.applyAsLong(initialId);
             this.affinity = affinity;
             this.authorization = authorization;
-            this.progressOffset = progressOffset;
+            this.partitionOffset = partitionOffset;
         }
 
         private void onServerMessage(
@@ -804,15 +796,15 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         {
             state = KafkaState.openingReply(state);
 
-            this.progressOffset = Math.max(progressOffset, group.progressOffset);
+            this.partitionOffset = Math.max(partitionOffset, group.partitionOffset);
 
             router.setThrottle(replyId, this::onServerMessage);
             doBegin(sender, routeId, replyId, traceId, authorization, affinity,
-                ex -> ex.set((b, o, l) -> kafkaCacheBeginExRW.wrap(b, o, l)
-                        .typeId(kafkaCacheTypeId)
-                        .topic(group.topic.name())
-                        .partitionId(group.partition.id())
-                        .progressOffset(progressOffset)
+                ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
+                        .typeId(kafkaTypeId)
+                        .fetch(f -> f.topic(group.topic.name())
+                                     .partition(p -> p.partitionId(group.partition.id())
+                                                      .offset$(partitionOffset)))
                         .build()
                         .sizeof()));
         }
@@ -820,7 +812,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         private void doServerReplyFlushIfNecessary(
             long traceId)
         {
-            if (progressOffset < group.progressOffset &&
+            if (partitionOffset < group.partitionOffset &&
                 replyBudget >= SIZE_OF_FLUSH_WITH_EXTENSION)
             {
                 doServerReplyFlush(traceId, SIZE_OF_FLUSH_WITH_EXTENSION);
@@ -831,17 +823,18 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             long traceId,
             int reserved)
         {
-            assert progressOffset < group.progressOffset;
-            this.progressOffset = group.progressOffset;
+            assert partitionOffset < group.partitionOffset;
+            this.partitionOffset = group.partitionOffset;
 
             replyBudget -= reserved;
 
             assert replyBudget >= 0;
 
-            doFlush(sender, routeId, replyId, traceId, authorization, reserved,
-                ex -> ex.set((b, o, l) -> kafkaCacheFlushExRW.wrap(b, o, l)
-                        .typeId(kafkaCacheTypeId)
-                        .progressOffset(progressOffset)
+            doFlush(sender, routeId, replyId, traceId, authorization, 0L, reserved,
+                ex -> ex.set((b, o, l) -> kafkaFlushExRW.wrap(b, o, l)
+                        .typeId(kafkaTypeId)
+                        .fetch(f -> f.partition(p -> p.partitionId(group.partition.id())
+                                                      .offset$(partitionOffset)))
                         .build()
                         .sizeof()));
         }
