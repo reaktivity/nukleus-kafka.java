@@ -526,14 +526,17 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 final int headersSizeMax = kafkaFetchDataEx.headersSizeMax();
                 final long timestamp = kafkaFetchDataEx.timestamp();
                 final KafkaKeyFW key = kafkaFetchDataEx.key();
-                final int valueSize = valueFragment != null ? valueFragment.sizeof() + deferred : 1;
+                final int valueLength = valueFragment != null ? valueFragment.sizeof() + deferred : -1;
 
                 assert partitionId == partition.id();
 
-                partition.writeEntryStart(partitionOffset, timestamp, key, valueSize, headersSizeMax);
+                partition.writeEntryStart(partitionOffset, timestamp, key, valueLength, headersSizeMax);
             }
 
-            partition.writeEntryContinue(valueFragment);
+            if (valueFragment != null)
+            {
+                partition.writeEntryContinue(valueFragment);
+            }
 
             if ((flags & FLAGS_FIN) != 0x00)
             {

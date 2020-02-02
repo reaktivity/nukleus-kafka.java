@@ -228,7 +228,6 @@ public class CacheFetchIT
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -237,6 +236,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageValueNull() throws Exception
     {
+        partition.nextSegment(11L);
         k3po.finish();
     }
 

@@ -101,6 +101,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
     private final MessageFunction<RouteFW> wrapRoute = (t, b, i, l) -> routeRO.wrap(b, i, i + l);
 
+    private final OctetsFW valueFragmentRO = new OctetsFW();
     private final KafkaCacheEntryFW entryRO = new KafkaCacheEntryFW();
 
     private final int kafkaTypeId;
@@ -249,7 +250,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         int flags,
         long budgetId,
         int reserved,
-        Consumer<OctetsFW.Builder> payload,
+        OctetsFW payload,
         Consumer<OctetsFW.Builder> extension)
     {
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
@@ -835,7 +836,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 final KafkaCacheKeyFW key = entry.key();
                 final ArrayFW<KafkaCacheHeaderFW> headers = entry.headers();
                 final OctetsFW value = entry.value();
-                final int remaining = value.sizeof() - messageOffset;
+                final int remaining = value != null ? value.sizeof() - messageOffset : 0;
                 final int lengthMin = Math.min(remaining, 1024);
                 final int reservedMax = remaining + replyPadding;
                 final int reservedMin = lengthMin + replyPadding;
@@ -851,7 +852,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         reserved = replyDebitor.claim(replyDebitorIndex, replyId, reservedMin, reservedMax);
                     }
 
-                    if (reserved == 0)
+                    if (reserved == 0 && value != null)
                     {
                         break flush;
                     }
@@ -868,21 +869,29 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         flags |= FLAG_FIN;
                     }
 
+                    OctetsFW fragment = value;
+                    if (flags != (FLAG_INIT | FLAG_FIN))
+                    {
+                        final int fragmentOffset = value.offset() + messageOffset;
+                        final int fragmentLimit = fragmentOffset + length;
+                        fragment = valueFragmentRO.wrap(value.buffer(), fragmentOffset, fragmentLimit);
+                    }
+
                     final int partitionId = group.partition.id();
                     switch (flags)
                     {
                     case FLAG_INIT | FLAG_FIN:
-                        doClientReplyDataFull(traceId, timestamp, key, headers, value, reserved, flags,
+                        doClientReplyDataFull(traceId, timestamp, key, headers, fragment, reserved, flags,
                                               partitionId, partitionOffset);
                         break;
                     case FLAG_INIT:
-                        doClientReplyDataInit(traceId, timestamp, key, value, reserved, length, flags);
+                        doClientReplyDataInit(traceId, timestamp, key, fragment, reserved, length, flags);
                         break;
                     case FLAG_NONE:
-                        doClientReplyDataNone(traceId, value, reserved, length, flags);
+                        doClientReplyDataNone(traceId, fragment, reserved, length, flags);
                         break;
                     case FLAG_FIN:
-                        doClientReplyDataFin(traceId, headers, value, reserved, length, flags, partitionId, partitionOffset);
+                        doClientReplyDataFin(traceId, headers, fragment, reserved, length, flags, partitionId, partitionOffset);
                         break;
                     }
 
@@ -910,8 +919,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             int partitionId,
             long partitionOffset)
         {
-            doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved,
-                p -> p.set(value),
+            doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved, value,
                 ex -> ex.set((b, o, l) -> kafkaDataExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.timestamp(timestamp)
@@ -931,13 +939,12 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long traceId,
             long timestamp,
             KafkaCacheKeyFW key,
-            OctetsFW value,
+            OctetsFW fragment,
             int reserved,
             int length,
             int flags)
         {
-            doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved,
-                p -> p.set(value.buffer(), value.offset() + messageOffset, length),
+            doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved, fragment,
                 ex -> ex.set((b, o, l) -> kafkaDataExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.timestamp(timestamp)
@@ -949,28 +956,25 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
         private void doClientReplyDataNone(
             long traceId,
-            OctetsFW value,
+            OctetsFW fragment,
             int reserved,
             int length,
             int flags)
         {
-            doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved,
-                p -> p.set(value.buffer(), value.offset() + messageOffset, length),
-                EMPTY_EXTENSION);
+            doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved, fragment, EMPTY_EXTENSION);
         }
 
         private void doClientReplyDataFin(
             long traceId,
             ArrayFW<KafkaCacheHeaderFW> headers,
-            OctetsFW value,
+            OctetsFW fragment,
             int reserved,
             int length,
             int flags,
             int partitionId,
             long partitionOffset)
         {
-            doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved,
-                p -> p.set(value.buffer(), value.offset() + messageOffset, length),
+            doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved, fragment,
                 ex -> ex.set((b, o, l) -> kafkaDataExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.partition(p -> p.partitionId(partitionId)

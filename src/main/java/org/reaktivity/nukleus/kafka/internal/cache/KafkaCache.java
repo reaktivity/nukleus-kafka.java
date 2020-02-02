@@ -15,12 +15,9 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_DIRECTORY;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -78,8 +75,7 @@ public final class KafkaCache
         String topicName,
         int partitionId)
     {
-        final Path baseDirectory = Paths.get(REAKTOR_DIRECTORY.get(config));
-        final Path cacheDirectory = baseDirectory.resolve(config.cacheDirectory());
+        final Path cacheDirectory = config.cacheDirectory();
         final String partitionName = String.format("%s-%d", topicName, partitionId);
         final Path directory = cacheDirectory.resolve(clusterName).resolve(partitionName);
 

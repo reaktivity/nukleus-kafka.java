@@ -92,12 +92,13 @@ public final class KafkaCachePartitionWriter
         long offset,
         long timestamp,
         KafkaKeyFW key,
-        int valueSize,
+        int valueLength,
         int headerSizeMax)
     {
         assert offset >= 0 && offset >= entrySegment.nextOffset();
 
-        final int logRequired = entryInfo.capacity() + key.sizeof() + valueInfo.capacity() + valueSize + headerSizeMax;
+        final int logRequired = entryInfo.capacity() + key.sizeof() + valueInfo.capacity() +
+                Math.max(valueLength, 0) + headerSizeMax;
 
         int logRemaining = entrySegment.logRemaining();
         if (logRemaining < logRequired)
@@ -112,7 +113,7 @@ public final class KafkaCachePartitionWriter
 
         entryInfo.putLong(0, offset);
         entryInfo.putLong(Long.BYTES, timestamp);
-        valueInfo.putInt(0, valueSize);
+        valueInfo.putInt(0, valueLength);
 
         entrySegment.log(entryInfo, 0, entryInfo.capacity());
         entrySegment.log(key.buffer(), key.offset(), key.sizeof());
