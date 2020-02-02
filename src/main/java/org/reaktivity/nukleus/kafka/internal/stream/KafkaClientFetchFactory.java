@@ -2221,6 +2221,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 int headerCount,
                 DirectBuffer headers)
             {
+                this.partitionOffset = offset + 1;
+
                 final KafkaDataExFW kafkaDataEx = kafkaDataExRW.wrap(extBuffer, 0, extBuffer.capacity())
                         .typeId(kafkaTypeId)
                         .fetch(f ->
