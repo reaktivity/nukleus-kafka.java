@@ -144,7 +144,6 @@ public class CacheFetchIT
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -153,10 +152,10 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageKey() throws Exception
     {
+        partition.nextSegment(1L);
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -165,10 +164,10 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageKeyNull() throws Exception
     {
+        partition.nextSegment(1L);
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -177,10 +176,10 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageKeyWithValueNull() throws Exception
     {
+        partition.nextSegment(3L);
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -189,10 +188,10 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageKeyWithValueDistinct() throws Exception
     {
+        partition.nextSegment(4L);
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -201,10 +200,10 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageKeyWithHeader() throws Exception
     {
+        partition.nextSegment(5L);
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -213,6 +212,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageKeyDistinct() throws Exception
     {
+        partition.nextSegment(6L);
         k3po.finish();
     }
 
@@ -240,7 +240,6 @@ public class CacheFetchIT
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -249,10 +248,10 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageValue10k() throws Exception
     {
+        partition.nextSegment(12L);
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -261,6 +260,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageValue100k() throws Exception
     {
+        partition.nextSegment(12L);
         k3po.finish();
     }
 
@@ -300,7 +300,6 @@ public class CacheFetchIT
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -309,10 +308,10 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageValueDistinct() throws Exception
     {
+        partition.nextSegment(16L);
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -321,10 +320,10 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageHeader() throws Exception
     {
+        partition.nextSegment(20L);
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -333,10 +332,10 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageHeaderNull() throws Exception
     {
+        partition.nextSegment(21L);
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -345,10 +344,10 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageHeadersDistinct() throws Exception
     {
+        partition.nextSegment(22L);
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -357,10 +356,10 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageHeadersRepeated() throws Exception
     {
+        partition.nextSegment(23L);
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -369,6 +368,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithNoFilter() throws Exception
     {
+        partition.nextSegment(1L);
         k3po.finish();
     }
 
