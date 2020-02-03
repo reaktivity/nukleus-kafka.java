@@ -1090,6 +1090,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
     {
         final int length = limit - progress;
 
+        decode:
         if (length >= decodeMaxBytes)
         {
             final RecordHeaderFW recordHeader = recordHeaderRO.tryWrap(buffer, progress, limit);
@@ -1109,10 +1110,26 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 final int valueSize = Math.max(valueLength, 0);
                 final int valueReserved = valueSize + client.stream.replyPadding;
                 final int valueReservedMax = Math.min(valueReserved, client.stream.replyBudget);
-                final int valueLengthMax = valueReservedMax - client.stream.replyPadding;
+
+                final int maximum = valueReservedMax;
+                final int minimum = Math.min(maximum, 1024);
+
+                int valueClaimed = maximum;
+                if (valueClaimed != 0 && client.stream.replyDebitorIndex != NO_DEBITOR_INDEX)
+                {
+                    valueClaimed = client.stream.replyDebitor.claim(client.stream.replyDebitorIndex,
+                            client.stream.replyId, minimum, maximum);
+
+                    if (valueClaimed == 0)
+                    {
+                        break decode;
+                    }
+                }
+
+                final int valueLengthMax = valueClaimed - client.stream.replyPadding;
                 final int valueLimitMax = Math.min(limit, valueOffset + valueLengthMax);
                 final OctetsFW valueInit = valueLength != -1 ? valueRO.wrap(buffer, valueOffset, valueLimitMax) : null;
-                final int valueProgress = valueInit != null ? valueInit.sizeof() : 0;
+                final int valueProgress = valueInit != null ? valueLengthMax : 0;
                 final int recordProgress = recordHeader.sizeof() + valueProgress;
 
                 final int valueDeferred = valueLength - valueProgress;
@@ -1159,69 +1176,92 @@ public final class KafkaClientFetchFactory implements StreamFactory
         int limit)
     {
         final int length = limit - progress;
-        final int valueLengthMax = Math.max(length, client.stream.replyBudget - client.stream.replyPadding);
 
-        if (length >= client.decodableRecordBytes && valueLengthMax >= client.decodableRecordValueBytes)
+        decode:
+        if (length >= Math.min(decodeMaxBytes, client.decodableRecordBytes))
         {
-            final int valueOffset = progress;
-            final int valueProgress = client.decodableRecordValueBytes;
-            final int valueSize = Math.max(valueProgress, 0);
-            final int valueLimit = valueOffset + valueSize;
-            final OctetsFW valueFin = valueProgress != -1 ? valueRO.wrap(buffer, valueOffset, valueLimit) : null;
-            final int valueReserved = valueSize + client.stream.replyPadding;
+            final int valueReserved = Math.min(length, client.decodableRecordValueBytes) + client.stream.replyPadding;
+            final int valueReservedMax = Math.min(valueReserved, client.stream.replyBudget);
 
-            final int recordProgress = client.decodableRecordBytes;
-            final int recordLimit = progress + recordProgress;
-            final RecordTrailerFW recordTrailer = recordTrailerRO.wrap(buffer, valueLimit, recordLimit);
-            final int headerCount = recordTrailer.headerCount();
-            final int headersOffset = recordTrailer.limit();
-            final int headersLength = recordLimit - headersOffset;
-            final DirectBuffer headers = headersRO;
-            headers.wrap(buffer, headersOffset, headersLength);
+            final int maximum = valueReservedMax;
+            final int minimum = Math.min(maximum, 1024);
 
-            progress += recordProgress;
+            int valueClaimed = maximum;
+            if (valueClaimed != 0 && client.stream.replyDebitorIndex != NO_DEBITOR_INDEX)
+            {
+                valueClaimed = client.stream.replyDebitor.claim(client.stream.replyDebitorIndex,
+                        client.stream.replyId, minimum, maximum);
 
-            client.onDecodeFetchRecordValueFin(traceId, valueReserved, client.decodeRecordOffset, valueFin, headerCount, headers);
+                if (valueClaimed == 0)
+                {
+                    break decode;
+                }
+            }
 
-            client.decodableRecords--;
-            assert client.decodableRecords >= 0;
+            final int valueLengthMax = valueClaimed - client.stream.replyPadding;
 
-            client.decodableResponseBytes -= recordProgress;
-            assert client.decodableResponseBytes >= 0;
+            if (length >= client.decodableRecordBytes && valueLengthMax >= client.decodableRecordValueBytes)
+            {
+                final int valueOffset = progress;
+                final int valueProgress = valueLengthMax;
+                final int valueSize = Math.max(valueProgress, 0);
+                final int valueLimit = valueOffset + valueSize;
+                final OctetsFW valueFin = valueProgress != -1 ? valueRO.wrap(buffer, valueOffset, valueLimit) : null;
 
-            client.decodableRecordBatchBytes -= recordProgress;
-            assert client.decodableRecordBatchBytes >= 0;
+                final int recordProgress = client.decodableRecordBytes;
+                final int recordLimit = progress + recordProgress;
+                final RecordTrailerFW recordTrailer = recordTrailerRO.wrap(buffer, valueLimit, recordLimit);
+                final int headerCount = recordTrailer.headerCount();
+                final int headersOffset = recordTrailer.limit();
+                final int headersLength = recordLimit - headersOffset;
+                final DirectBuffer headers = headersRO;
+                headers.wrap(buffer, headersOffset, headersLength);
 
-            client.decodableRecordSetBytes -= recordProgress;
-            assert client.decodableRecordSetBytes >= 0;
+                progress += recordProgress;
 
-            client.decodableRecordBytes -= recordProgress;
-            assert client.decodableRecordBytes == 0;
+                client.onDecodeFetchRecordValueFin(traceId, valueReservedMax, client.decodeRecordOffset, valueFin,
+                        headerCount, headers);
 
-            client.decodableRecordValueBytes -= valueProgress;
-            assert client.decodableRecordValueBytes == 0;
+                client.decodableRecords--;
+                assert client.decodableRecords >= 0;
 
-            client.decoder = decodeFetchRecordLength;
-        }
-        else if (length >= decodeMaxBytes)
-        {
-            assert client.decodableRecordValueBytes != -1 : "record headers overflow decode buffer";
+                client.decodableResponseBytes -= recordProgress;
+                assert client.decodableResponseBytes >= 0;
 
-            final int valueOffset = progress;
-            final int valueProgress = Math.min(client.decodableRecordValueBytes, decodeMaxBytes);
-            final int valueLimit = valueOffset + valueProgress;
-            final int valueReserved = valueProgress + client.stream.replyPadding;
-            final OctetsFW value = valueRO.wrap(buffer, valueOffset, valueLimit);
+                client.decodableRecordBatchBytes -= recordProgress;
+                assert client.decodableRecordBatchBytes >= 0;
 
-            progress += valueProgress;
+                client.decodableRecordSetBytes -= recordProgress;
+                assert client.decodableRecordSetBytes >= 0;
 
-            client.onDecodeFetchRecordValueCont(traceId, valueReserved, value);
+                client.decodableRecordBytes -= recordProgress;
+                assert client.decodableRecordBytes == 0;
 
-            client.decodableRecordBytes -= valueProgress;
-            assert client.decodableRecordBytes >= 0;
+                client.decodableRecordValueBytes -= valueProgress;
+                assert client.decodableRecordValueBytes == 0;
 
-            client.decodableRecordValueBytes -= valueProgress;
-            assert client.decodableRecordValueBytes >= 0;
+                client.decoder = decodeFetchRecordLength;
+            }
+            else
+            {
+                assert length >= decodeMaxBytes;
+                assert client.decodableRecordValueBytes != -1 : "record headers overflow decode buffer";
+
+                final int valueOffset = progress;
+                final int valueProgress = Math.min(valueLengthMax, decodeMaxBytes);
+                final int valueLimit = valueOffset + valueProgress;
+                final OctetsFW value = valueRO.wrap(buffer, valueOffset, valueLimit);
+
+                progress += valueProgress;
+
+                client.onDecodeFetchRecordValueCont(traceId, valueReservedMax, value);
+
+                client.decodableRecordBytes -= valueProgress;
+                assert client.decodableRecordBytes >= 0;
+
+                client.decodableRecordValueBytes -= valueProgress;
+                assert client.decodableRecordValueBytes >= 0;
+            }
         }
 
         return progress;

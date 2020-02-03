@@ -511,15 +511,21 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             final int reserved = data.reserved();
             final int flags = data.flags();
             final OctetsFW valueFragment = data.payload();
-            final OctetsFW extension = data.extension();
-            final ExtensionFW dataEx = extension.get(extensionRO::tryWrap);
-            assert dataEx.typeId() == kafkaTypeId;
-            final KafkaDataExFW kafkaDataEx = extension.get(kafkaDataExRO::wrap);
-            assert kafkaDataEx.kind() == KafkaDataExFW.KIND_FETCH;
-            final KafkaFetchDataExFW kafkaFetchDataEx = kafkaDataEx.fetch();
+
+            KafkaFetchDataExFW kafkaFetchDataEx = null;
+            if ((flags & (FLAGS_INIT | FLAGS_FIN)) != 0x00)
+            {
+                final OctetsFW extension = data.extension();
+                final ExtensionFW dataEx = extension.get(extensionRO::tryWrap);
+                assert dataEx != null && dataEx.typeId() == kafkaTypeId;
+                final KafkaDataExFW kafkaDataEx = extension.get(kafkaDataExRO::wrap);
+                assert kafkaDataEx.kind() == KafkaDataExFW.KIND_FETCH;
+                kafkaFetchDataEx = kafkaDataEx.fetch();
+            }
 
             if ((flags & FLAGS_INIT) != 0x00)
             {
+                assert kafkaFetchDataEx != null;
                 final int deferred = kafkaFetchDataEx.deferred();
                 final int partitionId = kafkaFetchDataEx.partition().partitionId();
                 final long partitionOffset = kafkaFetchDataEx.partition().offset$();
@@ -540,6 +546,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
             if ((flags & FLAGS_FIN) != 0x00)
             {
+                assert kafkaFetchDataEx != null;
                 final ArrayFW<KafkaHeaderFW> headers = kafkaFetchDataEx.headers();
                 partition.writeEntryFinish(headers);
 

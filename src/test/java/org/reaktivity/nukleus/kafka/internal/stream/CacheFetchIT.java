@@ -327,8 +327,8 @@ public class CacheFetchIT
     @Test
     @Specification({
         "${route}/cache/controller",
-        "${client}/message.header/client",
-        "${server}/message.header/server"})
+        "${client}/message.header.null/client",
+        "${server}/message.header.null/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageHeaderNull() throws Exception
     {
