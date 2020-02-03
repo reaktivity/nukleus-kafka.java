@@ -372,7 +372,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.authorization = authorization;
             this.topic = topic;
             this.partition = partition;
-            this.partitionOffset = partition.seek(Long.MAX_VALUE).nextOffset();
+            this.partitionOffset = partition.seekNotAfter(Long.MAX_VALUE).nextOffset();
             this.members = new ArrayList<>();
         }
 
@@ -391,20 +391,15 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 member.doClientInitialWindowIfNecessary(traceId, 0L, 0, 0);
             }
 
-            if (KafkaState.replyOpened(state))
+            if (isFanoutReplyOpened())
             {
                 member.doClientReplyBeginIfNecessary(traceId);
             }
         }
 
-        private void onClientFanoutMemberOpened(
-            long traceId,
-            KafkaCacheClientFetchStream member)
+        private boolean isFanoutReplyOpened()
         {
-            if (KafkaState.replyOpened(state))
-            {
-                member.doClientReplyDataIfNecessary(traceId);
-            }
+            return KafkaState.replyOpened(state);
         }
 
         private void onClientFanoutMemberClosed(
@@ -788,7 +783,17 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             state = KafkaState.openingReply(state);
 
-            this.partitionOffset = Math.max(partitionOffset, group.partitionOffset);
+            if (partitionOffset == -1L) // LATEST
+            {
+                this.partitionOffset = group.partition.seekNotBefore(group.partitionOffset).baseOffset();
+            }
+            else if (partitionOffset == -2L) // EARLIEST
+            {
+                this.partitionOffset = group.partition.seekNotBefore(0L).baseOffset();
+            }
+
+            assert partitionOffset >= 0;
+            currentSegment = group.partition.seekNotAfter(partitionOffset);
 
             router.setThrottle(replyId, this::onClientMessage);
             doBegin(sender, routeId, replyId, traceId, authorization, affinity,
@@ -1024,6 +1029,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void onClientReplyWindow(
             WindowFW window)
         {
+            final long traceId = window.traceId();
             final long budgetId = window.budgetId();
             final int credit = window.credit();
             final int padding = window.padding();
@@ -1041,11 +1047,11 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     replyDebitor = supplyDebitor.apply(replyBudgetId);
                     replyDebitorIndex = replyDebitor.acquire(replyBudgetId, replyId, this::doClientReplyDataIfNecessary);
                 }
+            }
 
-                currentSegment = group.partition.seek(partitionOffset);
-
-                final long traceId = window.traceId();
-                group.onClientFanoutMemberOpened(traceId, this);
+            if (group.isFanoutReplyOpened())
+            {
+                doClientReplyDataIfNecessary(traceId);
             }
         }
 

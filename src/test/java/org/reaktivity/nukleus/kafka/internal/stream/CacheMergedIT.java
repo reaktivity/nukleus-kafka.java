@@ -174,6 +174,10 @@ public class CacheMergedIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMergedMessageValues() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("CHANGING_PARTITION_COUNT");
+        Thread.sleep(200); // allow A1, B1, A2, B2 to be merged
+        k3po.notifyBarrier("CHANGED_PARTITION_COUNT");
         k3po.finish();
     }
 }

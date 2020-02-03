@@ -36,6 +36,7 @@ import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheBrokerWriter;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheClusterWriter;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionWriter;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegment;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicWriter;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheWriter;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
@@ -496,7 +497,14 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             state = KafkaState.openedReply(state);
 
             assert partitionId == partition.id();
-            assert progressOffset >= 0 && progressOffset >= this.partitionOffset;
+            assert progressOffset >= 0L && progressOffset >= this.partitionOffset;
+
+            KafkaCacheSegment segment = partition.seek(progressOffset);
+            if (segment.baseOffset() < 0)
+            {
+                segment = segment.nextSegment(progressOffset);
+            }
+            assert segment.baseOffset() >= 0L;
             this.partitionOffset = progressOffset;
 
             members.forEach(s -> s.doServerReplyBeginIfNecessary(traceId));

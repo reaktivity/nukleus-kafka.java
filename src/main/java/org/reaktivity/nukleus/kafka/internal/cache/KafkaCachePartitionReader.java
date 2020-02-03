@@ -43,8 +43,23 @@ public final class KafkaCachePartitionReader
         return partitionId;
     }
 
-    public KafkaCacheSegment seek(
+    public KafkaCacheSegment seekNotAfter(
         long offset)
+    {
+        ensureLatest();
+        candidate.baseOffset(offset);
+        return segments.floor(candidate);
+    }
+
+    public KafkaCacheSegment seekNotBefore(
+        long offset)
+    {
+        ensureLatest();
+        candidate.baseOffset(offset);
+        return segments.ceiling(candidate);
+    }
+
+    private void ensureLatest()
     {
         KafkaCacheSegment nextSegment = latest.nextSegment();
         while (nextSegment != null)
@@ -53,8 +68,5 @@ public final class KafkaCachePartitionReader
             latest = nextSegment;
             nextSegment = latest.nextSegment();
         }
-
-        candidate.baseOffset(offset);
-        return segments.floor(candidate);
     }
 }
