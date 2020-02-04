@@ -240,6 +240,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("requires FIN dataEx from script")
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -252,6 +253,7 @@ public class CacheFetchIT
         k3po.finish();
     }
 
+    @Ignore("requires FIN dataEx from script")
     @Test
     @Specification({
         "${route}/cache/controller",
