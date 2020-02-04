@@ -387,6 +387,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             {
                 correlations.remove(replyId);
                 doServerFanoutInitialAbortIfNecessary(traceId);
+                doServerFanoutReplyResetIfNecessary(traceId);
             }
         }
 
