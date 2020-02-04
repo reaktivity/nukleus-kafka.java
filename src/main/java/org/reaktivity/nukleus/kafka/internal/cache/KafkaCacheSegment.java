@@ -317,7 +317,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
             int index,
             int length)
         {
-            final boolean writable = logFile.readable().capacity() + length < logCapacity;
+            final boolean writable = logFile.readable().capacity() + length <= logCapacity;
             if (writable)
             {
                 logFile.write(buffer, index, length);
