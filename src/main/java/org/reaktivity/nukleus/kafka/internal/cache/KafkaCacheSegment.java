@@ -26,8 +26,9 @@ import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 
 public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
 {
-    public static final int END_OF_MESSAGES = -1;
-    public static final int END_OF_SEGMENT = -2;
+    public static final int POSITION_END_OF_MESSAGES = -1;
+    public static final int POSITION_END_OF_SEGMENT = -2;
+    public static final int OFFSET_LATEST = -1;
 
     private static final UnsafeBuffer EMPTY_BUFFER = new UnsafeBuffer(0, 0);
 
@@ -55,9 +56,10 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
     {
         final DirectBuffer buffer = index();
         final long baseOffset = baseOffset();
+        final int maxIndex = (buffer.capacity() >> 3) - 1;
 
         int lowIndex = 0;
-        int highIndex = (buffer.capacity() >> 3) - 1;
+        int highIndex = maxIndex;
 
         while (lowIndex <= highIndex)
         {
@@ -80,8 +82,14 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
             }
         }
 
-        // TODO: END_OF_MESSAGES vs END_OF_SEGMENT
-        return lowIndex <= highIndex ? (int)(buffer.getLong(lowIndex << 3) & 0xFFFF_FFFF) : END_OF_MESSAGES;
+        if (lowIndex <= highIndex || (lowIndex >= 0 && lowIndex <= maxIndex))
+        {
+            return (int)(buffer.getLong(lowIndex << 3) & 0xFFFF_FFFF);
+        }
+        else
+        {
+            return nextSegment != null ? POSITION_END_OF_SEGMENT : POSITION_END_OF_MESSAGES;
+        }
     }
 
     public KafkaCacheEntryFW read(
@@ -161,8 +169,8 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         return false;
     }
 
-    public void nextOffset(
-        long nextOffset)
+    public void lastOffset(
+        long lastOffset)
     {
         throw new UnsupportedOperationException();
     }
@@ -268,7 +276,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         private final KafkaCacheFile logFile;
         private final KafkaCacheFile indexFile;
 
-        private volatile long nextOffset;
+        private long lastOffset;
 
         private Data(
             MutableDirectBuffer writeBuffer,
@@ -279,15 +287,16 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         {
             super(writeBuffer, directory, logCapacity, indexCapacity);
             this.baseOffset = baseOffset;
-            this.nextOffset = baseOffset;
+            this.lastOffset = OFFSET_LATEST;
             this.logFile = new KafkaCacheFile(writeBuffer, directory, "log", baseOffset, logCapacity);
             this.indexFile = new KafkaCacheFile(writeBuffer, directory, "index", baseOffset, indexCapacity);
         }
 
-        public void nextOffset(
-            long nextOffset)
+        public void lastOffset(
+            long lastOffset)
         {
-            this.nextOffset = nextOffset;
+            assert lastOffset > this.lastOffset;
+            this.lastOffset = lastOffset;
         }
 
         @Override
@@ -299,7 +308,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         @Override
         public long nextOffset()
         {
-            return nextOffset;
+            return lastOffset == OFFSET_LATEST ? baseOffset : lastOffset + 1;
         }
 
         @Override
@@ -322,7 +331,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
             int index,
             int length)
         {
-            final boolean writable = indexFile.readable().capacity() + length < indexCapacity;
+            final boolean writable = indexFile.readable().capacity() + length <= indexCapacity;
             if (writable)
             {
                 indexFile.write(buffer, index, length);

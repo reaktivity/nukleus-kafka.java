@@ -46,7 +46,7 @@ public final class KafkaCachePartitionReader
     public KafkaCacheSegment seekNotAfter(
         long offset)
     {
-        ensureLatest();
+        ensureSeekable();
         candidate.baseOffset(offset);
         return segments.floor(candidate);
     }
@@ -54,12 +54,12 @@ public final class KafkaCachePartitionReader
     public KafkaCacheSegment seekNotBefore(
         long offset)
     {
-        ensureLatest();
+        ensureSeekable();
         candidate.baseOffset(offset);
         return segments.ceiling(candidate);
     }
 
-    private void ensureLatest()
+    public void ensureSeekable()
     {
         KafkaCacheSegment nextSegment = latest.nextSegment();
         while (nextSegment != null)

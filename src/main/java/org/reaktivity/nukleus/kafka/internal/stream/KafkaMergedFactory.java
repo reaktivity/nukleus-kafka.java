@@ -1129,7 +1129,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             state = KafkaState.closedInitial(state);
 
-            final KafkaResetExFW kafkaResetEx = extension.get(kafkaResetExRO::wrap);
+            final KafkaResetExFW kafkaResetEx = extension.get(kafkaResetExRO::tryWrap);
             final int error = kafkaResetEx != null ? kafkaResetEx.error() : 0;
 
             doFetchReplyResetIfNecessary(traceId);

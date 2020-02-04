@@ -33,8 +33,6 @@ public final class KafkaCachePartitionWriter
     private final MutableDirectBuffer valueInfo = new UnsafeBuffer(new byte[Integer.BYTES]);
     private final MutableDirectBuffer indexInfo = new UnsafeBuffer(new byte[Integer.BYTES + Integer.BYTES]);
 
-    private final KafkaCacheSegment.Candidate candidate = new KafkaCacheSegment.Candidate();
-
     private final int partitionId;
     private final NavigableSet<KafkaCacheSegment> segments;
 
@@ -56,8 +54,19 @@ public final class KafkaCachePartitionWriter
         return partitionId;
     }
 
-    public KafkaCacheSegment seek(
+    public void ensureWritable(
         long offset)
+    {
+        advance();
+
+        if (entrySegment.baseOffset() < 0)
+        {
+            entrySegment = entrySegment.nextSegment(offset);
+        }
+        assert entrySegment.baseOffset() >= 0L;
+    }
+
+    public KafkaCachePartitionWriter advance()
     {
         KafkaCacheSegment nextSegment = entrySegment.nextSegment();
         while (nextSegment != null)
@@ -67,8 +76,7 @@ public final class KafkaCachePartitionWriter
             nextSegment = entrySegment.nextSegment();
         }
 
-        candidate.baseOffset(offset);
-        return segments.floor(candidate);
+        return this;
     }
 
     public long nextOffset()
@@ -95,18 +103,23 @@ public final class KafkaCachePartitionWriter
         int valueLength,
         int headerSizeMax)
     {
-        assert offset >= 0 && offset >= entrySegment.nextOffset();
+        final long nextOffset = entrySegment.nextOffset();
+        assert offset >= 0 && offset >= nextOffset : String.format("%d >= 0 && %d >= %d", offset, offset, nextOffset);
 
         final int logRequired = entryInfo.capacity() + key.sizeof() + valueInfo.capacity() +
                 Math.max(valueLength, 0) + headerSizeMax;
+        final int indexRequired = indexInfo.capacity();
 
         int logRemaining = entrySegment.logRemaining();
-        if (logRemaining < logRequired)
+        int indexRemaining = entrySegment.indexRemaining();
+        if (logRemaining < logRequired || indexRemaining < indexRequired)
         {
             entrySegment = entrySegment.nextSegment(offset);
             logRemaining = entrySegment.logRemaining();
+            indexRemaining = entrySegment.indexRemaining();
         }
         assert logRemaining >= logRequired;
+        assert indexRemaining >= indexRequired;
 
         this.offset = offset;
         this.position = entrySegment.log().capacity();
@@ -148,6 +161,6 @@ public final class KafkaCachePartitionWriter
 
         entrySegment.index(indexInfo, 0, indexInfo.capacity());
 
-        entrySegment.nextOffset(offset + 1);
+        entrySegment.lastOffset(offset);
     }
 }

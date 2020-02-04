@@ -36,7 +36,6 @@ import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheBrokerWriter;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheClusterWriter;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionWriter;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegment;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicWriter;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheWriter;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
@@ -66,6 +65,8 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 public final class KafkaCacheServerFetchFactory implements StreamFactory
 {
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
+
+    private static final int SIZE_OF_FLUSH_WITH_EXTENSION = 64;
 
     private static final int FLAGS_INIT = 0x02;
     private static final int FLAGS_FIN = 0x01;
@@ -162,7 +163,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             final RouteFW route = wrapRoute.apply(t, b, i, l);
             final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
             final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
-            return routeTopic != null && Objects.equals(routeTopic, beginTopic);
+            return !route.localAddress().equals(route.remoteAddress()) &&
+                    routeTopic != null && Objects.equals(routeTopic, beginTopic);
         };
 
         final RouteFW route = router.resolve(routeId, authorization, filter, wrapRoute);
@@ -351,7 +353,6 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             this.authorization = authorization;
             this.topic = topic;
             this.partition = partition;
-            this.partitionOffset = partition.seek(Long.MAX_VALUE).nextOffset();
             this.members = new ArrayList<>();
         }
 
@@ -385,7 +386,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             if (members.isEmpty())
             {
                 correlations.remove(replyId);
-                doServerFanoutInitialEndIfNecessary(traceId);
+                doServerFanoutInitialAbortIfNecessary(traceId);
             }
         }
 
@@ -413,6 +414,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             this.replyId = supplyReplyId.applyAsLong(initialId);
             this.receiver = router.supplyReceiver(initialId);
 
+            this.partitionOffset = partition.advance().nextOffset();
+
             correlations.put(replyId, this::onServerFanoutMessage);
             router.setThrottle(initialId, this::onServerFanoutMessage);
             doBegin(receiver, routeId, initialId, traceId, authorization, 0L,
@@ -426,19 +429,19 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             state = KafkaState.openingInitial(state);
         }
 
-        private void doServerFanoutInitialEndIfNecessary(
+        private void doServerFanoutInitialAbortIfNecessary(
             long traceId)
         {
             if (!KafkaState.initialClosed(state))
             {
-                doServerFanoutInitialEnd(traceId);
+                doServerFanoutInitialAbort(traceId);
             }
         }
 
-        private void doServerFanoutInitialEnd(
+        private void doServerFanoutInitialAbort(
             long traceId)
         {
-            doEnd(receiver, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
+            doAbort(receiver, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
 
             state = KafkaState.closedInitial(state);
         }
@@ -492,20 +495,15 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             final KafkaFetchBeginExFW kafkaFetchBeginEx = kafkaBeginEx.fetch();
             final KafkaOffsetFW progress = kafkaFetchBeginEx.partition();
             final int partitionId = progress.partitionId();
-            final long progressOffset = progress.offset$();
+            final long partitionOffset = progress.offset$();
 
             state = KafkaState.openedReply(state);
 
             assert partitionId == partition.id();
-            assert progressOffset >= 0L && progressOffset >= this.partitionOffset;
+            assert partitionOffset >= 0L && partitionOffset >= this.partitionOffset;
+            this.partitionOffset = partitionOffset;
 
-            KafkaCacheSegment segment = partition.seek(progressOffset);
-            if (segment.baseOffset() < 0)
-            {
-                segment = segment.nextSegment(progressOffset);
-            }
-            assert segment.baseOffset() >= 0L;
-            this.partitionOffset = progressOffset;
+            partition.ensureWritable(partitionOffset);
 
             members.forEach(s -> s.doServerReplyBeginIfNecessary(traceId));
 
@@ -543,6 +541,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 final int valueLength = valueFragment != null ? valueFragment.sizeof() + deferred : -1;
 
                 assert partitionId == partition.id();
+                assert partitionOffset >= this.partitionOffset;
 
                 partition.writeEntryStart(partitionOffset, timestamp, key, valueLength, headersSizeMax);
             }
@@ -555,10 +554,15 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             if ((flags & FLAGS_FIN) != 0x00)
             {
                 assert kafkaFetchDataEx != null;
+                final int partitionId = kafkaFetchDataEx.partition().partitionId();
+                final long partitionOffset = kafkaFetchDataEx.partition().offset$();
                 final ArrayFW<KafkaHeaderFW> headers = kafkaFetchDataEx.headers();
+
                 partition.writeEntryFinish(headers);
 
-                this.partitionOffset = kafkaFetchDataEx.partition().offset$();
+                assert partitionId == partition.id();
+                assert partitionOffset >= this.partitionOffset;
+                this.partitionOffset = partitionOffset;
 
                 members.forEach(s -> s.doServerReplyFlushIfNecessary(traceId));
             }
@@ -644,7 +648,6 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
     private final class KafkaCacheServerFetchStream
     {
-        private static final int SIZE_OF_FLUSH_WITH_EXTENSION = 64;
         private final KafkaCacheServerFetchFanout group;
         private final MessageConsumer sender;
         private final long routeId;
@@ -830,7 +833,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         private void doServerReplyFlushIfNecessary(
             long traceId)
         {
-            if (partitionOffset < group.partitionOffset &&
+            if (partitionOffset <= group.partitionOffset &&
                 replyBudget >= SIZE_OF_FLUSH_WITH_EXTENSION)
             {
                 doServerReplyFlush(traceId, SIZE_OF_FLUSH_WITH_EXTENSION);
@@ -841,8 +844,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             long traceId,
             int reserved)
         {
-            assert partitionOffset < group.partitionOffset;
-            this.partitionOffset = group.partitionOffset;
+            assert partitionOffset <= group.partitionOffset;
 
             replyBudget -= reserved;
 
@@ -852,9 +854,11 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 ex -> ex.set((b, o, l) -> kafkaFlushExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.partition(p -> p.partitionId(group.partition.id())
-                                                      .offset$(partitionOffset)))
+                                                      .offset$(group.partitionOffset)))
                         .build()
                         .sizeof()));
+
+            this.partitionOffset = group.partitionOffset + 1;
         }
 
         private void doServerReplyEndIfNecessary(

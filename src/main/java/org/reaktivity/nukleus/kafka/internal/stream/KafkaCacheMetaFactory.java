@@ -146,7 +146,8 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             final RouteFW route = wrapRoute.apply(t, b, i, l);
             final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
             final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
-            return routeTopic != null && Objects.equals(routeTopic, beginTopic);
+            return !route.localAddress().equals(route.remoteAddress()) &&
+                    routeTopic != null && Objects.equals(routeTopic, beginTopic);
         };
 
         MessageConsumer newStream = null;

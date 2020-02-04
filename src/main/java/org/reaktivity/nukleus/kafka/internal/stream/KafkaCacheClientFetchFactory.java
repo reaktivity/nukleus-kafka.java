@@ -16,7 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegment.END_OF_SEGMENT;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegment.POSITION_END_OF_SEGMENT;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -72,6 +72,10 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 public final class KafkaCacheClientFetchFactory implements StreamFactory
 {
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
+
+    private static final long OFFSET_LATEST = -1L;
+    private static final long OFFSET_EARLIEST = -2L;
+    private static final long OFFSET_MAXIMUM = Long.MAX_VALUE;
 
     private static final int FLAG_FIN = 0x01;
     private static final int FLAG_INIT = 0x02;
@@ -372,7 +376,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.authorization = authorization;
             this.topic = topic;
             this.partition = partition;
-            this.partitionOffset = partition.seekNotAfter(Long.MAX_VALUE).nextOffset();
+            this.partitionOffset = OFFSET_MAXIMUM;
             this.members = new ArrayList<>();
         }
 
@@ -411,7 +415,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             if (members.isEmpty())
             {
                 correlations.remove(replyId);
-                doClientFanoutInitialEndIfNecessary(traceId);
+                doClientFanoutInitialAbortIfNecessary(traceId);
             }
         }
 
@@ -426,7 +430,26 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
             if (!KafkaState.initialOpening(state))
             {
+                if (partitionOffset == OFFSET_MAXIMUM)
+                {
+                    members.forEach(this::setMinimumPartitionOffset);
+                    if (partitionOffset == OFFSET_MAXIMUM)
+                    {
+                        this.partitionOffset = OFFSET_LATEST;
+                    }
+                }
+
                 doClientFanoutInitialBegin(traceId);
+            }
+        }
+
+        private void setMinimumPartitionOffset(
+            KafkaCacheClientFetchStream member)
+        {
+            if (member.partitionOffset < partitionOffset &&
+                member.partitionOffset != OFFSET_LATEST)
+            {
+                this.partitionOffset = member.partitionOffset;
             }
         }
 
@@ -452,19 +475,19 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             state = KafkaState.openingInitial(state);
         }
 
-        private void doClientFanoutInitialEndIfNecessary(
+        private void doClientFanoutInitialAbortIfNecessary(
             long traceId)
         {
             if (!KafkaState.initialClosed(state))
             {
-                doClientFanoutInitialEnd(traceId);
+                doClientFanoutInitialAbort(traceId);
             }
         }
 
-        private void doClientFanoutInitialEnd(
+        private void doClientFanoutInitialAbort(
             long traceId)
         {
-            doEnd(receiver, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
+            doAbort(receiver, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
 
             state = KafkaState.closedInitial(state);
         }
@@ -516,15 +539,15 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final KafkaBeginExFW kafkaBeginEx = extension.get(kafkaBeginExRO::wrap);
             assert kafkaBeginEx.kind() == KafkaBeginExFW.KIND_FETCH;
             final KafkaFetchBeginExFW kafkaFetchBeginEx = kafkaBeginEx.fetch();
-            final KafkaOffsetFW progress = kafkaFetchBeginEx.partition();
-            final int partitionId = progress.partitionId();
-            final long progressOffset = progress.offset$();
+            final KafkaOffsetFW partition = kafkaFetchBeginEx.partition();
+            final int partitionId = partition.partitionId();
+            final long partitionOffset = partition.offset$();
 
             state = KafkaState.openedReply(state);
 
-            assert partitionId == partition.id();
-            assert progressOffset >= 0 && progressOffset >= this.partitionOffset;
-            this.partitionOffset = progressOffset;
+            assert partitionId == this.partition.id();
+            assert partitionOffset >= 0 && partitionOffset >= this.partitionOffset;
+            this.partitionOffset = partitionOffset;
 
             members.forEach(s -> s.doClientReplyBeginIfNecessary(traceId));
 
@@ -535,16 +558,20 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             FlushFW flush)
         {
             final long traceId = flush.traceId();
+            final int reserved = flush.reserved();
             final OctetsFW extension = flush.extension();
             final KafkaFlushExFW kafkaFlushEx = extension.get(kafkaFlushExRO::wrap);
             final KafkaFetchFlushExFW kafkaFetchFlushEx = kafkaFlushEx.fetch();
             final KafkaOffsetFW partition = kafkaFetchFlushEx.partition();
             final long partitionOffset = partition.offset$();
 
-            assert partitionOffset > this.partitionOffset;
+            assert partitionOffset >= this.partitionOffset;
             this.partitionOffset = partitionOffset;
+            this.partition.ensureSeekable();
 
             members.forEach(s -> s.doClientReplyDataIfNecessary(traceId));
+
+            doClientFanoutReplyWindow(traceId, reserved);
         }
 
         private void onClientFanoutReplyEnd(
@@ -783,11 +810,11 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             state = KafkaState.openingReply(state);
 
-            if (partitionOffset == -1L) // LATEST
+            if (partitionOffset == OFFSET_LATEST)
             {
-                this.partitionOffset = group.partition.seekNotBefore(group.partitionOffset).baseOffset();
+                this.partitionOffset = group.partitionOffset;
             }
-            else if (partitionOffset == -2L) // EARLIEST
+            else if (partitionOffset == OFFSET_EARLIEST)
             {
                 this.partitionOffset = group.partition.seekNotBefore(0L).baseOffset();
             }
@@ -822,7 +849,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             assert currentSegment != null;
 
             int position = currentSegment.position(partitionOffset);
-            while (position == END_OF_SEGMENT)
+            while (position == POSITION_END_OF_SEGMENT)
             {
                 final KafkaCacheSegment nextSegment = currentSegment.nextSegment();
                 if (nextSegment == null)
