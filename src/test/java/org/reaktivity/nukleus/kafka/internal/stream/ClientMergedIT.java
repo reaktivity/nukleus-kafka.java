@@ -60,7 +60,7 @@ public class ClientMergedIT
     @Ignore("filtered")
     @Test
     @Specification({
-        "${route}/client.merge/controller",
+        "${route}/client.merged/controller",
         "${client}/merged.filter.header/client",
         "${server}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -72,7 +72,7 @@ public class ClientMergedIT
     @Ignore("filtered")
     @Test
     @Specification({
-        "${route}/client.merge/controller",
+        "${route}/client.merged/controller",
         "${client}/merged.filter.header.and.header/client",
         "${server}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -84,7 +84,7 @@ public class ClientMergedIT
     @Ignore("filtered")
     @Test
     @Specification({
-        "${route}/client.merge/controller",
+        "${route}/client.merged/controller",
         "${client}/merged.filter.header.or.header/client",
         "${server}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -96,7 +96,7 @@ public class ClientMergedIT
     @Ignore("filtered")
     @Test
     @Specification({
-        "${route}/client.merge/controller",
+        "${route}/client.merged/controller",
         "${client}/merged.filter.key/client",
         "${server}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -108,7 +108,7 @@ public class ClientMergedIT
     @Ignore("filtered")
     @Test
     @Specification({
-        "${route}/client.merge/controller",
+        "${route}/client.merged/controller",
         "${client}/merged.filter.key.and.header/client",
         "${server}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -120,7 +120,7 @@ public class ClientMergedIT
     @Ignore("filtered")
     @Test
     @Specification({
-        "${route}/client.merge/controller",
+        "${route}/client.merged/controller",
         "${client}/merged.filter.key.or.header/client",
         "${server}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -131,7 +131,7 @@ public class ClientMergedIT
 
     @Test
     @Specification({
-        "${route}/client.merge/controller",
+        "${route}/client.merged/controller",
         "${client}/merged.filter.none/client",
         "${server}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -142,7 +142,7 @@ public class ClientMergedIT
 
     @Test
     @Specification({
-        "${route}/client.merge/controller",
+        "${route}/client.merged/controller",
         "${client}/merged.message.values/client",
         "${server}/unmerged.message.values/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")

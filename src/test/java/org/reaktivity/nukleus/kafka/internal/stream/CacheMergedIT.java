@@ -74,7 +74,7 @@ public class CacheMergedIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/cache.merge/controller",
+        "${route}/cache.merged/controller",
         "${client}/merged.filter.header/client",
         "${server}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -88,7 +88,7 @@ public class CacheMergedIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/cache.merge/controller",
+        "${route}/cache.merged/controller",
         "${client}/merged.filter.header.and.header/client",
         "${server}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -102,7 +102,7 @@ public class CacheMergedIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/cache.merge/controller",
+        "${route}/cache.merged/controller",
         "${client}/merged.filter.header.or.header/client",
         "${server}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -116,7 +116,7 @@ public class CacheMergedIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/cache.merge/controller",
+        "${route}/cache.merged/controller",
         "${client}/merged.filter.key/client",
         "${server}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -130,7 +130,7 @@ public class CacheMergedIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/cache.merge/controller",
+        "${route}/cache.merged/controller",
         "${client}/merged.filter.key.and.header/client",
         "${server}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -144,7 +144,7 @@ public class CacheMergedIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/cache.merge/controller",
+        "${route}/cache.merged/controller",
         "${client}/merged.filter.key.or.header/client",
         "${server}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -158,7 +158,7 @@ public class CacheMergedIT
     @Ignore("merged message order not deterministic")
     @Test
     @Specification({
-        "${route}/cache.merge/controller",
+        "${route}/cache.merged/controller",
         "${client}/merged.filter.none/client",
         "${server}/unmerged.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -169,7 +169,7 @@ public class CacheMergedIT
 
     @Test
     @Specification({
-        "${route}/cache.merge/controller",
+        "${route}/cache.merged/controller",
         "${client}/merged.message.values/client",
         "${server}/unmerged.message.values/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
