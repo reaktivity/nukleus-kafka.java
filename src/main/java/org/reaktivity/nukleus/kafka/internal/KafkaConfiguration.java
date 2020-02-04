@@ -39,12 +39,11 @@ public class KafkaConfiguration extends Configuration
     static
     {
         final ConfigurationDef config = new ConfigurationDef("nukleus.kafka");
-        KAFKA_META_MAX_AGE = config.property("meta.max.age", 300);
-        KAFKA_DESCRIBE_MAX_AGE = config.property("describe.max.age", 300);
+        KAFKA_META_MAX_AGE = config.property("meta.max.age", 5 * 60);
+        KAFKA_DESCRIBE_MAX_AGE = config.property("describe.max.age", 5 * 60);
         KAFKA_FETCH_MAX_WAIT_MILLIS = config.property("fetch.max.wait.millis", 500);
         KAFKA_FETCH_MAX_BYTES = config.property("fetch.max.bytes", 50 * 1024 * 1024);
-        // maximum record batch size, corresponding to Kafka broker and topic configuration property "max.message.bytes"
-        KAFKA_FETCH_PARTITION_MAX_BYTES = config.property("fetch.partition.max.bytes", 1 * 1024 * 1024);
+        KAFKA_FETCH_PARTITION_MAX_BYTES = config.property("fetch.partition.max.bytes", 50 * 1024 * 1024);
         KAFKA_CACHE_DIRECTORY = config.property(Path.class, "cache.directory", (c, v) -> cacheDirectory(c, v), KafkaNukleus.NAME);
         KAFKA_CACHE_SEGMENT_LOG_BYTES = config.property("cache.segment.log.bytes", 1 * 1024 * 1024);
         KAFKA_CACHE_SEGMENT_INDEX_BYTES = config.property("cache.segment.index.bytes", 16 * 1024);
