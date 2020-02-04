@@ -17,7 +17,6 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_READ_IDLE_TIMEOUT;
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
@@ -48,7 +47,6 @@ public class ClientFetchIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(8192)
-        .configure(KAFKA_READ_IDLE_TIMEOUT, 86400)
         .configure(REAKTOR_DRAIN_ON_CLOSE, false)
         .configure(REAKTOR_BUFFER_SLOT_CAPACITY, 8192)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)

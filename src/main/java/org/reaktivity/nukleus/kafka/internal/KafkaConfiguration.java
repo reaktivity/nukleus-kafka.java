@@ -30,7 +30,6 @@ public class KafkaConfiguration extends Configuration
     public static final IntPropertyDef KAFKA_FETCH_MAX_WAIT_MILLIS;
     public static final IntPropertyDef KAFKA_FETCH_MAX_BYTES;
     public static final IntPropertyDef KAFKA_FETCH_PARTITION_MAX_BYTES;
-    public static final IntPropertyDef KAFKA_READ_IDLE_TIMEOUT;
     public static final PropertyDef<Path> KAFKA_CACHE_DIRECTORY;
     public static final IntPropertyDef KAFKA_CACHE_SEGMENT_LOG_BYTES;
     public static final IntPropertyDef KAFKA_CACHE_SEGMENT_INDEX_BYTES;
@@ -46,7 +45,6 @@ public class KafkaConfiguration extends Configuration
         KAFKA_FETCH_MAX_BYTES = config.property("fetch.max.bytes", 50 * 1024 * 1024);
         // maximum record batch size, corresponding to Kafka broker and topic configuration property "max.message.bytes"
         KAFKA_FETCH_PARTITION_MAX_BYTES = config.property("fetch.partition.max.bytes", 1 * 1024 * 1024);
-        KAFKA_READ_IDLE_TIMEOUT = config.property("read.idle.timeout", 5000);
         KAFKA_CACHE_DIRECTORY = config.property(Path.class, "cache.directory", (c, v) -> cacheDirectory(c, v), KafkaNukleus.NAME);
         KAFKA_CACHE_SEGMENT_LOG_BYTES = config.property("cache.segment.log.bytes", 1 * 1024 * 1024);
         KAFKA_CACHE_SEGMENT_INDEX_BYTES = config.property("cache.segment.index.bytes", 16 * 1024);
@@ -82,11 +80,6 @@ public class KafkaConfiguration extends Configuration
     public int fetchPartitionMaxBytes()
     {
         return KAFKA_FETCH_PARTITION_MAX_BYTES.get(this);
-    }
-
-    public int readIdleTimeout()
-    {
-        return KAFKA_READ_IDLE_TIMEOUT.getAsInt(this);
     }
 
     public Path cacheDirectory()
