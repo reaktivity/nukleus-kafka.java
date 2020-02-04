@@ -142,6 +142,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         {
             nextSegment = new KafkaCacheSegment.Data(writeBuffer, directory, nextOffset, logCapacity, indexCapacity);
             this.nextSegment = nextSegment;
+            readOnly();
         }
         return nextSegment;
     }
@@ -187,6 +188,11 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
     protected int indexRemaining()
     {
         return indexCapacity - index().capacity();
+    }
+
+    protected void readOnly()
+    {
+        // ignore
     }
 
     private boolean equalTo(
@@ -349,6 +355,13 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         protected DirectBuffer log()
         {
             return logFile.readable();
+        }
+
+        @Override
+        protected void readOnly()
+        {
+            logFile.readonly();
+            indexFile.readonly();
         }
     }
 }

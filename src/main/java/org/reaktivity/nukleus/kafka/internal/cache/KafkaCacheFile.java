@@ -90,6 +90,18 @@ public final class KafkaCacheFile
         }
     }
 
+    void readonly()
+    {
+        try
+        {
+            writable.close();
+        }
+        catch (IOException ex)
+        {
+            LangUtil.rethrowUnchecked(ex);
+        }
+    }
+
     private static MappedByteBuffer readInit(
         Path path,
         int capacity)
