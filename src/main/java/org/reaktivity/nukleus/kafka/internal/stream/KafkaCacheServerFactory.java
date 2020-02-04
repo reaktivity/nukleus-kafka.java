@@ -61,6 +61,10 @@ public final class KafkaCacheServerFactory implements StreamFactory
         final Long2ObjectHashMap<MessageConsumer> correlations = new Long2ObjectHashMap<>();
         final Int2ObjectHashMap<StreamFactory> streamFactoriesByKind = new Int2ObjectHashMap<>();
 
+        streamFactoriesByKind.put(KafkaBeginExFW.KIND_BOOTSTRAP, new KafkaCacheServerBootstrapFactory(
+                config, router, writeBuffer, supplyInitialId, supplyReplyId,
+                supplyTraceId, supplyTypeId, correlations));
+
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_META, new KafkaCacheMetaFactory(
                 config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
                 supplyTraceId, supplyTypeId, supplyCacheRoute, correlations));
