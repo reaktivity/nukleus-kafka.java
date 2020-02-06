@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_CLIENT_RECONNECT;
+
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
@@ -69,7 +71,7 @@ public final class KafkaCacheClientFactory implements StreamFactory
 
         final KafkaCacheMetaFactory cacheMetaFactory = new KafkaCacheMetaFactory(
                 config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
-                supplyTraceId, supplyTypeId, supplyCacheRoute, correlations);
+                supplyTraceId, supplyTypeId, supplyCacheRoute, correlations, KAFKA_CACHE_CLIENT_RECONNECT);
 
         final KafkaCacheDescribeFactory cacheDescribeFactory = new KafkaCacheDescribeFactory(
                 config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,

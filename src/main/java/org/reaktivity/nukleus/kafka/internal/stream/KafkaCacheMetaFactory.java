@@ -29,6 +29,7 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Int2IntHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.reaktivity.nukleus.Configuration.BooleanPropertyDef;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessageFunction;
@@ -93,6 +94,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
     private final LongUnaryOperator supplyReplyId;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
+    private final boolean reconnect;
 
     public KafkaCacheMetaFactory(
         KafkaConfiguration config,
@@ -104,7 +106,8 @@ public final class KafkaCacheMetaFactory implements StreamFactory
         LongSupplier supplyTraceId,
         ToIntFunction<String> supplyTypeId,
         LongFunction<KafkaCacheRoute> supplyCacheRoute,
-        Long2ObjectHashMap<MessageConsumer> correlations)
+        Long2ObjectHashMap<MessageConsumer> correlations,
+        BooleanPropertyDef reconnect)
     {
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.router = router;
@@ -115,6 +118,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
         this.supplyReplyId = supplyReplyId;
         this.supplyCacheRoute = supplyCacheRoute;
         this.correlations = correlations;
+        this.reconnect = reconnect.getAsBoolean(config);
     }
 
     @Override
@@ -432,16 +436,41 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             state = KafkaState.closedInitial(state);
         }
 
+        private void doMetaFanoutInitialAbortIfNecessary(
+            long traceId)
+        {
+            if (!KafkaState.initialClosed(state))
+            {
+                doMetaFanoutInitialAbort(traceId);
+            }
+        }
+
+        private void doMetaFanoutInitialAbort(
+            long traceId)
+        {
+            doAbort(receiver, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
+
+            state = KafkaState.closedInitial(state);
+        }
+
         private void onMetaFanoutInitialReset(
             ResetFW reset)
         {
             final long traceId = reset.traceId();
 
-            members.forEach(s -> s.doMetaInitialResetIfNecessary(traceId));
-
             state = KafkaState.closedInitial(state);
 
             doMetaFanoutReplyResetIfNecessary(traceId);
+
+            if (reconnect)
+            {
+                System.out.println("TODO: progressive back-off");
+                doMetaFanoutInitialBeginIfNecessary(traceId);
+            }
+            else
+            {
+                members.forEach(s -> s.doMetaInitialResetIfNecessary(traceId));
+            }
         }
 
         private void onMetaFanoutInitialWindow(
@@ -549,9 +578,19 @@ public final class KafkaCacheMetaFactory implements StreamFactory
         {
             final long traceId = abort.traceId();
 
-            members.forEach(s -> s.doMetaReplyAbortIfNecessary(traceId));
-
             state = KafkaState.closedReply(state);
+
+            doMetaFanoutInitialAbortIfNecessary(traceId);
+
+            if (reconnect)
+            {
+                System.out.println("TODO: progressive back-off");
+                doMetaFanoutInitialBeginIfNecessary(traceId);
+            }
+            else
+            {
+                members.forEach(s -> s.doMetaReplyAbortIfNecessary(traceId));
+            }
         }
 
         private void doMetaFanoutReplyResetIfNecessary(

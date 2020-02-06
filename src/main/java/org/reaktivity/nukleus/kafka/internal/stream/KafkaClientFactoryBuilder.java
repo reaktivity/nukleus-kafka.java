@@ -30,7 +30,7 @@ import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 
-public final class KafkaClientFactoryBuilder implements StreamFactoryBuilder
+public final class KafkaClientFactoryBuilder implements KafkaStreamFactoryBuilder
 {
     private final KafkaConfiguration config;
 

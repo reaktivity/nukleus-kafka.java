@@ -29,13 +29,16 @@ import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheClientFactoryBuild
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheRoute;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheServerFactoryBuilder;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaClientFactoryBuilder;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaStreamFactoryBuilder;
+import org.reaktivity.nukleus.route.AddressFactoryBuilder;
 import org.reaktivity.nukleus.route.RouteKind;
 import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 
 final class KafkaElektron implements Elektron
 {
     private final Long2ObjectHashMap<KafkaCacheRoute> cacheRoutesById;
-    private final Map<RouteKind, StreamFactoryBuilder> streamFactoryBuilders;
+    private final Map<RouteKind, KafkaStreamFactoryBuilder> streamFactoryBuilders;
+    private final Map<RouteKind, AddressFactoryBuilder> addressFactoryBuilders;
 
     KafkaElektron(
         KafkaConfiguration config,
@@ -43,11 +46,24 @@ final class KafkaElektron implements Elektron
     {
         this.cacheRoutesById = new Long2ObjectHashMap<>();
 
-        Map<RouteKind, StreamFactoryBuilder> streamFactoryBuilders = new EnumMap<>(RouteKind.class);
+        Map<RouteKind, KafkaStreamFactoryBuilder> streamFactoryBuilders = new EnumMap<>(RouteKind.class);
         streamFactoryBuilders.put(CLIENT, new KafkaClientFactoryBuilder(config));
         streamFactoryBuilders.put(CACHE_SERVER, new KafkaCacheServerFactoryBuilder(config, cache, this::supplyCacheRoute));
         streamFactoryBuilders.put(CACHE_CLIENT, new KafkaCacheClientFactoryBuilder(config, cache, this::supplyCacheRoute));
         this.streamFactoryBuilders = streamFactoryBuilders;
+
+        Map<RouteKind, AddressFactoryBuilder> addressFactoryBuilders = new EnumMap<>(RouteKind.class);
+        for (Map.Entry<RouteKind, KafkaStreamFactoryBuilder> entry : streamFactoryBuilders.entrySet())
+        {
+            final RouteKind routeKind = entry.getKey();
+            final KafkaStreamFactoryBuilder streamFactoryBuilder = entry.getValue();
+            final AddressFactoryBuilder addressFactoryBuilder = streamFactoryBuilder.addressFactoryBuilder();
+            if (routeKind == CACHE_SERVER && config.cacheServerBootstrap())
+            {
+                addressFactoryBuilders.put(routeKind, addressFactoryBuilder);
+            }
+        }
+        this.addressFactoryBuilders = addressFactoryBuilders;
     }
 
     @Override
@@ -55,6 +71,13 @@ final class KafkaElektron implements Elektron
         RouteKind kind)
     {
         return streamFactoryBuilders.get(kind);
+    }
+
+    @Override
+    public AddressFactoryBuilder addressFactoryBuilder(
+        RouteKind kind)
+    {
+        return addressFactoryBuilders.get(kind);
     }
 
     @Override

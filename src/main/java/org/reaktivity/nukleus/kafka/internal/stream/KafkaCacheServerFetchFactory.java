@@ -57,6 +57,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFlushExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaResetExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.route.RouteManager;
@@ -64,6 +65,8 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class KafkaCacheServerFetchFactory implements StreamFactory
 {
+    private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
+
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
 
     private static final int SIZE_OF_FLUSH_WITH_EXTENSION = 64;
@@ -83,6 +86,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
     private final ExtensionFW extensionRO = new ExtensionFW();
     private final KafkaBeginExFW kafkaBeginExRO = new KafkaBeginExFW();
     private final KafkaDataExFW kafkaDataExRO = new KafkaDataExFW();
+    private final KafkaResetExFW kafkaResetExRO = new KafkaResetExFW();
 
     private final BeginFW.Builder beginRW = new BeginFW.Builder();
     private final FlushFW.Builder flushRW = new FlushFW.Builder();
@@ -104,6 +108,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
     private final LongUnaryOperator supplyReplyId;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
+    private final boolean reconnect;
 
     public KafkaCacheServerFetchFactory(
         KafkaConfiguration config,
@@ -127,6 +132,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         this.supplyReplyId = supplyReplyId;
         this.supplyCacheRoute = supplyCacheRoute;
         this.correlations = correlations;
+        this.reconnect = config.cacheServerReconnect();
     }
 
     @Override
@@ -595,14 +601,28 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             ResetFW reset)
         {
             final long traceId = reset.traceId();
-
-            // TODO: detect NOT_LEADER_FOR_PARTITION, coordinate to maintain KafkaCachePartition single writer
-
-            members.forEach(s -> s.doServerInitialResetIfNecessary(traceId));
+            final OctetsFW extension = reset.extension();
 
             state = KafkaState.closedInitial(state);
 
             doServerFanoutReplyResetIfNecessary(traceId);
+
+            if (reconnect)
+            {
+                // TODO: coordinate to maintain KafkaCachePartition single writer
+                final KafkaResetExFW kafkaResetEx = extension.get(kafkaResetExRO::tryWrap);
+                final int error = kafkaResetEx != null ? kafkaResetEx.error() : 0;
+
+                if (error != ERROR_NOT_LEADER_FOR_PARTITION)
+                {
+                    System.out.format("TODO: progressive back-off, FETCH error %d\n", error);
+                    doServerFanoutInitialBeginIfNecessary(traceId);
+                }
+            }
+            else
+            {
+                members.forEach(s -> s.doServerInitialResetIfNecessary(traceId));
+            }
         }
 
         private void onServerFanoutInitialWindow(

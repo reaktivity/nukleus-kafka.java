@@ -22,19 +22,24 @@ import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
 
 import org.agrona.MutableDirectBuffer;
+import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.buffer.BufferPool;
+import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheWriter;
+import org.reaktivity.nukleus.route.AddressFactoryBuilder;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 
-public final class KafkaCacheServerFactoryBuilder implements StreamFactoryBuilder
+public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryBuilder
 {
     private final KafkaConfiguration config;
     private final KafkaCacheWriter cache;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
+    private final AddressFactoryBuilder addressFactoryBuilder;
+    private final Long2ObjectHashMap<MessageConsumer> correlations;
 
     private RouteManager router;
     private MutableDirectBuffer writeBuffer;
@@ -52,6 +57,14 @@ public final class KafkaCacheServerFactoryBuilder implements StreamFactoryBuilde
         this.config = config;
         this.cache = cache.newWriter();
         this.supplyCacheRoute = supplyCacheRoute;
+        this.correlations = new Long2ObjectHashMap<>();
+        this.addressFactoryBuilder = new KafkaCacheServerAddressFactoryBuilder(config, correlations);
+    }
+
+    @Override
+    public AddressFactoryBuilder addressFactoryBuilder()
+    {
+        return addressFactoryBuilder;
     }
 
     @Override
@@ -125,6 +138,7 @@ public final class KafkaCacheServerFactoryBuilder implements StreamFactoryBuilde
                 supplyReplyId,
                 supplyTraceId,
                 supplyTypeId,
-                supplyCacheRoute);
+                supplyCacheRoute,
+                correlations);
     }
 }
