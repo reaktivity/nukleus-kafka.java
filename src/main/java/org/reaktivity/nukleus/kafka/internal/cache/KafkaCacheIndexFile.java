@@ -79,7 +79,8 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
             }
         }
 
-        return lowIndex <= highIndex && lowIndex >= 0 && highIndex <= maxIndex ? lowIndex : -1;
+        assert lowIndex >= 0;
+        return lowIndex <= maxIndex ? lowIndex : -1;
     }
 
     protected int scan(
