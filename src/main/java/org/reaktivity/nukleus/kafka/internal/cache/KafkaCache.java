@@ -67,7 +67,8 @@ public final class KafkaCache
     {
         final int maxLogCapacity = config.cacheSegmentLogBytes();
         final int maxIndexCapacity = config.cacheSegmentIndexBytes();
-        return new KafkaCacheSegment.Sentinel(directory, maxLogCapacity, maxIndexCapacity);
+        final int maxHashCapacity = config.cacheSegmentHashBytes();
+        return new KafkaCacheSegment.Sentinel(directory, maxLogCapacity, maxIndexCapacity, maxHashCapacity);
     }
 
     private Path initDirectory(

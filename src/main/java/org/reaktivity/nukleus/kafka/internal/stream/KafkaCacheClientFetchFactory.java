@@ -16,7 +16,6 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegment.POSITION_END_OF_SEGMENT;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -667,6 +666,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private int replyPadding;
 
         private KafkaCacheSegment currentSegment;
+        private int currentIndex;
+
         private long partitionOffset;
         private int messageOffset;
 
@@ -848,9 +849,10 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long traceId)
         {
             assert currentSegment != null;
+            assert currentIndex >= 0;
 
-            int position = currentSegment.position(partitionOffset);
-            while (position == POSITION_END_OF_SEGMENT)
+            int nextIndex = currentSegment.findOffsetIndex(partitionOffset, currentIndex);
+            while (nextIndex < 0)
             {
                 final KafkaCacheSegment nextSegment = currentSegment.nextSegment();
                 if (nextSegment == null)
@@ -859,11 +861,15 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 }
 
                 currentSegment = nextSegment;
+                currentIndex = 0;
+
+                nextIndex = currentSegment.findOffsetIndex(partitionOffset, currentIndex);
             }
 
-            if (position >= 0)
+            if (nextIndex >= 0)
             {
-                final KafkaCacheEntryFW entry = currentSegment.read(position, entryRO);
+                final int nextPosition = currentSegment.readOffsetPosition(nextIndex);
+                final KafkaCacheEntryFW entry = currentSegment.readLog(nextPosition, entryRO);
                 final long partitionOffset = entry.offset$();
                 final long timestamp = entry.timestamp();
                 final KafkaCacheKeyFW key = entry.key();
@@ -937,6 +943,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         this.partitionOffset = partitionOffset + 1;
                         this.messageOffset = 0;
                     }
+
+                    this.currentIndex = nextIndex;
                 }
             }
         }

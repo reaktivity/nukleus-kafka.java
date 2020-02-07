@@ -36,6 +36,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
     protected final Path directory;
     protected final int logCapacity;
     protected final int indexCapacity;
+    protected final int hashCapacity;
 
     protected volatile KafkaCacheSegment.Data nextSegment;
 
@@ -43,62 +44,14 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         MutableDirectBuffer writeBuffer,
         Path directory,
         int logCapacity,
-        int indexCapacity)
+        int indexCapacity,
+        int hashCapacity)
     {
         this.writeBuffer = writeBuffer;
         this.directory = directory;
         this.logCapacity = logCapacity;
         this.indexCapacity = indexCapacity;
-    }
-
-    public int position(
-        long nextOffset)
-    {
-        final DirectBuffer buffer = index();
-        final long baseOffset = baseOffset();
-        final int maxIndex = (buffer.capacity() >> 3) - 1;
-
-        int lowIndex = 0;
-        int highIndex = maxIndex;
-
-        while (lowIndex <= highIndex)
-        {
-            final int midIndex = (lowIndex + highIndex) >>> 1;
-            final long relativeEntry = buffer.getLong(midIndex << 3);
-            final int relativeOffset = (int)(relativeEntry >>> 32);
-            final long absoluteOffset = baseOffset + relativeOffset;
-
-            if (absoluteOffset < nextOffset)
-            {
-                lowIndex = midIndex + 1;
-            }
-            else if (absoluteOffset > nextOffset)
-            {
-                highIndex = midIndex - 1;
-            }
-            else
-            {
-                return (int)(relativeEntry & 0xFFFF_FFFF);
-            }
-        }
-
-        if (lowIndex <= highIndex || (lowIndex >= 0 && lowIndex <= maxIndex))
-        {
-            return (int)(buffer.getLong(lowIndex << 3) & 0xFFFF_FFFF);
-        }
-        else
-        {
-            return nextSegment != null ? POSITION_END_OF_SEGMENT : POSITION_END_OF_MESSAGES;
-        }
-    }
-
-    public KafkaCacheEntryFW read(
-        int position,
-        KafkaCacheEntryFW entry)
-    {
-        assert position >= 0;
-        final DirectBuffer buffer = log();
-        return entry.tryWrap(buffer, position, buffer.capacity());
+        this.hashCapacity = hashCapacity;
     }
 
     @Override
@@ -140,9 +93,10 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         KafkaCacheSegment.Data nextSegment = this.nextSegment;
         if (nextSegment == null)
         {
-            nextSegment = new KafkaCacheSegment.Data(writeBuffer, directory, nextOffset, logCapacity, indexCapacity);
+            nextSegment = new KafkaCacheSegment.Data(writeBuffer, directory, nextOffset,
+                    logCapacity, indexCapacity, hashCapacity);
             this.nextSegment = nextSegment;
-            readOnly();
+            freeze();
         }
         return nextSegment;
     }
@@ -154,7 +108,60 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         return baseOffset();
     }
 
-    public boolean log(
+    public int logPosition()
+    {
+        return 0;
+    }
+
+    public int logRemaining()
+    {
+        return 0;
+    }
+
+    public int indexRemaining()
+    {
+        return 0;
+    }
+
+    public int hashRemaining()
+    {
+        return 0;
+    }
+
+    public KafkaCacheEntryFW readLog(
+        int position,
+        KafkaCacheEntryFW entry)
+    {
+        return null;
+    }
+
+    public int readOffsetPosition(
+        int index)
+    {
+        return -1;
+    }
+
+    public long readHashOffset(
+        int hashIndex)
+    {
+        return -1;
+    }
+
+    public int findOffsetIndex(
+        long nextOffset,
+        int indexHint)
+    {
+        return -1;
+    }
+
+    public int findHashIndex(
+        int hash,
+        int indexHint)
+    {
+        return -1;
+    }
+
+    public boolean writeLog(
         DirectBuffer buffer,
         int index,
         int length)
@@ -162,7 +169,15 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         return false;
     }
 
-    public boolean index(
+    public boolean writeIndex(
+        DirectBuffer buffer,
+        int index,
+        int length)
+    {
+        return false;
+    }
+
+    public boolean writeHash(
         DirectBuffer buffer,
         int index,
         int length)
@@ -176,21 +191,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         throw new UnsupportedOperationException();
     }
 
-    protected abstract DirectBuffer log();
-
-    protected abstract DirectBuffer index();
-
-    protected int logRemaining()
-    {
-        return logCapacity - log().capacity();
-    }
-
-    protected int indexRemaining()
-    {
-        return indexCapacity - index().capacity();
-    }
-
-    protected void readOnly()
+    protected void freeze()
     {
         // ignore
     }
@@ -207,7 +208,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
 
         public Candidate()
         {
-            super(EMPTY_BUFFER, null, 0, 0);
+            super(EMPTY_BUFFER, null, 0, 0, 0);
         }
 
         public void baseOffset(
@@ -221,18 +222,6 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         {
             return baseOffset;
         }
-
-        @Override
-        protected DirectBuffer log()
-        {
-            return EMPTY_BUFFER;
-        }
-
-        @Override
-        protected DirectBuffer index()
-        {
-            return EMPTY_BUFFER;
-        }
     }
 
     public static final class Sentinel extends KafkaCacheSegment
@@ -240,9 +229,11 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         public Sentinel(
             Path directory,
             int maxLogCapacity,
-            int maxIndexCapacity)
+            int maxIndexCapacity,
+            int maxHashCapacity)
         {
-            super(new UnsafeBuffer(allocateDirect(64 * 1024)), directory, maxLogCapacity, maxIndexCapacity); // TODO: configure
+            super(new UnsafeBuffer(allocateDirect(64 * 1024)), directory,
+                    maxLogCapacity, maxIndexCapacity, maxHashCapacity); // TODO: configure
         }
 
         @Override
@@ -250,37 +241,14 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         {
             return -2L; // EARLIEST
         }
-
-        @Override
-        protected DirectBuffer log()
-        {
-            return EMPTY_BUFFER;
-        }
-
-        @Override
-        protected DirectBuffer index()
-        {
-            return EMPTY_BUFFER;
-        }
-
-        @Override
-        protected int logRemaining()
-        {
-            return 0;
-        }
-
-        @Override
-        protected int indexRemaining()
-        {
-            return 0;
-        }
     }
 
     public static final class Data extends KafkaCacheSegment
     {
         private final long baseOffset;
-        private final KafkaCacheFile logFile;
-        private final KafkaCacheFile indexFile;
+        private final KafkaCacheLogFile logFile;
+        private final KafkaCacheLogIndexFile indexFile;
+        private KafkaCacheHashIndexFile hashFile;
 
         private long lastOffset;
 
@@ -289,13 +257,15 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
             Path directory,
             long baseOffset,
             int logCapacity,
-            int indexCapacity)
+            int indexCapacity,
+            int hashCapacity)
         {
-            super(writeBuffer, directory, logCapacity, indexCapacity);
+            super(writeBuffer, directory, logCapacity, indexCapacity, hashCapacity);
             this.baseOffset = baseOffset;
             this.lastOffset = OFFSET_LATEST;
-            this.logFile = new KafkaCacheFile(writeBuffer, directory, "log", baseOffset, logCapacity);
-            this.indexFile = new KafkaCacheFile(writeBuffer, directory, "index", baseOffset, indexCapacity);
+            this.logFile = new KafkaCacheLogFile(writeBuffer, directory, baseOffset, logCapacity);
+            this.indexFile = new KafkaCacheLogIndexFile(writeBuffer, directory, baseOffset, indexCapacity);
+            this.hashFile = new KafkaCacheHashIndexFile(writeBuffer, directory, baseOffset, indexCapacity);
         }
 
         public void lastOffset(
@@ -318,50 +288,100 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         }
 
         @Override
-        public boolean log(
+        public int logPosition()
+        {
+            return logFile.readableBuf.capacity();
+        }
+
+        @Override
+        public int logRemaining()
+        {
+            return logFile.available();
+        }
+
+        @Override
+        public int indexRemaining()
+        {
+            return indexFile.available();
+        }
+
+        @Override
+        public int hashRemaining()
+        {
+            return hashFile.available();
+        }
+
+        @Override
+        public KafkaCacheEntryFW readLog(
+            int position,
+            KafkaCacheEntryFW entry)
+        {
+            return logFile.read(position, entry);
+        }
+
+        @Override
+        public int findHashIndex(
+            int hash,
+            int indexHint)
+        {
+            return hashFile.findHash(hash, indexHint);
+        }
+
+        @Override
+        public long readHashOffset(
+            int hashIndex)
+        {
+            return hashFile.offset(hashIndex);
+        }
+
+        @Override
+        public int findOffsetIndex(
+            long nextOffset,
+            int indexHint)
+        {
+            return indexFile.findOffset(nextOffset, indexHint);
+        }
+
+        @Override
+        public int readOffsetPosition(
+            int offsetIndex)
+        {
+            return indexFile.position(offsetIndex);
+        }
+
+        @Override
+        public boolean writeLog(
             DirectBuffer buffer,
             int index,
             int length)
         {
-            final boolean writable = logFile.readable().capacity() + length <= logCapacity;
-            if (writable)
-            {
-                logFile.write(buffer, index, length);
-            }
-            return writable;
+            return logFile.write(buffer, index, length);
         }
 
         @Override
-        public boolean index(
+        public boolean writeIndex(
             DirectBuffer buffer,
             int index,
             int length)
         {
-            final boolean writable = indexFile.readable().capacity() + length <= indexCapacity;
-            if (writable)
-            {
-                indexFile.write(buffer, index, length);
-            }
-            return writable;
+            return indexFile.write(buffer, index, length);
         }
 
         @Override
-        protected DirectBuffer index()
+        public boolean writeHash(
+            DirectBuffer buffer,
+            int index,
+            int length)
         {
-            return indexFile.readable();
+            return hashFile.write(buffer, index, length);
         }
 
         @Override
-        protected DirectBuffer log()
+        protected void freeze()
         {
-            return logFile.readable();
-        }
-
-        @Override
-        protected void readOnly()
-        {
-            logFile.readonly();
-            indexFile.readonly();
+            logFile.freeze();
+            indexFile.freeze();
+            hashFile.freeze();
         }
     }
 }

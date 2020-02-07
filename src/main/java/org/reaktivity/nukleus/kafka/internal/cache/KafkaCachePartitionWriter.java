@@ -17,9 +17,12 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static java.util.Collections.singleton;
 
+import java.nio.ByteBuffer;
 import java.util.NavigableSet;
 import java.util.TreeSet;
+import java.util.zip.CRC32C;
 
+import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
@@ -32,6 +35,7 @@ public final class KafkaCachePartitionWriter
     private final MutableDirectBuffer entryInfo = new UnsafeBuffer(new byte[Long.BYTES + Long.BYTES]);
     private final MutableDirectBuffer valueInfo = new UnsafeBuffer(new byte[Integer.BYTES]);
     private final MutableDirectBuffer indexInfo = new UnsafeBuffer(new byte[Integer.BYTES + Integer.BYTES]);
+    private final MutableDirectBuffer hashInfo = new UnsafeBuffer(new byte[Integer.BYTES + Integer.BYTES]);
 
     private final int partitionId;
     private final NavigableSet<KafkaCacheSegment> segments;
@@ -39,6 +43,7 @@ public final class KafkaCachePartitionWriter
     private KafkaCacheSegment entrySegment;
     private long offset;
     private int position;
+    private final CRC32C crc;
 
     KafkaCachePartitionWriter(
         int partitionId,
@@ -47,6 +52,7 @@ public final class KafkaCachePartitionWriter
         this.partitionId = partitionId;
         this.segments = new TreeSet<>(singleton(segment));
         this.entrySegment = segment;
+        crc = new CRC32C();
     }
 
     public int id()
@@ -109,28 +115,53 @@ public final class KafkaCachePartitionWriter
         final int logRequired = entryInfo.capacity() + key.sizeof() + valueInfo.capacity() +
                 Math.max(valueLength, 0) + headerSizeMax;
         final int indexRequired = indexInfo.capacity();
+        final int hashKeyRequired = key.length() != -1 ? 1 : 0;
+        final int hashHeaderRequiredMax = headerSizeMax >> 2;
+        final int hashRequiredMax = (hashKeyRequired + hashHeaderRequiredMax) * hashInfo.capacity();
 
         int logRemaining = entrySegment.logRemaining();
         int indexRemaining = entrySegment.indexRemaining();
-        if (logRemaining < logRequired || indexRemaining < indexRequired)
+        int hashRemaining = entrySegment.hashRemaining();
+        if (logRemaining < logRequired ||
+            indexRemaining < indexRequired ||
+            hashRemaining < hashRequiredMax)
         {
             entrySegment = entrySegment.nextSegment(offset);
             logRemaining = entrySegment.logRemaining();
             indexRemaining = entrySegment.indexRemaining();
+            hashRemaining = entrySegment.hashRemaining();
         }
         assert logRemaining >= logRequired;
         assert indexRemaining >= indexRequired;
+        assert hashRemaining >= hashRequiredMax;
 
         this.offset = offset;
-        this.position = entrySegment.log().capacity();
+        this.position = entrySegment.logPosition();
 
         entryInfo.putLong(0, offset);
         entryInfo.putLong(Long.BYTES, timestamp);
         valueInfo.putInt(0, valueLength);
 
-        entrySegment.log(entryInfo, 0, entryInfo.capacity());
-        entrySegment.log(key.buffer(), key.offset(), key.sizeof());
-        entrySegment.log(valueInfo, 0, valueInfo.capacity());
+        entrySegment.writeLog(entryInfo, 0, entryInfo.capacity());
+        entrySegment.writeLog(key.buffer(), key.offset(), key.sizeof());
+        entrySegment.writeLog(valueInfo, 0, valueInfo.capacity());
+
+        if (key.length() != -1)
+        {
+            final DirectBuffer buffer = key.buffer();
+            final ByteBuffer byteBuffer = buffer.byteBuffer();
+            byteBuffer.clear();
+            assert byteBuffer != null;
+            crc.reset();
+            byteBuffer.position(key.offset());
+            byteBuffer.limit(key.limit());
+            crc.update(byteBuffer);
+            final long hash = crc.getValue();
+            final long offsetDelta = (int)(offset - entrySegment.baseOffset());
+            hashInfo.putLong(0, (hash << 32) | offsetDelta);
+            entrySegment.writeHash(hashInfo, 0, hashInfo.capacity());
+        }
+
     }
 
     public void writeEntryContinue(
@@ -140,7 +171,7 @@ public final class KafkaCachePartitionWriter
         final int logRequired = payload.sizeof();
         assert logRemaining >= logRequired;
 
-        entrySegment.log(payload.buffer(), payload.offset(), payload.sizeof());
+        entrySegment.writeLog(payload.buffer(), payload.offset(), payload.sizeof());
     }
 
     public void writeEntryFinish(
@@ -150,16 +181,34 @@ public final class KafkaCachePartitionWriter
         final int logRequired = headers.sizeof();
         assert logRemaining >= logRequired;
 
-        entrySegment.log(headers.buffer(), headers.offset(), headers.sizeof());
+        entrySegment.writeLog(headers.buffer(), headers.offset(), headers.sizeof());
 
         final long offsetDelta = (int)(offset - entrySegment.baseOffset());
         indexInfo.putLong(0, (offsetDelta << 32) | position);
+
+        if (!headers.isEmpty())
+        {
+            final DirectBuffer buffer = headers.buffer();
+            final ByteBuffer byteBuffer = buffer.byteBuffer();
+            assert byteBuffer != null;
+            byteBuffer.clear();
+            headers.forEach(h ->
+            {
+                crc.reset();
+                byteBuffer.position(h.offset());
+                byteBuffer.limit(h.limit());
+                crc.update(byteBuffer);
+                final long hash = crc.getValue();
+                hashInfo.putLong(0, (hash << 32) | offsetDelta);
+                entrySegment.writeHash(hashInfo, 0, hashInfo.capacity());
+            });
+        }
 
         final int indexRemaining = entrySegment.indexRemaining();
         final int indexRequired = indexInfo.capacity();
         assert indexRemaining >= indexRequired;
 
-        entrySegment.index(indexInfo, 0, indexInfo.capacity());
+        entrySegment.writeIndex(indexInfo, 0, indexInfo.capacity());
 
         entrySegment.lastOffset(offset);
     }

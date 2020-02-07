@@ -27,74 +27,109 @@ import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.agrona.DirectBuffer;
+import org.agrona.IoUtil;
 import org.agrona.LangUtil;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 
-public final class KafkaCacheFile
+public abstract class KafkaCacheFile
 {
+    private final int maxCapacity;
     private final MutableDirectBuffer writeBuffer;
     private final ByteBuffer writeByteBuffer;
-    private final MappedByteBuffer readableByteBuf;
-    private final FileChannel writable;
-    private final DirectBuffer readableBuf;
-    private final long readableAddress;
-    private final int maxCapacity;
+    private final FileChannel writer;
 
-    KafkaCacheFile(
+    private MappedByteBuffer readableByteBuf;
+    private long readableAddress;
+
+    protected final long baseOffset;
+    protected final DirectBuffer readableBuf;
+    protected final Path writeFile;
+    protected final Path freezeFile;
+
+    protected KafkaCacheFile(
         MutableDirectBuffer writeBuffer,
-        Path directory,
-        String extension,
+        Path file,
+        long baseOffset,
+        int maxCapacity)
+    {
+        this(writeBuffer, file, file, baseOffset, maxCapacity);
+    }
+
+    protected KafkaCacheFile(
+        MutableDirectBuffer writeBuffer,
+        Path writeFile,
+        Path freezeFile,
         long baseOffset,
         int maxCapacity)
     {
         this.writeBuffer = requireNonNull(writeBuffer);
         this.writeByteBuffer = requireNonNull(writeBuffer.byteBuffer());
-        final Path file = directory.resolve(String.format("%016x.%s", baseOffset, extension));
-        this.readableByteBuf = readInit(file, maxCapacity);
+        this.readableByteBuf = readInit(writeFile, maxCapacity);
         this.readableBuf = new UnsafeBuffer(0, 0);
-        this.writable = writeInit(file);
+        this.writer = writeInit(writeFile);
         this.readableAddress = address(readableByteBuf);
+        this.writeFile = writeFile;
+        this.freezeFile = freezeFile;
+        this.baseOffset = baseOffset;
         this.maxCapacity = maxCapacity;
     }
 
-    DirectBuffer readable()
+    int available()
     {
-        return readableBuf;
+        return maxCapacity - readableBuf.capacity();
     }
 
-    void write(
+    protected boolean write(
         DirectBuffer buffer,
         int index,
         int length)
     {
-        try
-        {
-            writeByteBuffer.clear();
-            writeBuffer.putBytes(0, buffer, index, length);
-            writeByteBuffer.limit(length);
+        final int available = available();
+        final boolean writable = available >= length;
 
-            final int written = writable.write(writeByteBuffer);
-            assert written == length;
-
-            final int newCapacity = readableBuf.capacity() + written;
-            assert newCapacity <= maxCapacity;
-            readableBuf.wrap(readableAddress, newCapacity);
-        }
-        catch (IOException ex)
+        if (writable)
         {
-            LangUtil.rethrowUnchecked(ex);
+            try
+            {
+                writeByteBuffer.clear();
+                writeBuffer.putBytes(0, buffer, index, length);
+                writeByteBuffer.limit(length);
+
+                final int written = writer.write(writeByteBuffer);
+                assert written == length;
+
+                final int newCapacity = readableBuf.capacity() + written;
+                assert newCapacity <= maxCapacity;
+                readableBuf.wrap(readableAddress, newCapacity);
+            }
+            catch (IOException ex)
+            {
+                LangUtil.rethrowUnchecked(ex);
+            }
         }
+
+        return writable;
     }
 
-    void readonly()
+    void freeze()
     {
         try
         {
-            writable.close();
+            writer.close();
+
+            if (freezeFile != writeFile)
+            {
+                Files.delete(writeFile);
+
+                IoUtil.unmap(readableByteBuf);
+                this.readableByteBuf = readInit(freezeFile);
+                this.readableAddress = address(readableByteBuf);
+            }
         }
         catch (IOException ex)
         {
@@ -103,12 +138,12 @@ public final class KafkaCacheFile
     }
 
     private static MappedByteBuffer readInit(
-        Path path,
+        Path file,
         int capacity)
     {
         MappedByteBuffer mapped = null;
 
-        try (FileChannel channel = FileChannel.open(path, CREATE, READ, WRITE))
+        try (FileChannel channel = FileChannel.open(file, CREATE, READ, WRITE))
         {
             mapped = channel.map(MapMode.READ_ONLY, 0, capacity);
             channel.truncate(0L);
@@ -122,14 +157,32 @@ public final class KafkaCacheFile
         return mapped;
     }
 
+    private static MappedByteBuffer readInit(
+        Path file)
+    {
+        MappedByteBuffer mapped = null;
+
+        try (FileChannel channel = FileChannel.open(file, READ))
+        {
+            mapped = channel.map(MapMode.READ_ONLY, 0, channel.size());
+        }
+        catch (IOException ex)
+        {
+            LangUtil.rethrowUnchecked(ex);
+        }
+
+        assert mapped != null;
+        return mapped;
+    }
+
     private static FileChannel writeInit(
-        Path path)
+        Path file)
     {
         FileChannel channel = null;
 
         try
         {
-            channel = FileChannel.open(path, APPEND);
+            channel = FileChannel.open(file, APPEND);
         }
         catch (IOException ex)
         {
@@ -138,5 +191,13 @@ public final class KafkaCacheFile
 
         assert channel != null;
         return channel;
+    }
+
+    protected static Path filename(
+        Path directory,
+        long baseOffset,
+        String extension)
+    {
+        return directory.resolve(String.format("%016x.%s", baseOffset, extension));
     }
 }
