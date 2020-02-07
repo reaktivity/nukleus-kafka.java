@@ -39,11 +39,11 @@ public final class KafkaCachePartitionWriter
 
     private final int partitionId;
     private final NavigableSet<KafkaCacheSegment> segments;
+    private final CRC32C checksum;
 
     private KafkaCacheSegment entrySegment;
     private long offset;
     private int position;
-    private final CRC32C crc;
 
     KafkaCachePartitionWriter(
         int partitionId,
@@ -52,7 +52,7 @@ public final class KafkaCachePartitionWriter
         this.partitionId = partitionId;
         this.segments = new TreeSet<>(singleton(segment));
         this.entrySegment = segment;
-        crc = new CRC32C();
+        this.checksum = new CRC32C();
     }
 
     public int id()
@@ -146,22 +146,19 @@ public final class KafkaCachePartitionWriter
         entrySegment.writeLog(key.buffer(), key.offset(), key.sizeof());
         entrySegment.writeLog(valueInfo, 0, valueInfo.capacity());
 
-        if (key.length() != -1)
-        {
-            final DirectBuffer buffer = key.buffer();
-            final ByteBuffer byteBuffer = buffer.byteBuffer();
-            byteBuffer.clear();
-            assert byteBuffer != null;
-            crc.reset();
-            byteBuffer.position(key.offset());
-            byteBuffer.limit(key.limit());
-            crc.update(byteBuffer);
-            final long hash = crc.getValue();
-            final long offsetDelta = (int)(offset - entrySegment.baseOffset());
-            hashInfo.putLong(0, (hash << 32) | offsetDelta);
-            entrySegment.writeHash(hashInfo, 0, hashInfo.capacity());
-        }
-
+        // TODO: compute null key hash in advance
+        final DirectBuffer buffer = key.buffer();
+        final ByteBuffer byteBuffer = buffer.byteBuffer();
+        byteBuffer.clear();
+        assert byteBuffer != null;
+        checksum.reset();
+        byteBuffer.position(key.offset());
+        byteBuffer.limit(key.limit());
+        checksum.update(byteBuffer);
+        final long hash = checksum.getValue();
+        final long offsetDelta = (int)(offset - entrySegment.baseOffset());
+        hashInfo.putLong(0, (hash << 32) | offsetDelta);
+        entrySegment.writeHash(hashInfo, 0, hashInfo.capacity());
     }
 
     public void writeEntryContinue(
@@ -194,11 +191,11 @@ public final class KafkaCachePartitionWriter
             byteBuffer.clear();
             headers.forEach(h ->
             {
-                crc.reset();
+                checksum.reset();
                 byteBuffer.position(h.offset());
                 byteBuffer.limit(h.limit());
-                crc.update(byteBuffer);
-                final long hash = crc.getValue();
+                checksum.update(byteBuffer);
+                final long hash = checksum.getValue();
                 hashInfo.putLong(0, (hash << 32) | offsetDelta);
                 entrySegment.writeHash(hashInfo, 0, hashInfo.capacity());
             });
