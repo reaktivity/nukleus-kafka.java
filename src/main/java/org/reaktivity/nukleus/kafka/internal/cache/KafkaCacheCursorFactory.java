@@ -51,20 +51,7 @@ public final class KafkaCacheCursorFactory
     public KafkaCacheCursor newCursor(
         ArrayFW<KafkaFilterFW> filters)
     {
-        KafkaFilterCondition condition;
-
-        if (filters.isEmpty())
-        {
-            condition = new KafkaFilterCondition.None();
-        }
-        else
-        {
-            final List<KafkaFilterCondition> asConditions = new ArrayList<>();
-            filters.forEach(f -> asConditions.add(asCondition(f)));
-            condition = new KafkaFilterCondition.Or(asConditions);
-        }
-
-        return new KafkaCacheCursor(condition);
+        return new KafkaCacheCursor(asCondition(filters));
     }
 
     public static final class KafkaCacheCursor
@@ -193,6 +180,12 @@ public final class KafkaCacheCursorFactory
                 KafkaCacheEntryFW cacheEntry)
             {
                 return cacheEntry != null;
+            }
+
+            @Override
+            public String toString()
+            {
+                return String.format("%s[]", getClass().getSimpleName());
             }
         }
 
@@ -476,13 +469,30 @@ public final class KafkaCacheCursorFactory
     }
 
     private KafkaFilterCondition asCondition(
+        ArrayFW<KafkaFilterFW> filters)
+    {
+        KafkaFilterCondition condition;
+        if (filters.isEmpty())
+        {
+            condition = new KafkaFilterCondition.None();
+        }
+        else
+        {
+            final List<KafkaFilterCondition> asConditions = new ArrayList<>();
+            filters.forEach(f -> asConditions.add(asCondition(f)));
+            condition = asConditions.size() == 1 ? asConditions.get(0) : new KafkaFilterCondition.Or(asConditions);
+        }
+        return condition;
+    }
+
+    private KafkaFilterCondition asCondition(
         KafkaFilterFW filter)
     {
         final ArrayFW<KafkaConditionFW> conditions = filter.conditions();
         assert !conditions.isEmpty();
         List<KafkaFilterCondition> asConditions = new ArrayList<>();
         conditions.forEach(c -> asConditions.add(asCondition(c)));
-        return new KafkaFilterCondition.And(asConditions);
+        return asConditions.size() == 1 ? asConditions.get(0) : new KafkaFilterCondition.And(asConditions);
     }
 
     private KafkaFilterCondition asCondition(
