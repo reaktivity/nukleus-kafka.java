@@ -449,4 +449,28 @@ public class CacheFetchIT
         partition.nextSegment(1L);
         k3po.finish();
     }
+
+    @Test
+    @Specification({
+        "${route}/cache/controller",
+        "${client}/filter.key.and.header.or.header/client",
+        "${server}/filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithKeyAndHeaderOrHeaderFilter() throws Exception
+    {
+        partition.nextSegment(1L);
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache/controller",
+        "${client}/filter.key.or.header.and.header/client",
+        "${server}/filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithKeyOrHeaderAndHeaderFilter() throws Exception
+    {
+        partition.nextSegment(1L);
+        k3po.finish();
+    }
 }
