@@ -21,7 +21,7 @@ import java.util.Random;
 
 import org.junit.Test;
 
-public class KafkaIndexRecordTest
+public class KafkaCacheCursorRecordTest
 {
     @Test
     public void shouldRoundTrip()
@@ -29,9 +29,9 @@ public class KafkaIndexRecordTest
         final Random random = new Random();
         final int index = random.nextInt() & 0x7FFF_FFFF;
         final int value = random.nextInt() & 0x7FFF_FFFF;
-        final long record = KafkaIndexRecord.record(index, value);
+        final long record = KafkaCacheCursorRecord.record(index, value);
 
-        assertEquals(index, KafkaIndexRecord.index(record));
-        assertEquals(value, KafkaIndexRecord.value(record));
+        assertEquals(index, KafkaCacheCursorRecord.index(record));
+        assertEquals(value, KafkaCacheCursorRecord.value(record));
     }
 }

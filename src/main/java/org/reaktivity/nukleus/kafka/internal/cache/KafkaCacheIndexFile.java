@@ -79,7 +79,7 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
         if (lowIndex <= lastIndex)
         {
             final long entry = buffer.getLong(lowIndex << 3);
-            return KafkaIndexRecord.record(lowIndex, KafkaIndexRecord.value(entry));
+            return KafkaCacheCursorRecord.record(lowIndex, KafkaCacheCursorRecord.value(entry));
         }
 
         return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
@@ -129,7 +129,7 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
         if (lowIndex <= lastIndex)
         {
             final long entry = buffer.getLong(lowIndex << 3);
-            return KafkaIndexRecord.record(lowIndex, KafkaIndexRecord.value(entry));
+            return KafkaCacheCursorRecord.record(lowIndex, KafkaCacheCursorRecord.value(entry));
         }
 
         return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
@@ -140,8 +140,8 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
         long record)
     {
         // assumes sorted by key, record from seekKey
-        final int index = KafkaIndexRecord.index(record);
-        final int value = KafkaIndexRecord.value(record);
+        final int index = KafkaCacheCursorRecord.index(record);
+        final int value = KafkaCacheCursorRecord.value(record);
         assert index >= 0;
 
         final DirectBuffer buffer = readableBuf;
@@ -165,7 +165,7 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
         if (currentIndex <= lastIndex)
         {
             final long entry = buffer.getLong(currentIndex << 3);
-            return KafkaIndexRecord.record(currentIndex, KafkaIndexRecord.value(entry));
+            return KafkaCacheCursorRecord.record(currentIndex, KafkaCacheCursorRecord.value(entry));
         }
 
         return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
@@ -176,8 +176,8 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
         long record)
     {
         // assumes sorted by value, repeated keys, record from seekValue
-        final int index = KafkaIndexRecord.index(record);
-        final int value = KafkaIndexRecord.value(record);
+        final int index = KafkaCacheCursorRecord.index(record);
+        final int value = KafkaCacheCursorRecord.value(record);
         assert index >= 0;
 
         final DirectBuffer buffer = readableBuf;
@@ -201,7 +201,7 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
         if (currentIndex <= lastIndex)
         {
             final long entry = buffer.getLong(currentIndex << 3);
-            return KafkaIndexRecord.record(currentIndex, KafkaIndexRecord.value(entry));
+            return KafkaCacheCursorRecord.record(currentIndex, KafkaCacheCursorRecord.value(entry));
         }
 
         return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
@@ -210,7 +210,7 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
     protected long scanIndex(
         long record)
     {
-        final int index = KafkaIndexRecord.index(record);
+        final int index = KafkaCacheCursorRecord.index(record);
         assert index >= 0;
 
         final DirectBuffer buffer = readableBuf;
@@ -220,7 +220,7 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
         if (index <= lastIndex)
         {
             final long entry = buffer.getLong(index << 3);
-            return KafkaIndexRecord.record(index, KafkaIndexRecord.value(entry));
+            return KafkaCacheCursorRecord.record(index, KafkaCacheCursorRecord.value(entry));
         }
 
         return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;

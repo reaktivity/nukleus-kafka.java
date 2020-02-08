@@ -15,7 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-public final class KafkaIndexRecord
+public final class KafkaCacheCursorRecord
 {
     public static int index(
         long record)
@@ -96,7 +96,7 @@ public final class KafkaIndexRecord
         }
     }
 
-    private KafkaIndexRecord()
+    private KafkaCacheCursorRecord()
     {
         // no instances
     }

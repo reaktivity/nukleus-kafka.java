@@ -38,12 +38,12 @@ import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheClusterReader;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorFactory;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorFactory.KafkaCacheCursor;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionReader;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheReader;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegment;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicReader;
-import org.reaktivity.nukleus.kafka.internal.filter.KafkaCursor;
-import org.reaktivity.nukleus.kafka.internal.filter.KafkaCursorFactory;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW;
@@ -119,7 +119,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
     private final LongFunction<BudgetDebitor> supplyDebitor;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
-    private final KafkaCursorFactory cursorFactory;
+    private final KafkaCacheCursorFactory cursorFactory;
 
     public KafkaCacheClientFetchFactory(
         KafkaConfiguration config,
@@ -145,7 +145,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         this.supplyDebitor = supplyDebitor;
         this.supplyCacheRoute = supplyCacheRoute;
         this.correlations = correlations;
-        this.cursorFactory = new KafkaCursorFactory();
+        this.cursorFactory = new KafkaCacheCursorFactory();
     }
 
     @Override
@@ -194,7 +194,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final long partitionOffset = progress.offset$();
             final KafkaCacheRoute cacheRoute = supplyCacheRoute.apply(resolvedId);
             final long partitionKey = cacheRoute.topicPartitionKey(topicName, partitionId);
-            final KafkaCursor cursor = cursorFactory.newCursor(filters);
+            final KafkaCacheCursor cursor = cursorFactory.newCursor(filters);
 
             KafkaCacheClientFetchFanout fanout = cacheRoute.clientFetchFanoutsByTopicPartition.get(partitionKey);
             if (fanout == null)
@@ -659,7 +659,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private final long replyId;
         private final long affinity;
         private final long authorization;
-        private final KafkaCursor cursor;
+        private final KafkaCacheCursor cursor;
 
         private int state;
 
@@ -681,7 +681,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long affinity,
             long authorization,
             long partitionOffset,
-            KafkaCursor cursor)
+            KafkaCacheCursor cursor)
         {
             this.group = group;
             this.sender = sender;
