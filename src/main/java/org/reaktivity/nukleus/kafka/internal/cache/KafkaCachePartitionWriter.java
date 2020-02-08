@@ -156,8 +156,7 @@ public final class KafkaCachePartitionWriter
         byteBuffer.limit(key.limit());
         checksum.update(byteBuffer);
         final long hash = checksum.getValue();
-        final long offsetDelta = (int)(offset - entrySegment.baseOffset());
-        hashInfo.putLong(0, (hash << 32) | offsetDelta);
+        hashInfo.putLong(0, (hash << 32) | position);
         entrySegment.writeHash(hashInfo, 0, hashInfo.capacity());
     }
 
@@ -196,7 +195,7 @@ public final class KafkaCachePartitionWriter
                 byteBuffer.limit(h.limit());
                 checksum.update(byteBuffer);
                 final long hash = checksum.getValue();
-                hashInfo.putLong(0, (hash << 32) | offsetDelta);
+                hashInfo.putLong(0, (hash << 32) | position);
                 entrySegment.writeHash(hashInfo, 0, hashInfo.capacity());
             });
         }

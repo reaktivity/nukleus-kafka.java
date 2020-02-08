@@ -17,7 +17,6 @@ package org.reaktivity.nukleus.kafka.internal.filter;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.zip.CRC32C;
 
@@ -29,79 +28,80 @@ import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
-public final class KafkaFilterInfoFactory
+public final class KafkaCursorFactory
 {
-    private static final List<KafkaFilterInfo> EMPTY_FILTER_INFOS = Collections.emptyList();
-
-    private final KafkaConditionInfo nullKeyInfo;
-
     private final CRC32C checksum;
+    private final KafkaCondition nullKeyInfo;
 
-    public KafkaFilterInfoFactory()
+    public KafkaCursorFactory()
     {
         this.checksum = new CRC32C();
         this.nullKeyInfo = initNullKeyInfo(checksum);
     }
 
-    public List<KafkaFilterInfo> asFilterInfos(
+    public KafkaCursor newCursor(
         ArrayFW<KafkaFilterFW> filters)
     {
-        List<KafkaFilterInfo> filterInfos;
+        KafkaCondition condition;
+
         if (filters.isEmpty())
         {
-            filterInfos = EMPTY_FILTER_INFOS;
+            condition = new KafkaCondition.None();
         }
         else
         {
-            final List<KafkaFilterInfo> newFilterInfos = new ArrayList<>();
-            filters.forEach(f -> newFilterInfos.add(asFilterInfo(f)));
-            filterInfos = newFilterInfos;
+            final List<KafkaCondition> asConditions = new ArrayList<>();
+            filters.forEach(f -> asConditions.add(asCondition(f)));
+            condition = new KafkaCondition.Or(asConditions);
         }
-        return filterInfos;
+
+        return new KafkaCursor(condition);
     }
 
-    private KafkaFilterInfo asFilterInfo(
+    private KafkaCondition asCondition(
         KafkaFilterFW filter)
     {
-        List<KafkaConditionInfo> conditionInfos = new ArrayList<>();
-        filter.conditions().forEach(c -> conditionInfos.add(asConditionInfo(c)));
-        return new KafkaFilterInfo(conditionInfos);
+        final ArrayFW<KafkaConditionFW> conditions = filter.conditions();
+        assert !conditions.isEmpty();
+        List<KafkaCondition> asConditions = new ArrayList<>();
+        conditions.forEach(c -> asConditions.add(asCondition(c)));
+        return new KafkaCondition.And(asConditions);
     }
 
-    private KafkaConditionInfo asConditionInfo(
+    private KafkaCondition asCondition(
         KafkaConditionFW condition)
     {
-        KafkaConditionInfo conditionInfo = null;
+        KafkaCondition asCondition = null;
 
         switch (condition.kind())
         {
         case KafkaConditionFW.KIND_KEY:
-            conditionInfo = asKeyConditionInfo(condition.key());
+            asCondition = asKeyCondition(condition.key());
             break;
         case KafkaConditionFW.KIND_HEADER:
-            conditionInfo = asHeaderConditionInfo(condition.header());
+            asCondition = asHeaderCondition(condition.header());
             break;
         }
 
-        assert conditionInfo != null;
-        return conditionInfo;
+        assert asCondition != null;
+        return asCondition;
     }
 
-    private KafkaConditionInfo asKeyConditionInfo(
+    private KafkaCondition asKeyCondition(
         KafkaKeyFW key)
     {
         final OctetsFW value = key.value();
 
-        return value == null ? nullKeyInfo : new KafkaConditionInfo.Key(checksum, key);
+        return value == null ? nullKeyInfo : new KafkaCondition.Key(checksum, key);
     }
 
-    private KafkaConditionInfo asHeaderConditionInfo(
+    private KafkaCondition asHeaderCondition(
         KafkaHeaderFW header)
     {
-        return new KafkaConditionInfo.Header(checksum, header);
+        return new KafkaCondition.Header(checksum, header);
     }
 
-    private static KafkaConditionInfo.Key initNullKeyInfo(
+    private static KafkaCondition.Key initNullKeyInfo(
         CRC32C checksum)
     {
         final KafkaKeyFW nullKeyRO = new KafkaKeyFW.Builder()
@@ -109,6 +109,6 @@ public final class KafkaFilterInfoFactory
                 .length(-1)
                 .value((OctetsFW) null)
                 .build();
-        return new KafkaConditionInfo.Key(checksum, nullKeyRO);
+        return new KafkaCondition.Key(checksum, nullKeyRO);
     }
 }

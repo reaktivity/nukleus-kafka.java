@@ -18,25 +18,31 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 import java.nio.file.Path;
 
 import org.agrona.MutableDirectBuffer;
-import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 
-public final class KafkaCacheLogFile extends KafkaCacheFile
+public final class KafkaCacheHashScanFile extends KafkaCacheIndexFile
 {
-    KafkaCacheLogFile(
+    KafkaCacheHashScanFile(
         MutableDirectBuffer writeBuffer,
         Path directory,
         long baseOffset,
         int maxCapacity)
     {
-        super(writeBuffer, filename(directory, baseOffset, "log"), baseOffset, maxCapacity);
+        super(writeBuffer,
+                filename(directory, baseOffset, "hscan"),
+                baseOffset, maxCapacity);
     }
 
-    public KafkaCacheEntryFW read(
-        int position,
-        KafkaCacheEntryFW entry)
+    public long seekHash(
+        int hash,
+        int position)
     {
-        assert position >= 0;
-        assert entry != null;
-        return entry.tryWrap(readableBuf, position, readableLimit);
+        return super.seekValue(hash, position);
+    }
+
+    public long scanHash(
+        int hash,
+        long record)
+    {
+        return super.scanValue(hash, record);
     }
 }

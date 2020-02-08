@@ -15,6 +15,9 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegment.NEXT_SEGMENT;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegment.RETRY_SEGMENT;
+
 import java.nio.file.Path;
 
 import org.agrona.DirectBuffer;
@@ -41,23 +44,16 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
         super(writeBuffer, writeFile, freezeFile, baseOffset, maxCapacity);
     }
 
-    protected int value(
-        int index)
+    protected long seekKey(
+        int key)
     {
-        return (int)(readableBuf.getLong(index << 3) & 0xFFFF_FFFF);
-    }
-
-    protected int seek(
-        int key,
-        int index)
-    {
+        // assumes sorted by key
         final DirectBuffer buffer = readableBuf;
-        final int maxIndex = (buffer.capacity() >> 3) - 1;
-
-        // TODO: use index hint for linear probe before binary search
+        final int maxIndex = (maxCapacity >> 3) - 1;
+        final int lastIndex = (readableLimit >> 3) - 1;
 
         int lowIndex = 0;
-        int highIndex = maxIndex;
+        int highIndex = lastIndex;
 
         while (lowIndex <= highIndex)
         {
@@ -75,31 +71,158 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
             }
             else
             {
-                return midIndex;
+                return entry;
             }
         }
 
         assert lowIndex >= 0;
-        return lowIndex <= maxIndex ? lowIndex : -1;
+        if (lowIndex <= lastIndex)
+        {
+            final long entry = buffer.getLong(lowIndex << 3);
+            return KafkaIndexRecord.record(lowIndex, KafkaIndexRecord.value(entry));
+        }
+
+        return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
     }
 
-    protected int scan(
+    protected long seekValue(
         int key,
-        int index)
+        int value)
     {
+        // assumes sorted by value, repeated keys
         final DirectBuffer buffer = readableBuf;
-        final int maxIndex = (buffer.capacity() >> 3) - 1;
+        final int maxIndex = (maxCapacity >> 3) - 1;
+        final int lastIndex = (readableLimit >> 3) - 1;
 
-        for (int currentIndex = Math.max(index, 0); currentIndex <= maxIndex; currentIndex++)
+        int lowIndex = 0;
+        int highIndex = lastIndex;
+
+        while (lowIndex <= highIndex)
         {
-            final long entry = buffer.getLong(currentIndex << 3);
-            final int entryKey = (int)(entry >>> 32);
-            if (entryKey == key)
+            final int midIndex = (lowIndex + highIndex) >>> 1;
+            final long entry = buffer.getLong(midIndex << 3);
+            final int entryValue = (int)(entry & 0x7FFF_FFFF);
+
+            if (entryValue < value)
             {
-                return currentIndex;
+                lowIndex = midIndex + 1;
+            }
+            else if (entryValue > value)
+            {
+                highIndex = midIndex - 1;
+            }
+            else
+            {
+                final int entryKey = (int)(entry >>> 32);
+                if (entryKey == key)
+                {
+                    lowIndex = midIndex + 1;
+                }
+                else
+                {
+                    return entry;
+                }
             }
         }
 
-        return -1;
+        assert lowIndex >= 0;
+        if (lowIndex <= lastIndex)
+        {
+            final long entry = buffer.getLong(lowIndex << 3);
+            return KafkaIndexRecord.record(lowIndex, KafkaIndexRecord.value(entry));
+        }
+
+        return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
+    }
+
+    protected long scanKey(
+        int key,
+        long record)
+    {
+        // assumes sorted by key, record from seekKey
+        final int index = KafkaIndexRecord.index(record);
+        final int value = KafkaIndexRecord.value(record);
+        assert index >= 0;
+
+        final DirectBuffer buffer = readableBuf;
+        final int capacity = readableLimit;
+        final int maxIndex = (maxCapacity >> 3) - 1;
+        final int lastIndex = (capacity >> 3) - 1;
+
+        int currentIndex = index;
+        while (currentIndex <= lastIndex)
+        {
+            final long entry = buffer.getLong(currentIndex << 3);
+            final int entryKey = (int)(entry >>> 32);
+            final int entryValue = (int)(entry & 0x7FFF_FFFF);
+            if (entryKey != key || entryValue == value)
+            {
+                break;
+            }
+            currentIndex++;
+        }
+
+        if (currentIndex <= lastIndex)
+        {
+            final long entry = buffer.getLong(currentIndex << 3);
+            return KafkaIndexRecord.record(currentIndex, KafkaIndexRecord.value(entry));
+        }
+
+        return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
+    }
+
+    protected long scanValue(
+        int key,
+        long record)
+    {
+        // assumes sorted by value, repeated keys, record from seekValue
+        final int index = KafkaIndexRecord.index(record);
+        final int value = KafkaIndexRecord.value(record);
+        assert index >= 0;
+
+        final DirectBuffer buffer = readableBuf;
+        final int capacity = readableLimit;
+        final int maxIndex = (maxCapacity >> 3) - 1;
+        final int lastIndex = (capacity >> 3) - 1;
+
+        int currentIndex = index;
+        while (currentIndex <= lastIndex)
+        {
+            final long entry = buffer.getLong(currentIndex << 3);
+            final int entryKey = (int)(entry >>> 32);
+            final int entryValue = (int)(entry & 0x7FFF_FFFF);
+            if (entryKey == key && entryValue >= value)
+            {
+                break;
+            }
+            currentIndex++;
+        }
+
+        if (currentIndex <= lastIndex)
+        {
+            final long entry = buffer.getLong(currentIndex << 3);
+            return KafkaIndexRecord.record(currentIndex, KafkaIndexRecord.value(entry));
+        }
+
+        return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
+    }
+
+    protected long scanIndex(
+        long record)
+    {
+        final int index = KafkaIndexRecord.index(record);
+        assert index >= 0;
+
+        final DirectBuffer buffer = readableBuf;
+        final int maxIndex = (maxCapacity >> 3) - 1;
+        final int lastIndex = (readableLimit >> 3) - 1;
+
+        if (index <= lastIndex)
+        {
+            final long entry = buffer.getLong(index << 3);
+            return KafkaIndexRecord.record(index, KafkaIndexRecord.value(entry));
+        }
+
+        return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
     }
 }

@@ -378,27 +378,27 @@ public class CacheFetchIT
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
         "${client}/filter.key/client",
-        "${server}/filter.key/server"})
+        "${server}/filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithKeyFilter() throws Exception
     {
+        partition.nextSegment(1L);
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
         "${client}/filter.key.and.header/client",
-        "${server}/filter.key.and.header/server"})
+        "${server}/filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithKeyAndHeaderFilter() throws Exception
     {
+        partition.nextSegment(1L);
         k3po.finish();
     }
 
@@ -411,30 +411,31 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithKeyOrHeaderFilter() throws Exception
     {
+        partition.nextSegment(1L);
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
         "${client}/filter.header/client",
-        "${server}/filter.header/server"})
+        "${server}/filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithHeaderFilter() throws Exception
     {
+        partition.nextSegment(1L);
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
         "${client}/filter.header.and.header/client",
-        "${server}/filter.header.and.header/server"})
+        "${server}/filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithHeaderAndHeaderFilter() throws Exception
     {
+        partition.nextSegment(1L);
         k3po.finish();
     }
 
@@ -447,6 +448,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithHeaderOrHeaderFilter() throws Exception
     {
+        partition.nextSegment(1L);
         k3po.finish();
     }
 }

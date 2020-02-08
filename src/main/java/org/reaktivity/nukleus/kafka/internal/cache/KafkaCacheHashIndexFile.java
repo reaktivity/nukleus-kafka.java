@@ -41,22 +41,8 @@ public final class KafkaCacheHashIndexFile extends KafkaCacheIndexFile
     {
         super(writeBuffer,
                 filename(directory, baseOffset, "hscan"),
-                filename(directory, baseOffset, "hindex"),
+                //filename(directory, baseOffset, "hindex"),
                 baseOffset, maxCapacity);
-    }
-
-    public int findHash(
-        int hash,
-        int index)
-    {
-        return super.scan(hash, index);
-    }
-
-    public long offset(
-        int index)
-    {
-        final int deltaOffset = super.value(index);
-        return baseOffset + deltaOffset;
     }
 
     @Override
@@ -64,40 +50,43 @@ public final class KafkaCacheHashIndexFile extends KafkaCacheIndexFile
     {
         try
         {
-            final Path tempFreezeFile = freezeFile.resolveSibling(String.format("%s.tmp", freezeFile.getFileName().toString()));
-
-            Files.copy(writeFile, tempFreezeFile);
-
-            try (FileChannel channel = FileChannel.open(tempFreezeFile, READ, WRITE))
+            if (freezeFile != writeFile)
             {
-                final ByteBuffer mapped = channel.map(MapMode.READ_WRITE, 0, channel.size());
-                final MutableDirectBuffer buffer = new UnsafeBuffer(mapped);
+                final Path tempFreezeFile = freezeFile.resolveSibling(String.format("%s.tmp", freezeFile.getFileName()));
 
-                // TODO: better O(N) sort algorithm
-                int maxIndex = (buffer.capacity() >> 3) - 1;
-                for (int index = 0, priorIndex = index; index < maxIndex; priorIndex = ++index)
+                Files.copy(writeFile, tempFreezeFile);
+
+                try (FileChannel channel = FileChannel.open(tempFreezeFile, READ, WRITE))
                 {
-                    final long candidate = buffer.getLong((index + 1) << 3);
-                    while (compareUnsigned(candidate, buffer.getLong(priorIndex << 3)) < 0)
+                    final ByteBuffer mapped = channel.map(MapMode.READ_WRITE, 0, channel.size());
+                    final MutableDirectBuffer buffer = new UnsafeBuffer(mapped);
+
+                    // TODO: better O(N) sort algorithm
+                    int maxIndex = (buffer.capacity() >> 3) - 1;
+                    for (int index = 0, priorIndex = index; index < maxIndex; priorIndex = ++index)
                     {
-                        buffer.putLong((priorIndex + 1) << 3, buffer.getLong(priorIndex << 3));
-                        if (priorIndex-- == 0)
+                        final long candidate = buffer.getLong((index + 1) << 3);
+                        while (compareUnsigned(candidate, buffer.getLong(priorIndex << 3)) < 0)
                         {
-                            break;
+                            buffer.putLong((priorIndex + 1) << 3, buffer.getLong(priorIndex << 3));
+                            if (priorIndex-- == 0)
+                            {
+                                break;
+                            }
                         }
+                        buffer.putLong((priorIndex + 1) << 3, candidate);
                     }
-                    buffer.putLong((priorIndex + 1) << 3, candidate);
+                    IoUtil.unmap(mapped);
                 }
-                IoUtil.unmap(mapped);
-            }
-            catch (IOException ex)
-            {
-                LangUtil.rethrowUnchecked(ex);
-            }
+                catch (IOException ex)
+                {
+                    LangUtil.rethrowUnchecked(ex);
+                }
 
-            Files.move(tempFreezeFile, freezeFile);
+                Files.move(tempFreezeFile, freezeFile);
 
-            super.freeze();
+                super.freeze();
+            }
         }
         catch (IOException ex)
         {

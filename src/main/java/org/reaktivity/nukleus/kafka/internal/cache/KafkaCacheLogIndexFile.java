@@ -30,17 +30,16 @@ public final class KafkaCacheLogIndexFile extends KafkaCacheIndexFile
         super(writeBuffer, filename(directory, baseOffset, "index"), baseOffset, maxCapacity);
     }
 
-    public int findOffset(
-        long offset,
-        int index)
+    public long seekOffset(
+        long offset)
     {
         final int deltaOffset = (int)(offset - baseOffset);
-        return super.seek(deltaOffset, index);
+        return super.seekKey(deltaOffset);
     }
 
-    public int position(
-        int index)
+    public long scanOffset(
+        long record)
     {
-        return super.value(index);
+        return super.scanIndex(record);
     }
 }

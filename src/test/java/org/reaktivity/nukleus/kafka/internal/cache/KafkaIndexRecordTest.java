@@ -13,19 +13,25 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.kafka.internal.filter;
+package org.reaktivity.nukleus.kafka.internal.cache;
 
-import static java.util.Collections.unmodifiableList;
+import static org.junit.Assert.assertEquals;
 
-import java.util.List;
+import java.util.Random;
 
-public final class KafkaFilterInfo
+import org.junit.Test;
+
+public class KafkaIndexRecordTest
 {
-    public final List<KafkaConditionInfo> conditionInfos;
-
-    public KafkaFilterInfo(
-        List<KafkaConditionInfo> conditionInfos)
+    @Test
+    public void shouldRoundTrip()
     {
-        this.conditionInfos = unmodifiableList(conditionInfos);
+        final Random random = new Random();
+        final int index = random.nextInt() & 0x7FFF_FFFF;
+        final int value = random.nextInt() & 0x7FFF_FFFF;
+        final long record = KafkaIndexRecord.record(index, value);
+
+        assertEquals(index, KafkaIndexRecord.index(record));
+        assertEquals(value, KafkaIndexRecord.value(record));
     }
 }

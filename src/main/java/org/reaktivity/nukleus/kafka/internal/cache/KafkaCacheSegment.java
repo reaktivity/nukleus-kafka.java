@@ -26,8 +26,11 @@ import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 
 public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
 {
-    public static final int POSITION_END_OF_MESSAGES = -1;
-    public static final int POSITION_END_OF_SEGMENT = -2;
+    public static final long RETRY_SEGMENT = Integer.MAX_VALUE - 1;
+    public static final long NEXT_SEGMENT = Long.MAX_VALUE - 1;
+
+    public static final int POSITION_UNSET = -1;
+
     public static final int OFFSET_LATEST = -1;
 
     private static final UnsafeBuffer EMPTY_BUFFER = new UnsafeBuffer(0, 0);
@@ -128,37 +131,37 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         return 0;
     }
 
+    public long seekOffset(
+        long nextOffset)
+    {
+        return NEXT_SEGMENT;
+    }
+
+    public long scanOffset(
+        long record)
+    {
+        return NEXT_SEGMENT;
+    }
+
+    public long seekHash(
+        int hash,
+        int position)
+    {
+        return NEXT_SEGMENT;
+    }
+
+    public long scanHash(
+        int hash,
+        long record)
+    {
+        return NEXT_SEGMENT;
+    }
+
     public KafkaCacheEntryFW readLog(
         int position,
         KafkaCacheEntryFW entry)
     {
         return null;
-    }
-
-    public int readOffsetPosition(
-        int index)
-    {
-        return -1;
-    }
-
-    public long readHashOffset(
-        int hashIndex)
-    {
-        return -1;
-    }
-
-    public int findOffsetIndex(
-        long nextOffset,
-        int indexHint)
-    {
-        return -1;
-    }
-
-    public int findHashIndex(
-        int hash,
-        int indexHint)
-    {
-        return -1;
     }
 
     public boolean writeLog(
@@ -248,7 +251,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         private final long baseOffset;
         private final KafkaCacheLogFile logFile;
         private final KafkaCacheLogIndexFile indexFile;
-        private KafkaCacheHashIndexFile hashFile;
+        private final KafkaCacheHashScanFile hashFile;
 
         private long lastOffset;
 
@@ -265,7 +268,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
             this.lastOffset = OFFSET_LATEST;
             this.logFile = new KafkaCacheLogFile(writeBuffer, directory, baseOffset, logCapacity);
             this.indexFile = new KafkaCacheLogIndexFile(writeBuffer, directory, baseOffset, indexCapacity);
-            this.hashFile = new KafkaCacheHashIndexFile(writeBuffer, directory, baseOffset, indexCapacity);
+            this.hashFile = new KafkaCacheHashScanFile(writeBuffer, directory, baseOffset, indexCapacity);
         }
 
         public void lastOffset(
@@ -290,7 +293,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         @Override
         public int logPosition()
         {
-            return logFile.readableBuf.capacity();
+            return logFile.readableLimit;
         }
 
         @Override
@@ -312,41 +315,41 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         }
 
         @Override
+        public long seekOffset(
+            long nextOffset)
+        {
+            return indexFile.seekOffset(nextOffset);
+        }
+
+        @Override
+        public long scanOffset(
+            long record)
+        {
+            return indexFile.scanOffset(record);
+        }
+
+        @Override
+        public long seekHash(
+            int hash,
+            int position)
+        {
+            return hashFile.seekHash(hash, position);
+        }
+
+        @Override
+        public long scanHash(
+            int hash,
+            long record)
+        {
+            return hashFile.scanHash(hash, record);
+        }
+
+        @Override
         public KafkaCacheEntryFW readLog(
             int position,
             KafkaCacheEntryFW entry)
         {
             return logFile.read(position, entry);
-        }
-
-        @Override
-        public int findHashIndex(
-            int hash,
-            int indexHint)
-        {
-            return hashFile.findHash(hash, indexHint);
-        }
-
-        @Override
-        public long readHashOffset(
-            int hashIndex)
-        {
-            return hashFile.offset(hashIndex);
-        }
-
-        @Override
-        public int findOffsetIndex(
-            long nextOffset,
-            int indexHint)
-        {
-            return indexFile.findOffset(nextOffset, indexHint);
-        }
-
-        @Override
-        public int readOffsetPosition(
-            int offsetIndex)
-        {
-            return indexFile.position(offsetIndex);
         }
 
         @Override

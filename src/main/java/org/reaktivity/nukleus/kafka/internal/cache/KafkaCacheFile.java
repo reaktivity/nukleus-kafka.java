@@ -20,7 +20,6 @@ import static java.nio.file.StandardOpenOption.CREATE;
 import static java.nio.file.StandardOpenOption.READ;
 import static java.nio.file.StandardOpenOption.WRITE;
 import static java.util.Objects.requireNonNull;
-import static org.agrona.BufferUtil.address;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -38,18 +37,19 @@ import org.agrona.concurrent.UnsafeBuffer;
 
 public abstract class KafkaCacheFile
 {
-    private final int maxCapacity;
     private final MutableDirectBuffer writeBuffer;
     private final ByteBuffer writeByteBuffer;
     private final FileChannel writer;
 
     private MappedByteBuffer readableByteBuf;
-    private long readableAddress;
 
+    protected final int maxCapacity;
     protected final long baseOffset;
     protected final DirectBuffer readableBuf;
     protected final Path writeFile;
     protected final Path freezeFile;
+
+    protected volatile int readableLimit;
 
     protected KafkaCacheFile(
         MutableDirectBuffer writeBuffer,
@@ -70,9 +70,8 @@ public abstract class KafkaCacheFile
         this.writeBuffer = requireNonNull(writeBuffer);
         this.writeByteBuffer = requireNonNull(writeBuffer.byteBuffer());
         this.readableByteBuf = readInit(writeFile, maxCapacity);
-        this.readableBuf = new UnsafeBuffer(0, 0);
+        this.readableBuf = new UnsafeBuffer(readableByteBuf);
         this.writer = writeInit(writeFile);
-        this.readableAddress = address(readableByteBuf);
         this.writeFile = writeFile;
         this.freezeFile = freezeFile;
         this.baseOffset = baseOffset;
@@ -81,7 +80,7 @@ public abstract class KafkaCacheFile
 
     int available()
     {
-        return maxCapacity - readableBuf.capacity();
+        return maxCapacity - readableLimit;
     }
 
     protected boolean write(
@@ -103,9 +102,8 @@ public abstract class KafkaCacheFile
                 final int written = writer.write(writeByteBuffer);
                 assert written == length;
 
-                final int newCapacity = readableBuf.capacity() + written;
-                assert newCapacity <= maxCapacity;
-                readableBuf.wrap(readableAddress, newCapacity);
+                readableLimit += written;
+                assert readableLimit <= maxCapacity;
             }
             catch (IOException ex)
             {
@@ -128,7 +126,6 @@ public abstract class KafkaCacheFile
 
                 IoUtil.unmap(readableByteBuf);
                 this.readableByteBuf = readInit(freezeFile);
-                this.readableAddress = address(readableByteBuf);
             }
         }
         catch (IOException ex)
