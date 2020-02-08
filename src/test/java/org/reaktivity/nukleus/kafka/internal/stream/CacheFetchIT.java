@@ -402,12 +402,11 @@ public class CacheFetchIT
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
         "${client}/filter.key.or.header/client",
-        "${server}/filter.key.or.header/server"})
+        "${server}/filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithKeyOrHeaderFilter() throws Exception
     {
@@ -439,12 +438,11 @@ public class CacheFetchIT
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache/controller",
         "${client}/filter.header.or.header/client",
-        "${server}/filter.header.or.header/server"})
+        "${server}/filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithHeaderOrHeaderFilter() throws Exception
     {
