@@ -22,8 +22,6 @@ import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CAC
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
-import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.DisableOnDebug;
@@ -32,9 +30,6 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
-import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegment;
 import org.reaktivity.reaktor.ReaktorConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
@@ -63,19 +58,6 @@ public class CacheMergedIT
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
 
-    private KafkaCacheSegment partition0;
-    private KafkaCacheSegment partition1;
-
-    @Before
-    public void initPartition()
-    {
-        final KafkaNukleus nukleus = reaktor.nukleus(KafkaNukleus.class);
-        final KafkaCache cache = nukleus.cache();
-        this.partition0 = cache.supplySegment("kafka-cache#0", "test", 0);
-        this.partition1 = cache.supplySegment("kafka-cache#0", "test", 1);
-    }
-
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache.merged/controller",
@@ -84,12 +66,9 @@ public class CacheMergedIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMergedMessagesWithHeaderFilter() throws Exception
     {
-        partition0.nextSegment(1L);
-        partition1.nextSegment(1L);
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache.merged/controller",
@@ -98,12 +77,9 @@ public class CacheMergedIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMergedMessagesWithHeaderAndHeaderFilter() throws Exception
     {
-        partition0.nextSegment(1L);
-        partition1.nextSegment(1L);
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache.merged/controller",
@@ -112,12 +88,9 @@ public class CacheMergedIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMergedMessagesWithHeaderOrHeaderFilter() throws Exception
     {
-        partition0.nextSegment(1L);
-        partition1.nextSegment(1L);
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache.merged/controller",
@@ -126,12 +99,9 @@ public class CacheMergedIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMergedMessagesWithKeyFilter() throws Exception
     {
-        partition0.nextSegment(1L);
-        partition1.nextSegment(1L);
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache.merged/controller",
@@ -140,12 +110,9 @@ public class CacheMergedIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMergedMessagesWithKeyAndHeaderFilter() throws Exception
     {
-        partition0.nextSegment(1L);
-        partition1.nextSegment(1L);
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/cache.merged/controller",
@@ -154,12 +121,9 @@ public class CacheMergedIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMergedMessagesWithKeyOrHeaderFilter() throws Exception
     {
-        partition0.nextSegment(1L);
-        partition1.nextSegment(1L);
         k3po.finish();
     }
 
-    @Ignore("merged message order not deterministic")
     @Test
     @Specification({
         "${route}/cache.merged/controller",

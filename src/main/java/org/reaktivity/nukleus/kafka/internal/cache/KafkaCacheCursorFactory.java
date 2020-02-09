@@ -338,19 +338,19 @@ public final class KafkaCacheCursorFactory
                         nextRecord = condition.next(nextRecordMax);
 
                         nextRecordMin = KafkaCacheCursorRecord.minByValue(nextRecord, nextRecordMin);
-                        nextRecordMax = KafkaCacheCursorRecord.maxByValue(nextRecordMax, nextRecord);
+                        nextRecordMax = KafkaCacheCursorRecord.maxByValue(nextRecord, nextRecordMax);
                     }
 
                     if (nextRecordMax == RETRY_SEGMENT ||
                         nextRecordMax == NEXT_SEGMENT)
                     {
-                        nextRecord = nextRecordMax;
+                        nextRecordMin = nextRecordMax;
                         break;
                     }
                 }
                 while (KafkaCacheCursorRecord.value(nextRecordMin) != KafkaCacheCursorRecord.value(nextRecordMax));
 
-                return nextRecord;
+                return nextRecordMin;
             }
 
             @Override

@@ -191,7 +191,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final long resolvedId = route.correlationId();
             final String topicName = beginTopic.asString();
             final int partitionId = progress.partitionId();
-            final long partitionOffset = progress.offset$();
+            final long partitionOffset = progress.partitionOffset();
             final KafkaCacheRoute cacheRoute = supplyCacheRoute.apply(resolvedId);
             final long partitionKey = cacheRoute.topicPartitionKey(topicName, partitionId);
             final KafkaCacheCursor cursor = cursorFactory.newCursor(filters);
@@ -473,7 +473,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(topic.name())
                                      .partition(p -> p.partitionId(partition.id())
-                                                      .offset$(partitionOffset)))
+                                                      .partitionOffset(partitionOffset)))
                         .build()
                         .sizeof()));
             state = KafkaState.openingInitial(state);
@@ -545,7 +545,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final KafkaFetchBeginExFW kafkaFetchBeginEx = kafkaBeginEx.fetch();
             final KafkaOffsetFW partition = kafkaFetchBeginEx.partition();
             final int partitionId = partition.partitionId();
-            final long partitionOffset = partition.offset$();
+            final long partitionOffset = partition.partitionOffset();
 
             state = KafkaState.openedReply(state);
 
@@ -567,7 +567,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final KafkaFlushExFW kafkaFlushEx = extension.get(kafkaFlushExRO::wrap);
             final KafkaFetchFlushExFW kafkaFetchFlushEx = kafkaFlushEx.fetch();
             final KafkaOffsetFW partition = kafkaFetchFlushEx.partition();
-            final long partitionOffset = partition.offset$();
+            final long partitionOffset = partition.partitionOffset();
 
             assert partitionOffset >= this.partitionOffset;
             this.partitionOffset = partitionOffset;
@@ -835,7 +835,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(group.topic.name())
                                      .partition(p -> p.partitionId(group.partition.id())
-                                                      .offset$(partitionOffset)))
+                                                      .partitionOffset(partitionOffset)))
                         .build()
                         .sizeof()));
         }
@@ -967,7 +967,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.timestamp(timestamp)
                                      .partition(p -> p.partitionId(partitionId)
-                                                      .offset$(partitionOffset))
+                                                      .partitionOffset(partitionOffset))
                                      .key(k -> k.length(key.length())
                                                 .value(key.value()))
                                      .headers(hs -> headers.forEach(h -> hs.item(i -> i.nameLen(h.nameLen())
@@ -1027,7 +1027,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 ex -> ex.set((b, o, l) -> kafkaDataExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.partition(p -> p.partitionId(partitionId)
-                                                      .offset$(partitionOffset))
+                                                      .partitionOffset(partitionOffset))
                                      .headers(hs -> headers.forEach(h -> hs.item(i -> i.nameLen(h.nameLen())
                                                                                        .name(h.name())
                                                                                        .valueLen(h.valueLen())

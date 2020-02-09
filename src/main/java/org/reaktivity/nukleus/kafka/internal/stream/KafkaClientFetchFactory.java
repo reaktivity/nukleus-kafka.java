@@ -295,7 +295,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 final String topic = beginTopic != null ? beginTopic.asString() : null;
                 final KafkaOffsetFW partition = kafkaFetchBeginEx.partition();
                 final int partitionId = partition.partitionId();
-                final long initialOffset = partition.offset$();
+                final long initialOffset = partition.partitionOffset();
 
                 newStream = new KafkaFetchStream(
                         application,
@@ -1479,7 +1479,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                                                         .typeId(kafkaTypeId)
                                                         .fetch(m -> m.topic(topic)
                                                                      .partition(p -> p.partitionId(partitionId)
-                                                                                      .offset$(partitionOffset)))
+                                                                                      .partitionOffset(partitionOffset)))
                                                         .build()
                                                         .sizeof()));
         }
@@ -2268,7 +2268,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                         .fetch(f ->
                         {
                             f.timestamp(timestamp);
-                            f.partition(p -> p.partitionId(decodePartitionId).offset$(offset));
+                            f.partition(p -> p.partitionId(decodePartitionId).partitionOffset(offset));
                             f.key(k -> setKey(k, key));
                             final int headersLimit = headers.capacity();
                             int headerProgress = 0;
@@ -2300,7 +2300,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                                      .timestamp(timestamp)
                                      .headersSizeMax(headersSizeMax)
                                      .partition(p -> p.partitionId(decodePartitionId)
-                                                      .offset$(offset))
+                                                      .partitionOffset(offset))
                                      .key(k -> setKey(k, key)))
                         .build();
 
@@ -2327,7 +2327,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f ->
                         {
-                            f.partition(p -> p.partitionId(decodePartitionId).offset$(offset));
+                            f.partition(p -> p.partitionId(decodePartitionId).partitionOffset(offset));
                             final int headersLimit = headers.capacity();
                             int headerProgress = 0;
                             for (int headerIndex = 0; headerIndex < headerCount; headerIndex++)

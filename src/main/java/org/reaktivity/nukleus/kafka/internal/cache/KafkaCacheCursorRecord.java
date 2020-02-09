@@ -71,7 +71,7 @@ public final class KafkaCacheCursorRecord
         }
         else
         {
-            return record1;
+            return Long.min(record1, record2);
         }
     }
 
@@ -92,7 +92,7 @@ public final class KafkaCacheCursorRecord
         }
         else
         {
-            return record1;
+            return Long.max(record1, record2);
         }
     }
 

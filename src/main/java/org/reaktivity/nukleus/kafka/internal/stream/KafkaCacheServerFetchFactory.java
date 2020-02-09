@@ -160,7 +160,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         final String16FW beginTopic = kafkaFetchBeginEx.topic();
         final KafkaOffsetFW progress = kafkaFetchBeginEx.partition();
         final int partitionId = progress.partitionId();
-        final long partitionOffset = progress.offset$();
+        final long partitionOffset = progress.partitionOffset();
 
         MessageConsumer newStream = null;
 
@@ -430,7 +430,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(topic.name())
                                      .partition(p -> p.partitionId(partition.id())
-                                                      .offset$(partitionOffset)))
+                                                      .partitionOffset(partitionOffset)))
                         .build()
                         .sizeof()));
             state = KafkaState.openingInitial(state);
@@ -502,7 +502,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             final KafkaFetchBeginExFW kafkaFetchBeginEx = kafkaBeginEx.fetch();
             final KafkaOffsetFW progress = kafkaFetchBeginEx.partition();
             final int partitionId = progress.partitionId();
-            final long partitionOffset = progress.offset$();
+            final long partitionOffset = progress.partitionOffset();
 
             state = KafkaState.openedReply(state);
 
@@ -541,7 +541,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 assert kafkaFetchDataEx != null;
                 final int deferred = kafkaFetchDataEx.deferred();
                 final int partitionId = kafkaFetchDataEx.partition().partitionId();
-                final long partitionOffset = kafkaFetchDataEx.partition().offset$();
+                final long partitionOffset = kafkaFetchDataEx.partition().partitionOffset();
                 final int headersSizeMax = kafkaFetchDataEx.headersSizeMax();
                 final long timestamp = kafkaFetchDataEx.timestamp();
                 final KafkaKeyFW key = kafkaFetchDataEx.key();
@@ -562,7 +562,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             {
                 assert kafkaFetchDataEx != null;
                 final int partitionId = kafkaFetchDataEx.partition().partitionId();
-                final long partitionOffset = kafkaFetchDataEx.partition().offset$();
+                final long partitionOffset = kafkaFetchDataEx.partition().partitionOffset();
                 final ArrayFW<KafkaHeaderFW> headers = kafkaFetchDataEx.headers();
 
                 partition.writeEntryFinish(headers);
@@ -846,7 +846,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(group.topic.name())
                                      .partition(p -> p.partitionId(group.partition.id())
-                                                      .offset$(partitionOffset)))
+                                                      .partitionOffset(partitionOffset)))
                         .build()
                         .sizeof()));
         }
@@ -875,7 +875,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 ex -> ex.set((b, o, l) -> kafkaFlushExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.partition(p -> p.partitionId(group.partition.id())
-                                                      .offset$(group.partitionOffset)))
+                                                      .partitionOffset(group.partitionOffset)))
                         .build()
                         .sizeof()));
 

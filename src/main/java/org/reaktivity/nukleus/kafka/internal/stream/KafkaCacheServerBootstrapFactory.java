@@ -862,7 +862,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(bootstrap.topic)
-                                     .partition(p -> p.partitionId(partitionId).offset$(OFFSET_EARLIEST)))
+                                     .partition(p -> p.partitionId(partitionId).partitionOffset(OFFSET_EARLIEST)))
                         .build()
                         .sizeof()));
         }
@@ -994,7 +994,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
                 final KafkaFetchFlushExFW kafkaFetchFlushEx = kafkaFlushEx.fetch();
                 final KafkaOffsetFW partition = kafkaFetchFlushEx.partition();
 
-                this.partitionOffset = partition.offset$();
+                this.partitionOffset = partition.partitionOffset();
 
                 doBootstrapFetchReplyWindow(traceId, reserved);
             }
