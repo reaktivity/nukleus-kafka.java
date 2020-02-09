@@ -22,6 +22,7 @@ import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CAC
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.DisableOnDebug;
@@ -58,6 +59,7 @@ public class CacheMergedIT
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
 
+    @Ignore("requires k3po parallel reads")
     @Test
     @Specification({
         "${route}/cache.merged/controller",
@@ -69,6 +71,7 @@ public class CacheMergedIT
         k3po.finish();
     }
 
+    @Ignore("requires k3po parallel reads")
     @Test
     @Specification({
         "${route}/cache.merged/controller",
@@ -80,6 +83,7 @@ public class CacheMergedIT
         k3po.finish();
     }
 
+    @Ignore("requires k3po parallel reads")
     @Test
     @Specification({
         "${route}/cache.merged/controller",
@@ -91,6 +95,7 @@ public class CacheMergedIT
         k3po.finish();
     }
 
+    @Ignore("requires k3po parallel reads")
     @Test
     @Specification({
         "${route}/cache.merged/controller",
@@ -102,6 +107,7 @@ public class CacheMergedIT
         k3po.finish();
     }
 
+    @Ignore("requires k3po parallel reads")
     @Test
     @Specification({
         "${route}/cache.merged/controller",
@@ -113,6 +119,7 @@ public class CacheMergedIT
         k3po.finish();
     }
 
+    @Ignore("requires k3po parallel reads")
     @Test
     @Specification({
         "${route}/cache.merged/controller",
