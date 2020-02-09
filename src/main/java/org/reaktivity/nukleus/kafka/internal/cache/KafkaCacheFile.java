@@ -43,7 +43,7 @@ public abstract class KafkaCacheFile
 
     private MappedByteBuffer readableByteBuf;
 
-    protected final int maxCapacity;
+    protected volatile int maxCapacity;
     protected final long baseOffset;
     protected final DirectBuffer readableBuf;
     protected final Path writeFile;
@@ -119,6 +119,8 @@ public abstract class KafkaCacheFile
         try
         {
             writer.close();
+
+            this.maxCapacity = readableLimit;
 
             if (freezeFile != writeFile)
             {
