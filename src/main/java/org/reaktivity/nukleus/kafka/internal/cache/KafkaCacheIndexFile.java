@@ -120,7 +120,7 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
                 }
                 else
                 {
-                    return entry;
+                    break;
                 }
             }
         }
