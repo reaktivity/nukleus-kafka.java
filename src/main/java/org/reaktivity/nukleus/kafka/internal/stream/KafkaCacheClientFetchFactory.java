@@ -843,22 +843,13 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void doClientReplyDataIfNecessary(
             long traceId)
         {
-            while (KafkaState.replyOpened(state) &&
+            if (KafkaState.replyOpened(state) &&
                    partitionOffset <= group.partitionOffset)
             {
                 final KafkaCacheEntryFW nextEntry = cursor.next(entryRO);
-                if (nextEntry == null)
+                if (nextEntry != null)
                 {
-                    break;
-                }
-
-                final int replyBudgetSnapshot = replyBudget;
-
-                doClientReplyData(traceId, nextEntry);
-
-                if (replyBudget == replyBudgetSnapshot)
-                {
-                    break;
+                    doClientReplyData(traceId, nextEntry);
                 }
             }
         }
@@ -923,7 +914,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                                           partitionId, partitionOffset);
                     break;
                 case FLAG_INIT:
-                    doClientReplyDataInit(traceId, timestamp, key, fragment, reserved, length, flags);
+                    doClientReplyDataInit(traceId, timestamp, key, fragment, reserved, length, flags,
+                                          partitionId, partitionOffset);
                     break;
                 case FLAG_NONE:
                     doClientReplyDataNone(traceId, fragment, reserved, length, flags);
@@ -985,7 +977,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             OctetsFW fragment,
             int reserved,
             int length,
-            int flags)
+            int flags,
+            int partitionId,
+            long partitionOffset)
         {
             replyBudget -= reserved;
 
@@ -993,6 +987,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 ex -> ex.set((b, o, l) -> kafkaDataExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.timestamp(timestamp)
+                                     .partition(p -> p.partitionId(partitionId)
+                                     .partitionOffset(partitionOffset))
                                      .key(k -> k.length(key.length())
                                                 .value(key.value())))
                         .build()

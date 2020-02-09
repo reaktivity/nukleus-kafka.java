@@ -70,6 +70,7 @@ public final class KafkaMergedFactory implements StreamFactory
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
+    private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(new UnsafeBuffer(0, 0),  0, 0);
 
     private static final List<KafkaCacheMergedFilter> EMPTY_MERGED_FILTERS = Collections.emptyList();
 
@@ -719,28 +720,35 @@ public final class KafkaMergedFactory implements StreamFactory
 
             assert replyBudget >= 0;
 
-            final KafkaFetchDataExFW kafkaFetchDataEx = kafkaDataEx.fetch();
-            final KafkaOffsetFW partition = kafkaFetchDataEx.partition();
-            final long timestamp = kafkaFetchDataEx.timestamp();
-            final KafkaKeyFW key = kafkaFetchDataEx.key();
-            final ArrayFW<KafkaHeaderFW> headers = kafkaFetchDataEx.headers();
+            Flyweight newKafkaDataEx = EMPTY_OCTETS;
 
-            nextOffsetsById.put(partition.partitionId(), partition.partitionOffset() + 1);
+            if (flags != 0x00)
+            {
+                assert kafkaDataEx != null;
 
-            final KafkaDataExFW newKafkaDataEx = kafkaDataExRW.wrap(extBuffer, 0, extBuffer.capacity())
-                 .typeId(kafkaTypeId)
-                 .merged(f -> f.timestamp(timestamp)
-                               .partition(p -> p.partitionId(partition.partitionId())
-                                                .partitionOffset(partition.partitionOffset()))
-                               .progress(ps -> nextOffsetsById.longForEach((p, o) -> ps.item(i -> i.partitionId((int) p)
-                                                                                                   .partitionOffset(o))))
-                               .key(k -> k.length(key.length())
-                                          .value(key.value()))
-                               .headers(hs -> headers.forEach(h -> hs.item(i -> i.nameLen(h.nameLen())
-                                                                                 .name(h.name())
-                                                                                 .valueLen(h.valueLen())
-                                                                                 .value(h.value())))))
-                 .build();
+                final KafkaFetchDataExFW kafkaFetchDataEx = kafkaDataEx.fetch();
+                final KafkaOffsetFW partition = kafkaFetchDataEx.partition();
+                final long timestamp = kafkaFetchDataEx.timestamp();
+                final KafkaKeyFW key = kafkaFetchDataEx.key();
+                final ArrayFW<KafkaHeaderFW> headers = kafkaFetchDataEx.headers();
+
+                nextOffsetsById.put(partition.partitionId(), partition.partitionOffset() + 1);
+
+                newKafkaDataEx = kafkaDataExRW.wrap(extBuffer, 0, extBuffer.capacity())
+                     .typeId(kafkaTypeId)
+                     .merged(f -> f.timestamp(timestamp)
+                                   .partition(p -> p.partitionId(partition.partitionId())
+                                                    .partitionOffset(partition.partitionOffset()))
+                                   .progress(ps -> nextOffsetsById.longForEach((p, o) -> ps.item(i -> i.partitionId((int) p)
+                                                                                                       .partitionOffset(o))))
+                                   .key(k -> k.length(key.length())
+                                              .value(key.value()))
+                                   .headers(hs -> headers.forEach(h -> hs.item(i -> i.nameLen(h.nameLen())
+                                                                                     .name(h.name())
+                                                                                     .valueLen(h.valueLen())
+                                                                                     .value(h.value())))))
+                     .build();
+            }
 
             doData(sender, routeId, replyId, traceId, authorization, replyBudgetId, reserved,
                 flags, payload, newKafkaDataEx);
@@ -1292,7 +1300,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 final int flags = data.flags();
                 final OctetsFW payload = data.payload();
                 final OctetsFW extension = data.extension();
-                final KafkaDataExFW kafkaDataEx = extension.get(kafkaDataExRO::wrap);
+                final KafkaDataExFW kafkaDataEx = extension.get(kafkaDataExRO::tryWrap);
 
                 mergedFetch.doMergedReplyData(traceId, flags, reserved, payload, kafkaDataEx);
             }
