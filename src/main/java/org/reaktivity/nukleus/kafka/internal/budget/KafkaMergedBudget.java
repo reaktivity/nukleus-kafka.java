@@ -36,6 +36,7 @@ final class KafkaMergedBudget
     private BudgetDebitor debitor;
     private long budget;
     private int watcherIndex;
+    private long fragmenterId;
 
     KafkaMergedBudget(
         long budgetId,
@@ -69,19 +70,34 @@ final class KafkaMergedBudget
         final int budgetMax = (int)(Math.min(budget, Integer.MAX_VALUE) & 0x7fff_ffff);
 
         int claimed = Math.min(budgetMax, maximum);
+
+        if (fragmenterId != 0 && fragmenterId != watcherId)
+        {
+            claimed = 0;
+            assert watchers.containsLong(fragmenterId);
+        }
+
         if (claimed >= minimum && debitorIndex != NO_DEBITOR_INDEX)
         {
             claimed = debitor.claim(debitorIndex, mergedWatcherId, minimum, maximum);
         }
 
-        final int watcherAt = watchers.indexOf(watcherId);
+        assert claimed == 0 || (claimed >= minimum && claimed <= maximum);
+
         if (claimed >= minimum)
+        {
+            budget -= claimed;
+        }
+
+        final int watcherAt = watchers.indexOf(watcherId);
+        if (claimed == maximum)
         {
             if (watcherAt != -1)
             {
                 watchers.remove(watcherAt);
             }
-            budget -= claimed;
+
+            fragmenterId = 0;
         }
         else
         {
@@ -89,7 +105,11 @@ final class KafkaMergedBudget
             {
                 watchers.addLong(watcherId);
             }
-            claimed = 0;
+
+            if (fragmenterId == 0)
+            {
+                fragmenterId = watcherId;
+            }
         }
 
         return claimed;
@@ -112,6 +132,11 @@ final class KafkaMergedBudget
     void detach(
         long watcherId)
     {
+        if (fragmenterId == watcherId)
+        {
+            fragmenterId = 0;
+        }
+
         watchers.removeLong(watcherId);
         flushers.remove(watcherId);
 
@@ -129,7 +154,14 @@ final class KafkaMergedBudget
     private void flush(
         long traceId)
     {
-        if (!watchers.isEmpty())
+        if (fragmenterId != 0)
+        {
+            assert watchers.containsLong(fragmenterId);
+            final LongConsumer flusher = flushers.get(fragmenterId);
+            flusher.accept(traceId);
+        }
+
+        if (fragmenterId == 0 && !watchers.isEmpty())
         {
             if (watcherIndex >= watchers.size())
             {
