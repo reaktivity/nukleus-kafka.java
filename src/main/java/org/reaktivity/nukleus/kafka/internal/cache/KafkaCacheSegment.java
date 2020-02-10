@@ -32,9 +32,11 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
     public static final int POSITION_UNSET = -1;
 
     public static final int OFFSET_LATEST = -1;
+    public static final int OFFSET_EARLIEST = -2;
 
     private static final UnsafeBuffer EMPTY_BUFFER = new UnsafeBuffer(0, 0);
 
+    protected final KafkaCacheSegment previousSegment;
     protected final MutableDirectBuffer writeBuffer;
     protected final Path directory;
     protected final int logCapacity;
@@ -44,12 +46,14 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
     protected volatile KafkaCacheSegment.Data nextSegment;
 
     protected KafkaCacheSegment(
+        KafkaCacheSegment previousSegment,
         MutableDirectBuffer writeBuffer,
         Path directory,
         int logCapacity,
         int indexCapacity,
         int hashCapacity)
     {
+        this.previousSegment = previousSegment;
         this.writeBuffer = writeBuffer;
         this.directory = directory;
         this.logCapacity = logCapacity;
@@ -96,7 +100,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         KafkaCacheSegment.Data nextSegment = this.nextSegment;
         if (nextSegment == null)
         {
-            nextSegment = new KafkaCacheSegment.Data(writeBuffer, directory, nextOffset,
+            nextSegment = new KafkaCacheSegment.Data(this, writeBuffer, directory, nextOffset,
                     logCapacity, indexCapacity, hashCapacity);
             this.nextSegment = nextSegment;
             freeze();
@@ -211,7 +215,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
 
         public Candidate()
         {
-            super(EMPTY_BUFFER, null, 0, 0, 0);
+            super(null, EMPTY_BUFFER, null, 0, 0, 0);
         }
 
         public void baseOffset(
@@ -235,14 +239,14 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
             int maxIndexCapacity,
             int maxHashCapacity)
         {
-            super(new UnsafeBuffer(allocateDirect(64 * 1024)), directory,
+            super(null, new UnsafeBuffer(allocateDirect(64 * 1024)), directory,
                     maxLogCapacity, maxIndexCapacity, maxHashCapacity); // TODO: configure
         }
 
         @Override
         public long baseOffset()
         {
-            return -2L; // EARLIEST
+            return OFFSET_EARLIEST;
         }
     }
 
@@ -256,6 +260,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
         private long lastOffset;
 
         private Data(
+            KafkaCacheSegment previousSegment,
             MutableDirectBuffer writeBuffer,
             Path directory,
             long baseOffset,
@@ -263,7 +268,7 @@ public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
             int indexCapacity,
             int hashCapacity)
         {
-            super(writeBuffer, directory, logCapacity, indexCapacity, hashCapacity);
+            super(previousSegment, writeBuffer, directory, logCapacity, indexCapacity, hashCapacity);
             this.baseOffset = baseOffset;
             this.lastOffset = OFFSET_LATEST;
             this.logFile = new KafkaCacheLogFile(writeBuffer, directory, baseOffset, logCapacity);
