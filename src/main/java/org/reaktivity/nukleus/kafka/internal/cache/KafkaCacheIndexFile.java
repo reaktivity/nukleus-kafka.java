@@ -34,16 +34,6 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
         super(writeBuffer, file, baseOffset, maxCapacity);
     }
 
-    protected KafkaCacheIndexFile(
-        MutableDirectBuffer writeBuffer,
-        Path writeFile,
-        Path freezeFile,
-        long baseOffset,
-        int maxCapacity)
-    {
-        super(writeBuffer, writeFile, freezeFile, baseOffset, maxCapacity);
-    }
-
     protected long seekKey(
         int key)
     {

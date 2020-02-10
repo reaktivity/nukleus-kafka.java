@@ -26,11 +26,9 @@ import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.agrona.DirectBuffer;
-import org.agrona.IoUtil;
 import org.agrona.LangUtil;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
@@ -40,30 +38,17 @@ public abstract class KafkaCacheFile
     private final MutableDirectBuffer writeBuffer;
     private final ByteBuffer writeByteBuffer;
     private final FileChannel writer;
+    private final MappedByteBuffer readableByteBuf;
 
-    private MappedByteBuffer readableByteBuf;
-
-    protected volatile int maxCapacity;
     protected final long baseOffset;
     protected final DirectBuffer readableBuf;
-    protected final Path writeFile;
-    protected final Path freezeFile;
 
+    protected volatile int maxCapacity;
     protected volatile int readableLimit;
 
     protected KafkaCacheFile(
         MutableDirectBuffer writeBuffer,
-        Path file,
-        long baseOffset,
-        int maxCapacity)
-    {
-        this(writeBuffer, file, file, baseOffset, maxCapacity);
-    }
-
-    protected KafkaCacheFile(
-        MutableDirectBuffer writeBuffer,
         Path writeFile,
-        Path freezeFile,
         long baseOffset,
         int maxCapacity)
     {
@@ -72,8 +57,6 @@ public abstract class KafkaCacheFile
         this.readableByteBuf = readInit(writeFile, maxCapacity);
         this.readableBuf = new UnsafeBuffer(readableByteBuf);
         this.writer = writeInit(writeFile);
-        this.writeFile = writeFile;
-        this.freezeFile = freezeFile;
         this.baseOffset = baseOffset;
         this.maxCapacity = maxCapacity;
     }
@@ -121,14 +104,6 @@ public abstract class KafkaCacheFile
             writer.close();
 
             this.maxCapacity = readableLimit;
-
-            if (freezeFile != writeFile)
-            {
-                Files.delete(writeFile);
-
-                IoUtil.unmap(readableByteBuf);
-                this.readableByteBuf = readInit(freezeFile);
-            }
         }
         catch (IOException ex)
         {
@@ -146,24 +121,6 @@ public abstract class KafkaCacheFile
         {
             mapped = channel.map(MapMode.READ_ONLY, 0, capacity);
             channel.truncate(0L);
-        }
-        catch (IOException ex)
-        {
-            LangUtil.rethrowUnchecked(ex);
-        }
-
-        assert mapped != null;
-        return mapped;
-    }
-
-    private static MappedByteBuffer readInit(
-        Path file)
-    {
-        MappedByteBuffer mapped = null;
-
-        try (FileChannel channel = FileChannel.open(file, READ))
-        {
-            mapped = channel.map(MapMode.READ_ONLY, 0, channel.size());
         }
         catch (IOException ex)
         {
