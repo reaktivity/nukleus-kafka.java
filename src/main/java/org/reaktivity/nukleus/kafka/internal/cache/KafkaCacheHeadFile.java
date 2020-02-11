@@ -20,6 +20,7 @@ import static java.nio.file.StandardOpenOption.CREATE;
 import static java.nio.file.StandardOpenOption.READ;
 import static java.nio.file.StandardOpenOption.WRITE;
 import static java.util.Objects.requireNonNull;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.cacheFile;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -32,6 +33,7 @@ import org.agrona.DirectBuffer;
 import org.agrona.LangUtil;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
 
 public abstract class KafkaCacheHeadFile
 {
@@ -43,27 +45,30 @@ public abstract class KafkaCacheHeadFile
     protected final long baseOffset;
     protected final DirectBuffer readableBuf;
 
-    protected volatile int maxCapacity;
-    protected volatile int readableLimit;
+    protected volatile int writeCapacity;
+    protected volatile int readCapacity;
 
     protected KafkaCacheHeadFile(
-        Path writeFile,
-        long baseOffset,
+        KafkaCacheHeadSegment segment,
+        String extension,
         MutableDirectBuffer writeBuffer,
-        int maxCapacity)
+        int writeCapacity)
     {
+        final long baseOffset = segment.baseOffset();
+        final Path headFile = cacheFile(segment, extension);
+
+        this.baseOffset = baseOffset;
+        this.readableByteBuf = readInit(headFile, writeCapacity);
+        this.readableBuf = new UnsafeBuffer(readableByteBuf);
         this.writeBuffer = requireNonNull(writeBuffer);
         this.writeByteBuffer = requireNonNull(writeBuffer.byteBuffer());
-        this.readableByteBuf = readInit(writeFile, maxCapacity);
-        this.readableBuf = new UnsafeBuffer(readableByteBuf);
-        this.writer = writeInit(writeFile);
-        this.baseOffset = baseOffset;
-        this.maxCapacity = maxCapacity;
+        this.writer = writeInit(headFile);
+        this.writeCapacity = writeCapacity;
     }
 
     int available()
     {
-        return maxCapacity - readableLimit;
+        return writeCapacity - readCapacity;
     }
 
     protected boolean write(
@@ -85,8 +90,8 @@ public abstract class KafkaCacheHeadFile
                 final int written = writer.write(writeByteBuffer);
                 assert written == length;
 
-                readableLimit += written;
-                assert readableLimit <= maxCapacity;
+                readCapacity += written;
+                assert readCapacity <= writeCapacity;
             }
             catch (IOException ex)
             {
@@ -103,7 +108,7 @@ public abstract class KafkaCacheHeadFile
         {
             writer.close();
 
-            this.maxCapacity = readableLimit;
+            this.writeCapacity = readCapacity;
         }
         catch (IOException ex)
         {
@@ -147,13 +152,5 @@ public abstract class KafkaCacheHeadFile
 
         assert channel != null;
         return channel;
-    }
-
-    protected static Path filename(
-        Path directory,
-        long baseOffset,
-        String extension)
-    {
-        return directory.resolve(String.format("%016x.%s", baseOffset, extension));
     }
 }

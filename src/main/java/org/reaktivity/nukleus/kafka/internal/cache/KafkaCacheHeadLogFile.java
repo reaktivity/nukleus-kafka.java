@@ -15,20 +15,18 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import java.nio.file.Path;
-
 import org.agrona.MutableDirectBuffer;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 
 public final class KafkaCacheHeadLogFile extends KafkaCacheHeadFile
 {
     KafkaCacheHeadLogFile(
-        Path directory,
-        long baseOffset,
+        KafkaCacheHeadSegment segment,
         MutableDirectBuffer writeBuffer,
-        int maxCapacity)
+        int writeCapacity)
     {
-        super(filename(directory, baseOffset, "log"), baseOffset, writeBuffer, maxCapacity);
+        super(segment, "log", writeBuffer, writeCapacity);
     }
 
     public KafkaCacheEntryFW read(
@@ -37,6 +35,6 @@ public final class KafkaCacheHeadLogFile extends KafkaCacheHeadFile
     {
         assert position >= 0;
         assert entry != null;
-        return entry.tryWrap(readableBuf, position, readableLimit);
+        return entry.tryWrap(readableBuf, position, readCapacity);
     }
 }

@@ -15,15 +15,14 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import java.nio.file.Path;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheTailSegment;
 
 public final class KafkaCacheTailHashFile extends KafkaCacheTailIndexFile
 {
     KafkaCacheTailHashFile(
-        Path directory,
-        long baseOffset)
+        KafkaCacheTailSegment segment)
     {
-        super(filename(directory, baseOffset, "hscan"), baseOffset); // TODO: hindex
+        super(segment, "hindex");
     }
 
     public long seekHash(

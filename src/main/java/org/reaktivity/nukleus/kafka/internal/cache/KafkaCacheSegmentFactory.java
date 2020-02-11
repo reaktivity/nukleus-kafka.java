@@ -17,11 +17,18 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static java.nio.ByteBuffer.allocateDirect;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileChannel.MapMode;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.zip.CRC32C;
 
 import org.agrona.DirectBuffer;
+import org.agrona.IoUtil;
+import org.agrona.LangUtil;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
@@ -71,6 +78,21 @@ public final class KafkaCacheSegmentFactory
     KafkaCacheCandidateSegment newCandidate()
     {
         return new KafkaCacheCandidateSegment();
+    }
+
+    static Path cacheFile(
+        KafkaCacheSegment segment,
+        String extension)
+    {
+        return cacheFile(segment.directory, segment.baseOffset(), extension);
+    }
+
+    static Path cacheFile(
+        Path directory,
+        long baseOffset,
+        String extension)
+    {
+        return directory.resolve(String.format("%016x.%s", baseOffset, extension));
     }
 
     public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
@@ -249,7 +271,6 @@ public final class KafkaCacheSegmentFactory
     final class KafkaCacheHeadSegment extends KafkaCacheSegment
     {
         private final long baseOffset;
-
         final KafkaCacheHeadLogFile logFile;
         final KafkaCacheHeadLogIndexFile indexFile;
         final KafkaCacheHeadHashFile hashFile;
@@ -265,9 +286,9 @@ public final class KafkaCacheSegmentFactory
             super(previousSegment, directory);
             this.baseOffset = baseOffset;
             this.headOffset = OFFSET_LATEST;
-            this.logFile = new KafkaCacheHeadLogFile(directory, baseOffset, writeBuffer, maxLogCapacity);
-            this.indexFile = new KafkaCacheHeadLogIndexFile(directory, baseOffset, writeBuffer, maxIndexCapacity);
-            this.hashFile = new KafkaCacheHeadHashFile(directory, baseOffset, writeBuffer, maxHashCapacity);
+            this.logFile = new KafkaCacheHeadLogFile(this, writeBuffer, maxLogCapacity);
+            this.indexFile = new KafkaCacheHeadLogIndexFile(this, writeBuffer, maxIndexCapacity);
+            this.hashFile = new KafkaCacheHeadHashFile(this, writeBuffer, maxHashCapacity);
         }
 
         @Override
@@ -331,6 +352,48 @@ public final class KafkaCacheSegmentFactory
             indexFile.freeze();
             hashFile.freeze();
 
+            try
+            {
+                final Path hashScanFile = cacheFile(this, "hscan");
+                final Path hashIndexTempFile = cacheFile(this, "hindex.tmp");
+                final Path hashIndexFile = cacheFile(this, "hindex");
+
+                Files.copy(hashScanFile, hashIndexTempFile);
+
+                try (FileChannel channel = FileChannel.open(hashIndexTempFile, StandardOpenOption.READ, StandardOpenOption.WRITE))
+                {
+                    final ByteBuffer mapped = channel.map(MapMode.READ_WRITE, 0, channel.size());
+                    final MutableDirectBuffer buffer = new UnsafeBuffer(mapped);
+
+                    // TODO: better O(N) sort algorithm
+                    int maxIndex = (buffer.capacity() >> 3) - 1;
+                    for (int index = 0, priorIndex = index; index < maxIndex; priorIndex = ++index)
+                    {
+                        final long candidate = buffer.getLong((index + 1) << 3);
+                        while (Long.compareUnsigned(candidate, buffer.getLong(priorIndex << 3)) < 0)
+                        {
+                            buffer.putLong((priorIndex + 1) << 3, buffer.getLong(priorIndex << 3));
+                            if (priorIndex-- == 0)
+                            {
+                                break;
+                            }
+                        }
+                        buffer.putLong((priorIndex + 1) << 3, candidate);
+                    }
+                    IoUtil.unmap(mapped);
+                }
+                catch (IOException ex)
+                {
+                    LangUtil.rethrowUnchecked(ex);
+                }
+
+                Files.move(hashIndexTempFile, hashIndexFile);
+            }
+            catch (IOException ex)
+            {
+                LangUtil.rethrowUnchecked(ex);
+            }
+
             return new KafkaCacheTailSegment(previousSegment, directory, baseOffset);
         }
 
@@ -354,7 +417,7 @@ public final class KafkaCacheSegmentFactory
         {
             assert offset > this.headOffset;
             this.headOffset = offset;
-            this.headPosition = logFile.readableLimit;
+            this.headPosition = logFile.readCapacity;
 
             entryInfo.putLong(0, headOffset);
             entryInfo.putLong(Long.BYTES, timestamp);
@@ -382,7 +445,7 @@ public final class KafkaCacheSegmentFactory
         void writeEntryContinue(
             OctetsFW payload)
         {
-            final int logRemaining = logFile.maxCapacity - logFile.readableLimit;
+            final int logRemaining = logFile.writeCapacity - logFile.readCapacity;
             final int logRequired = payload.sizeof();
             assert logRemaining >= logRequired;
 
@@ -392,7 +455,7 @@ public final class KafkaCacheSegmentFactory
         void writeEntryFinish(
             ArrayFW<KafkaHeaderFW> headers)
         {
-            final int logRemaining = logFile.maxCapacity - logFile.readableLimit;
+            final int logRemaining = logFile.writeCapacity - logFile.readCapacity;
             final int logRequired = headers.sizeof();
             assert logRemaining >= logRequired;
 
@@ -419,7 +482,7 @@ public final class KafkaCacheSegmentFactory
                 });
             }
 
-            final int indexRemaining = indexFile.maxCapacity - indexFile.readableLimit;
+            final int indexRemaining = indexFile.writeCapacity - indexFile.readCapacity;
             final int indexRequired = indexInfo.capacity();
             assert indexRemaining >= indexRequired;
 
@@ -441,9 +504,9 @@ public final class KafkaCacheSegmentFactory
         {
             super(previousSegment, directory);
             this.baseOffset = baseOffset;
-            this.logFile = new KafkaCacheTailLogFile(directory, baseOffset);
-            this.indexFile = new KafkaCacheTailLogIndexFile(directory, baseOffset);
-            this.hashFile = new KafkaCacheTailHashFile(directory, baseOffset);
+            this.logFile = new KafkaCacheTailLogFile(this);
+            this.indexFile = new KafkaCacheTailLogIndexFile(this);
+            this.hashFile = new KafkaCacheTailHashFile(this);
         }
 
         @Override

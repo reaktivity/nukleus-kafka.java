@@ -15,17 +15,15 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import java.nio.file.Path;
-
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheTailSegment;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 
 public final class KafkaCacheTailLogFile extends KafkaCacheTailFile
 {
     KafkaCacheTailLogFile(
-        Path directory,
-        long baseOffset)
+        KafkaCacheTailSegment segment)
     {
-        super(filename(directory, baseOffset, "log"), baseOffset);
+        super(segment, "log");
     }
 
     public KafkaCacheEntryFW read(
@@ -34,6 +32,6 @@ public final class KafkaCacheTailLogFile extends KafkaCacheTailFile
     {
         assert position >= 0;
         assert entry != null;
-        return entry.tryWrap(readableBuf, position, readableLimit);
+        return entry.tryWrap(readableBuf, position, readCapacity);
     }
 }

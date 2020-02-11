@@ -18,20 +18,19 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.NEXT_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.RETRY_SEGMENT;
 
-import java.nio.file.Path;
-
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
 
 public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
 {
     protected KafkaCacheHeadIndexFile(
+        KafkaCacheHeadSegment segment,
+        String extension,
         MutableDirectBuffer writeBuffer,
-        Path file,
-        long baseOffset,
-        int maxCapacity)
+        int writeCapacity)
     {
-        super(file, baseOffset, writeBuffer, maxCapacity);
+        super(segment, extension, writeBuffer, writeCapacity);
     }
 
     protected long seekKey(
@@ -39,8 +38,8 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
     {
         // assumes sorted by key
         final DirectBuffer buffer = readableBuf;
-        final int maxIndex = (maxCapacity >> 3) - 1;
-        final int lastIndex = (readableLimit >> 3) - 1;
+        final int maxIndex = (writeCapacity >> 3) - 1;
+        final int lastIndex = (readCapacity >> 3) - 1;
 
         int lowIndex = 0;
         int highIndex = lastIndex;
@@ -81,8 +80,8 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
     {
         // assumes sorted by value, repeated keys
         final DirectBuffer buffer = readableBuf;
-        final int maxIndex = (maxCapacity >> 3) - 1;
-        final int lastIndex = (readableLimit >> 3) - 1;
+        final int maxIndex = (writeCapacity >> 3) - 1;
+        final int lastIndex = (readCapacity >> 3) - 1;
 
         int lowIndex = 0;
         int highIndex = lastIndex;
@@ -135,8 +134,8 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
         assert index >= 0;
 
         final DirectBuffer buffer = readableBuf;
-        final int capacity = readableLimit;
-        final int maxIndex = (maxCapacity >> 3) - 1;
+        final int capacity = readCapacity;
+        final int maxIndex = (writeCapacity >> 3) - 1;
         final int lastIndex = (capacity >> 3) - 1;
 
         int currentIndex = index;
@@ -171,8 +170,8 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
         assert index >= 0;
 
         final DirectBuffer buffer = readableBuf;
-        final int capacity = readableLimit;
-        final int maxIndex = (maxCapacity >> 3) - 1;
+        final int capacity = readCapacity;
+        final int maxIndex = (writeCapacity >> 3) - 1;
         final int lastIndex = (capacity >> 3) - 1;
 
         int currentIndex = index;
@@ -204,8 +203,8 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
         assert index >= 0;
 
         final DirectBuffer buffer = readableBuf;
-        final int maxIndex = (maxCapacity >> 3) - 1;
-        final int lastIndex = (readableLimit >> 3) - 1;
+        final int maxIndex = (writeCapacity >> 3) - 1;
+        final int lastIndex = (readCapacity >> 3) - 1;
 
         if (index <= lastIndex)
         {

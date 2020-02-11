@@ -15,19 +15,17 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import java.nio.file.Path;
-
 import org.agrona.MutableDirectBuffer;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
 
 public final class KafkaCacheHeadLogIndexFile extends KafkaCacheHeadIndexFile
 {
     KafkaCacheHeadLogIndexFile(
-        Path directory,
-        long baseOffset,
+        KafkaCacheHeadSegment segment,
         MutableDirectBuffer writeBuffer,
         int maxCapacity)
     {
-        super(writeBuffer, filename(directory, baseOffset, "index"), baseOffset, maxCapacity);
+        super(segment, "index", writeBuffer, maxCapacity);
     }
 
     public long seekOffset(

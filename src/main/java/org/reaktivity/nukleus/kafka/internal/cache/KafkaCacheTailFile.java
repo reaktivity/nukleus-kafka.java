@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static java.nio.file.StandardOpenOption.READ;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.cacheFile;
 
 import java.io.IOException;
 import java.nio.MappedByteBuffer;
@@ -26,6 +27,7 @@ import java.nio.file.Path;
 import org.agrona.DirectBuffer;
 import org.agrona.LangUtil;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheTailSegment;
 
 public abstract class KafkaCacheTailFile
 {
@@ -33,16 +35,19 @@ public abstract class KafkaCacheTailFile
 
     protected final long baseOffset;
     protected final DirectBuffer readableBuf;
-    protected final int readableLimit;
+    protected final int readCapacity;
 
     protected KafkaCacheTailFile(
-        Path headFile,
-        long baseOffset)
+        KafkaCacheTailSegment segment,
+        String extension)
     {
-        this.readableByteBuf = readInit(headFile);
-        this.readableBuf = new UnsafeBuffer(readableByteBuf);
+        final long baseOffset = segment.baseOffset();
+        final Path tailFile = cacheFile(segment, extension);
+
         this.baseOffset = baseOffset;
-        this.readableLimit = readableByteBuf.capacity();
+        this.readableByteBuf = readInit(tailFile);
+        this.readableBuf = new UnsafeBuffer(readableByteBuf);
+        this.readCapacity = readableByteBuf.capacity();
     }
 
     private static MappedByteBuffer readInit(
@@ -61,13 +66,5 @@ public abstract class KafkaCacheTailFile
 
         assert mapped != null;
         return mapped;
-    }
-
-    protected static Path filename(
-        Path directory,
-        long baseOffset,
-        String extension)
-    {
-        return directory.resolve(String.format("%016x.%s", baseOffset, extension));
     }
 }

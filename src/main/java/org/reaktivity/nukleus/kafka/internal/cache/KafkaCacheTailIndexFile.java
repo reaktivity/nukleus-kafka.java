@@ -17,17 +17,16 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.NEXT_SEGMENT;
 
-import java.nio.file.Path;
-
 import org.agrona.DirectBuffer;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheTailSegment;
 
 public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
 {
     protected KafkaCacheTailIndexFile(
-        Path headFile,
-        long baseOffset)
+        KafkaCacheTailSegment segment,
+        String extension)
     {
-        super(headFile, baseOffset);
+        super(segment, extension);
     }
 
     protected long seekKey(
@@ -35,7 +34,7 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
     {
         // assumes sorted by key
         final DirectBuffer buffer = readableBuf;
-        final int lastIndex = (readableLimit >> 3) - 1;
+        final int lastIndex = (readCapacity >> 3) - 1;
 
         int lowIndex = 0;
         int highIndex = lastIndex;
@@ -76,7 +75,7 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
     {
         // assumes sorted by value, repeated keys
         final DirectBuffer buffer = readableBuf;
-        final int lastIndex = (readableLimit >> 3) - 1;
+        final int lastIndex = (readCapacity >> 3) - 1;
 
         int lowIndex = 0;
         int highIndex = lastIndex;
@@ -129,7 +128,7 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
         assert index >= 0;
 
         final DirectBuffer buffer = readableBuf;
-        final int capacity = readableLimit;
+        final int capacity = readCapacity;
         final int lastIndex = (capacity >> 3) - 1;
 
         int currentIndex = index;
@@ -164,7 +163,7 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
         assert index >= 0;
 
         final DirectBuffer buffer = readableBuf;
-        final int lastIndex = (readableLimit >> 3) - 1;
+        final int lastIndex = (readCapacity >> 3) - 1;
 
         int currentIndex = index;
         while (currentIndex <= lastIndex)
@@ -195,7 +194,7 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
         assert index >= 0;
 
         final DirectBuffer buffer = readableBuf;
-        final int lastIndex = (readableLimit >> 3) - 1;
+        final int lastIndex = (readCapacity >> 3) - 1;
 
         if (index <= lastIndex)
         {
