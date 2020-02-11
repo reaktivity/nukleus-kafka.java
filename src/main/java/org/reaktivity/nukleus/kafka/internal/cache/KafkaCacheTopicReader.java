@@ -16,6 +16,8 @@
 package org.reaktivity.nukleus.kafka.internal.cache;
 
 import org.agrona.collections.Int2ObjectHashMap;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheCandidateSegment;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSentinelSegment;
 
 public final class KafkaCacheTopicReader
 {
@@ -23,15 +25,18 @@ public final class KafkaCacheTopicReader
     private final String topicName;
     private final KafkaCacheSegmentSupplier segmentSupplier;
     private final Int2ObjectHashMap<KafkaCachePartitionReader> partitionsById;
+    private final KafkaCacheCandidateSegment candidate;
 
     KafkaCacheTopicReader(
         String clusterName,
         String topicName,
-        KafkaCacheSegmentSupplier segmentSupplier)
+        KafkaCacheSegmentSupplier segmentSupplier,
+        KafkaCacheCandidateSegment candidate)
     {
         this.clusterName = clusterName;
         this.topicName = topicName;
         this.segmentSupplier = segmentSupplier;
+        this.candidate = candidate;
         this.partitionsById = new Int2ObjectHashMap<>();
     }
 
@@ -49,7 +54,7 @@ public final class KafkaCacheTopicReader
     private KafkaCachePartitionReader newPartition(
         int partitionId)
     {
-        final KafkaCacheSegment segment = segmentSupplier.supply(clusterName, topicName, partitionId);
-        return new KafkaCachePartitionReader(partitionId, segment);
+        final KafkaCacheSentinelSegment sentinel = segmentSupplier.supply(clusterName, topicName, partitionId);
+        return new KafkaCachePartitionReader(partitionId, sentinel, candidate);
     }
 }

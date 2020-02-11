@@ -19,27 +19,30 @@ import java.nio.file.Path;
 
 import org.agrona.MutableDirectBuffer;
 
-public final class KafkaCacheLogIndexFile extends KafkaCacheIndexFile
+public final class KafkaCacheHeadHashFile extends KafkaCacheHeadIndexFile
 {
-    KafkaCacheLogIndexFile(
-        MutableDirectBuffer writeBuffer,
+    KafkaCacheHeadHashFile(
         Path directory,
         long baseOffset,
+        MutableDirectBuffer writeBuffer,
         int maxCapacity)
     {
-        super(writeBuffer, filename(directory, baseOffset, "index"), baseOffset, maxCapacity);
+        super(writeBuffer,
+                filename(directory, baseOffset, "hscan"),
+                baseOffset, maxCapacity);
     }
 
-    public long seekOffset(
-        long offset)
+    public long seekHash(
+        int hash,
+        int position)
     {
-        final int deltaOffset = (int)(offset - baseOffset);
-        return super.seekKey(deltaOffset);
+        return super.seekValue(hash, position);
     }
 
-    public long scanOffset(
+    public long scanHash(
+        int hash,
         long record)
     {
-        return super.scanIndex(record);
+        return super.scanValue(hash, record);
     }
 }

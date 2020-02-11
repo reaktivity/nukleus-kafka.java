@@ -15,13 +15,31 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSentinelSegment;
+import java.nio.file.Path;
 
-@FunctionalInterface
-public interface KafkaCacheSegmentSupplier
+import org.agrona.MutableDirectBuffer;
+
+public final class KafkaCacheHeadLogIndexFile extends KafkaCacheHeadIndexFile
 {
-    KafkaCacheSentinelSegment supply(
-        String clusterName,
-        String topicName,
-        int partitionId);
+    KafkaCacheHeadLogIndexFile(
+        Path directory,
+        long baseOffset,
+        MutableDirectBuffer writeBuffer,
+        int maxCapacity)
+    {
+        super(writeBuffer, filename(directory, baseOffset, "index"), baseOffset, maxCapacity);
+    }
+
+    public long seekOffset(
+        long offset)
+    {
+        final int deltaOffset = (int)(offset - baseOffset);
+        return super.seekKey(deltaOffset);
+    }
+
+    public long scanOffset(
+        long record)
+    {
+        return super.scanIndex(record);
+    }
 }

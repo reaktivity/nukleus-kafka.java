@@ -15,13 +15,28 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSentinelSegment;
+import java.nio.file.Path;
 
-@FunctionalInterface
-public interface KafkaCacheSegmentSupplier
+import org.agrona.MutableDirectBuffer;
+import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
+
+public final class KafkaCacheHeadLogFile extends KafkaCacheHeadFile
 {
-    KafkaCacheSentinelSegment supply(
-        String clusterName,
-        String topicName,
-        int partitionId);
+    KafkaCacheHeadLogFile(
+        Path directory,
+        long baseOffset,
+        MutableDirectBuffer writeBuffer,
+        int maxCapacity)
+    {
+        super(filename(directory, baseOffset, "log"), baseOffset, writeBuffer, maxCapacity);
+    }
+
+    public KafkaCacheEntryFW read(
+        int position,
+        KafkaCacheEntryFW entry)
+    {
+        assert position >= 0;
+        assert entry != null;
+        return entry.tryWrap(readableBuf, position, readableLimit);
+    }
 }

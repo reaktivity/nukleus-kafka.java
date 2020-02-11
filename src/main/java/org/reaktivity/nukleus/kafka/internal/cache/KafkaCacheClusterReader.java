@@ -18,18 +18,23 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheCandidateSegment;
+
 public final class KafkaCacheClusterReader
 {
     private final String clusterName;
     private final KafkaCacheSegmentSupplier segmentSupplier;
     private final Map<String, KafkaCacheTopicReader> topicsByName;
+    private final KafkaCacheCandidateSegment candidate;
 
     KafkaCacheClusterReader(
         String clusterName,
-        KafkaCacheSegmentSupplier segmentSupplier)
+        KafkaCacheSegmentSupplier segmentSupplier,
+        KafkaCacheCandidateSegment candidate)
     {
         this.clusterName = clusterName;
         this.segmentSupplier = segmentSupplier;
+        this.candidate = candidate;
         this.topicsByName = new LinkedHashMap<>();
     }
 
@@ -42,6 +47,6 @@ public final class KafkaCacheClusterReader
     private KafkaCacheTopicReader newTopic(
         String topicName)
     {
-        return new KafkaCacheTopicReader(clusterName, topicName, segmentSupplier);
+        return new KafkaCacheTopicReader(clusterName, topicName, segmentSupplier, candidate);
     }
 }

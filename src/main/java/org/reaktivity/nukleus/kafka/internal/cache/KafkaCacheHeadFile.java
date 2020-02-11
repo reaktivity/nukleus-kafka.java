@@ -33,7 +33,7 @@ import org.agrona.LangUtil;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 
-public abstract class KafkaCacheFile
+public abstract class KafkaCacheHeadFile
 {
     private final MutableDirectBuffer writeBuffer;
     private final ByteBuffer writeByteBuffer;
@@ -46,10 +46,10 @@ public abstract class KafkaCacheFile
     protected volatile int maxCapacity;
     protected volatile int readableLimit;
 
-    protected KafkaCacheFile(
-        MutableDirectBuffer writeBuffer,
+    protected KafkaCacheHeadFile(
         Path writeFile,
         long baseOffset,
+        MutableDirectBuffer writeBuffer,
         int maxCapacity)
     {
         this.writeBuffer = requireNonNull(writeBuffer);

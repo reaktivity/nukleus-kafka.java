@@ -58,6 +58,11 @@ public class KafkaConfiguration extends Configuration
         KAFKA_CONFIG = config;
     }
 
+    public KafkaConfiguration()
+    {
+        this(new Configuration());
+    }
+
     public KafkaConfiguration(
         Configuration config)
     {

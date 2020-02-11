@@ -15,13 +15,28 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSentinelSegment;
+import java.nio.file.Path;
 
-@FunctionalInterface
-public interface KafkaCacheSegmentSupplier
+public final class KafkaCacheTailHashFile extends KafkaCacheTailIndexFile
 {
-    KafkaCacheSentinelSegment supply(
-        String clusterName,
-        String topicName,
-        int partitionId);
+    KafkaCacheTailHashFile(
+        Path directory,
+        long baseOffset)
+    {
+        super(filename(directory, baseOffset, "hscan"), baseOffset); // TODO: hindex
+    }
+
+    public long seekHash(
+        int hash,
+        int position)
+    {
+        return super.seekValue(hash, position);
+    }
+
+    public long scanHash(
+        int hash,
+        long record)
+    {
+        return super.scanValue(hash, record);
+    }
 }

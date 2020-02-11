@@ -24,24 +24,27 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.agrona.LangUtil;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSentinelSegment;
 
 public final class KafkaCache
 {
     public static final String TYPE_NAME = String.format("%s/cache", KafkaNukleus.NAME);
 
-    private final KafkaConfiguration config;
-    private final Map<String, Map<String, Map<Integer, KafkaCacheSegment>>> segmentsByClusterTopicPartition;
+    private final Path cacheDirectory;
+    private final KafkaCacheSegmentFactory cacheSegmentFactory;
+    private final Map<String, Map<String, Map<Integer, KafkaCacheSentinelSegment>>> segmentsByClusterTopicPartition;
 
     public KafkaCache(
         KafkaConfiguration config)
     {
-        this.config = config;
+        this.cacheSegmentFactory = new KafkaCacheSegmentFactory(config);
         this.segmentsByClusterTopicPartition = new ConcurrentHashMap<>();
+        this.cacheDirectory = config.cacheDirectory();
     }
 
     public KafkaCacheReader newReader()
     {
-        return new KafkaCacheReader(this::supplySegment);
+        return new KafkaCacheReader(this::supplySegment, cacheSegmentFactory.newCandidate());
     }
 
     public KafkaCacheWriter newWriter()
@@ -49,26 +52,17 @@ public final class KafkaCache
         return new KafkaCacheWriter(this::supplySegment);
     }
 
-    public KafkaCacheSegment supplySegment(
+    public KafkaCacheSentinelSegment supplySegment(
         String clusterName,
         String topicName,
         int partitionId)
     {
-        final Map<String, Map<Integer, KafkaCacheSegment>> segmentsByTopicPartition =
+        final Map<String, Map<Integer, KafkaCacheSentinelSegment>> segmentsByTopicPartition =
                 segmentsByClusterTopicPartition.computeIfAbsent(clusterName, c -> new ConcurrentHashMap<>());
-        final Map<Integer, KafkaCacheSegment> segmentsByPartition =
+        final Map<Integer, KafkaCacheSentinelSegment> sentinelsByPartition =
                 segmentsByTopicPartition.computeIfAbsent(topicName, t -> new ConcurrentHashMap<>());
-        return segmentsByPartition.computeIfAbsent(partitionId,
-            p -> newSegment(initDirectory(clusterName, topicName, partitionId)));
-    }
-
-    private KafkaCacheSegment newSegment(
-        Path directory)
-    {
-        final int maxLogCapacity = config.cacheSegmentLogBytes();
-        final int maxIndexCapacity = config.cacheSegmentIndexBytes();
-        final int maxHashCapacity = config.cacheSegmentHashBytes();
-        return new KafkaCacheSegment.Sentinel(directory, maxLogCapacity, maxIndexCapacity, maxHashCapacity);
+        return sentinelsByPartition.computeIfAbsent(partitionId,
+            p -> cacheSegmentFactory.newSentinel(initDirectory(clusterName, topicName, partitionId)));
     }
 
     private Path initDirectory(
@@ -76,7 +70,6 @@ public final class KafkaCache
         String topicName,
         int partitionId)
     {
-        final Path cacheDirectory = config.cacheDirectory();
         final String partitionName = String.format("%s-%d", topicName, partitionId);
         final Path directory = cacheDirectory.resolve(clusterName).resolve(partitionName);
 

@@ -20,21 +20,25 @@ import static java.util.Collections.singleton;
 import java.util.NavigableSet;
 import java.util.TreeSet;
 
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheCandidateSegment;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
+
 public final class KafkaCachePartitionReader
 {
-    private final KafkaCacheSegment.Candidate candidate = new KafkaCacheSegment.Candidate();
-
     private final int partitionId;
     private final NavigableSet<KafkaCacheSegment> segments;
+    private final KafkaCacheCandidateSegment candidate;
 
     private KafkaCacheSegment latest;
 
     KafkaCachePartitionReader(
         int partitionId,
-        KafkaCacheSegment segment)
+        KafkaCacheSegment segment,
+        KafkaCacheCandidateSegment candidate)
     {
         this.partitionId = partitionId;
         this.segments = new TreeSet<>(singleton(segment));
+        this.candidate = candidate;
         this.latest = segment;
     }
 

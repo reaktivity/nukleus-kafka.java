@@ -42,7 +42,7 @@ import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorFactory;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorFactory.KafkaCacheCursor;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionReader;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheReader;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegment;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicReader;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;

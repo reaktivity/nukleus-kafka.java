@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.cache;
 
 import org.agrona.collections.Int2ObjectHashMap;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSentinelSegment;
 
 public final class KafkaCacheTopicWriter
 {
@@ -49,7 +50,7 @@ public final class KafkaCacheTopicWriter
     private KafkaCachePartitionWriter newPartition(
         int partitionId)
     {
-        final KafkaCacheSegment segment = segmentSupplier.supply(clusterName, topicName, partitionId);
-        return new KafkaCachePartitionWriter(partitionId, segment);
+        final KafkaCacheSentinelSegment sentinel = segmentSupplier.supply(clusterName, topicName, partitionId);
+        return new KafkaCachePartitionWriter(partitionId, sentinel);
     }
 }

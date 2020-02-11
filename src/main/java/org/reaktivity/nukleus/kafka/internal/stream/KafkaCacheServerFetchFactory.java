@@ -421,7 +421,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             this.replyId = supplyReplyId.applyAsLong(initialId);
             this.receiver = router.supplyReceiver(initialId);
 
-            this.partitionOffset = partition.advance().nextOffset();
+            this.partitionOffset = partition.nextOffset();
 
             correlations.put(replyId, this::onServerFanoutMessage);
             router.setThrottle(initialId, this::onServerFanoutMessage);

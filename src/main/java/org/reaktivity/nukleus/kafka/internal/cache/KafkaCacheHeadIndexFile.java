@@ -15,23 +15,23 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegment.NEXT_SEGMENT;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegment.RETRY_SEGMENT;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.NEXT_SEGMENT;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.RETRY_SEGMENT;
 
 import java.nio.file.Path;
 
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 
-public abstract class KafkaCacheIndexFile extends KafkaCacheFile
+public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
 {
-    protected KafkaCacheIndexFile(
+    protected KafkaCacheHeadIndexFile(
         MutableDirectBuffer writeBuffer,
         Path file,
         long baseOffset,
         int maxCapacity)
     {
-        super(writeBuffer, file, baseOffset, maxCapacity);
+        super(file, baseOffset, writeBuffer, maxCapacity);
     }
 
     protected long seekKey(
