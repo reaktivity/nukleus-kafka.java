@@ -15,19 +15,26 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.CACHE_EXTENSION_HASH_INDEX;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.CACHE_EXTENSION_HASH_SCAN;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.CACHE_EXTENSION_HASH_SCAN_SORTING;
+
+import java.nio.file.Path;
 
 import org.agrona.MutableDirectBuffer;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
 
 public final class KafkaCacheHeadHashFile extends KafkaCacheHeadIndexFile
 {
+    private final KafkaCacheHeadSegment segment;
+
     KafkaCacheHeadHashFile(
         KafkaCacheHeadSegment segment,
         MutableDirectBuffer writeBuffer,
         int writeCapacity)
     {
         super(segment, CACHE_EXTENSION_HASH_SCAN, writeBuffer, writeCapacity);
+        this.segment = segment;
     }
 
     public long seekHash(
@@ -42,5 +49,13 @@ public final class KafkaCacheHeadHashFile extends KafkaCacheHeadIndexFile
         long record)
     {
         return super.scanValue(hash, record);
+    }
+
+    public void toHashIndex()
+    {
+        final Path hashScanFile = segment.cacheFile(CACHE_EXTENSION_HASH_SCAN);
+        final Path hashScanSortingFile = segment.cacheFile(CACHE_EXTENSION_HASH_SCAN_SORTING);
+        final Path hashIndexFile = segment.cacheFile(CACHE_EXTENSION_HASH_INDEX);
+        super.sort(hashScanFile, hashScanSortingFile, hashIndexFile);
     }
 }

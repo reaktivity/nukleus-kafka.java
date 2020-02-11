@@ -16,20 +16,12 @@
 package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static java.nio.ByteBuffer.allocateDirect;
-import static java.nio.file.StandardOpenOption.READ;
-import static java.nio.file.StandardOpenOption.WRITE;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.channels.FileChannel.MapMode;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.zip.CRC32C;
 
 import org.agrona.DirectBuffer;
-import org.agrona.IoUtil;
-import org.agrona.LangUtil;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
@@ -350,54 +342,9 @@ public final class KafkaCacheSegmentFactory
             indexFile.freeze();
             hashFile.freeze();
 
-            sortHashScanAsHashIndex();
+            hashFile.toHashIndex();
 
             return new KafkaCacheTailSegment(previousSegment, directory, baseOffset);
-        }
-
-        private void sortHashScanAsHashIndex()
-        {
-            try
-            {
-                final Path hashScanFile = cacheFile(CACHE_EXTENSION_HASH_SCAN);
-                final Path hashScanSortingFile = cacheFile(CACHE_EXTENSION_HASH_SCAN_SORTING);
-                final Path hashIndexFile = cacheFile(CACHE_EXTENSION_HASH_INDEX);
-
-                Files.copy(hashScanFile, hashScanSortingFile);
-
-                try (FileChannel channel = FileChannel.open(hashScanSortingFile, READ, WRITE))
-                {
-                    final ByteBuffer mapped = channel.map(MapMode.READ_WRITE, 0, channel.size());
-                    final MutableDirectBuffer buffer = new UnsafeBuffer(mapped);
-
-                    // TODO: better O(N) sort algorithm
-                    int maxIndex = (buffer.capacity() >> 3) - 1;
-                    for (int index = 0, priorIndex = index; index < maxIndex; priorIndex = ++index)
-                    {
-                        final long candidate = buffer.getLong((index + 1) << 3);
-                        while (priorIndex >= 0 &&
-                               Long.compareUnsigned(candidate, buffer.getLong(priorIndex << 3)) < 0)
-                        {
-                            buffer.putLong((priorIndex + 1) << 3, buffer.getLong(priorIndex << 3));
-                            priorIndex--;
-                        }
-                        buffer.putLong((priorIndex + 1) << 3, candidate);
-                    }
-
-                    IoUtil.unmap(mapped);
-                }
-                catch (IOException ex)
-                {
-                    LangUtil.rethrowUnchecked(ex);
-                }
-
-                Files.move(hashScanSortingFile, hashIndexFile);
-                Files.delete(hashScanFile);
-            }
-            catch (IOException ex)
-            {
-                LangUtil.rethrowUnchecked(ex);
-            }
         }
 
         void writeEntry(

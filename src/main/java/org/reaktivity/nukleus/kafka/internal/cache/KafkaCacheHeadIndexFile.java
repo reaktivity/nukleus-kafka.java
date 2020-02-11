@@ -15,14 +15,26 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static java.nio.file.StandardOpenOption.READ;
+import static java.nio.file.StandardOpenOption.WRITE;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.index;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.record;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.value;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.NEXT_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.RETRY_SEGMENT;
 
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileChannel.MapMode;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 import org.agrona.DirectBuffer;
+import org.agrona.IoUtil;
+import org.agrona.LangUtil;
 import org.agrona.MutableDirectBuffer;
+import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
 
 public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
@@ -216,5 +228,50 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
         }
 
         return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
+    }
+
+    protected void sort(
+        Path unsortedFile,
+        Path sortingFile,
+        Path sortedFile)
+    {
+        try
+        {
+            Files.copy(unsortedFile, sortingFile);
+
+            try (FileChannel channel = FileChannel.open(sortingFile, READ, WRITE))
+            {
+                final ByteBuffer mapped = channel.map(MapMode.READ_WRITE, 0, channel.size());
+                final MutableDirectBuffer buffer = new UnsafeBuffer(mapped);
+                final int capacity = buffer.capacity();
+
+                // TODO: better O(N) sort algorithm
+                final int maxIndex = capacity - Long.BYTES;
+                for (int index = 0, priorIndex = index; index < maxIndex; priorIndex = index += Long.BYTES)
+                {
+                    final long candidate = buffer.getLong(index + Long.BYTES);
+                    while (priorIndex >= 0 &&
+                           Long.compareUnsigned(candidate, buffer.getLong(priorIndex)) < 0)
+                    {
+                        buffer.putLong(priorIndex + Long.BYTES, buffer.getLong(priorIndex));
+                        priorIndex -= Long.BYTES;
+                    }
+                    buffer.putLong(priorIndex + Long.BYTES, candidate);
+                }
+
+                IoUtil.unmap(mapped);
+            }
+            catch (IOException ex)
+            {
+                LangUtil.rethrowUnchecked(ex);
+            }
+
+            Files.move(sortingFile, sortedFile);
+            Files.delete(unsortedFile);
+        }
+        catch (IOException ex)
+        {
+            LangUtil.rethrowUnchecked(ex);
+        }
     }
 }
