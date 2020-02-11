@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.CACHE_EXTENSION_LOG;
+
 import org.agrona.MutableDirectBuffer;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
@@ -26,7 +28,7 @@ public final class KafkaCacheHeadLogFile extends KafkaCacheHeadFile
         MutableDirectBuffer writeBuffer,
         int writeCapacity)
     {
-        super(segment, "log", writeBuffer, writeCapacity);
+        super(segment, CACHE_EXTENSION_LOG, writeBuffer, writeCapacity);
     }
 
     public KafkaCacheEntryFW read(

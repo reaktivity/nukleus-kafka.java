@@ -15,6 +15,10 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.index;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.record;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.CACHE_EXTENSION_HASH_INDEX;
+
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheTailSegment;
 
 public final class KafkaCacheTailHashFile extends KafkaCacheTailIndexFile
@@ -22,20 +26,21 @@ public final class KafkaCacheTailHashFile extends KafkaCacheTailIndexFile
     KafkaCacheTailHashFile(
         KafkaCacheTailSegment segment)
     {
-        super(segment, "hindex");
+        super(segment, CACHE_EXTENSION_HASH_INDEX);
     }
 
     public long seekHash(
         int hash,
         int position)
     {
-        return super.seekValue(hash, position);
+        final long record = super.seekKey(hash);
+        return super.scanKey(hash, record(index(record), position));
     }
 
     public long scanHash(
         int hash,
         long record)
     {
-        return super.scanValue(hash, record);
+        return super.scanKey(hash, record);
     }
 }

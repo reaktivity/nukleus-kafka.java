@@ -15,14 +15,19 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.CACHE_EXTENSION_LOG_INDEX;
+
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheTailSegment;
 
 public final class KafkaCacheTailLogIndexFile extends KafkaCacheTailIndexFile
 {
+    private final long baseOffset;
+
     KafkaCacheTailLogIndexFile(
         KafkaCacheTailSegment segment)
     {
-        super(segment, "index");
+        super(segment, CACHE_EXTENSION_LOG_INDEX);
+        this.baseOffset = segment.baseOffset();
     }
 
     public long seekOffset(

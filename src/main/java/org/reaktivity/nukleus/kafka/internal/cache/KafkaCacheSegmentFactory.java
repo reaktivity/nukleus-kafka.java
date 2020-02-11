@@ -16,6 +16,8 @@
 package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static java.nio.ByteBuffer.allocateDirect;
+import static java.nio.file.StandardOpenOption.READ;
+import static java.nio.file.StandardOpenOption.WRITE;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -23,7 +25,6 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.zip.CRC32C;
 
 import org.agrona.DirectBuffer;
@@ -47,6 +48,12 @@ public final class KafkaCacheSegmentFactory
 
     public static final int OFFSET_LATEST = -1;
     public static final int OFFSET_EARLIEST = -2;
+
+    public static final String CACHE_EXTENSION_LOG = "log";
+    public static final String CACHE_EXTENSION_LOG_INDEX = "index";
+    public static final String CACHE_EXTENSION_HASH_SCAN = "hscan";
+    public static final String CACHE_EXTENSION_HASH_SCAN_SORTING = String.format("%s.sorting", CACHE_EXTENSION_HASH_SCAN);
+    public static final String CACHE_EXTENSION_HASH_INDEX = "hindex";
 
     private final MutableDirectBuffer entryInfo = new UnsafeBuffer(new byte[Long.BYTES + Long.BYTES]);
     private final MutableDirectBuffer valueInfo = new UnsafeBuffer(new byte[Integer.BYTES]);
@@ -78,21 +85,6 @@ public final class KafkaCacheSegmentFactory
     KafkaCacheCandidateSegment newCandidate()
     {
         return new KafkaCacheCandidateSegment();
-    }
-
-    static Path cacheFile(
-        KafkaCacheSegment segment,
-        String extension)
-    {
-        return cacheFile(segment.directory, segment.baseOffset(), extension);
-    }
-
-    static Path cacheFile(
-        Path directory,
-        long baseOffset,
-        String extension)
-    {
-        return directory.resolve(String.format("%016x.%s", baseOffset, extension));
     }
 
     public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
@@ -216,6 +208,12 @@ public final class KafkaCacheSegmentFactory
         protected KafkaCacheSegment freezeSegment()
         {
             return this;
+        }
+
+        protected final Path cacheFile(
+            String extension)
+        {
+            return directory.resolve(String.format("%016x.%s", baseOffset(), extension));
         }
 
         private boolean equalTo(
@@ -352,15 +350,22 @@ public final class KafkaCacheSegmentFactory
             indexFile.freeze();
             hashFile.freeze();
 
+            sortHashScanAsHashIndex();
+
+            return new KafkaCacheTailSegment(previousSegment, directory, baseOffset);
+        }
+
+        private void sortHashScanAsHashIndex()
+        {
             try
             {
-                final Path hashScanFile = cacheFile(this, "hscan");
-                final Path hashIndexTempFile = cacheFile(this, "hindex.tmp");
-                final Path hashIndexFile = cacheFile(this, "hindex");
+                final Path hashScanFile = cacheFile(CACHE_EXTENSION_HASH_SCAN);
+                final Path hashScanSortingFile = cacheFile(CACHE_EXTENSION_HASH_SCAN_SORTING);
+                final Path hashIndexFile = cacheFile(CACHE_EXTENSION_HASH_INDEX);
 
-                Files.copy(hashScanFile, hashIndexTempFile);
+                Files.copy(hashScanFile, hashScanSortingFile);
 
-                try (FileChannel channel = FileChannel.open(hashIndexTempFile, StandardOpenOption.READ, StandardOpenOption.WRITE))
+                try (FileChannel channel = FileChannel.open(hashScanSortingFile, READ, WRITE))
                 {
                     final ByteBuffer mapped = channel.map(MapMode.READ_WRITE, 0, channel.size());
                     final MutableDirectBuffer buffer = new UnsafeBuffer(mapped);
@@ -370,16 +375,15 @@ public final class KafkaCacheSegmentFactory
                     for (int index = 0, priorIndex = index; index < maxIndex; priorIndex = ++index)
                     {
                         final long candidate = buffer.getLong((index + 1) << 3);
-                        while (Long.compareUnsigned(candidate, buffer.getLong(priorIndex << 3)) < 0)
+                        while (priorIndex >= 0 &&
+                               Long.compareUnsigned(candidate, buffer.getLong(priorIndex << 3)) < 0)
                         {
                             buffer.putLong((priorIndex + 1) << 3, buffer.getLong(priorIndex << 3));
-                            if (priorIndex-- == 0)
-                            {
-                                break;
-                            }
+                            priorIndex--;
                         }
                         buffer.putLong((priorIndex + 1) << 3, candidate);
                     }
+
                     IoUtil.unmap(mapped);
                 }
                 catch (IOException ex)
@@ -387,14 +391,13 @@ public final class KafkaCacheSegmentFactory
                     LangUtil.rethrowUnchecked(ex);
                 }
 
-                Files.move(hashIndexTempFile, hashIndexFile);
+                Files.move(hashScanSortingFile, hashIndexFile);
+                Files.delete(hashScanFile);
             }
             catch (IOException ex)
             {
                 LangUtil.rethrowUnchecked(ex);
             }
-
-            return new KafkaCacheTailSegment(previousSegment, directory, baseOffset);
         }
 
         void writeEntry(
@@ -404,8 +407,12 @@ public final class KafkaCacheSegmentFactory
             ArrayFW<KafkaHeaderFW> headers,
             OctetsFW value)
         {
-            writeEntryStart(offset, timestamp, key, value.sizeof());
-            writeEntryContinue(value);
+            final int valueLength = value != null ? value.sizeof() : -1;
+            writeEntryStart(offset, timestamp, key, valueLength);
+            if (value != null)
+            {
+                writeEntryContinue(value);
+            }
             writeEntryFinish(headers);
         }
 
@@ -437,7 +444,10 @@ public final class KafkaCacheSegmentFactory
             byteBuffer.limit(key.limit());
             checksum.update(byteBuffer);
             final long hash = checksum.getValue();
-            hashInfo.putLong(0, (hash << 32) | headPosition);
+            final long hashShifted31 = hash << 31;
+            final long hashShifted32 = hashShifted31 << 1;
+            final long hashEntry = hashShifted32 | headPosition;
+            hashInfo.putLong(0, hashEntry);
             hashFile.write(hashInfo, 0, hashInfo.capacity());
         }
 
@@ -493,9 +503,9 @@ public final class KafkaCacheSegmentFactory
     final class KafkaCacheTailSegment extends KafkaCacheSegment
     {
         private final long baseOffset;
-        private final KafkaCacheTailLogFile logFile;
-        private final KafkaCacheTailLogIndexFile indexFile;
-        private final KafkaCacheTailHashFile hashFile;
+        final KafkaCacheTailLogFile logFile;
+        final KafkaCacheTailLogIndexFile indexFile;
+        final KafkaCacheTailHashFile hashFile;
 
         private KafkaCacheTailSegment(
             KafkaCacheSegment previousSegment,

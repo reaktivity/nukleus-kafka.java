@@ -15,6 +15,9 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.index;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.record;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.value;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.NEXT_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.RETRY_SEGMENT;
 
@@ -68,7 +71,7 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
         if (lowIndex <= lastIndex)
         {
             final long entry = buffer.getLong(lowIndex << 3);
-            return KafkaCacheCursorRecord.record(lowIndex, KafkaCacheCursorRecord.value(entry));
+            return record(lowIndex, value(entry));
         }
 
         return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
@@ -118,7 +121,7 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
         if (lowIndex <= lastIndex)
         {
             final long entry = buffer.getLong(lowIndex << 3);
-            return KafkaCacheCursorRecord.record(lowIndex, KafkaCacheCursorRecord.value(entry));
+            return record(lowIndex, value(entry));
         }
 
         return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
@@ -129,8 +132,8 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
         long record)
     {
         // assumes sorted by key, record from seekKey
-        final int index = KafkaCacheCursorRecord.index(record);
-        final int value = KafkaCacheCursorRecord.value(record);
+        final int index = index(record);
+        final int value = value(record);
         assert index >= 0;
 
         final DirectBuffer buffer = readableBuf;
@@ -154,7 +157,7 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
         if (currentIndex <= lastIndex)
         {
             final long entry = buffer.getLong(currentIndex << 3);
-            return KafkaCacheCursorRecord.record(currentIndex, KafkaCacheCursorRecord.value(entry));
+            return record(currentIndex, value(entry));
         }
 
         return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
@@ -190,7 +193,7 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
         if (currentIndex <= lastIndex)
         {
             final long entry = buffer.getLong(currentIndex << 3);
-            return KafkaCacheCursorRecord.record(currentIndex, KafkaCacheCursorRecord.value(entry));
+            return record(currentIndex, value(entry));
         }
 
         return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
@@ -209,7 +212,7 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
         if (index <= lastIndex)
         {
             final long entry = buffer.getLong(index << 3);
-            return KafkaCacheCursorRecord.record(index, KafkaCacheCursorRecord.value(entry));
+            return record(index, value(entry));
         }
 
         return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;

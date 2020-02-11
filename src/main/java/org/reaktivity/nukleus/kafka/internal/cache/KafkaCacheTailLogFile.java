@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.CACHE_EXTENSION_LOG;
+
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheTailSegment;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 
@@ -23,7 +25,7 @@ public final class KafkaCacheTailLogFile extends KafkaCacheTailFile
     KafkaCacheTailLogFile(
         KafkaCacheTailSegment segment)
     {
-        super(segment, "log");
+        super(segment, CACHE_EXTENSION_LOG);
     }
 
     public KafkaCacheEntryFW read(

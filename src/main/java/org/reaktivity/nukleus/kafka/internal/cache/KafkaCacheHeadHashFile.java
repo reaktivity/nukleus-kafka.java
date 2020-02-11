@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.CACHE_EXTENSION_HASH_SCAN;
+
 import org.agrona.MutableDirectBuffer;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
 
@@ -25,7 +27,7 @@ public final class KafkaCacheHeadHashFile extends KafkaCacheHeadIndexFile
         MutableDirectBuffer writeBuffer,
         int writeCapacity)
     {
-        super(segment, "hscan", writeBuffer, writeCapacity);
+        super(segment, CACHE_EXTENSION_HASH_SCAN, writeBuffer, writeCapacity);
     }
 
     public long seekHash(

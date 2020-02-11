@@ -20,7 +20,6 @@ import static java.nio.file.StandardOpenOption.CREATE;
 import static java.nio.file.StandardOpenOption.READ;
 import static java.nio.file.StandardOpenOption.WRITE;
 import static java.util.Objects.requireNonNull;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.cacheFile;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -55,7 +54,7 @@ public abstract class KafkaCacheHeadFile
         int writeCapacity)
     {
         final long baseOffset = segment.baseOffset();
-        final Path headFile = cacheFile(segment, extension);
+        final Path headFile = segment.cacheFile(extension);
 
         this.baseOffset = baseOffset;
         this.readableByteBuf = readInit(headFile, writeCapacity);

@@ -16,9 +16,9 @@
 package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static java.nio.file.StandardOpenOption.READ;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.cacheFile;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
@@ -31,9 +31,6 @@ import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.Kafk
 
 public abstract class KafkaCacheTailFile
 {
-    private final MappedByteBuffer readableByteBuf;
-
-    protected final long baseOffset;
     protected final DirectBuffer readableBuf;
     protected final int readCapacity;
 
@@ -41,11 +38,9 @@ public abstract class KafkaCacheTailFile
         KafkaCacheTailSegment segment,
         String extension)
     {
-        final long baseOffset = segment.baseOffset();
-        final Path tailFile = cacheFile(segment, extension);
+        final Path tailFile = segment.cacheFile(extension);
+        final ByteBuffer readableByteBuf = readInit(tailFile);
 
-        this.baseOffset = baseOffset;
-        this.readableByteBuf = readInit(tailFile);
         this.readableBuf = new UnsafeBuffer(readableByteBuf);
         this.readCapacity = readableByteBuf.capacity();
     }

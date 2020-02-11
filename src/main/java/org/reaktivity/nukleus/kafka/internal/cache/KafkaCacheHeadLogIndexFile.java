@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.CACHE_EXTENSION_LOG_INDEX;
+
 import org.agrona.MutableDirectBuffer;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
 
@@ -25,7 +27,7 @@ public final class KafkaCacheHeadLogIndexFile extends KafkaCacheHeadIndexFile
         MutableDirectBuffer writeBuffer,
         int maxCapacity)
     {
-        super(segment, "index", writeBuffer, maxCapacity);
+        super(segment, CACHE_EXTENSION_LOG_INDEX, writeBuffer, maxCapacity);
     }
 
     public long seekOffset(

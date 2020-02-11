@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.record;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.value;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.NEXT_SEGMENT;
 
 import org.agrona.DirectBuffer;
@@ -55,7 +57,7 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
             }
             else
             {
-                return entry;
+                break;
             }
         }
 
@@ -63,7 +65,7 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
         if (lowIndex <= lastIndex)
         {
             final long entry = buffer.getLong(lowIndex << 3);
-            return KafkaCacheCursorRecord.record(lowIndex, KafkaCacheCursorRecord.value(entry));
+            return record(lowIndex, value(entry));
         }
 
         return NEXT_SEGMENT;
@@ -112,7 +114,7 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
         if (lowIndex <= lastIndex)
         {
             final long entry = buffer.getLong(lowIndex << 3);
-            return KafkaCacheCursorRecord.record(lowIndex, KafkaCacheCursorRecord.value(entry));
+            return record(lowIndex, value(entry));
         }
 
         return NEXT_SEGMENT;
@@ -122,7 +124,9 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
         int key,
         long record)
     {
-        // assumes sorted by key, record from seekKey
+        // assumes sorted by key, repeated keys, record from seekKey
+        // TODO: optimize scanKey to break loop on key mismatch
+        //       requires cursor condition retain memento of last match index
         final int index = KafkaCacheCursorRecord.index(record);
         final int value = KafkaCacheCursorRecord.value(record);
         assert index >= 0;
@@ -137,7 +141,7 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
             final long entry = buffer.getLong(currentIndex << 3);
             final int entryKey = (int)(entry >>> 32);
             final int entryValue = (int)(entry & 0x7FFF_FFFF);
-            if (entryKey != key || entryValue == value)
+            if (entryKey == key && entryValue >= value)
             {
                 break;
             }
@@ -147,7 +151,7 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
         if (currentIndex <= lastIndex)
         {
             final long entry = buffer.getLong(currentIndex << 3);
-            return KafkaCacheCursorRecord.record(currentIndex, KafkaCacheCursorRecord.value(entry));
+            return record(currentIndex, value(entry));
         }
 
         return NEXT_SEGMENT;
@@ -181,7 +185,7 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
         if (currentIndex <= lastIndex)
         {
             final long entry = buffer.getLong(currentIndex << 3);
-            return KafkaCacheCursorRecord.record(currentIndex, KafkaCacheCursorRecord.value(entry));
+            return record(currentIndex, value(entry));
         }
 
         return NEXT_SEGMENT;
@@ -199,7 +203,7 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
         if (index <= lastIndex)
         {
             final long entry = buffer.getLong(index << 3);
-            return KafkaCacheCursorRecord.record(index, KafkaCacheCursorRecord.value(entry));
+            return record(index, value(entry));
         }
 
         return NEXT_SEGMENT;

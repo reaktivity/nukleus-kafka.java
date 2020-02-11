@@ -64,18 +64,6 @@ public final class KafkaCachePartitionWriter
         return headSegment != null ? headSegment.nextOffset() : OFFSET_EARLIEST;
     }
 
-    public void writeEntry(
-        long offset,
-        long timestamp,
-        KafkaKeyFW key,
-        ArrayFW<KafkaHeaderFW> headers,
-        OctetsFW value)
-    {
-        writeEntryStart(offset, timestamp, key, value.sizeof(), headers.sizeof());
-        writeEntryContinue(value);
-        writeEntryFinish(headers);
-    }
-
     public void writeEntryStart(
         long offset,
         long timestamp,

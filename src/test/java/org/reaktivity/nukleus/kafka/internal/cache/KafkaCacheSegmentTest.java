@@ -18,13 +18,17 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 import static java.lang.System.currentTimeMillis;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.record;
 
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.util.zip.CRC32C;
 
 import org.agrona.DirectBuffer;
+import org.agrona.MutableDirectBuffer;
+import org.agrona.collections.Int2IntHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -42,6 +46,19 @@ public class KafkaCacheSegmentTest
     @Rule
     public TemporaryFolder tempFolder = new TemporaryFolder();
 
+    private KafkaKeyFW.Builder keyRW;
+    private ArrayFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW> headersRW;
+
+    @Before
+    public void setup()
+    {
+        this.keyRW = new KafkaKeyFW.Builder()
+                .wrap(new UnsafeBuffer(ByteBuffer.allocate(1024)), 0, 1024);
+
+        this.headersRW = new ArrayFW.Builder<>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+                .wrap(new UnsafeBuffer(ByteBuffer.allocate(1024)), 0, 1024);
+    }
+
     @Test
     public void shouldFreezeSegment()
     {
@@ -56,6 +73,59 @@ public class KafkaCacheSegmentTest
         assertEquals(head.previousSegment, tail.previousSegment);
         assertEquals(head.nextSegment, tail.nextSegment);
         assertEquals(head.previousSegment.nextSegment, tail);
+    }
+
+    @Test
+    public void shouldSortHashScan()
+    {
+        KafkaConfiguration config = new KafkaConfiguration();
+        Path directory = tempFolder.getRoot().toPath();
+
+        KafkaCacheSegmentFactory factory = new KafkaCacheSegmentFactory(config);
+        KafkaCacheSegment sentinel = factory.newSentinel(directory);
+        KafkaCacheHeadSegment head = sentinel.nextSegment(0L);
+
+        int cachedEntries = 1024;
+        MutableDirectBuffer keyBytes = new UnsafeBuffer(new byte[Long.BYTES]);
+        ArrayFW<KafkaHeaderFW> headers = headersRW.build();
+        for (long offset = 0; offset < cachedEntries; offset++)
+        {
+            keyBytes.putLong(0, offset);
+            KafkaKeyFW key = keyRW.rewrap()
+                                  .length(keyBytes.capacity())
+                                  .value(keyBytes, 0, keyBytes.capacity())
+                                  .build();
+
+            head.writeEntry(offset, currentTimeMillis(), key, headers, null);
+        }
+
+        KafkaCacheTailSegment tail = head.freezeSegment();
+
+        DirectBuffer hashScanBuf = head.hashFile.readableBuf;
+        int hashScanCapacity = head.hashFile.readCapacity;
+        Int2IntHashMap hashScan = new Int2IntHashMap(-1);
+        for (int index = 0; index < hashScanCapacity; index += Long.BYTES)
+        {
+            long entry = hashScanBuf.getLong(index);
+            int key = (int)(entry >>> 32);
+            int value = (int)(entry & 0xffff_ffffL);
+            hashScan.put(key, value);
+        }
+
+        DirectBuffer hashIndexBuf = tail.hashFile.readableBuf;
+        int hashIndexCapacity = tail.hashFile.readCapacity;
+        Int2IntHashMap hashIndex = new Int2IntHashMap(-1);
+        for (int index = 0; index < hashIndexCapacity; index += Long.BYTES)
+        {
+            long entry = hashIndexBuf.getLong(index);
+            int key = (int)(entry >>> 32);
+            int value = (int)(entry & 0xffff_ffffL);
+            hashIndex.put(key, value);
+        }
+
+        assertEquals(cachedEntries, hashScan.size());
+        assertEquals(cachedEntries, hashIndex.size());
+        assertEquals(hashScan, hashIndex);
     }
 
     @Test
@@ -92,11 +162,11 @@ public class KafkaCacheSegmentTest
         checksum.update(key.buffer().byteArray(), 0, key.sizeof());
         int hash = (int) checksum.getValue();
 
-        long headCursor = head.scanHash(hash, KafkaCacheCursorRecord.record(0, 0));
+        long headCursor = head.scanHash(hash, record(0, 0));
 
         final KafkaCacheSegment tail = head.freezeSegment();
 
-        long tailCursor = tail.scanHash(hash, KafkaCacheCursorRecord.record(0, 0));
+        long tailCursor = tail.scanHash(hash, record(0, 0));
 
         assertEquals(0, KafkaCacheCursorRecord.index(headCursor));
         assertEquals(0, KafkaCacheCursorRecord.value(headCursor));

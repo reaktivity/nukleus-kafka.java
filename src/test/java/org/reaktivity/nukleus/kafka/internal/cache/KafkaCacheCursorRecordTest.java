@@ -16,6 +16,9 @@
 package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static org.junit.Assert.assertEquals;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.index;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.record;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.value;
 
 import java.util.Random;
 
@@ -29,9 +32,9 @@ public class KafkaCacheCursorRecordTest
         final Random random = new Random();
         final int index = random.nextInt() & 0x7FFF_FFFF;
         final int value = random.nextInt() & 0x7FFF_FFFF;
-        final long record = KafkaCacheCursorRecord.record(index, value);
+        final long record = record(index, value);
 
-        assertEquals(index, KafkaCacheCursorRecord.index(record));
-        assertEquals(value, KafkaCacheCursorRecord.value(record));
+        assertEquals(index, index(record));
+        assertEquals(value, value(record));
     }
 }
