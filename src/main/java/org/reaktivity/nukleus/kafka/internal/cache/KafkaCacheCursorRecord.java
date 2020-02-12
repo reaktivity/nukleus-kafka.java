@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static java.lang.Integer.compareUnsigned;
+import static java.lang.Integer.toUnsignedLong;
 
 public final class KafkaCacheCursorRecord
 {
@@ -38,7 +39,7 @@ public final class KafkaCacheCursorRecord
         int index,
         int value)
     {
-        return ((long) index << 32) | value;
+        return ((long) index << 32) | toUnsignedLong(value);
     }
 
     public static long nextIndex(

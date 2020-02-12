@@ -39,6 +39,18 @@ public class KafkaCacheCursorRecordTest
     }
 
     @Test
+    public void shouldMakeRecordWithNegativeValue()
+    {
+        final Random random = new Random();
+        final int index = random.nextInt() & 0x7FFF_FFFF;
+        final int value = random.nextInt() | 0x8000_0000;
+        final long record = record(index, value);
+
+        assertEquals(index, index(record));
+        assertEquals(value, value(record));
+    }
+
+    @Test
     public void shouldMakeRecordWithNegativeIndex()
     {
         final Random random = new Random();
