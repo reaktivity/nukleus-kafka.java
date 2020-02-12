@@ -19,6 +19,9 @@ import static java.lang.Integer.compareUnsigned;
 
 public final class KafkaCacheCursorRecord
 {
+    public static final long NEXT_SEGMENT = Long.MAX_VALUE - 1;
+    public static final long RETRY_SEGMENT = Integer.MAX_VALUE - 1;
+
     public static int index(
         long record)
     {

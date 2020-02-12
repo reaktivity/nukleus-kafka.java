@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.index;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.record;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.value;
@@ -40,9 +42,13 @@ public final class KafkaCacheTailKeysFile extends KafkaCacheTailIndexFile
         int hash,
         long offset)
     {
-        final long record = super.seekKey(hash);
-        final int deltaOffset = (int)(baseOffset - offset);
-        return super.scanKey(hash, record(index(record), deltaOffset));
+        long record = super.seekKey(hash);
+        if (record != RETRY_SEGMENT && record != NEXT_SEGMENT)
+        {
+            final int deltaOffset = (int)(offset - baseOffset);
+            record = super.scanKey(hash, record(index(record), deltaOffset));
+        }
+        return record;
     }
 
     public long scanKey(

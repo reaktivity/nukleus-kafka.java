@@ -16,6 +16,8 @@
 package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static java.nio.ByteBuffer.allocateDirect;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.value;
 
 import java.nio.ByteBuffer;
@@ -34,9 +36,6 @@ import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 
 public final class KafkaCacheSegmentFactory
 {
-    public static final long RETRY_SEGMENT = Integer.MAX_VALUE - 1;
-    public static final long NEXT_SEGMENT = Long.MAX_VALUE - 1;
-
     public static final int POSITION_UNSET = -1;
 
     public static final int OFFSET_LATEST = -1;

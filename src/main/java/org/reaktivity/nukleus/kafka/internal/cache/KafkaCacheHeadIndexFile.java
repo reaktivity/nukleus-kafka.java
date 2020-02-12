@@ -17,10 +17,11 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static java.nio.file.StandardOpenOption.READ;
 import static java.nio.file.StandardOpenOption.WRITE;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.index;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.record;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.value;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.NEXT_SEGMENT;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.RETRY_SEGMENT;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -157,8 +158,8 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
         long record)
     {
         // assumes sorted by value, repeated keys, record from seekValue
-        final int index = KafkaCacheCursorRecord.index(record);
-        final int value = KafkaCacheCursorRecord.value(record);
+        final int index = index(record);
+        final int value = value(record);
         assert index >= 0;
 
         final DirectBuffer buffer = readableBuf;
@@ -191,7 +192,7 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
     protected long scanIndex(
         long record)
     {
-        final int index = KafkaCacheCursorRecord.index(record);
+        final int index = index(record);
         assert index >= 0;
 
         final DirectBuffer buffer = readableBuf;

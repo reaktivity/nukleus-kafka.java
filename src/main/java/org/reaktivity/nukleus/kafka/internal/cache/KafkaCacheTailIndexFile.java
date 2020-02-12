@@ -15,9 +15,10 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.index;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.record;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.value;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.NEXT_SEGMENT;
 
 import org.agrona.DirectBuffer;
 import org.agrona.collections.Int2IntHashMap;
@@ -92,8 +93,8 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
         // assumes sorted by key, repeated keys, record from seekKey
         // TODO: optimize scanKey to break loop on key mismatch
         //       requires cursor condition retain memento of last match index
-        final int index = KafkaCacheCursorRecord.index(record);
-        final int value = KafkaCacheCursorRecord.value(record);
+        final int index = index(record);
+        final int value = value(record);
         assert index >= 0;
 
         final DirectBuffer buffer = readableBuf;
@@ -125,7 +126,7 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
     protected long scanIndex(
         long record)
     {
-        final int index = KafkaCacheCursorRecord.index(record);
+        final int index = index(record);
         assert index >= 0;
 
         final DirectBuffer buffer = readableBuf;
