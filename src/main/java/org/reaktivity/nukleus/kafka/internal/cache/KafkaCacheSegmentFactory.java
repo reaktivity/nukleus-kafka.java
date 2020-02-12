@@ -18,7 +18,8 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 import static java.nio.ByteBuffer.allocateDirect;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.value;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursor;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
 
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
@@ -175,7 +176,7 @@ public final class KafkaCacheSegmentFactory
         }
 
         public long scanOffset(
-            long record)
+            long cursor)
         {
             return NEXT_SEGMENT;
         }
@@ -189,7 +190,21 @@ public final class KafkaCacheSegmentFactory
 
         public long scanHash(
             int hash,
-            long record)
+            long cursor)
+        {
+            return NEXT_SEGMENT;
+        }
+
+        public long reverseSeekHash(
+            int hash,
+            int position)
+        {
+            return NEXT_SEGMENT;
+        }
+
+        public long reverseScanHash(
+            int hash,
+            long cursor)
         {
             return NEXT_SEGMENT;
         }
@@ -219,6 +234,7 @@ public final class KafkaCacheSegmentFactory
         {
             return baseOffset() == that.baseOffset();
         }
+
     }
 
     public final class KafkaCacheCandidateSegment extends KafkaCacheSegment
@@ -318,9 +334,9 @@ public final class KafkaCacheSegmentFactory
 
         @Override
         public long scanOffset(
-            long record)
+            long cursor)
         {
-            return indexFile.scanOffset(record);
+            return indexFile.scanOffset(cursor);
         }
 
         @Override
@@ -328,15 +344,31 @@ public final class KafkaCacheSegmentFactory
             int hash,
             int position)
         {
-            return hashFile.seekHash(hash, position);
+            return hashFile.scanHash(hash, cursor(0, position));
         }
 
         @Override
         public long scanHash(
             int hash,
-            long record)
+            long cursor)
         {
-            return hashFile.scanHash(hash, record);
+            return hashFile.scanHash(hash, cursor);
+        }
+
+        @Override
+        public long reverseSeekHash(
+            int hash,
+            int position)
+        {
+            return hashFile.reverseScanHash(hash, cursor(Integer.MAX_VALUE, position));
+        }
+
+        @Override
+        public long reverseScanHash(
+            int hash,
+            long cursor)
+        {
+            return hashFile.reverseScanHash(hash, cursor);
         }
 
         @Override
@@ -347,6 +379,7 @@ public final class KafkaCacheSegmentFactory
             return logFile.read(position, entry);
         }
 
+        @Override
         protected KafkaCacheHeadSegment headSegment()
         {
             return this;
@@ -412,10 +445,10 @@ public final class KafkaCacheSegmentFactory
             ancestor:
             if (key.length() != -1)
             {
-                long hashRecord = hashFile.scanHash((int) hash, 0);
-                while (hashRecord != NEXT_SEGMENT && hashRecord != RETRY_SEGMENT)
+                long hashCursor = reverseSeekHash((int) hash, Integer.MAX_VALUE);
+                while (hashCursor != NEXT_SEGMENT && hashCursor != RETRY_SEGMENT)
                 {
-                    final int position = value(hashRecord);
+                    final int position = cursorValue(hashCursor);
                     final KafkaCacheEntryFW entry = logFile.read(position, entryRO);
                     assert entry != null;
                     if (key.equals(entry.key()))
@@ -424,23 +457,23 @@ public final class KafkaCacheSegmentFactory
                         break ancestor;
                     }
 
-                    final long nextHashRecord = hashFile.scanHash((int) hash, hashRecord);
-                    if (nextHashRecord == NEXT_SEGMENT || nextHashRecord == RETRY_SEGMENT)
+                    final long nextHashCursor = reverseScanHash((int) hash, hashCursor);
+                    if (nextHashCursor == NEXT_SEGMENT || nextHashCursor == RETRY_SEGMENT)
                     {
                         break;
                     }
 
-                    hashRecord = nextHashRecord;
+                    hashCursor = nextHashCursor;
                 }
-                assert hashRecord == NEXT_SEGMENT || hashRecord == RETRY_SEGMENT;
+                assert hashCursor == NEXT_SEGMENT || hashCursor == RETRY_SEGMENT;
 
                 KafkaCacheTailKeysFile previousKeys = keysFile.previousKeys;
                 while (previousKeys != null)
                 {
-                    long keyRecord = previousKeys.seekKey((int) hash, Integer.MIN_VALUE);
-                    while (keyRecord != NEXT_SEGMENT && keyRecord != RETRY_SEGMENT)
+                    long keyCursor = previousKeys.reverseSeekKey((int) hash, Integer.MAX_VALUE);
+                    while (keyCursor != NEXT_SEGMENT && keyCursor != RETRY_SEGMENT)
                     {
-                        final long ancestorBaseOffset = previousKeys.baseOffset(keyRecord);
+                        final long ancestorBaseOffset = previousKeys.baseOffset(keyCursor);
 
                         KafkaCacheSegment ancestorSegment = this;
                         while (ancestorSegment != null && ancestorSegment.baseOffset() > ancestorBaseOffset)
@@ -450,35 +483,35 @@ public final class KafkaCacheSegmentFactory
 
                         if (ancestorSegment != null && ancestorSegment.baseOffset() == ancestorBaseOffset)
                         {
-                            long ancestorRecord = ancestorSegment.seekHash((int) hash, 0);
-                            while (ancestorRecord != NEXT_SEGMENT && ancestorRecord != RETRY_SEGMENT)
+                            long ancestorCursor = ancestorSegment.reverseSeekHash((int) hash, Integer.MAX_VALUE);
+                            while (ancestorCursor != NEXT_SEGMENT && ancestorCursor != RETRY_SEGMENT)
                             {
-                                final int position = value(ancestorRecord);
-                                final KafkaCacheEntryFW entry = ancestorSegment.readLog(position, entryRO);
-                                assert entry != null;
-                                if (key.equals(entry.key()))
+                                final int position = cursorValue(ancestorCursor);
+                                final KafkaCacheEntryFW cacheEntry = ancestorSegment.readLog(position, entryRO);
+                                assert cacheEntry != null;
+                                if (key.equals(cacheEntry.key()))
                                 {
-                                    ancestor = entry.offset$();
+                                    ancestor = cacheEntry.offset$();
                                     break ancestor;
                                 }
 
-                                final long nextAncestorRecord = ancestorSegment.scanHash((int) hash, ancestorRecord);
-                                if (nextAncestorRecord < 0)
+                                final long nextAncestorCursor = ancestorSegment.reverseScanHash((int) hash, ancestorCursor);
+                                if (nextAncestorCursor < 0)
                                 {
                                     break;
                                 }
 
-                                ancestorRecord = nextAncestorRecord;
+                                ancestorCursor = nextAncestorCursor;
                             }
                         }
 
-                        final long nextKeyRecord = previousKeys.scanKey((int) hash, keyRecord);
-                        if (nextKeyRecord < 0)
+                        final long nextKeyCursor = previousKeys.reverseScanKey((int) hash, keyCursor);
+                        if (nextKeyCursor < 0)
                         {
                             break;
                         }
 
-                        keyRecord = nextKeyRecord;
+                        keyCursor = nextKeyCursor;
                     }
 
                     previousKeys = previousKeys.previousKeys;
@@ -587,9 +620,9 @@ public final class KafkaCacheSegmentFactory
 
         @Override
         public long scanOffset(
-            long record)
+            long cursor)
         {
-            return indexFile.scanOffset(record);
+            return indexFile.scanOffset(cursor);
         }
 
         @Override
@@ -603,9 +636,17 @@ public final class KafkaCacheSegmentFactory
         @Override
         public long scanHash(
             int hash,
+            long cursor)
+        {
+            return hashFile.scanHash(hash, cursor);
+        }
+
+        @Override
+        public long reverseScanHash(
+            int hash,
             long record)
         {
-            return hashFile.scanHash(hash, record);
+            return hashFile.reverseScanHash(hash, record);
         }
 
         @Override

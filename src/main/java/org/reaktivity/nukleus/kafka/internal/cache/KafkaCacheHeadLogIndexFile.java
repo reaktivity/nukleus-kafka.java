@@ -38,8 +38,8 @@ public final class KafkaCacheHeadLogIndexFile extends KafkaCacheHeadIndexFile
     }
 
     public long scanOffset(
-        long record)
+        long cursor)
     {
-        return super.scanIndex(record);
+        return super.scanIndex(cursor);
     }
 }

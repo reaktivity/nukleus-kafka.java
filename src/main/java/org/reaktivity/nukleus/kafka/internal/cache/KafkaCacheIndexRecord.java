@@ -15,31 +15,31 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.CACHE_EXTENSION_LOG_INDEX;
+import static java.lang.Integer.toUnsignedLong;
 
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheTailSegment;
-
-public final class KafkaCacheTailLogIndexFile extends KafkaCacheTailIndexFile
+public final class KafkaCacheIndexRecord
 {
-    private final long baseOffset;
-
-    KafkaCacheTailLogIndexFile(
-        KafkaCacheTailSegment segment)
+    public static int indexKey(
+        long indexEntry)
     {
-        super(segment, CACHE_EXTENSION_LOG_INDEX);
-        this.baseOffset = segment.baseOffset();
+        return (int)(indexEntry >>> 32);
     }
 
-    public long seekOffset(
-        long offset)
+    public static int indexValue(
+        long indexEntry)
     {
-        final int deltaOffset = (int)(offset - baseOffset);
-        return super.seekKey(deltaOffset);
+        return (int)(indexEntry & 0xFFFF_FFFFL);
     }
 
-    public long scanOffset(
-        long cursor)
+    public static long indexEntry(
+        int indexKey,
+        int indexValue)
     {
-        return super.scanIndex(cursor);
+        return ((long) indexKey << 32) | toUnsignedLong(indexValue);
+    }
+
+    private KafkaCacheIndexRecord()
+    {
+        // no instances
     }
 }

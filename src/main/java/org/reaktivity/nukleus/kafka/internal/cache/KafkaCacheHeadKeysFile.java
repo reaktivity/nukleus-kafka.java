@@ -49,9 +49,9 @@ public final class KafkaCacheHeadKeysFile extends KafkaCacheHeadIndexFile
 
     public long scanHash(
         int hash,
-        long record)
+        long cursor)
     {
-        return super.scanValue(hash, record);
+        return super.scanValue(hash, cursor);
     }
 
     public void toKeysIndex()

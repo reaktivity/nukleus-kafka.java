@@ -23,19 +23,19 @@ public final class KafkaCacheCursorRecord
     public static final long NEXT_SEGMENT = Long.MAX_VALUE - 1;
     public static final long RETRY_SEGMENT = Integer.MAX_VALUE - 1;
 
-    public static int index(
-        long record)
+    public static int cursorIndex(
+        long cursor)
     {
-        return (int)(record >>> 32);
+        return (int)(cursor >>> 32);
     }
 
-    public static int value(
-        long record)
+    public static int cursorValue(
+        long cursor)
     {
-        return (int)(record & 0xFFFF_FFFFL);
+        return (int)(cursor & 0xFFFF_FFFFL);
     }
 
-    public static long record(
+    public static long cursor(
         int index,
         int value)
     {
@@ -43,63 +43,63 @@ public final class KafkaCacheCursorRecord
     }
 
     public static long nextIndex(
-        long record)
+        long cursor)
     {
-        return record(index(record) + 1, value(record));
+        return cursor(cursorIndex(cursor) + 1, cursorValue(cursor));
     }
 
     public static long previousIndex(
-        long record)
+        long cursor)
     {
-        return record(index(record) - 1, value(record));
+        return cursor(cursorIndex(cursor) - 1, cursorValue(cursor));
     }
 
     public static long nextValue(
-        long record)
+        long cursor)
     {
-        return record(index(record), value(record) + 1);
+        return cursor(cursorIndex(cursor), cursorValue(cursor) + 1);
     }
 
     public static long minByValue(
-        long record1,
-        long record2)
+        long cursor1,
+        long cursor2)
     {
-        final int value1 = value(record1);
-        final int value2 = value(record2);
+        final int value1 = cursorValue(cursor1);
+        final int value2 = cursorValue(cursor2);
 
         final int comparison = compareUnsigned(value1, value2);
         if (comparison < 0)
         {
-            return record1;
+            return cursor1;
         }
         else if (comparison > 0)
         {
-            return record2;
+            return cursor2;
         }
         else
         {
-            return Long.min(record1, record2);
+            return Long.min(cursor1, cursor2);
         }
     }
 
     public static long maxByValue(
-        long record1,
-        long record2)
+        long cursor1,
+        long cursor2)
     {
-        final int value1 = value(record1);
-        final int value2 = value(record2);
+        final int value1 = cursorValue(cursor1);
+        final int value2 = cursorValue(cursor2);
 
         if (value1 > value2)
         {
-            return record1;
+            return cursor1;
         }
         else if (value2 > value1)
         {
-            return record2;
+            return cursor2;
         }
         else
         {
-            return Long.max(record1, record2);
+            return Long.max(cursor1, cursor2);
         }
     }
 

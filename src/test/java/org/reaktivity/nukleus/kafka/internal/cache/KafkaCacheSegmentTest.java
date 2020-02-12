@@ -18,7 +18,9 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 import static java.lang.System.currentTimeMillis;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.record;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursor;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorIndex;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
 
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
@@ -177,14 +179,14 @@ public class KafkaCacheSegmentTest
         checksum.update(key.buffer().byteArray(), 0, key.sizeof());
         int hash = (int) checksum.getValue();
 
-        long headCursor = head.scanHash(hash, record(0, 0));
+        long headCursor = head.scanHash(hash, cursor(0, 0));
 
         final KafkaCacheSegment tail = head.freezeSegment(1L);
 
-        long tailCursor = tail.scanHash(hash, record(0, 0));
+        long tailCursor = tail.scanHash(hash, cursor(0, 0));
 
-        assertEquals(0, KafkaCacheCursorRecord.index(headCursor));
-        assertEquals(0, KafkaCacheCursorRecord.value(headCursor));
+        assertEquals(0, cursorIndex(headCursor));
+        assertEquals(0, cursorValue(headCursor));
         assertEquals(headCursor, tailCursor);
     }
 }

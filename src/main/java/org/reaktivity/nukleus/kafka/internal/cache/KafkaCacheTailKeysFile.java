@@ -17,9 +17,9 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.index;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.record;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.value;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursor;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorIndex;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.CACHE_EXTENSION_KEYS_INDEX;
 
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheTailSegment;
@@ -38,29 +38,42 @@ public final class KafkaCacheTailKeysFile extends KafkaCacheTailIndexFile
         this.previousKeys = previousKeys;
     }
 
+    public long baseOffset(
+        long cursor)
+    {
+        return baseOffset + cursorValue(cursor);
+    }
+
     public long seekKey(
         int hash,
         long offset)
     {
-        long record = super.seekKey(hash);
-        if (record != RETRY_SEGMENT && record != NEXT_SEGMENT)
+        long cursor = super.seekKey(hash);
+        if (cursor != RETRY_SEGMENT && cursor != NEXT_SEGMENT)
         {
             final int deltaOffset = (int)(offset - baseOffset);
-            record = super.scanKey(hash, record(index(record), deltaOffset));
+            cursor = super.scanKey(hash, cursor(cursorIndex(cursor), deltaOffset));
         }
-        return record;
+        return cursor;
     }
 
     public long scanKey(
         int hash,
-        long record)
+        long cursor)
     {
-        return super.scanKey(hash, record);
+        return super.scanKey(hash, cursor);
     }
 
-    public long baseOffset(
-        long record)
+    public long reverseSeekKey(
+        int hash,
+        long offset)
     {
-        return baseOffset + value(record);
+        long cursor = super.reverseSeekKey(hash);
+        if (cursor != RETRY_SEGMENT && cursor != NEXT_SEGMENT)
+        {
+            final int deltaOffset = (int)(offset - baseOffset);
+            cursor = super.reverseScanKey(hash, cursor(cursorIndex(cursor), deltaOffset));
+        }
+        return cursor;
     }
 }

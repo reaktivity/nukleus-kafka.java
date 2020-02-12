@@ -16,9 +16,9 @@
 package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static org.junit.Assert.assertEquals;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.index;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.record;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.value;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursor;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorIndex;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
 
 import java.util.Random;
 
@@ -27,38 +27,38 @@ import org.junit.Test;
 public class KafkaCacheCursorRecordTest
 {
     @Test
-    public void shouldMakeRecord()
+    public void shouldMakeCursor()
     {
         final Random random = new Random();
         final int index = random.nextInt() & 0x7FFF_FFFF;
         final int value = random.nextInt() & 0x7FFF_FFFF;
-        final long record = record(index, value);
+        final long cursor = cursor(index, value);
 
-        assertEquals(index, index(record));
-        assertEquals(value, value(record));
+        assertEquals(index, cursorIndex(cursor));
+        assertEquals(value, cursorValue(cursor));
     }
 
     @Test
-    public void shouldMakeRecordWithNegativeValue()
+    public void shouldMakeCursorWithNegativeValue()
     {
         final Random random = new Random();
         final int index = random.nextInt() & 0x7FFF_FFFF;
         final int value = random.nextInt() | 0x8000_0000;
-        final long record = record(index, value);
+        final long cursor = cursor(index, value);
 
-        assertEquals(index, index(record));
-        assertEquals(value, value(record));
+        assertEquals(index, cursorIndex(cursor));
+        assertEquals(value, cursorValue(cursor));
     }
 
     @Test
-    public void shouldMakeRecordWithNegativeIndex()
+    public void shouldMakeCursorWithNegativeIndex()
     {
         final Random random = new Random();
         final int index = random.nextInt() | 0x8000_0000;
         final int value = random.nextInt() & 0x7FFF_FFFF;
-        final long record = record(index, value);
+        final long cursor = cursor(index, value);
 
-        assertEquals(index, index(record));
-        assertEquals(value, value(record));
+        assertEquals(index, cursorIndex(cursor));
+        assertEquals(value, cursorValue(cursor));
     }
 }

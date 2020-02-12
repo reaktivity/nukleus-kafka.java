@@ -37,18 +37,18 @@ public final class KafkaCacheHeadHashFile extends KafkaCacheHeadIndexFile
         this.segment = segment;
     }
 
-    public long seekHash(
-        int hash,
-        int position)
-    {
-        return super.seekValue(hash, position);
-    }
-
     public long scanHash(
         int hash,
-        long record)
+        long cursor)
     {
-        return super.scanValue(hash, record);
+        return super.scanValue(hash, cursor);
+    }
+
+    public long reverseScanHash(
+        int hash,
+        long cursor)
+    {
+        return super.reverseScanValue(hash, cursor);
     }
 
     public void toHashIndex()

@@ -15,13 +15,16 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static java.lang.Integer.compareUnsigned;
 import static java.nio.file.StandardOpenOption.READ;
 import static java.nio.file.StandardOpenOption.WRITE;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.index;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.record;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.value;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursor;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorIndex;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheIndexRecord.indexKey;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheIndexRecord.indexValue;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -51,13 +54,11 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
 
     protected Int2IntHashMap toMap()
     {
-        Int2IntHashMap map = new Int2IntHashMap(-1);
+        final Int2IntHashMap map = new Int2IntHashMap(-1);
         for (int index = 0; index < readCapacity; index += Long.BYTES)
         {
-            long entry = readableBuf.getLong(index);
-            int key = (int)(entry >>> 32);
-            int value = (int)(entry & 0xffff_ffffL);
-            map.put(key, value);
+            final long indexEntry = readableBuf.getLong(index);
+            map.put(indexKey(indexEntry), indexValue(indexEntry));
         }
         return map;
     }
@@ -76,14 +77,15 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
         while (lowIndex <= highIndex)
         {
             final int midIndex = (lowIndex + highIndex) >>> 1;
-            final long entry = buffer.getLong(midIndex << 3);
-            final int entryKey = (int)(entry >>> 32);
+            final long indexEntry = buffer.getLong(midIndex << 3);
+            final int indexKey = indexKey(indexEntry);
+            final int comparison = compareUnsigned(indexKey, key);
 
-            if (entryKey < key)
+            if (comparison < 0)
             {
                 lowIndex = midIndex + 1;
             }
-            else if (entryKey > key)
+            else if (comparison > 0)
             {
                 highIndex = midIndex - 1;
             }
@@ -96,8 +98,8 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
         assert lowIndex >= 0;
         if (lowIndex <= lastIndex)
         {
-            final long entry = buffer.getLong(lowIndex << 3);
-            return record(lowIndex, value(entry));
+            final long indexEntry = buffer.getLong(lowIndex << 3);
+            return cursor(lowIndex, indexValue(indexEntry));
         }
 
         return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
@@ -107,7 +109,7 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
         int key,
         int value)
     {
-        // assumes sorted by value, repeated keys
+        // assumes sorted by (unsigned) value, repeated keys
         final DirectBuffer buffer = readableBuf;
         final int maxIndex = (writeCapacity >> 3) - 1;
         final int lastIndex = (readCapacity >> 3) - 1;
@@ -118,21 +120,22 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
         while (lowIndex <= highIndex)
         {
             final int midIndex = (lowIndex + highIndex) >>> 1;
-            final long entry = buffer.getLong(midIndex << 3);
-            final int entryValue = (int)(entry & 0x7FFF_FFFF);
+            final long indexEntry = buffer.getLong(midIndex << 3);
+            final int indexValue = indexValue(indexEntry);
+            final int comparison = compareUnsigned(indexValue, value);
 
-            if (entryValue < value)
+            if (comparison < 0)
             {
                 lowIndex = midIndex + 1;
             }
-            else if (entryValue > value)
+            else if (comparison > 0)
             {
                 highIndex = midIndex - 1;
             }
             else
             {
-                final int entryKey = (int)(entry >>> 32);
-                if (entryKey == key)
+                final int indexKey = indexKey(indexEntry);
+                if (indexKey != key)
                 {
                     lowIndex = midIndex + 1;
                 }
@@ -146,8 +149,8 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
         assert lowIndex >= 0;
         if (lowIndex <= lastIndex)
         {
-            final long entry = buffer.getLong(lowIndex << 3);
-            return record(lowIndex, value(entry));
+            final long indexEntry = buffer.getLong(lowIndex << 3);
+            return cursor(lowIndex, indexValue(indexEntry));
         }
 
         return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
@@ -155,25 +158,26 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
 
     protected long scanValue(
         int key,
-        long record)
+        long cursor)
     {
-        // assumes sorted by value, repeated keys, record from seekValue
-        final int index = index(record);
-        final int value = value(record);
-        assert index >= 0;
+        // assumes sorted by (unsigned) value, repeated non-negative keys
+        final int cursorIndex = cursorIndex(cursor);
+        final int cursorValue = cursorValue(cursor);
+        assert cursorIndex >= 0;
 
         final DirectBuffer buffer = readableBuf;
         final int capacity = readCapacity;
         final int maxIndex = (writeCapacity >> 3) - 1;
         final int lastIndex = (capacity >> 3) - 1;
 
-        int currentIndex = index;
+        int currentIndex = cursorIndex;
         while (currentIndex <= lastIndex)
         {
-            final long entry = buffer.getLong(currentIndex << 3);
-            final int entryKey = (int)(entry >>> 32);
-            final int entryValue = (int)(entry & 0x7FFF_FFFF);
-            if (entryKey == key && entryValue >= value)
+            final long indexEntry = buffer.getLong(currentIndex << 3);
+            final int indexKey = indexKey(indexEntry);
+            final int indexValue = indexValue(indexEntry);
+
+            if (indexKey == key && compareUnsigned(indexValue, cursorValue) >= 0)
             {
                 break;
             }
@@ -182,27 +186,65 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
 
         if (currentIndex <= lastIndex)
         {
-            final long entry = buffer.getLong(currentIndex << 3);
-            return record(currentIndex, value(entry));
+            final long indexEntry = buffer.getLong(currentIndex << 3);
+            return cursor(currentIndex, indexValue(indexEntry));
         }
 
         return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
     }
 
     protected long scanIndex(
-        long record)
+        long cursor)
     {
-        final int index = index(record);
-        assert index >= 0;
+        // assumes sorted by non-negative key
+        final int cursorIndex = cursorIndex(cursor);
+        assert cursorIndex >= 0;
 
         final DirectBuffer buffer = readableBuf;
         final int maxIndex = (writeCapacity >> 3) - 1;
         final int lastIndex = (readCapacity >> 3) - 1;
 
-        if (index <= lastIndex)
+        if (cursorIndex <= lastIndex)
         {
-            final long entry = buffer.getLong(index << 3);
-            return record(index, value(entry));
+            final long indexEntry = buffer.getLong(cursorIndex << 3);
+            return cursor(cursorIndex, indexValue(indexEntry));
+        }
+
+        return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
+    }
+
+    protected long reverseScanValue(
+        int key,
+        long cursor)
+    {
+        // assumes sorted by (unsigned) value, repeated non-negative keys
+        final int cursorIndex = cursorIndex(cursor);
+        final int cursorValue = cursorValue(cursor);
+        assert cursorIndex >= 0;
+
+        final DirectBuffer buffer = readableBuf;
+        final int capacity = readCapacity;
+        final int maxIndex = (writeCapacity >> 3) - 1;
+        final int lastIndex = (capacity >> 3) - 1;
+
+        int currentIndex = Math.min(cursorIndex, lastIndex);
+        while (currentIndex >= 0 && currentIndex <= lastIndex)
+        {
+            final long indexEntry = buffer.getLong(currentIndex << 3);
+            final int indexKey = indexKey(indexEntry);
+            final int indexValue = indexValue(indexEntry);
+
+            if (indexKey == key && compareUnsigned(indexValue, cursorValue) <= 0)
+            {
+                break;
+            }
+            currentIndex--;
+        }
+
+        if (currentIndex >= 0 && currentIndex <= lastIndex)
+        {
+            final long indexEntry = buffer.getLong(currentIndex << 3);
+            return cursor(currentIndex, indexValue(indexEntry));
         }
 
         return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
