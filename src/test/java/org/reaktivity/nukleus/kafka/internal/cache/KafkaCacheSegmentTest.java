@@ -68,10 +68,10 @@ public class KafkaCacheSegmentTest
         KafkaCacheSegmentFactory factory = new KafkaCacheSegmentFactory(config);
         KafkaCacheSegment sentinel = factory.newSentinel(directory);
         KafkaCacheHeadSegment head = sentinel.nextSegment(0L);
-        KafkaCacheTailSegment tail = head.freezeSegment();
+        KafkaCacheTailSegment tail = head.freezeSegment(1L);
 
-        assertEquals(head.previousSegment, tail.previousSegment);
         assertEquals(head.nextSegment, tail.nextSegment);
+        assertEquals(head.previousSegment, tail.previousSegment);
         assertEquals(head.previousSegment.nextSegment, tail);
     }
 
@@ -99,33 +99,48 @@ public class KafkaCacheSegmentTest
             head.writeEntry(offset, currentTimeMillis(), key, headers, null);
         }
 
-        KafkaCacheTailSegment tail = head.freezeSegment();
+        KafkaCacheTailSegment tail = head.freezeSegment(cachedEntries);
 
-        DirectBuffer hashScanBuf = head.hashFile.readableBuf;
-        int hashScanCapacity = head.hashFile.readCapacity;
-        Int2IntHashMap hashScan = new Int2IntHashMap(-1);
-        for (int index = 0; index < hashScanCapacity; index += Long.BYTES)
-        {
-            long entry = hashScanBuf.getLong(index);
-            int key = (int)(entry >>> 32);
-            int value = (int)(entry & 0xffff_ffffL);
-            hashScan.put(key, value);
-        }
-
-        DirectBuffer hashIndexBuf = tail.hashFile.readableBuf;
-        int hashIndexCapacity = tail.hashFile.readCapacity;
-        Int2IntHashMap hashIndex = new Int2IntHashMap(-1);
-        for (int index = 0; index < hashIndexCapacity; index += Long.BYTES)
-        {
-            long entry = hashIndexBuf.getLong(index);
-            int key = (int)(entry >>> 32);
-            int value = (int)(entry & 0xffff_ffffL);
-            hashIndex.put(key, value);
-        }
+        Int2IntHashMap hashScan = head.hashFile.toMap();
+        Int2IntHashMap hashIndex = tail.hashFile.toMap();
 
         assertEquals(cachedEntries, hashScan.size());
         assertEquals(cachedEntries, hashIndex.size());
         assertEquals(hashScan, hashIndex);
+    }
+
+    @Test
+    public void shouldSortKeysScan()
+    {
+        KafkaConfiguration config = new KafkaConfiguration();
+        Path directory = tempFolder.getRoot().toPath();
+
+        KafkaCacheSegmentFactory factory = new KafkaCacheSegmentFactory(config);
+        KafkaCacheSegment sentinel = factory.newSentinel(directory);
+        KafkaCacheHeadSegment head = sentinel.nextSegment(0L);
+
+        int cachedEntries = 1024;
+        MutableDirectBuffer keyBytes = new UnsafeBuffer(new byte[Long.BYTES]);
+        ArrayFW<KafkaHeaderFW> headers = headersRW.build();
+        for (long offset = 0; offset < cachedEntries; offset++)
+        {
+            keyBytes.putLong(0, offset >> 1);
+            KafkaKeyFW key = keyRW.rewrap()
+                                  .length(keyBytes.capacity())
+                                  .value(keyBytes, 0, keyBytes.capacity())
+                                  .build();
+
+            head.writeEntry(offset, currentTimeMillis(), key, headers, null);
+        }
+
+        KafkaCacheTailSegment tail = head.freezeSegment(cachedEntries);
+
+        Int2IntHashMap keysScan = head.keysFile.toMap();
+        Int2IntHashMap keysIndex = tail.headSegment().keysFile.previousKeys.toMap();
+
+        assertEquals(cachedEntries >> 1, keysScan.size());
+        assertEquals(cachedEntries >> 1, keysIndex.size());
+        assertEquals(keysScan, keysIndex);
     }
 
     @Test
@@ -164,7 +179,7 @@ public class KafkaCacheSegmentTest
 
         long headCursor = head.scanHash(hash, record(0, 0));
 
-        final KafkaCacheSegment tail = head.freezeSegment();
+        final KafkaCacheSegment tail = head.freezeSegment(1L);
 
         long tailCursor = tail.scanHash(hash, record(0, 0));
 

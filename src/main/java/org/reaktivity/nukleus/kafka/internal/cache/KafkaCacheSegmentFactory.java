@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static java.nio.ByteBuffer.allocateDirect;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.value;
 
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
@@ -46,15 +47,22 @@ public final class KafkaCacheSegmentFactory
     public static final String CACHE_EXTENSION_HASH_SCAN = "hscan";
     public static final String CACHE_EXTENSION_HASH_SCAN_SORTING = String.format("%s.sorting", CACHE_EXTENSION_HASH_SCAN);
     public static final String CACHE_EXTENSION_HASH_INDEX = "hindex";
+    public static final String CACHE_EXTENSION_KEYS_SCAN = "kscan";
+    public static final String CACHE_EXTENSION_KEYS_SCAN_SORTING = String.format("%s.sorting", CACHE_EXTENSION_KEYS_SCAN);
+    public static final String CACHE_EXTENSION_KEYS_INDEX = "kindex";
 
-    private final MutableDirectBuffer entryInfo = new UnsafeBuffer(new byte[Long.BYTES + Long.BYTES]);
+    private final KafkaCacheEntryFW entryRO = new KafkaCacheEntryFW();
+
+    private final MutableDirectBuffer entryInfo = new UnsafeBuffer(new byte[Long.BYTES + Long.BYTES + Long.BYTES]);
     private final MutableDirectBuffer valueInfo = new UnsafeBuffer(new byte[Integer.BYTES]);
     private final MutableDirectBuffer indexInfo = new UnsafeBuffer(new byte[Integer.BYTES + Integer.BYTES]);
     private final MutableDirectBuffer hashInfo = new UnsafeBuffer(new byte[Integer.BYTES + Integer.BYTES]);
+    private final MutableDirectBuffer keysInfo = new UnsafeBuffer(new byte[Integer.BYTES + Integer.BYTES]);
 
     private final int maxLogCapacity;
     private final int maxIndexCapacity;
     private final int maxHashCapacity;
+    private final int maxKeysCapacity;
     private final MutableDirectBuffer writeBuffer;
     private final CRC32C checksum;
 
@@ -64,6 +72,7 @@ public final class KafkaCacheSegmentFactory
         this.maxLogCapacity = config.cacheSegmentLogBytes();
         this.maxIndexCapacity = config.cacheSegmentIndexBytes();
         this.maxHashCapacity = config.cacheSegmentHashBytes();
+        this.maxKeysCapacity = config.cacheSegmentKeysBytes();
         this.writeBuffer = new UnsafeBuffer(allocateDirect(64 * 1024)); // TODO: configure
         this.checksum = new CRC32C();
     }
@@ -139,15 +148,11 @@ public final class KafkaCacheSegmentFactory
         {
             assert nextSegment == null;
 
-            final KafkaCacheSegment frozenSegment = freezeSegment();
-            final KafkaCacheHeadSegment nextSegment = new KafkaCacheHeadSegment(frozenSegment, directory, nextOffset);
+            final KafkaCacheSegment frozenSegment = freezeSegment(nextOffset);
 
-            frozenSegment.nextSegment = nextSegment;
-            previousSegment.nextSegment = frozenSegment;
+            assert nextSegment == frozenSegment.nextSegment;
 
-            this.nextSegment = nextSegment;
-
-            return nextSegment;
+            return nextSegment.headSegment();
         }
 
         protected KafkaCacheHeadSegment headSegment()
@@ -197,8 +202,10 @@ public final class KafkaCacheSegmentFactory
             return null;
         }
 
-        protected KafkaCacheSegment freezeSegment()
+        protected KafkaCacheSegment freezeSegment(
+            long nextOffset)
         {
+            this.nextSegment = new KafkaCacheHeadSegment(this, directory, nextOffset);
             return this;
         }
 
@@ -264,6 +271,7 @@ public final class KafkaCacheSegmentFactory
         final KafkaCacheHeadLogFile logFile;
         final KafkaCacheHeadLogIndexFile indexFile;
         final KafkaCacheHeadHashFile hashFile;
+        final KafkaCacheHeadKeysFile keysFile;
 
         private long headOffset;
         private int headPosition;
@@ -273,12 +281,22 @@ public final class KafkaCacheSegmentFactory
             Path directory,
             long baseOffset)
         {
+            this(previousSegment, directory, baseOffset, null);
+        }
+
+        private KafkaCacheHeadSegment(
+            KafkaCacheSegment previousSegment,
+            Path directory,
+            long baseOffset,
+            KafkaCacheTailKeysFile previousKeys)
+        {
             super(previousSegment, directory);
             this.baseOffset = baseOffset;
             this.headOffset = OFFSET_LATEST;
             this.logFile = new KafkaCacheHeadLogFile(this, writeBuffer, maxLogCapacity);
             this.indexFile = new KafkaCacheHeadLogIndexFile(this, writeBuffer, maxIndexCapacity);
             this.hashFile = new KafkaCacheHeadHashFile(this, writeBuffer, maxHashCapacity);
+            this.keysFile = new KafkaCacheHeadKeysFile(this, writeBuffer, maxKeysCapacity, previousKeys);
         }
 
         @Override
@@ -336,15 +354,22 @@ public final class KafkaCacheSegmentFactory
         }
 
         @Override
-        protected KafkaCacheTailSegment freezeSegment()
+        protected KafkaCacheTailSegment freezeSegment(
+            long nextOffset)
         {
             logFile.freeze();
             indexFile.freeze();
             hashFile.freeze();
 
             hashFile.toHashIndex();
+            keysFile.toKeysIndex();
 
-            return new KafkaCacheTailSegment(previousSegment, directory, baseOffset);
+            final KafkaCacheTailSegment tailSegment = new KafkaCacheTailSegment(previousSegment, directory, baseOffset);
+            final KafkaCacheTailKeysFile tailKeys = new KafkaCacheTailKeysFile(tailSegment, keysFile.previousKeys);
+            tailSegment.nextSegment = new KafkaCacheHeadSegment(this, directory, nextOffset, tailKeys);
+            previousSegment.nextSegment = tailSegment;
+            this.nextSegment = tailSegment.nextSegment;
+            return tailSegment;
         }
 
         void writeEntry(
@@ -373,14 +398,6 @@ public final class KafkaCacheSegmentFactory
             this.headOffset = offset;
             this.headPosition = logFile.readCapacity;
 
-            entryInfo.putLong(0, headOffset);
-            entryInfo.putLong(Long.BYTES, timestamp);
-            valueInfo.putInt(0, valueLength);
-
-            logFile.write(entryInfo, 0, entryInfo.capacity());
-            logFile.write(key.buffer(), key.offset(), key.sizeof());
-            logFile.write(valueInfo, 0, valueInfo.capacity());
-
             // TODO: compute null key hash in advance
             final DirectBuffer buffer = key.buffer();
             final ByteBuffer byteBuffer = buffer.byteBuffer();
@@ -391,11 +408,101 @@ public final class KafkaCacheSegmentFactory
             byteBuffer.limit(key.limit());
             checksum.update(byteBuffer);
             final long hash = checksum.getValue();
-            final long hashShifted31 = hash << 31;
-            final long hashShifted32 = hashShifted31 << 1;
-            final long hashEntry = hashShifted32 | headPosition;
+
+            long ancestor = -1L;
+            ancestor:
+            if (key.length() != -1)
+            {
+                long hashRecord = hashFile.scanHash((int) hash, 0);
+                while (hashRecord != NEXT_SEGMENT && hashRecord != RETRY_SEGMENT)
+                {
+                    final int position = value(hashRecord);
+                    final KafkaCacheEntryFW entry = logFile.read(position, entryRO);
+                    assert entry != null;
+                    if (key.equals(entry.key()))
+                    {
+                        ancestor = entry.offset$();
+                        break ancestor;
+                    }
+
+                    final long nextHashRecord = hashFile.scanHash((int) hash, hashRecord);
+                    if (nextHashRecord == NEXT_SEGMENT || nextHashRecord == RETRY_SEGMENT)
+                    {
+                        break;
+                    }
+
+                    hashRecord = nextHashRecord;
+                }
+                assert hashRecord == NEXT_SEGMENT || hashRecord == RETRY_SEGMENT;
+
+                KafkaCacheTailKeysFile previousKeys = keysFile.previousKeys;
+                while (previousKeys != null)
+                {
+                    long keyRecord = previousKeys.seekKey((int) hash, Integer.MIN_VALUE);
+                    while (keyRecord != NEXT_SEGMENT && keyRecord != RETRY_SEGMENT)
+                    {
+                        final long ancestorBaseOffset = previousKeys.baseOffset(keyRecord);
+
+                        KafkaCacheSegment ancestorSegment = this;
+                        while (ancestorSegment != null && ancestorSegment.baseOffset() > ancestorBaseOffset)
+                        {
+                            ancestorSegment = ancestorSegment.previousSegment;
+                        }
+
+                        if (ancestorSegment != null && ancestorSegment.baseOffset() == ancestorBaseOffset)
+                        {
+                            long ancestorRecord = ancestorSegment.seekHash((int) hash, 0);
+                            while (ancestorRecord != NEXT_SEGMENT && ancestorRecord != RETRY_SEGMENT)
+                            {
+                                final int position = value(ancestorRecord);
+                                final KafkaCacheEntryFW entry = ancestorSegment.readLog(position, entryRO);
+                                assert entry != null;
+                                if (key.equals(entry.key()))
+                                {
+                                    ancestor = entry.offset$();
+                                    break ancestor;
+                                }
+
+                                final long nextAncestorRecord = ancestorSegment.scanHash((int) hash, ancestorRecord);
+                                if (nextAncestorRecord < 0)
+                                {
+                                    break;
+                                }
+
+                                ancestorRecord = nextAncestorRecord;
+                            }
+                        }
+
+                        final long nextKeyRecord = previousKeys.scanKey((int) hash, keyRecord);
+                        if (nextKeyRecord < 0)
+                        {
+                            break;
+                        }
+
+                        keyRecord = nextKeyRecord;
+                    }
+
+                    previousKeys = previousKeys.previousKeys;
+                }
+            }
+
+            entryInfo.putLong(0, headOffset);
+            entryInfo.putLong(Long.BYTES, timestamp);
+            entryInfo.putLong(Long.BYTES + Long.BYTES, ancestor);
+            valueInfo.putInt(0, valueLength);
+
+            logFile.write(entryInfo, 0, entryInfo.capacity());
+            logFile.write(key.buffer(), key.offset(), key.sizeof());
+            logFile.write(valueInfo, 0, valueInfo.capacity());
+
+            final long hashEntry = hash << 32 | headPosition;
             hashInfo.putLong(0, hashEntry);
             hashFile.write(hashInfo, 0, hashInfo.capacity());
+
+            final int deltaBaseOffset = 0;
+            final long keyEntry = hash << 32 | deltaBaseOffset;
+            keysInfo.putLong(0, keyEntry);
+            keysFile.write(keysInfo, 0, keysInfo.capacity());
         }
 
 

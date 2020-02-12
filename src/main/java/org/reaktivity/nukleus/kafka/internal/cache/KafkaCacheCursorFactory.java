@@ -36,7 +36,6 @@ import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
-import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheHeaderFW;
 
 public final class KafkaCacheCursorFactory
 {
@@ -280,7 +279,7 @@ public final class KafkaCacheCursorFactory
             public boolean test(
                 KafkaCacheEntryFW cacheEntry)
             {
-                final ArrayFW<KafkaCacheHeaderFW> headers = cacheEntry.headers();
+                final ArrayFW<KafkaHeaderFW> headers = cacheEntry.headers();
                 match.value = false;
                 headers.forEach(header -> match.value |= test(header));
                 return match.value;
@@ -337,6 +336,12 @@ public final class KafkaCacheCursorFactory
                     {
                         final KafkaFilterCondition condition = conditions.get(i);
                         nextRecord = condition.next(nextRecordMax);
+
+                        if (nextRecord == RETRY_SEGMENT || nextRecord == NEXT_SEGMENT)
+                        {
+                            nextRecordMax = nextRecord;
+                            break;
+                        }
 
                         nextRecordMin = KafkaCacheCursorRecord.minByValue(nextRecord, nextRecordMin);
                         nextRecordMax = KafkaCacheCursorRecord.maxByValue(nextRecord, nextRecordMax);

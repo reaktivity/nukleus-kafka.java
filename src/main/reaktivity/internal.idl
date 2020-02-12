@@ -35,10 +35,11 @@ scope internal
         {
           int64 offset;
           int64 timestamp;
-          KafkaCacheKey key;
+          int64 ancestor;
+          kafka::KafkaKey key;
           int32 valueLen;
           octets[valueLen] value = null;
-          KafkaCacheHeader[] headers;
+          kafka::KafkaHeader[] headers;
         }
     }
 }

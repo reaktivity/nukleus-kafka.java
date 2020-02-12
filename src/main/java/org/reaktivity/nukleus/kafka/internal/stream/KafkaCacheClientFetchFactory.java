@@ -46,12 +46,12 @@ import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.Kafk
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicReader;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
-import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.AbortFW;
@@ -862,8 +862,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
             final long partitionOffset = nextEntry.offset$();
             final long timestamp = nextEntry.timestamp();
-            final KafkaCacheKeyFW key = nextEntry.key();
-            final ArrayFW<KafkaCacheHeaderFW> headers = nextEntry.headers();
+            final KafkaKeyFW key = nextEntry.key();
+            final ArrayFW<KafkaHeaderFW> headers = nextEntry.headers();
             final OctetsFW value = nextEntry.value();
             final int remaining = value != null ? value.sizeof() - messageOffset : 0;
             final int lengthMin = Math.min(remaining, 1024);
@@ -944,8 +944,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void doClientReplyDataFull(
             long traceId,
             long timestamp,
-            KafkaCacheKeyFW key,
-            ArrayFW<KafkaCacheHeaderFW> headers,
+            KafkaKeyFW key,
+            ArrayFW<KafkaHeaderFW> headers,
             OctetsFW value,
             int reserved,
             int flags,
@@ -973,7 +973,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void doClientReplyDataInit(
             long traceId,
             long timestamp,
-            KafkaCacheKeyFW key,
+            KafkaKeyFW key,
             OctetsFW fragment,
             int reserved,
             int length,
@@ -1009,7 +1009,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
         private void doClientReplyDataFin(
             long traceId,
-            ArrayFW<KafkaCacheHeaderFW> headers,
+            ArrayFW<KafkaHeaderFW> headers,
             OctetsFW fragment,
             int reserved,
             int length,

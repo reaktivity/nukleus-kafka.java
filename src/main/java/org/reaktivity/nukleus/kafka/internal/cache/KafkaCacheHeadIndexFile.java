@@ -17,7 +17,6 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static java.nio.file.StandardOpenOption.READ;
 import static java.nio.file.StandardOpenOption.WRITE;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.index;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.record;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.value;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.NEXT_SEGMENT;
@@ -34,6 +33,7 @@ import org.agrona.DirectBuffer;
 import org.agrona.IoUtil;
 import org.agrona.LangUtil;
 import org.agrona.MutableDirectBuffer;
+import org.agrona.collections.Int2IntHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
 
@@ -46,6 +46,19 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
         int writeCapacity)
     {
         super(segment, extension, writeBuffer, writeCapacity);
+    }
+
+    protected Int2IntHashMap toMap()
+    {
+        Int2IntHashMap map = new Int2IntHashMap(-1);
+        for (int index = 0; index < readCapacity; index += Long.BYTES)
+        {
+            long entry = readableBuf.getLong(index);
+            int key = (int)(entry >>> 32);
+            int value = (int)(entry & 0xffff_ffffL);
+            map.put(key, value);
+        }
+        return map;
     }
 
     protected long seekKey(
@@ -75,7 +88,7 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
             }
             else
             {
-                return entry;
+                break;
             }
         }
 
@@ -134,42 +147,6 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
         {
             final long entry = buffer.getLong(lowIndex << 3);
             return record(lowIndex, value(entry));
-        }
-
-        return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
-    }
-
-    protected long scanKey(
-        int key,
-        long record)
-    {
-        // assumes sorted by key, record from seekKey
-        final int index = index(record);
-        final int value = value(record);
-        assert index >= 0;
-
-        final DirectBuffer buffer = readableBuf;
-        final int capacity = readCapacity;
-        final int maxIndex = (writeCapacity >> 3) - 1;
-        final int lastIndex = (capacity >> 3) - 1;
-
-        int currentIndex = index;
-        while (currentIndex <= lastIndex)
-        {
-            final long entry = buffer.getLong(currentIndex << 3);
-            final int entryKey = (int)(entry >>> 32);
-            final int entryValue = (int)(entry & 0x7FFF_FFFF);
-            if (entryKey != key || entryValue == value)
-            {
-                break;
-            }
-            currentIndex++;
-        }
-
-        if (currentIndex <= lastIndex)
-        {
-            final long entry = buffer.getLong(currentIndex << 3);
-            return record(currentIndex, value(entry));
         }
 
         return lastIndex < maxIndex ? RETRY_SEGMENT : NEXT_SEGMENT;
@@ -243,21 +220,8 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
             {
                 final ByteBuffer mapped = channel.map(MapMode.READ_WRITE, 0, channel.size());
                 final MutableDirectBuffer buffer = new UnsafeBuffer(mapped);
-                final int capacity = buffer.capacity();
 
-                // TODO: better O(N) sort algorithm
-                final int maxIndex = capacity - Long.BYTES;
-                for (int index = 0, priorIndex = index; index < maxIndex; priorIndex = index += Long.BYTES)
-                {
-                    final long candidate = buffer.getLong(index + Long.BYTES);
-                    while (priorIndex >= 0 &&
-                           Long.compareUnsigned(candidate, buffer.getLong(priorIndex)) < 0)
-                    {
-                        buffer.putLong(priorIndex + Long.BYTES, buffer.getLong(priorIndex));
-                        priorIndex -= Long.BYTES;
-                    }
-                    buffer.putLong(priorIndex + Long.BYTES, candidate);
-                }
+                sort(buffer);
 
                 IoUtil.unmap(mapped);
             }
@@ -273,5 +237,93 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
         {
             LangUtil.rethrowUnchecked(ex);
         }
+    }
+
+    protected void sortUnique(
+        Path unsortedFile,
+        Path sortingFile,
+        Path sortedFile)
+    {
+        try
+        {
+            Files.copy(unsortedFile, sortingFile);
+
+            try (FileChannel channel = FileChannel.open(sortingFile, READ, WRITE))
+            {
+                final ByteBuffer mapped = channel.map(MapMode.READ_WRITE, 0, channel.size());
+                final MutableDirectBuffer buffer = new UnsafeBuffer(mapped);
+
+                sort(buffer);
+                final int newCapacity = unique(buffer);
+
+                IoUtil.unmap(mapped);
+
+                channel.truncate(newCapacity);
+            }
+            catch (IOException ex)
+            {
+                LangUtil.rethrowUnchecked(ex);
+            }
+
+            Files.move(sortingFile, sortedFile);
+            Files.delete(unsortedFile);
+        }
+        catch (IOException ex)
+        {
+            LangUtil.rethrowUnchecked(ex);
+        }
+    }
+
+    private void sort(
+        MutableDirectBuffer buffer)
+    {
+        final int capacity = buffer.capacity();
+
+        // TODO: better O(N) sort algorithm
+        final int maxIndex = capacity - Long.BYTES;
+        for (int index = 0, priorIndex = index; index < maxIndex; priorIndex = index += Long.BYTES)
+        {
+            final long candidate = buffer.getLong(index + Long.BYTES);
+            while (priorIndex >= 0 &&
+                   Long.compareUnsigned(candidate, buffer.getLong(priorIndex)) < 0)
+            {
+                buffer.putLong(priorIndex + Long.BYTES, buffer.getLong(priorIndex));
+                priorIndex -= Long.BYTES;
+            }
+            buffer.putLong(priorIndex + Long.BYTES, candidate);
+        }
+    }
+
+    private int unique(
+        MutableDirectBuffer buffer)
+    {
+        // assumes sorted
+        final int capacity = buffer.capacity();
+
+        int uniqueIndex = 0;
+        int maxIndex = capacity - Long.BYTES;
+
+        outer:
+        for (int compareIndex = Long.BYTES; compareIndex <= maxIndex; )
+        {
+            while (buffer.getLong(compareIndex) == buffer.getLong(uniqueIndex))
+            {
+                compareIndex += Long.BYTES;
+
+                if (compareIndex > maxIndex)
+                {
+                    uniqueIndex += Long.BYTES;
+                    break outer;
+                }
+            }
+
+            assert buffer.getLong(compareIndex) != buffer.getLong(uniqueIndex);
+
+            uniqueIndex += Long.BYTES;
+            buffer.putLong(uniqueIndex, buffer.getLong(compareIndex));
+            compareIndex += Long.BYTES;
+        }
+
+        return uniqueIndex;
     }
 }

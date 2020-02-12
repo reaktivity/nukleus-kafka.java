@@ -35,6 +35,7 @@ public class KafkaConfiguration extends Configuration
     public static final IntPropertyDef KAFKA_CACHE_SEGMENT_LOG_BYTES;
     public static final IntPropertyDef KAFKA_CACHE_SEGMENT_INDEX_BYTES;
     public static final IntPropertyDef KAFKA_CACHE_SEGMENT_HASH_BYTES;
+    public static final IntPropertyDef KAFKA_CACHE_SEGMENT_KEYS_BYTES;
     public static final BooleanPropertyDef KAFKA_CACHE_CLIENT_RECONNECT;
     public static final BooleanPropertyDef KAFKA_CACHE_SERVER_RECONNECT;
 
@@ -52,6 +53,7 @@ public class KafkaConfiguration extends Configuration
         KAFKA_CACHE_SEGMENT_LOG_BYTES = config.property("cache.segment.log.bytes", 1 * 1024 * 1024);
         KAFKA_CACHE_SEGMENT_INDEX_BYTES = config.property("cache.segment.index.bytes", 256 * 1024);
         KAFKA_CACHE_SEGMENT_HASH_BYTES = config.property("cache.segment.hash.bytes", 16 * 1024);
+        KAFKA_CACHE_SEGMENT_KEYS_BYTES = config.property("cache.segment.keys.bytes", 16 * 1024);
         KAFKA_CACHE_SERVER_BOOTSTRAP = config.property("cache.server.bootstrap", true);
         KAFKA_CACHE_SERVER_RECONNECT = config.property("cache.server.reconnect", true);
         KAFKA_CACHE_CLIENT_RECONNECT = config.property("cache.client.reconnect", false);
@@ -117,6 +119,11 @@ public class KafkaConfiguration extends Configuration
     public int cacheSegmentHashBytes()
     {
         return KAFKA_CACHE_SEGMENT_HASH_BYTES.getAsInt(this);
+    }
+
+    public int cacheSegmentKeysBytes()
+    {
+        return KAFKA_CACHE_SEGMENT_KEYS_BYTES.getAsInt(this);
     }
 
     public boolean cacheClientReconnect()

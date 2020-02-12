@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static java.lang.Integer.compareUnsigned;
+
 public final class KafkaCacheCursorRecord
 {
     public static int index(
@@ -26,7 +28,7 @@ public final class KafkaCacheCursorRecord
     public static int value(
         long record)
     {
-        return (int)(record & 0x7FFF_FFFFL);
+        return (int)(record & 0xFFFF_FFFFL);
     }
 
     public static long record(
@@ -61,11 +63,12 @@ public final class KafkaCacheCursorRecord
         final int value1 = value(record1);
         final int value2 = value(record2);
 
-        if (value1 < value2)
+        final int comparison = compareUnsigned(value1, value2);
+        if (comparison < 0)
         {
             return record1;
         }
-        else if (value2 < value1)
+        else if (comparison > 0)
         {
             return record2;
         }

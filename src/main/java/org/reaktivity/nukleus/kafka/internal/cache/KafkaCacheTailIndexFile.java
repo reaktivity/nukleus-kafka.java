@@ -20,6 +20,7 @@ import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.NEXT_SEGMENT;
 
 import org.agrona.DirectBuffer;
+import org.agrona.collections.Int2IntHashMap;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheTailSegment;
 
 public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
@@ -29,6 +30,19 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
         String extension)
     {
         super(segment, extension);
+    }
+
+    protected Int2IntHashMap toMap()
+    {
+        Int2IntHashMap map = new Int2IntHashMap(-1);
+        for (int index = 0; index < readCapacity; index += Long.BYTES)
+        {
+            long entry = readableBuf.getLong(index);
+            int key = (int)(entry >>> 32);
+            int value = (int)(entry & 0xffff_ffffL);
+            map.put(key, value);
+        }
+        return map;
     }
 
     protected long seekKey(
@@ -71,55 +85,6 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
         return NEXT_SEGMENT;
     }
 
-    protected long seekValue(
-        int key,
-        int value)
-    {
-        // assumes sorted by value, repeated keys
-        final DirectBuffer buffer = readableBuf;
-        final int lastIndex = (readCapacity >> 3) - 1;
-
-        int lowIndex = 0;
-        int highIndex = lastIndex;
-
-        while (lowIndex <= highIndex)
-        {
-            final int midIndex = (lowIndex + highIndex) >>> 1;
-            final long entry = buffer.getLong(midIndex << 3);
-            final int entryValue = (int)(entry & 0x7FFF_FFFF);
-
-            if (entryValue < value)
-            {
-                lowIndex = midIndex + 1;
-            }
-            else if (entryValue > value)
-            {
-                highIndex = midIndex - 1;
-            }
-            else
-            {
-                final int entryKey = (int)(entry >>> 32);
-                if (entryKey == key)
-                {
-                    lowIndex = midIndex + 1;
-                }
-                else
-                {
-                    break;
-                }
-            }
-        }
-
-        assert lowIndex >= 0;
-        if (lowIndex <= lastIndex)
-        {
-            final long entry = buffer.getLong(lowIndex << 3);
-            return record(lowIndex, value(entry));
-        }
-
-        return NEXT_SEGMENT;
-    }
-
     protected long scanKey(
         int key,
         long record)
@@ -134,40 +99,6 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
         final DirectBuffer buffer = readableBuf;
         final int capacity = readCapacity;
         final int lastIndex = (capacity >> 3) - 1;
-
-        int currentIndex = index;
-        while (currentIndex <= lastIndex)
-        {
-            final long entry = buffer.getLong(currentIndex << 3);
-            final int entryKey = (int)(entry >>> 32);
-            final int entryValue = (int)(entry & 0x7FFF_FFFF);
-            if (entryKey == key && entryValue >= value)
-            {
-                break;
-            }
-            currentIndex++;
-        }
-
-        if (currentIndex <= lastIndex)
-        {
-            final long entry = buffer.getLong(currentIndex << 3);
-            return record(currentIndex, value(entry));
-        }
-
-        return NEXT_SEGMENT;
-    }
-
-    protected long scanValue(
-        int key,
-        long record)
-    {
-        // assumes sorted by value, repeated keys, record from seekValue
-        final int index = KafkaCacheCursorRecord.index(record);
-        final int value = KafkaCacheCursorRecord.value(record);
-        assert index >= 0;
-
-        final DirectBuffer buffer = readableBuf;
-        final int lastIndex = (readCapacity >> 3) - 1;
 
         int currentIndex = index;
         while (currentIndex <= lastIndex)
