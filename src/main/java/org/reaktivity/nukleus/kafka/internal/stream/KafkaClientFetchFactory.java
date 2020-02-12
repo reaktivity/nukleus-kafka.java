@@ -1129,7 +1129,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 final int valueLengthMax = valueClaimed - client.stream.replyPadding;
                 final int valueLimitMax = Math.min(limit, valueOffset + valueLengthMax);
                 final OctetsFW valueInit = valueLength != -1 ? valueRO.wrap(buffer, valueOffset, valueLimitMax) : null;
-                final int valueProgress = valueInit != null ? valueLengthMax : 0;
+                final int valueProgress = valueInit != null ? valueInit.sizeof() : 0;
                 final int recordProgress = recordHeader.sizeof() + valueProgress;
 
                 final int valueDeferred = valueLength - valueProgress;
@@ -2323,6 +2323,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 int headerCount,
                 DirectBuffer headers)
             {
+                this.partitionOffset = offset + 1;
+
                 final KafkaDataExFW kafkaDataEx = kafkaDataExRW.wrap(extBuffer, 0, extBuffer.capacity())
                         .typeId(kafkaTypeId)
                         .fetch(f ->
