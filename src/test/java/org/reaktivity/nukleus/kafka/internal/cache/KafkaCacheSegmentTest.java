@@ -21,6 +21,7 @@ import static org.junit.Assert.assertEquals;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursor;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorIndex;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType.NONE;
 
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
@@ -98,7 +99,7 @@ public class KafkaCacheSegmentTest
                                   .value(keyBytes, 0, keyBytes.capacity())
                                   .build();
 
-            head.writeEntry(offset, currentTimeMillis(), key, headers, null);
+            head.writeEntry(offset, currentTimeMillis(), key, headers, null, NONE);
         }
 
         KafkaCacheTailSegment tail = head.freezeSegment(cachedEntries);
@@ -132,7 +133,7 @@ public class KafkaCacheSegmentTest
                                   .value(keyBytes, 0, keyBytes.capacity())
                                   .build();
 
-            head.writeEntry(offset, currentTimeMillis(), key, headers, null);
+            head.writeEntry(offset, currentTimeMillis(), key, headers, null, NONE);
         }
 
         KafkaCacheTailSegment tail = head.freezeSegment(cachedEntries);
@@ -173,7 +174,7 @@ public class KafkaCacheSegmentTest
             .set(testBytes, 0, testBytes.capacity())
             .build();
 
-        head.writeEntry(1, currentTimeMillis(), key, headers, value);
+        head.writeEntry(1, currentTimeMillis(), key, headers, value, NONE);
 
         CRC32C checksum = new CRC32C();
         checksum.update(key.buffer().byteArray(), 0, key.sizeof());

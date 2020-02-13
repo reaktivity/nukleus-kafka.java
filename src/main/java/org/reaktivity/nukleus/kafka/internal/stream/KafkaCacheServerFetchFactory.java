@@ -39,6 +39,8 @@ import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionWriter;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicWriter;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheWriter;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW;
@@ -161,6 +163,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         final KafkaOffsetFW progress = kafkaFetchBeginEx.partition();
         final int partitionId = progress.partitionId();
         final long partitionOffset = progress.partitionOffset();
+        final KafkaDeltaType deltaType = kafkaFetchBeginEx.deltaType().get();
 
         MessageConsumer newStream = null;
 
@@ -169,8 +172,10 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             final RouteFW route = wrapRoute.apply(t, b, i, l);
             final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
             final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
+            final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : KafkaDeltaType.NONE;
             return !route.localAddress().equals(route.remoteAddress()) &&
-                    routeTopic != null && Objects.equals(routeTopic, beginTopic);
+                    routeTopic != null && Objects.equals(routeTopic, beginTopic) &&
+                    (routeDeltaType == deltaType || deltaType == KafkaDeltaType.NONE);
         };
 
         final RouteFW route = router.resolve(routeId, authorization, filter, wrapRoute);
@@ -183,13 +188,15 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             KafkaCacheServerFetchFanout fanout = cacheRoute.serverFetchFanoutsByTopicPartition.get(partitionKey);
             if (fanout == null)
             {
+                final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
+                final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : KafkaDeltaType.NONE;
                 final String clusterName = route.localAddress().asString();
                 final KafkaCacheClusterWriter cluster = cache.supplyCluster(clusterName);
                 final KafkaCacheBrokerWriter broker = cluster.supplyBroker(affinity);
                 final KafkaCacheTopicWriter topic = broker.supplyTopic(topicName);
                 final KafkaCachePartitionWriter partition = topic.supplyPartition(partitionId);
                 final KafkaCacheServerFetchFanout newFanout =
-                        new KafkaCacheServerFetchFanout(resolvedId, authorization, topic, partition);
+                        new KafkaCacheServerFetchFanout(resolvedId, authorization, topic, partition, routeDeltaType);
 
                 cacheRoute.serverFetchFanoutsByTopicPartition.put(partitionKey, newFanout);
                 fanout = newFanout;
@@ -339,6 +346,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         private final long authorization;
         private final KafkaCacheTopicWriter topic;
         private final KafkaCachePartitionWriter partition;
+        private final KafkaDeltaType deltaType;
         private final List<KafkaCacheServerFetchStream> members;
 
         private long initialId;
@@ -353,12 +361,14 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             long routeId,
             long authorization,
             KafkaCacheTopicWriter topic,
-            KafkaCachePartitionWriter partition)
+            KafkaCachePartitionWriter partition,
+            KafkaDeltaType deltaType)
         {
             this.routeId = routeId;
             this.authorization = authorization;
             this.topic = topic;
             this.partition = partition;
+            this.deltaType = deltaType;
             this.members = new ArrayList<>();
         }
 
@@ -430,7 +440,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(topic.name())
                                      .partition(p -> p.partitionId(partition.id())
-                                                      .partitionOffset(partitionOffset)))
+                                                      .partitionOffset(partitionOffset))
+                                     .deltaType(t -> t.set(KafkaDeltaType.NONE)))
                         .build()
                         .sizeof()));
             state = KafkaState.openingInitial(state);
@@ -545,8 +556,11 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 final int headersSizeMax = kafkaFetchDataEx.headersSizeMax();
                 final long timestamp = kafkaFetchDataEx.timestamp();
                 final KafkaKeyFW key = kafkaFetchDataEx.key();
+                final KafkaDeltaFW delta = kafkaFetchDataEx.delta();
                 final int valueLength = valueFragment != null ? valueFragment.sizeof() + deferred : -1;
 
+                assert delta.type().get() == KafkaDeltaType.NONE;
+                assert delta.ancestorOffset() == -1L;
                 assert partitionId == partition.id();
                 assert partitionOffset >= this.partitionOffset;
 
@@ -563,12 +577,16 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 assert kafkaFetchDataEx != null;
                 final int partitionId = kafkaFetchDataEx.partition().partitionId();
                 final long partitionOffset = kafkaFetchDataEx.partition().partitionOffset();
+                final KafkaDeltaFW delta = kafkaFetchDataEx.delta();
                 final ArrayFW<KafkaHeaderFW> headers = kafkaFetchDataEx.headers();
 
-                partition.writeEntryFinish(headers);
-
+                assert delta.type().get() == KafkaDeltaType.NONE;
+                assert delta.ancestorOffset() == -1L;
                 assert partitionId == partition.id();
                 assert partitionOffset >= this.partitionOffset;
+
+                partition.writeEntryFinish(headers, deltaType);
+
                 this.partitionOffset = partitionOffset;
 
                 members.forEach(s -> s.doServerReplyFlushIfNecessary(traceId));
@@ -846,7 +864,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(group.topic.name())
                                      .partition(p -> p.partitionId(group.partition.id())
-                                                      .partitionOffset(partitionOffset)))
+                                                      .partitionOffset(partitionOffset))
+                                     .deltaType(t -> t.set(KafkaDeltaType.NONE)))
                         .build()
                         .sizeof()));
         }

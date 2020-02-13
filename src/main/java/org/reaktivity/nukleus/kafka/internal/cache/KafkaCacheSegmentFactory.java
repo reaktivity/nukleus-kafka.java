@@ -30,6 +30,7 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
@@ -409,7 +410,8 @@ public final class KafkaCacheSegmentFactory
             long timestamp,
             KafkaKeyFW key,
             ArrayFW<KafkaHeaderFW> headers,
-            OctetsFW value)
+            OctetsFW value,
+            KafkaDeltaType deltaType)
         {
             final int valueLength = value != null ? value.sizeof() : -1;
             writeEntryStart(offset, timestamp, key, valueLength);
@@ -417,7 +419,7 @@ public final class KafkaCacheSegmentFactory
             {
                 writeEntryContinue(value);
             }
-            writeEntryFinish(headers);
+            writeEntryFinish(headers, deltaType);
         }
 
         void writeEntryStart(
@@ -549,7 +551,8 @@ public final class KafkaCacheSegmentFactory
         }
 
         void writeEntryFinish(
-            ArrayFW<KafkaHeaderFW> headers)
+            ArrayFW<KafkaHeaderFW> headers,
+            KafkaDeltaType deltaType)
         {
             final int logRemaining = logFile.writeCapacity - logFile.readCapacity;
             final int logRequired = headers.sizeof();
@@ -583,6 +586,11 @@ public final class KafkaCacheSegmentFactory
             assert indexRemaining >= indexRequired;
 
             indexFile.write(indexInfo, 0, indexInfo.capacity());
+
+            if (deltaType != KafkaDeltaType.NONE)
+            {
+                // TODO: compute delta
+            }
         }
     }
 

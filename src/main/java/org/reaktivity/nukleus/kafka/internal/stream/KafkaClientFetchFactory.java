@@ -41,6 +41,7 @@ import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW;
@@ -280,11 +281,12 @@ public final class KafkaClientFetchFactory implements StreamFactory
             final MessagePredicate filter = (t, b, i, l) ->
             {
                 final RouteFW route = wrapRoute.apply(t, b, i, l);
-                final OctetsFW routeEx = route.extension();
-                final KafkaRouteExFW kafkaRouteEx = routeEx.get(kafkaRouteExRO::tryWrap);
-                final String16FW routeTopic = kafkaRouteEx.topic();
+                final KafkaRouteExFW routeEx = route.extension().get(kafkaRouteExRO::tryWrap);
+                final String16FW routeTopic = routeEx.topic();
+                final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : KafkaDeltaType.NONE;
                 return !route.localAddress().equals(route.remoteAddress()) &&
-                        Objects.equals(routeTopic, beginTopic);
+                        Objects.equals(routeTopic, beginTopic) &&
+                        routeDeltaType == KafkaDeltaType.NONE;
             };
 
             final RouteFW route = router.resolve(routeId, authorization, filter, wrapRoute);
@@ -1479,7 +1481,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
                                                         .typeId(kafkaTypeId)
                                                         .fetch(m -> m.topic(topic)
                                                                      .partition(p -> p.partitionId(partitionId)
-                                                                                      .partitionOffset(partitionOffset)))
+                                                                                      .partitionOffset(partitionOffset))
+                                                                     .deltaType(t -> t.set(KafkaDeltaType.NONE)))
                                                         .build()
                                                         .sizeof()));
         }
@@ -2270,6 +2273,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                             f.timestamp(timestamp);
                             f.partition(p -> p.partitionId(decodePartitionId).partitionOffset(offset));
                             f.key(k -> setKey(k, key));
+                            f.delta(d -> d.type(t -> t.set(KafkaDeltaType.NONE)));
                             final int headersLimit = headers.capacity();
                             int headerProgress = 0;
                             for (int headerIndex = 0; headerIndex < headerCount; headerIndex++)
@@ -2301,7 +2305,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
                                      .headersSizeMax(headersSizeMax)
                                      .partition(p -> p.partitionId(decodePartitionId)
                                                       .partitionOffset(offset))
-                                     .key(k -> setKey(k, key)))
+                                     .key(k -> setKey(k, key))
+                                     .delta(d -> d.type(t -> t.set(KafkaDeltaType.NONE))))
                         .build();
 
                 doApplicationData(traceId, authorization, FLAG_INIT, reserved, valueInit, kafkaDataEx);
@@ -2330,6 +2335,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                         .fetch(f ->
                         {
                             f.partition(p -> p.partitionId(decodePartitionId).partitionOffset(offset));
+                            f.delta(d -> d.type(t -> t.set(KafkaDeltaType.NONE)));
                             final int headersLimit = headers.capacity();
                             int headerProgress = 0;
                             for (int headerIndex = 0; headerIndex < headerCount; headerIndex++)

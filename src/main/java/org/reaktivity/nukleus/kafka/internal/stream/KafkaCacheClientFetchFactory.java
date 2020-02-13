@@ -45,6 +45,7 @@ import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheReader;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicReader;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
@@ -173,6 +174,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         final String16FW beginTopic = kafkaFetchBeginEx.topic();
         final KafkaOffsetFW progress = kafkaFetchBeginEx.partition();
         final ArrayFW<KafkaFilterFW> filters = kafkaFetchBeginEx.filters();
+        final KafkaDeltaType deltaType = kafkaFetchBeginEx.deltaType().get();
 
         MessageConsumer newStream = null;
 
@@ -181,8 +183,10 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final RouteFW route = wrapRoute.apply(t, b, i, l);
             final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
             final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
+            final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : KafkaDeltaType.NONE;
             return !route.localAddress().equals(route.remoteAddress()) &&
-                    routeTopic != null && Objects.equals(routeTopic, beginTopic);
+                    routeTopic != null && Objects.equals(routeTopic, beginTopic) &&
+                    (routeDeltaType == deltaType || deltaType == KafkaDeltaType.NONE);
         };
 
         final RouteFW route = router.resolve(routeId, authorization, filter, wrapRoute);
@@ -220,7 +224,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         affinity,
                         authorization,
                         partitionOffset,
-                        cursor)::onClientMessage;
+                        cursor,
+                        deltaType)::onClientMessage;
             }
         }
 
@@ -473,7 +478,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(topic.name())
                                      .partition(p -> p.partitionId(partition.id())
-                                                      .partitionOffset(partitionOffset)))
+                                                      .partitionOffset(partitionOffset))
+                                     .deltaType(t -> t.set(KafkaDeltaType.NONE)))
                         .build()
                         .sizeof()));
             state = KafkaState.openingInitial(state);
@@ -660,6 +666,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private final long affinity;
         private final long authorization;
         private final KafkaCacheCursor cursor;
+        private final KafkaDeltaType deltaType;
 
         private int state;
 
@@ -681,7 +688,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long affinity,
             long authorization,
             long partitionOffset,
-            KafkaCacheCursor cursor)
+            KafkaCacheCursor cursor,
+            KafkaDeltaType deltaType)
         {
             this.group = group;
             this.sender = sender;
@@ -692,6 +700,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.authorization = authorization;
             this.partitionOffset = partitionOffset;
             this.cursor = cursor;
+            this.deltaType = deltaType;
         }
 
         private void onClientMessage(
@@ -835,7 +844,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(group.topic.name())
                                      .partition(p -> p.partitionId(group.partition.id())
-                                                      .partitionOffset(partitionOffset)))
+                                                      .partitionOffset(partitionOffset))
+                                     .deltaType(t -> t.set(deltaType)))
                         .build()
                         .sizeof()));
         }
@@ -864,6 +874,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final long timestamp = nextEntry.timestamp();
             final KafkaKeyFW key = nextEntry.key();
             final ArrayFW<KafkaHeaderFW> headers = nextEntry.headers();
+            final long ancestor = nextEntry.ancestor();
+            final KafkaDeltaType deltaType = KafkaDeltaType.NONE;
             final OctetsFW value = nextEntry.value();
             final int remaining = value != null ? value.sizeof() - messageOffset : 0;
             final int lengthMin = Math.min(remaining, 1024);
@@ -910,18 +922,19 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 switch (flags)
                 {
                 case FLAG_INIT | FLAG_FIN:
-                    doClientReplyDataFull(traceId, timestamp, key, headers, fragment, reserved, flags,
+                    doClientReplyDataFull(traceId, timestamp, key, headers, deltaType, ancestor, fragment, reserved, flags,
                                           partitionId, partitionOffset);
                     break;
                 case FLAG_INIT:
-                    doClientReplyDataInit(traceId, timestamp, key, fragment, reserved, length, flags,
+                    doClientReplyDataInit(traceId, timestamp, key, deltaType, ancestor, fragment, reserved, length, flags,
                                           partitionId, partitionOffset);
                     break;
                 case FLAG_NONE:
                     doClientReplyDataNone(traceId, fragment, reserved, length, flags);
                     break;
                 case FLAG_FIN:
-                    doClientReplyDataFin(traceId, headers, fragment, reserved, length, flags, partitionId, partitionOffset);
+                    doClientReplyDataFin(traceId, headers, deltaType, ancestor, fragment, reserved, length, flags,
+                                         partitionId, partitionOffset);
                     break;
                 }
 
@@ -946,6 +959,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long timestamp,
             KafkaKeyFW key,
             ArrayFW<KafkaHeaderFW> headers,
+            KafkaDeltaType deltaType,
+            long ancestorOffset,
             OctetsFW value,
             int reserved,
             int flags,
@@ -962,6 +977,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                                                       .partitionOffset(partitionOffset))
                                      .key(k -> k.length(key.length())
                                                 .value(key.value()))
+                                     .delta(d -> d.type(t -> t.set(deltaType))
+                                                              .ancestorOffset(ancestorOffset))
                                      .headers(hs -> headers.forEach(h -> hs.item(i -> i.nameLen(h.nameLen())
                                                                                        .name(h.name())
                                                                                        .valueLen(h.valueLen())
@@ -974,6 +991,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long traceId,
             long timestamp,
             KafkaKeyFW key,
+            KafkaDeltaType deltaType,
+            long ancestorOffset,
             OctetsFW fragment,
             int reserved,
             int length,
@@ -990,7 +1009,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                                      .partition(p -> p.partitionId(partitionId)
                                      .partitionOffset(partitionOffset))
                                      .key(k -> k.length(key.length())
-                                                .value(key.value())))
+                                                .value(key.value()))
+                                     .delta(d -> d.type(t -> t.set(deltaType))
+                                                  .ancestorOffset(ancestorOffset)))
                         .build()
                         .sizeof()));
         }
@@ -1010,6 +1031,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void doClientReplyDataFin(
             long traceId,
             ArrayFW<KafkaHeaderFW> headers,
+            KafkaDeltaType deltaType,
+            long ancestorOffset,
             OctetsFW fragment,
             int reserved,
             int length,
@@ -1024,6 +1047,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.partition(p -> p.partitionId(partitionId)
                                                       .partitionOffset(partitionOffset))
+                                     .delta(d -> d.type(t -> t.set(deltaType))
+                                                  .ancestorOffset(ancestorOffset))
                                      .headers(hs -> headers.forEach(h -> hs.item(i -> i.nameLen(h.nameLen())
                                                                                        .name(h.name())
                                                                                        .valueLen(h.valueLen())

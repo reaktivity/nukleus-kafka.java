@@ -40,6 +40,8 @@ import org.reaktivity.nukleus.kafka.internal.budget.MergedBudgetCreditor;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
@@ -155,14 +157,17 @@ public final class KafkaMergedFactory implements StreamFactory
         final KafkaMergedBeginExFW kafkaMergedBeginEx = kafkaBeginEx.merged();
         final String16FW beginTopic = kafkaMergedBeginEx.topic();
         final String topic = beginTopic != null ? beginTopic.asString() : null;
+        final KafkaDeltaType deltaType = kafkaMergedBeginEx.deltaType().get();
 
         final MessagePredicate filter = (t, b, i, l) ->
         {
             final RouteFW route = wrapRoute.apply(t, b, i, l);
             final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
             final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
+            final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : KafkaDeltaType.NONE;
             return route.localAddress().equals(route.remoteAddress()) &&
-                    routeTopic != null && Objects.equals(routeTopic, beginTopic);
+                    routeTopic != null && Objects.equals(routeTopic, beginTopic) &&
+                    (routeDeltaType == deltaType || deltaType == KafkaDeltaType.NONE);
         };
 
         MessageConsumer newStream = null;
@@ -199,7 +204,8 @@ public final class KafkaMergedFactory implements StreamFactory
                     resolvedId,
                     initialOffsetsById,
                     defaultOffset,
-                    mergedFilters)::onMergedInitial;
+                    mergedFilters,
+                    deltaType)::onMergedInitial;
         }
 
         return newStream;
@@ -528,6 +534,7 @@ public final class KafkaMergedFactory implements StreamFactory
         private final Long2LongHashMap nextOffsetsById;
         private final long defaultOffset;
         private final List<KafkaCacheMergedFilter> filters;
+        private final KafkaDeltaType deltaType;
 
         private int state;
 
@@ -547,7 +554,8 @@ public final class KafkaMergedFactory implements StreamFactory
             long resolvedId,
             Long2LongHashMap initialOffsetsById,
             long defaultOffset,
-            List<KafkaCacheMergedFilter> filters)
+            List<KafkaCacheMergedFilter> filters,
+            KafkaDeltaType deltaType)
         {
             this.sender = sender;
             this.routeId = routeId;
@@ -562,6 +570,7 @@ public final class KafkaMergedFactory implements StreamFactory
             this.nextOffsetsById = initialOffsetsById;
             this.defaultOffset = defaultOffset;
             this.filters = filters;
+            this.deltaType = deltaType;
         }
 
         private void onMergedInitial(
@@ -731,6 +740,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 final long timestamp = kafkaFetchDataEx.timestamp();
                 final KafkaKeyFW key = kafkaFetchDataEx.key();
                 final ArrayFW<KafkaHeaderFW> headers = kafkaFetchDataEx.headers();
+                final KafkaDeltaFW delta = kafkaFetchDataEx.delta();
 
                 nextOffsetsById.put(partition.partitionId(), partition.partitionOffset() + 1);
 
@@ -743,6 +753,7 @@ public final class KafkaMergedFactory implements StreamFactory
                                                                                                        .partitionOffset(o))))
                                    .key(k -> k.length(key.length())
                                               .value(key.value()))
+                                   .delta(d -> d.type(t -> t.set(delta.type())).ancestorOffset(delta.ancestorOffset()))
                                    .headers(hs -> headers.forEach(h -> hs.item(i -> i.nameLen(h.nameLen())
                                                                                      .name(h.name())
                                                                                      .valueLen(h.valueLen())
@@ -1185,7 +1196,8 @@ public final class KafkaMergedFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(mergedFetch.topic)
                                      .partition(p -> p.partitionId(partitionId).partitionOffset(partitionOffset))
-                                     .filters(fs -> mergedFetch.filters.forEach(mf -> fs.item(i -> setFilter(i, mf)))))
+                                     .filters(fs -> mergedFetch.filters.forEach(mf -> fs.item(i -> setFilter(i, mf))))
+                                     .deltaType(t -> t.set(mergedFetch.deltaType)))
                         .build()
                         .sizeof()));
         }

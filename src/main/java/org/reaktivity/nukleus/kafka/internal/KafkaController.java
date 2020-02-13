@@ -28,6 +28,7 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.Controller;
 import org.reaktivity.nukleus.ControllerSpi;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.FreezeFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
@@ -141,11 +142,15 @@ public final class KafkaController implements Controller
             {
                 final JsonObject object = (JsonObject) element;
                 final String topic = gson.fromJson(object.get("topic"), String.class);
+                final String deltaType = gson.fromJson(object.get("deltaType"), String.class);
 
                 if (topic != null)
                 {
                     routeEx = routeExRW.wrap(extensionBuffer, 0, extensionBuffer.capacity())
                                        .topic(topic)
+                                       .deltaType(t -> t.set(object.has("deltaType")
+                                               ? KafkaDeltaType.valueOf(deltaType)
+                                               : KafkaDeltaType.NONE))
                                        .build();
                 }
             }

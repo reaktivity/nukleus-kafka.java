@@ -22,6 +22,7 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSentinelSegment;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
@@ -86,9 +87,10 @@ public final class KafkaCachePartitionWriter
     }
 
     public void writeEntryFinish(
-        ArrayFW<KafkaHeaderFW> headers)
+        ArrayFW<KafkaHeaderFW> headers,
+        KafkaDeltaType deltaType)
     {
-        headSegment.writeEntryFinish(headers);
+        headSegment.writeEntryFinish(headers, deltaType);
     }
 
     private KafkaCacheHeadSegment nextSegmentIfNecessary(
