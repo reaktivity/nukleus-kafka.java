@@ -33,6 +33,7 @@ import java.util.zip.CRC32C;
 
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
+import org.agrona.collections.LongHashSet;
 import org.agrona.collections.MutableBoolean;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
@@ -51,11 +52,14 @@ public final class KafkaCacheCursorFactory
 {
     private final KafkaCacheDeltaFW deltaRO = new KafkaCacheDeltaFW();
 
+    private final MutableDirectBuffer writeBuffer;
     private final CRC32C checksum;
     private final KafkaFilterCondition nullKeyInfo;
 
-    public KafkaCacheCursorFactory()
+    public KafkaCacheCursorFactory(
+        MutableDirectBuffer writeBuffer)
     {
+        this.writeBuffer = writeBuffer;
         this.checksum = new CRC32C();
         this.nullKeyInfo = initNullKeyInfo(checksum);
     }
@@ -71,6 +75,7 @@ public final class KafkaCacheCursorFactory
     {
         private final KafkaFilterCondition condition;
         private final KafkaDeltaType deltaType;
+        private final LongHashSet deltaKeyOffsets; // TODO: bounded LongHashCache, evict -> discard
 
         private KafkaCacheSegment segment;
         private long offset;
@@ -82,6 +87,7 @@ public final class KafkaCacheCursorFactory
         {
             this.condition = condition;
             this.deltaType = deltaType;
+            this.deltaKeyOffsets = new LongHashSet();
         }
 
         public void init(
@@ -133,28 +139,56 @@ public final class KafkaCacheCursorFactory
                         nextEntry = null;
                     }
 
-                    if (deltaType != KafkaDeltaType.NONE &&
-                        nextEntry != null &&
-                        nextEntry.deltaPosition() != -1)
+                    if (nextEntry != null && deltaType != KafkaDeltaType.NONE)
                     {
-                        final int deltaPosition = nextEntry.deltaPosition();
-                        final KafkaCacheDeltaFW delta = segment.readDelta(deltaPosition, deltaRO);
+                        final long ancestorOffset = nextEntry.ancestor();
 
-                        // TODO: use write buffer
-                        MutableDirectBuffer buffer = new UnsafeBuffer(new byte[nextEntry.sizeof()]);
+                        if (nextEntry.valueLen() == -1)
+                        {
+                            if (!deltaKeyOffsets.remove(ancestorOffset))
+                            {
+                                nextEntry = null;
+                            }
+                        }
+                        else
+                        {
+                            final long partitionOffset = nextEntry.offset$();
+                            final int deltaPosition = nextEntry.deltaPosition();
 
-                        final DirectBuffer entryBuffer = nextEntry.buffer();
-                        final int entryOffset = nextEntry.offset();
-                        final KafkaKeyFW key = nextEntry.key();
-                        final ArrayFW<KafkaHeaderFW> headers = nextEntry.headers();
+                            if (ancestorOffset != -1)
+                            {
+                                if (deltaPosition != -1 && deltaKeyOffsets.remove(ancestorOffset))
+                                {
+                                    final KafkaCacheDeltaFW delta = segment.readDelta(deltaPosition, deltaRO);
 
-                        final int sizeofEntryHeader = key.limit() - nextEntry.offset();
-                        buffer.putBytes(0, entryBuffer, entryOffset, sizeofEntryHeader);
-                        buffer.putBytes(sizeofEntryHeader, delta.buffer(), delta.offset(), delta.sizeof());
-                        buffer.putBytes(sizeofEntryHeader + delta.sizeof(), headers.buffer(), headers.offset(), headers.sizeof());
+                                    final DirectBuffer entryBuffer = nextEntry.buffer();
+                                    final KafkaKeyFW key = nextEntry.key();
+                                    final int entryOffset = nextEntry.offset();
+                                    final ArrayFW<KafkaHeaderFW> headers = nextEntry.headers();
 
-                        final int sizeofEntry = sizeofEntryHeader + delta.sizeof() + headers.sizeof();
-                        nextEntry = cacheEntry.wrap(buffer, 0, sizeofEntry);
+                                    final int sizeofEntryHeader = key.limit() - nextEntry.offset();
+                                    writeBuffer.putBytes(0, entryBuffer, entryOffset, sizeofEntryHeader);
+                                    writeBuffer.putBytes(sizeofEntryHeader, delta.buffer(), delta.offset(), delta.sizeof());
+                                    writeBuffer.putBytes(sizeofEntryHeader + delta.sizeof(),
+                                            headers.buffer(), headers.offset(), headers.sizeof());
+
+                                    final int sizeofEntry = sizeofEntryHeader + delta.sizeof() + headers.sizeof();
+                                    nextEntry = cacheEntry.wrap(writeBuffer, 0, sizeofEntry);
+                                }
+                                else
+                                {
+                                    // TODO: consider moving message to next segment if delta exceeds size limit instead
+                                    //       still need to handle implicit snapshot case
+                                    writeBuffer.putBytes(0, nextEntry.buffer(), nextEntry.offset(), nextEntry.sizeof());
+                                    writeBuffer.putLong(KafkaCacheEntryFW.FIELD_OFFSET_ANCESTOR, -1L);
+
+                                    nextEntry = cacheEntry.wrap(writeBuffer, 0, writeBuffer.capacity());
+                                }
+                            }
+
+                            deltaKeyOffsets.add(partitionOffset);
+                        }
+
                     }
 
                     this.cursor = nextCursor;

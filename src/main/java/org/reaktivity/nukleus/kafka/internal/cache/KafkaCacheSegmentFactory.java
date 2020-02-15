@@ -22,7 +22,6 @@ import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType.JSON_PATCH;
 
-import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.util.zip.CRC32C;
@@ -75,6 +74,11 @@ public final class KafkaCacheSegmentFactory
     private final MutableDirectBuffer indexInfo = new UnsafeBuffer(new byte[Integer.BYTES + Integer.BYTES]);
     private final MutableDirectBuffer hashInfo = new UnsafeBuffer(new byte[Integer.BYTES + Integer.BYTES]);
     private final MutableDirectBuffer keysInfo = new UnsafeBuffer(new byte[Integer.BYTES + Integer.BYTES]);
+
+    private final DirectBufferInputStream ancestorIn = new DirectBufferInputStream();
+    private final DirectBufferInputStream headIn = new DirectBufferInputStream();
+    private final MutableDirectBuffer diffBuffer = new ExpandableArrayBuffer();
+    private final ExpandableDirectBufferOutputStream diffOut = new ExpandableDirectBufferOutputStream();
 
     private final int maxLogCapacity;
     private final int maxIndexCapacity;
@@ -572,23 +576,19 @@ public final class KafkaCacheSegmentFactory
                 assert head.offset$() == headOffset;
 
                 final JsonProvider json = JsonProvider.provider();
-                final InputStream ancestorIn =
-                        new DirectBufferInputStream(ancestorValue.buffer(), ancestorValue.offset(), ancestorValue.sizeof());
+                ancestorIn.wrap(ancestorValue.buffer(), ancestorValue.offset(), ancestorValue.sizeof());
                 final JsonReader ancestorReader = json.createReader(ancestorIn);
                 final JsonStructure ancestorJson = ancestorReader.read();
                 ancestorReader.close();
 
-                final InputStream headIn =
-                        new DirectBufferInputStream(headValue.buffer(), headValue.offset(), headValue.sizeof());
+                headIn.wrap(headValue.buffer(), headValue.offset(), headValue.sizeof());
                 final JsonReader headReader = json.createReader(headIn);
                 final JsonStructure headJson = headReader.read();
                 headReader.close();
 
                 final JsonPatch diff = json.createDiff(ancestorJson, headJson);
                 final JsonArray diffJson = diff.toJsonArray();
-                final MutableDirectBuffer diffBuffer = new ExpandableArrayBuffer(headValue.sizeof());
-                final ExpandableDirectBufferOutputStream diffOut =
-                        new ExpandableDirectBufferOutputStream(diffBuffer, Integer.BYTES);
+                diffOut.wrap(diffBuffer, Integer.BYTES);
                 final JsonWriter writer = json.createWriter(diffOut);
                 writer.write(diffJson);
                 writer.close();

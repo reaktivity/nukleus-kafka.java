@@ -146,7 +146,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         this.supplyDebitor = supplyDebitor;
         this.supplyCacheRoute = supplyCacheRoute;
         this.correlations = correlations;
-        this.cursorFactory = new KafkaCacheCursorFactory();
+        this.cursorFactory = new KafkaCacheCursorFactory(writeBuffer);
     }
 
     @Override
@@ -875,7 +875,6 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final KafkaKeyFW key = nextEntry.key();
             final ArrayFW<KafkaHeaderFW> headers = nextEntry.headers();
             final long ancestor = nextEntry.ancestor();
-            final KafkaDeltaType deltaType = ancestor == -1L ? KafkaDeltaType.NONE : this.deltaType;
             final OctetsFW value = nextEntry.value();
             final int remaining = value != null ? value.sizeof() - messageOffset : 0;
             final int lengthMin = Math.min(remaining, 1024);

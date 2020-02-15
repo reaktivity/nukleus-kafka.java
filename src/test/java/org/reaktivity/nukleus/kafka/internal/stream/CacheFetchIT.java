@@ -485,4 +485,28 @@ public class CacheFetchIT
         partition.nextSegment(1L);
         k3po.finish();
     }
+
+    @Test
+    @Specification({
+        "${route}/cache.delta/json.patch/controller",
+        "${client}/filter.header.json.patch/client",
+        "${server}/filter.none.json/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldReceiveJsonPatchMessagesWithHeaderFilter() throws Exception
+    {
+        partition.nextSegment(1L);
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache.delta/json.patch/controller",
+        "${client}/filter.key.and.header.json.patch/client",
+        "${server}/filter.none.json/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldReceiveJsonPatchMessagesWithKeyAndHeaderFilter() throws Exception
+    {
+        partition.nextSegment(1L);
+        k3po.finish();
+    }
 }
