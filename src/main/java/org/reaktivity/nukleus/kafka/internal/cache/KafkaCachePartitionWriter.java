@@ -70,14 +70,15 @@ public final class KafkaCachePartitionWriter
         long timestamp,
         KafkaKeyFW key,
         int valueLength,
-        int headerSizeMax)
+        int headerSizeMax,
+        KafkaDeltaType deltaType)
     {
         final KafkaCacheHeadSegment headSegment = nextSegmentIfNecessary(offset, key, valueLength, headerSizeMax);
 
         final long nextOffset = headSegment.nextOffset();
         assert offset >= 0 && offset >= nextOffset : String.format("%d >= 0 && %d >= %d", offset, offset, nextOffset);
 
-        headSegment.writeEntryStart(offset, timestamp, key, valueLength);
+        headSegment.writeEntryStart(offset, timestamp, key, valueLength, deltaType);
     }
 
     public void writeEntryContinue(

@@ -36,10 +36,17 @@ scope internal
           int64 offset;
           int64 timestamp;
           int64 ancestor;
+          int32 deltaPosition = -1;
           kafka::KafkaKey key;
           int32 valueLen;
           octets[valueLen] value = null;
           kafka::KafkaHeader[] headers;
+        }
+
+        struct KafkaCacheDelta
+        {
+            int32 length;
+            octets[length] value = null;
         }
     }
 }

@@ -198,7 +198,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final long partitionOffset = progress.partitionOffset();
             final KafkaCacheRoute cacheRoute = supplyCacheRoute.apply(resolvedId);
             final long partitionKey = cacheRoute.topicPartitionKey(topicName, partitionId);
-            final KafkaCacheCursor cursor = cursorFactory.newCursor(filters);
+            final KafkaCacheCursor cursor = cursorFactory.newCursor(filters, deltaType);
 
             KafkaCacheClientFetchFanout fanout = cacheRoute.clientFetchFanoutsByTopicPartition.get(partitionKey);
             if (fanout == null)
@@ -875,7 +875,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final KafkaKeyFW key = nextEntry.key();
             final ArrayFW<KafkaHeaderFW> headers = nextEntry.headers();
             final long ancestor = nextEntry.ancestor();
-            final KafkaDeltaType deltaType = KafkaDeltaType.NONE;
+            final KafkaDeltaType deltaType = ancestor == -1L ? KafkaDeltaType.NONE : this.deltaType;
             final OctetsFW value = nextEntry.value();
             final int remaining = value != null ? value.sizeof() - messageOffset : 0;
             final int lengthMin = Math.min(remaining, 1024);

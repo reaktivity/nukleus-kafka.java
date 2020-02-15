@@ -32,20 +32,25 @@ import java.util.List;
 import java.util.zip.CRC32C;
 
 import org.agrona.DirectBuffer;
+import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.MutableBoolean;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
+import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheDeltaFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 
 public final class KafkaCacheCursorFactory
 {
+    private final KafkaCacheDeltaFW deltaRO = new KafkaCacheDeltaFW();
+
     private final CRC32C checksum;
     private final KafkaFilterCondition nullKeyInfo;
 
@@ -56,23 +61,27 @@ public final class KafkaCacheCursorFactory
     }
 
     public KafkaCacheCursor newCursor(
-        ArrayFW<KafkaFilterFW> filters)
+        ArrayFW<KafkaFilterFW> filters,
+        KafkaDeltaType deltaType)
     {
-        return new KafkaCacheCursor(asCondition(filters));
+        return new KafkaCacheCursor(asCondition(filters), deltaType);
     }
 
-    public static final class KafkaCacheCursor
+    public final class KafkaCacheCursor
     {
         private final KafkaFilterCondition condition;
+        private final KafkaDeltaType deltaType;
 
         private KafkaCacheSegment segment;
         private long offset;
         private long cursor;
 
         KafkaCacheCursor(
-            KafkaFilterCondition condition)
+            KafkaFilterCondition condition,
+            KafkaDeltaType deltaType)
         {
             this.condition = condition;
+            this.deltaType = deltaType;
         }
 
         public void init(
@@ -122,6 +131,30 @@ public final class KafkaCacheCursorFactory
                     if (!condition.test(nextEntry))
                     {
                         nextEntry = null;
+                    }
+
+                    if (deltaType != KafkaDeltaType.NONE &&
+                        nextEntry != null &&
+                        nextEntry.deltaPosition() != -1)
+                    {
+                        final int deltaPosition = nextEntry.deltaPosition();
+                        final KafkaCacheDeltaFW delta = segment.readDelta(deltaPosition, deltaRO);
+
+                        // TODO: use write buffer
+                        MutableDirectBuffer buffer = new UnsafeBuffer(new byte[nextEntry.sizeof()]);
+
+                        final DirectBuffer entryBuffer = nextEntry.buffer();
+                        final int entryOffset = nextEntry.offset();
+                        final KafkaKeyFW key = nextEntry.key();
+                        final ArrayFW<KafkaHeaderFW> headers = nextEntry.headers();
+
+                        final int sizeofEntryHeader = key.limit() - nextEntry.offset();
+                        buffer.putBytes(0, entryBuffer, entryOffset, sizeofEntryHeader);
+                        buffer.putBytes(sizeofEntryHeader, delta.buffer(), delta.offset(), delta.sizeof());
+                        buffer.putBytes(sizeofEntryHeader + delta.sizeof(), headers.buffer(), headers.offset(), headers.sizeof());
+
+                        final int sizeofEntry = sizeofEntryHeader + delta.sizeof() + headers.sizeof();
+                        nextEntry = cacheEntry.wrap(buffer, 0, sizeofEntry);
                     }
 
                     this.cursor = nextCursor;

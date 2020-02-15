@@ -20,20 +20,34 @@ import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursor;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType.JSON_PATCH;
 
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.util.zip.CRC32C;
 
+import javax.json.JsonArray;
+import javax.json.JsonPatch;
+import javax.json.JsonReader;
+import javax.json.JsonStructure;
+import javax.json.JsonWriter;
+import javax.json.spi.JsonProvider;
+
 import org.agrona.DirectBuffer;
+import org.agrona.ExpandableArrayBuffer;
+import org.agrona.IoUtil;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.agrona.io.DirectBufferInputStream;
+import org.agrona.io.ExpandableDirectBufferOutputStream;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
+import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheDeltaFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 
 public final class KafkaCacheSegmentFactory
@@ -51,10 +65,12 @@ public final class KafkaCacheSegmentFactory
     public static final String CACHE_EXTENSION_KEYS_SCAN = "kscan";
     public static final String CACHE_EXTENSION_KEYS_SCAN_SORTING = String.format("%s.sorting", CACHE_EXTENSION_KEYS_SCAN);
     public static final String CACHE_EXTENSION_KEYS_INDEX = "kindex";
+    public static final String CACHE_EXTENSION_DELTA = "delta";
 
-    private final KafkaCacheEntryFW entryRO = new KafkaCacheEntryFW();
+    private final KafkaCacheEntryFW ancestorEntryRO = new KafkaCacheEntryFW();
+    private final KafkaCacheEntryFW headEntryRO = new KafkaCacheEntryFW();
 
-    private final MutableDirectBuffer entryInfo = new UnsafeBuffer(new byte[Long.BYTES + Long.BYTES + Long.BYTES]);
+    private final MutableDirectBuffer entryInfo = new UnsafeBuffer(new byte[3 * Long.BYTES + Integer.BYTES]);
     private final MutableDirectBuffer valueInfo = new UnsafeBuffer(new byte[Integer.BYTES]);
     private final MutableDirectBuffer indexInfo = new UnsafeBuffer(new byte[Integer.BYTES + Integer.BYTES]);
     private final MutableDirectBuffer hashInfo = new UnsafeBuffer(new byte[Integer.BYTES + Integer.BYTES]);
@@ -217,6 +233,13 @@ public final class KafkaCacheSegmentFactory
             return null;
         }
 
+        public KafkaCacheDeltaFW readDelta(
+            int position,
+            KafkaCacheDeltaFW delta)
+        {
+            return null;
+        }
+
         protected KafkaCacheSegment freezeSegment(
             long nextOffset)
         {
@@ -235,7 +258,6 @@ public final class KafkaCacheSegmentFactory
         {
             return baseOffset() == that.baseOffset();
         }
-
     }
 
     public final class KafkaCacheCandidateSegment extends KafkaCacheSegment
@@ -288,9 +310,11 @@ public final class KafkaCacheSegmentFactory
         final KafkaCacheHeadLogIndexFile indexFile;
         final KafkaCacheHeadHashFile hashFile;
         final KafkaCacheHeadKeysFile keysFile;
+        final KafkaCacheHeadDeltaFile deltaFile;
 
         private long headOffset;
         private int headPosition;
+        private KafkaCacheEntryFW ancestor;
 
         private KafkaCacheHeadSegment(
             KafkaCacheSegment previousSegment,
@@ -313,6 +337,7 @@ public final class KafkaCacheSegmentFactory
             this.indexFile = new KafkaCacheHeadLogIndexFile(this, writeBuffer, maxIndexCapacity);
             this.hashFile = new KafkaCacheHeadHashFile(this, writeBuffer, maxHashCapacity);
             this.keysFile = new KafkaCacheHeadKeysFile(this, writeBuffer, maxKeysCapacity, previousKeys);
+            this.deltaFile = new KafkaCacheHeadDeltaFile(this, writeBuffer, maxIndexCapacity);
         }
 
         @Override
@@ -381,6 +406,14 @@ public final class KafkaCacheSegmentFactory
         }
 
         @Override
+        public KafkaCacheDeltaFW readDelta(
+            int position,
+            KafkaCacheDeltaFW delta)
+        {
+            return deltaFile.read(position, delta);
+        }
+
+        @Override
         protected KafkaCacheHeadSegment headSegment()
         {
             return this;
@@ -393,6 +426,7 @@ public final class KafkaCacheSegmentFactory
             logFile.freeze();
             indexFile.freeze();
             hashFile.freeze();
+            deltaFile.freeze();
 
             hashFile.toHashIndex();
             keysFile.toKeysIndex();
@@ -402,6 +436,12 @@ public final class KafkaCacheSegmentFactory
             tailSegment.nextSegment = new KafkaCacheHeadSegment(this, directory, nextOffset, tailKeys);
             previousSegment.nextSegment = tailSegment;
             this.nextSegment = tailSegment.nextSegment;
+
+            if (deltaFile.readCapacity == 0)
+            {
+                IoUtil.delete(cacheFile(CACHE_EXTENSION_DELTA).toFile(), true);
+            }
+
             return tailSegment;
         }
 
@@ -414,7 +454,7 @@ public final class KafkaCacheSegmentFactory
             KafkaDeltaType deltaType)
         {
             final int valueLength = value != null ? value.sizeof() : -1;
-            writeEntryStart(offset, timestamp, key, valueLength);
+            writeEntryStart(offset, timestamp, key, valueLength, deltaType);
             if (value != null)
             {
                 writeEntryContinue(value);
@@ -426,7 +466,8 @@ public final class KafkaCacheSegmentFactory
             long offset,
             long timestamp,
             KafkaKeyFW key,
-            int valueLength)
+            int valueLength,
+            KafkaDeltaType deltaType)
         {
             assert offset > this.headOffset;
             this.headOffset = offset;
@@ -442,87 +483,21 @@ public final class KafkaCacheSegmentFactory
             byteBuffer.limit(key.limit());
             checksum.update(byteBuffer);
             final long hash = checksum.getValue();
+            final KafkaCacheEntryFW ancestor = findAncestor(key, hash);
+            final long ancestorOffset = ancestor != null ? ancestor.offset$() : -1L;
+            final int deltaPosition = deltaType == JSON_PATCH &&
+                                      ancestor != null && ancestor.valueLen() != -1 &&
+                                      valueLength != -1
+                        ? deltaFile.readCapacity
+                        : -1;
 
-            long ancestor = -1L;
-            ancestor:
-            if (key.length() != -1)
-            {
-                long hashCursor = reverseSeekHash((int) hash, Integer.MAX_VALUE);
-                while (hashCursor != NEXT_SEGMENT && hashCursor != RETRY_SEGMENT)
-                {
-                    final int position = cursorValue(hashCursor);
-                    final KafkaCacheEntryFW entry = logFile.read(position, entryRO);
-                    assert entry != null;
-                    if (key.equals(entry.key()))
-                    {
-                        ancestor = entry.offset$();
-                        break ancestor;
-                    }
-
-                    final long nextHashCursor = reverseScanHash((int) hash, hashCursor);
-                    if (nextHashCursor == NEXT_SEGMENT || nextHashCursor == RETRY_SEGMENT)
-                    {
-                        break;
-                    }
-
-                    hashCursor = nextHashCursor;
-                }
-                assert hashCursor == NEXT_SEGMENT || hashCursor == RETRY_SEGMENT;
-
-                KafkaCacheTailKeysFile previousKeys = keysFile.previousKeys;
-                while (previousKeys != null)
-                {
-                    long keyCursor = previousKeys.reverseSeekKey((int) hash, Integer.MAX_VALUE);
-                    while (keyCursor != NEXT_SEGMENT && keyCursor != RETRY_SEGMENT)
-                    {
-                        final long ancestorBaseOffset = previousKeys.baseOffset(keyCursor);
-
-                        KafkaCacheSegment ancestorSegment = this;
-                        while (ancestorSegment != null && ancestorSegment.baseOffset() > ancestorBaseOffset)
-                        {
-                            ancestorSegment = ancestorSegment.previousSegment;
-                        }
-
-                        if (ancestorSegment != null && ancestorSegment.baseOffset() == ancestorBaseOffset)
-                        {
-                            long ancestorCursor = ancestorSegment.reverseSeekHash((int) hash, Integer.MAX_VALUE);
-                            while (ancestorCursor != NEXT_SEGMENT && ancestorCursor != RETRY_SEGMENT)
-                            {
-                                final int position = cursorValue(ancestorCursor);
-                                final KafkaCacheEntryFW cacheEntry = ancestorSegment.readLog(position, entryRO);
-                                assert cacheEntry != null;
-                                if (key.equals(cacheEntry.key()))
-                                {
-                                    ancestor = cacheEntry.offset$();
-                                    break ancestor;
-                                }
-
-                                final long nextAncestorCursor = ancestorSegment.reverseScanHash((int) hash, ancestorCursor);
-                                if (nextAncestorCursor < 0)
-                                {
-                                    break;
-                                }
-
-                                ancestorCursor = nextAncestorCursor;
-                            }
-                        }
-
-                        final long nextKeyCursor = previousKeys.reverseScanKey((int) hash, keyCursor);
-                        if (nextKeyCursor < 0)
-                        {
-                            break;
-                        }
-
-                        keyCursor = nextKeyCursor;
-                    }
-
-                    previousKeys = previousKeys.previousKeys;
-                }
-            }
+            assert deltaPosition == -1 || ancestor != null;
+            this.ancestor = ancestor;
 
             entryInfo.putLong(0, headOffset);
             entryInfo.putLong(Long.BYTES, timestamp);
-            entryInfo.putLong(Long.BYTES + Long.BYTES, ancestor);
+            entryInfo.putLong(Long.BYTES + Long.BYTES, ancestorOffset);
+            entryInfo.putInt(Long.BYTES + Long.BYTES + Long.BYTES, deltaPosition);
             valueInfo.putInt(0, valueLength);
 
             logFile.write(entryInfo, 0, entryInfo.capacity());
@@ -538,7 +513,6 @@ public final class KafkaCacheSegmentFactory
             keysInfo.putLong(0, keyEntry);
             keysFile.write(keysInfo, 0, keysInfo.capacity());
         }
-
 
         void writeEntryContinue(
             OctetsFW payload)
@@ -587,10 +561,128 @@ public final class KafkaCacheSegmentFactory
 
             indexFile.write(indexInfo, 0, indexInfo.capacity());
 
-            if (deltaType != KafkaDeltaType.NONE)
+            final KafkaCacheEntryFW head = logFile.read(headPosition, headEntryRO);
+
+            if (deltaType == JSON_PATCH &&
+                ancestor != null && ancestor.valueLen() != -1 &&
+                head.valueLen() != -1)
             {
-                // TODO: compute delta
+                final OctetsFW ancestorValue = ancestor.value();
+                final OctetsFW headValue = head.value();
+                assert head.offset$() == headOffset;
+
+                final JsonProvider json = JsonProvider.provider();
+                final InputStream ancestorIn =
+                        new DirectBufferInputStream(ancestorValue.buffer(), ancestorValue.offset(), ancestorValue.sizeof());
+                final JsonReader ancestorReader = json.createReader(ancestorIn);
+                final JsonStructure ancestorJson = ancestorReader.read();
+                ancestorReader.close();
+
+                final InputStream headIn =
+                        new DirectBufferInputStream(headValue.buffer(), headValue.offset(), headValue.sizeof());
+                final JsonReader headReader = json.createReader(headIn);
+                final JsonStructure headJson = headReader.read();
+                headReader.close();
+
+                final JsonPatch diff = json.createDiff(ancestorJson, headJson);
+                final JsonArray diffJson = diff.toJsonArray();
+                final MutableDirectBuffer diffBuffer = new ExpandableArrayBuffer(headValue.sizeof());
+                final ExpandableDirectBufferOutputStream diffOut =
+                        new ExpandableDirectBufferOutputStream(diffBuffer, Integer.BYTES);
+                final JsonWriter writer = json.createWriter(diffOut);
+                writer.write(diffJson);
+                writer.close();
+
+                // TODO: signal delta.sizeof > head.sizeof via null delta, otherwise delta file can exceed log file
+
+                final int deltaLength = diffOut.position();
+                diffBuffer.putInt(0, deltaLength);
+                deltaFile.write(diffBuffer, 0, Integer.BYTES + deltaLength);
             }
+        }
+
+        private KafkaCacheEntryFW findAncestor(
+            KafkaKeyFW key,
+            long hash)
+        {
+            KafkaCacheEntryFW ancestor = null;
+            ancestor:
+            if (key.length() != -1)
+            {
+                long hashCursor = reverseSeekHash((int) hash, Integer.MAX_VALUE);
+                while (hashCursor != NEXT_SEGMENT && hashCursor != RETRY_SEGMENT)
+                {
+                    final int position = cursorValue(hashCursor);
+                    final KafkaCacheEntryFW cacheEntry = logFile.read(position, ancestorEntryRO);
+                    assert cacheEntry != null;
+                    if (key.equals(cacheEntry.key()))
+                    {
+                        ancestor = cacheEntry;
+                        break ancestor;
+                    }
+
+                    final long nextHashCursor = reverseScanHash((int) hash, hashCursor);
+                    if (nextHashCursor == NEXT_SEGMENT || nextHashCursor == RETRY_SEGMENT)
+                    {
+                        break;
+                    }
+
+                    hashCursor = nextHashCursor;
+                }
+                assert hashCursor == NEXT_SEGMENT || hashCursor == RETRY_SEGMENT;
+
+                KafkaCacheTailKeysFile previousKeys = keysFile.previousKeys;
+                while (previousKeys != null)
+                {
+                    long keyCursor = previousKeys.reverseSeekKey((int) hash, Integer.MAX_VALUE);
+                    while (keyCursor != NEXT_SEGMENT && keyCursor != RETRY_SEGMENT)
+                    {
+                        final long ancestorBaseOffset = previousKeys.baseOffset(keyCursor);
+
+                        KafkaCacheSegment ancestorSegment = this;
+                        while (ancestorSegment != null && ancestorSegment.baseOffset() > ancestorBaseOffset)
+                        {
+                            ancestorSegment = ancestorSegment.previousSegment;
+                        }
+
+                        if (ancestorSegment != null && ancestorSegment.baseOffset() == ancestorBaseOffset)
+                        {
+                            long ancestorCursor = ancestorSegment.reverseSeekHash((int) hash, Integer.MAX_VALUE);
+                            while (ancestorCursor != NEXT_SEGMENT && ancestorCursor != RETRY_SEGMENT)
+                            {
+                                final int position = cursorValue(ancestorCursor);
+                                final KafkaCacheEntryFW cacheEntry = ancestorSegment.readLog(position, ancestorEntryRO);
+                                assert cacheEntry != null;
+                                if (key.equals(cacheEntry.key()))
+                                {
+                                    ancestor = cacheEntry;
+                                    break ancestor;
+                                }
+
+                                final long nextAncestorCursor = ancestorSegment.reverseScanHash((int) hash, ancestorCursor);
+                                if (nextAncestorCursor < 0)
+                                {
+                                    break;
+                                }
+
+                                ancestorCursor = nextAncestorCursor;
+                            }
+                        }
+
+                        final long nextKeyCursor = previousKeys.reverseScanKey((int) hash, keyCursor);
+                        if (nextKeyCursor < 0)
+                        {
+                            break;
+                        }
+
+                        keyCursor = nextKeyCursor;
+                    }
+
+                    previousKeys = previousKeys.previousKeys;
+                }
+            }
+
+            return ancestor;
         }
     }
 
@@ -600,6 +692,7 @@ public final class KafkaCacheSegmentFactory
         final KafkaCacheTailLogFile logFile;
         final KafkaCacheTailLogIndexFile indexFile;
         final KafkaCacheTailHashFile hashFile;
+        final KafkaCacheTailDeltaFile deltaFile;
 
         private KafkaCacheTailSegment(
             KafkaCacheSegment previousSegment,
@@ -611,6 +704,7 @@ public final class KafkaCacheSegmentFactory
             this.logFile = new KafkaCacheTailLogFile(this);
             this.indexFile = new KafkaCacheTailLogIndexFile(this);
             this.hashFile = new KafkaCacheTailHashFile(this);
+            this.deltaFile = new KafkaCacheTailDeltaFile(this);
         }
 
         @Override
@@ -663,6 +757,14 @@ public final class KafkaCacheSegmentFactory
             KafkaCacheEntryFW entry)
         {
             return logFile.read(position, entry);
+        }
+
+        @Override
+        public KafkaCacheDeltaFW readDelta(
+            int position,
+            KafkaCacheDeltaFW entry)
+        {
+            return deltaFile.read(position, entry);
         }
     }
 }

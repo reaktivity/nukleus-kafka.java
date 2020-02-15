@@ -564,7 +564,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 assert partitionId == partition.id();
                 assert partitionOffset >= this.partitionOffset;
 
-                partition.writeEntryStart(partitionOffset, timestamp, key, valueLength, headersSizeMax);
+                partition.writeEntryStart(partitionOffset, timestamp, key, valueLength, headersSizeMax, deltaType);
             }
 
             if (valueFragment != null)

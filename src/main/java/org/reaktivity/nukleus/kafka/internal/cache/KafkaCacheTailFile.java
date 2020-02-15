@@ -19,7 +19,6 @@ import static java.nio.file.StandardOpenOption.READ;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
 import java.nio.file.Path;
@@ -31,6 +30,8 @@ import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.Kafk
 
 public abstract class KafkaCacheTailFile
 {
+    private static final ByteBuffer EMPTY_BUFFER = ByteBuffer.allocate(0);
+
     protected final DirectBuffer readableBuf;
     protected final int readCapacity;
 
@@ -45,14 +46,21 @@ public abstract class KafkaCacheTailFile
         this.readCapacity = readableByteBuf.capacity();
     }
 
-    private static MappedByteBuffer readInit(
+    private static ByteBuffer readInit(
         Path file)
     {
-        MappedByteBuffer mapped = null;
+        ByteBuffer mapped = null;
 
         try (FileChannel channel = FileChannel.open(file, READ))
         {
-            mapped = channel.map(MapMode.READ_ONLY, 0, channel.size());
+            if (channel.size() == 0)
+            {
+                mapped = EMPTY_BUFFER;
+            }
+            else
+            {
+                mapped = channel.map(MapMode.READ_ONLY, 0, channel.size());
+            }
         }
         catch (IOException ex)
         {
