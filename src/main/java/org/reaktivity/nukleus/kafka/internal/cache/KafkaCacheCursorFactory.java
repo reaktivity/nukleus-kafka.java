@@ -145,10 +145,7 @@ public final class KafkaCacheCursorFactory
 
                         if (nextEntry.valueLen() == -1)
                         {
-                            if (!deltaKeyOffsets.remove(ancestorOffset))
-                            {
-                                nextEntry = null;
-                            }
+                            deltaKeyOffsets.remove(ancestorOffset);
                         }
                         else
                         {
