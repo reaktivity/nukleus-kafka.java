@@ -533,6 +533,7 @@ public final class KafkaCacheClientDescribeFactory implements StreamFactory
                     configValues = new TreeMap<>();
                 }
 
+                configValues.clear();
                 changedConfigs.forEach(c -> configValues.put(c.name().asString(), c.value().asString()));
 
                 members.forEach(s -> s.doDescribeReplyDataIfNecessary(traceId, kafkaDataEx));
