@@ -527,14 +527,13 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
 
             if (kafkaDescribebDataEx != null)
             {
-                final ArrayFW<KafkaConfigFW> configs = kafkaDescribebDataEx.configs();
+                final ArrayFW<KafkaConfigFW> changedConfigs = kafkaDescribebDataEx.configs();
                 if (configValues == null)
                 {
                     configValues = new TreeMap<>();
                 }
 
-                configValues.clear();
-                configs.forEach(c -> configValues.put(c.name().asString(), c.value().asString()));
+                changedConfigs.forEach(c -> configValues.put(c.name().asString(), c.value().asString()));
 
                 members.forEach(s -> s.doDescribeReplyDataIfNecessary(traceId, kafkaDataEx));
             }
