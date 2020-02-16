@@ -73,7 +73,7 @@ public final class KafkaCacheClientFactory implements StreamFactory
                 config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
                 supplyTraceId, supplyTypeId, supplyCacheRoute, correlations, KAFKA_CACHE_CLIENT_RECONNECT);
 
-        final KafkaCacheDescribeFactory cacheDescribeFactory = new KafkaCacheDescribeFactory(
+        final KafkaCacheClientDescribeFactory cacheDescribeFactory = new KafkaCacheClientDescribeFactory(
                 config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
                 supplyTraceId, supplyTypeId, supplyCacheRoute, correlations);
 

@@ -21,6 +21,7 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSentinelSegment;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheTopicConfig;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
@@ -36,21 +37,29 @@ public final class KafkaCachePartitionWriter
 
     private final int partitionId;
     private final KafkaCacheSentinelSegment sentinel;
+    private final KafkaCacheTopicConfig topicConfig;
 
     private KafkaCacheHeadSegment headSegment;
 
     KafkaCachePartitionWriter(
         int partitionId,
-        KafkaCacheSentinelSegment sentinel)
+        KafkaCacheSentinelSegment sentinel,
+        KafkaCacheTopicConfig topicConfig)
     {
         this.partitionId = partitionId;
         this.sentinel = sentinel;
+        this.topicConfig = topicConfig;
         this.headSegment = sentinel.headSegment();
     }
 
     public int id()
     {
         return partitionId;
+    }
+
+    public KafkaCacheTopicConfig config()
+    {
+        return topicConfig;
     }
 
     public void ensureWritable(

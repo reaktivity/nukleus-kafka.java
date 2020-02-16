@@ -25,21 +25,25 @@ import org.agrona.LangUtil;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSentinelSegment;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheTopicConfig;
 
 public final class KafkaCache
 {
     public static final String TYPE_NAME = String.format("%s/cache", KafkaNukleus.NAME);
 
-    private final Path cacheDirectory;
+    private final KafkaConfiguration config;
     private final KafkaCacheSegmentFactory cacheSegmentFactory;
     private final Map<String, Map<String, Map<Integer, KafkaCacheSentinelSegment>>> segmentsByClusterTopicPartition;
+
+    private final Map<String, Map<String, KafkaCacheTopicConfig>> topicConfigsByClusterTopic;
 
     public KafkaCache(
         KafkaConfiguration config)
     {
+        this.config = config;
         this.cacheSegmentFactory = new KafkaCacheSegmentFactory(config);
         this.segmentsByClusterTopicPartition = new ConcurrentHashMap<>();
-        this.cacheDirectory = config.cacheDirectory();
+        this.topicConfigsByClusterTopic = new ConcurrentHashMap<>();
     }
 
     public KafkaCacheReader newReader()
@@ -49,7 +53,7 @@ public final class KafkaCache
 
     public KafkaCacheWriter newWriter()
     {
-        return new KafkaCacheWriter(this::supplySegment);
+        return new KafkaCacheWriter(this::supplySegment, this::supplyTopicConfig);
     }
 
     public KafkaCacheSentinelSegment supplySegment(
@@ -65,11 +69,21 @@ public final class KafkaCache
             p -> cacheSegmentFactory.newSentinel(initDirectory(clusterName, topicName, partitionId)));
     }
 
+    public KafkaCacheTopicConfig supplyTopicConfig(
+        String clusterName,
+        String topicName)
+    {
+        final Map<String, KafkaCacheTopicConfig> topicConfigsByTopic =
+                topicConfigsByClusterTopic.computeIfAbsent(clusterName, c -> new ConcurrentHashMap<>());
+        return topicConfigsByTopic.computeIfAbsent(topicName, t -> new KafkaCacheTopicConfig(config));
+    }
+
     private Path initDirectory(
         String clusterName,
         String topicName,
         int partitionId)
     {
+        final Path cacheDirectory = config.cacheDirectory();
         final String partitionName = String.format("%s-%d", topicName, partitionId);
         final Path directory = cacheDirectory.resolve(clusterName).resolve(partitionName);
 

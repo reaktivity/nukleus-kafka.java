@@ -17,15 +17,17 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheClientDescribeFactory.KafkaCacheClientDescribeFanout;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheClientFetchFactory.KafkaCacheClientFetchFanout;
-import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheDescribeFactory.KafkaCacheDescribeFanout;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheMetaFactory.KafkaCacheMetaFanout;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheServerDescribeFactory.KafkaCacheServerDescribeFanout;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheServerFetchFactory.KafkaCacheServerFetchFanout;
 
 public final class KafkaCacheRoute
 {
     public final long routeId;
-    public final Int2ObjectHashMap<KafkaCacheDescribeFanout> describeFanoutsByTopic;
+    public final Int2ObjectHashMap<KafkaCacheClientDescribeFanout> clientDescribeFanoutsByTopic;
+    public final Int2ObjectHashMap<KafkaCacheServerDescribeFanout> serverDescribeFanoutsByTopic;
     public final Int2ObjectHashMap<KafkaCacheMetaFanout> metaFanoutsByTopic;
     public final Long2ObjectHashMap<KafkaCacheClientFetchFanout> clientFetchFanoutsByTopicPartition;
     public final Long2ObjectHashMap<KafkaCacheServerFetchFanout> serverFetchFanoutsByTopicPartition;
@@ -34,7 +36,8 @@ public final class KafkaCacheRoute
         long routeId)
     {
         this.routeId = routeId;
-        this.describeFanoutsByTopic = new Int2ObjectHashMap<>();
+        this.clientDescribeFanoutsByTopic = new Int2ObjectHashMap<>();
+        this.serverDescribeFanoutsByTopic = new Int2ObjectHashMap<>();
         this.metaFanoutsByTopic = new Int2ObjectHashMap<>();
         this.clientFetchFanoutsByTopicPartition = new Long2ObjectHashMap<>();
         this.serverFetchFanoutsByTopicPartition = new Long2ObjectHashMap<>();
@@ -50,6 +53,6 @@ public final class KafkaCacheRoute
         String topic,
         int partitionId)
     {
-        return (((long) topicKey(topic)) << Integer.SIZE) | partitionId;
+        return (((long) topicKey(topic)) << Integer.SIZE) | (partitionId & 0xFFFF_FFFFL);
     }
 }

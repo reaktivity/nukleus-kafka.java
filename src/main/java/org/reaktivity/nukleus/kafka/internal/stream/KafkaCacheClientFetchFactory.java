@@ -853,13 +853,22 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void doClientReplyDataIfNecessary(
             long traceId)
         {
-            if (KafkaState.replyOpened(state) &&
-                   partitionOffset <= group.partitionOffset)
+            while (KafkaState.replyOpened(state) &&
+                partitionOffset <= group.partitionOffset)
             {
                 final KafkaCacheEntryFW nextEntry = cursor.next(entryRO);
-                if (nextEntry != null)
+                if (nextEntry == null)
                 {
-                    doClientReplyData(traceId, nextEntry);
+                    break;
+                }
+
+                final int replyBudgetSnapshot = replyBudget;
+
+                doClientReplyData(traceId, nextEntry);
+
+                if (replyBudget == replyBudgetSnapshot || replyBudget <= replyPadding)
+                {
+                    break;
                 }
             }
         }

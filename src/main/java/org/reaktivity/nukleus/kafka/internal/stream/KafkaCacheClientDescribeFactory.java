@@ -59,7 +59,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 
-public final class KafkaCacheDescribeFactory implements StreamFactory
+public final class KafkaCacheClientDescribeFactory implements StreamFactory
 {
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
 
@@ -97,7 +97,7 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
 
-    public KafkaCacheDescribeFactory(
+    public KafkaCacheClientDescribeFactory(
         KafkaConfiguration config,
         RouteManager router,
         MutableDirectBuffer writeBuffer,
@@ -162,21 +162,21 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
             final String topicName = beginTopic.asString();
             final KafkaCacheRoute cacheRoute = supplyCacheRoute.apply(resolvedId);
             final int topicKey = cacheRoute.topicKey(topicName);
-            KafkaCacheDescribeFanout fanout = cacheRoute.describeFanoutsByTopic.get(topicKey);
+            KafkaCacheClientDescribeFanout fanout = cacheRoute.clientDescribeFanoutsByTopic.get(topicKey);
             if (fanout == null)
             {
                 final List<String> configNames = new ArrayList<>();
                 kafkaDescribeBeginEx.configs().forEach(c -> configNames.add(c.asString()));
-                final KafkaCacheDescribeFanout newFanout =
-                        new KafkaCacheDescribeFanout(resolvedId, authorization, topicName, configNames);
+                final KafkaCacheClientDescribeFanout newFanout =
+                        new KafkaCacheClientDescribeFanout(resolvedId, authorization, topicName, configNames);
 
-                cacheRoute.describeFanoutsByTopic.put(topicKey, newFanout);
+                cacheRoute.clientDescribeFanoutsByTopic.put(topicKey, newFanout);
                 fanout = newFanout;
             }
 
             if (fanout != null)
             {
-                newStream = new KafkaCacheDescribeStream(
+                newStream = new KafkaCacheClientDescribeStream(
                         fanout,
                         sender,
                         routeId,
@@ -311,13 +311,13 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
         sender.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
     }
 
-    final class KafkaCacheDescribeFanout
+    final class KafkaCacheClientDescribeFanout
     {
         private final long routeId;
         private final long authorization;
         private final String topic;
         private final List<String> configNames;
-        private final List<KafkaCacheDescribeStream> members;
+        private final List<KafkaCacheClientDescribeStream> members;
 
         private long initialId;
         private long replyId;
@@ -326,7 +326,7 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
 
         private int state;
 
-        private KafkaCacheDescribeFanout(
+        private KafkaCacheClientDescribeFanout(
             long routeId,
             long authorization,
             String topic,
@@ -341,7 +341,7 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
 
         private void onDescribeFanoutMemberOpening(
             long traceId,
-            KafkaCacheDescribeStream member)
+            KafkaCacheClientDescribeStream member)
         {
             members.add(member);
 
@@ -362,7 +362,7 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
 
         private void onDescribeFanoutMemberOpened(
             long traceId,
-            KafkaCacheDescribeStream member)
+            KafkaCacheClientDescribeStream member)
         {
             if (configValues != null)
             {
@@ -377,7 +377,7 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
 
         private void onDescribeFanoutMemberClosed(
             long traceId,
-            KafkaCacheDescribeStream member)
+            KafkaCacheClientDescribeStream member)
         {
             members.remove(member);
 
@@ -589,9 +589,9 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
         }
     }
 
-    private final class KafkaCacheDescribeStream
+    private final class KafkaCacheClientDescribeStream
     {
-        private final KafkaCacheDescribeFanout group;
+        private final KafkaCacheClientDescribeFanout group;
         private final MessageConsumer sender;
         private final long routeId;
         private final long initialId;
@@ -605,8 +605,8 @@ public final class KafkaCacheDescribeFactory implements StreamFactory
         private int replyBudget;
         private int replyPadding;
 
-        KafkaCacheDescribeStream(
-            KafkaCacheDescribeFanout group,
+        KafkaCacheClientDescribeStream(
+            KafkaCacheClientDescribeFanout group,
             MessageConsumer sender,
             long routeId,
             long initialId,

@@ -17,7 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_META_MAX_AGE;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CLIENT_META_MAX_AGE;
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
@@ -50,7 +50,7 @@ public class ClientMergedIT
         .counterValuesBufferCapacity(8192)
         .configure(REAKTOR_BUFFER_SLOT_CAPACITY, 8192)
         .configure(ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE, false)
-        .configure(KAFKA_META_MAX_AGE, 1)
+        .configure(KAFKA_CLIENT_META_MAX_AGE, 1)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 

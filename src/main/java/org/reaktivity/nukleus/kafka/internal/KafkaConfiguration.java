@@ -25,17 +25,22 @@ public class KafkaConfiguration extends Configuration
 {
     public static final boolean DEBUG = Boolean.getBoolean("nukleus.kafka.debug");
 
-    public static final IntPropertyDef KAFKA_META_MAX_AGE;
-    public static final IntPropertyDef KAFKA_DESCRIBE_MAX_AGE;
-    public static final IntPropertyDef KAFKA_FETCH_MAX_WAIT_MILLIS;
-    public static final IntPropertyDef KAFKA_FETCH_MAX_BYTES;
-    public static final IntPropertyDef KAFKA_FETCH_PARTITION_MAX_BYTES;
-    public static final BooleanPropertyDef KAFKA_CACHE_SERVER_BOOTSTRAP;
+    public static final IntPropertyDef KAFKA_CLIENT_META_MAX_AGE;
+    public static final IntPropertyDef KAFKA_CLIENT_DESCRIBE_MAX_AGE;
+    public static final IntPropertyDef KAFKA_CLIENT_FETCH_MAX_WAIT_MILLIS;
+    public static final IntPropertyDef KAFKA_CLIENT_FETCH_MAX_BYTES;
+    public static final IntPropertyDef KAFKA_CLIENT_FETCH_PARTITION_MAX_BYTES;
     public static final PropertyDef<Path> KAFKA_CACHE_DIRECTORY;
-    public static final IntPropertyDef KAFKA_CACHE_SEGMENT_LOG_BYTES;
+    public static final PropertyDef<String> KAFKA_CACHE_CLEANUP_POLICY;
+    public static final IntPropertyDef KAFKA_CACHE_MAX_MESSAGE_BYTES;
+    public static final LongPropertyDef KAFKA_CACHE_RETENTION_MILLIS;
+    public static final LongPropertyDef KAFKA_CACHE_RETENTION_BYTES;
+    public static final LongPropertyDef KAFKA_CACHE_SEGMENT_MILLIS;
+    public static final IntPropertyDef KAFKA_CACHE_SEGMENT_BYTES;
     public static final IntPropertyDef KAFKA_CACHE_SEGMENT_INDEX_BYTES;
     public static final IntPropertyDef KAFKA_CACHE_SEGMENT_HASH_BYTES;
     public static final IntPropertyDef KAFKA_CACHE_SEGMENT_KEYS_BYTES;
+    public static final BooleanPropertyDef KAFKA_CACHE_SERVER_BOOTSTRAP;
     public static final BooleanPropertyDef KAFKA_CACHE_CLIENT_RECONNECT;
     public static final BooleanPropertyDef KAFKA_CACHE_SERVER_RECONNECT;
 
@@ -44,19 +49,24 @@ public class KafkaConfiguration extends Configuration
     static
     {
         final ConfigurationDef config = new ConfigurationDef("nukleus.kafka");
-        KAFKA_META_MAX_AGE = config.property("meta.max.age", 5 * 60);
-        KAFKA_DESCRIBE_MAX_AGE = config.property("describe.max.age", 5 * 60);
-        KAFKA_FETCH_MAX_WAIT_MILLIS = config.property("fetch.max.wait.millis", 500);
-        KAFKA_FETCH_MAX_BYTES = config.property("fetch.max.bytes", 50 * 1024 * 1024);
-        KAFKA_FETCH_PARTITION_MAX_BYTES = config.property("fetch.partition.max.bytes", 50 * 1024 * 1024);
+        KAFKA_CLIENT_META_MAX_AGE = config.property("client.meta.max.age", 5 * 60);
+        KAFKA_CLIENT_DESCRIBE_MAX_AGE = config.property("client.describe.max.age", 5 * 60);
+        KAFKA_CLIENT_FETCH_MAX_WAIT_MILLIS = config.property("client.fetch.max.wait.millis", 500);
+        KAFKA_CLIENT_FETCH_MAX_BYTES = config.property("client.fetch.max.bytes", 50 * 1024 * 1024);
+        KAFKA_CLIENT_FETCH_PARTITION_MAX_BYTES = config.property("client.fetch.partition.max.bytes", 50 * 1024 * 1024);
         KAFKA_CACHE_DIRECTORY = config.property(Path.class, "cache.directory", (c, v) -> cacheDirectory(c, v), KafkaNukleus.NAME);
-        KAFKA_CACHE_SEGMENT_LOG_BYTES = config.property("cache.segment.log.bytes", 1 * 1024 * 1024);
-        KAFKA_CACHE_SEGMENT_INDEX_BYTES = config.property("cache.segment.index.bytes", 256 * 1024);
-        KAFKA_CACHE_SEGMENT_HASH_BYTES = config.property("cache.segment.hash.bytes", 16 * 1024);
-        KAFKA_CACHE_SEGMENT_KEYS_BYTES = config.property("cache.segment.keys.bytes", 16 * 1024);
         KAFKA_CACHE_SERVER_BOOTSTRAP = config.property("cache.server.bootstrap", true);
         KAFKA_CACHE_SERVER_RECONNECT = config.property("cache.server.reconnect", true);
         KAFKA_CACHE_CLIENT_RECONNECT = config.property("cache.client.reconnect", false);
+        KAFKA_CACHE_CLEANUP_POLICY = config.property("cache.cleanup.policy", "delete");
+        KAFKA_CACHE_MAX_MESSAGE_BYTES = config.property("cache.max.message.bytes", 1000012);
+        KAFKA_CACHE_RETENTION_MILLIS = config.property("cache.retention.ms", 604800000L);
+        KAFKA_CACHE_RETENTION_BYTES = config.property("cache.retention.bytes", -1L);
+        KAFKA_CACHE_SEGMENT_MILLIS = config.property("cache.segment.ms", 604800000L);
+        KAFKA_CACHE_SEGMENT_BYTES = config.property("cache.segment.bytes", 0x40000000);
+        KAFKA_CACHE_SEGMENT_INDEX_BYTES = config.property("cache.segment.index.bytes", 0xA00000);
+        KAFKA_CACHE_SEGMENT_HASH_BYTES = config.property("cache.segment.hash.bytes", 0xA0000);
+        KAFKA_CACHE_SEGMENT_KEYS_BYTES = config.property("cache.segment.keys.bytes", 0xA0000);
         KAFKA_CONFIG = config;
     }
 
@@ -71,34 +81,29 @@ public class KafkaConfiguration extends Configuration
         super(KAFKA_CONFIG, config);
     }
 
-    public boolean cacheServerBootstrap()
+    public int clientMetaMaxAge()
     {
-        return KAFKA_CACHE_SERVER_BOOTSTRAP.getAsBoolean(this);
+        return KAFKA_CLIENT_META_MAX_AGE.getAsInt(this);
     }
 
-    public int metaMaxAge()
+    public long clientDescribeMaxAge()
     {
-        return KAFKA_META_MAX_AGE.getAsInt(this);
+        return KAFKA_CLIENT_DESCRIBE_MAX_AGE.getAsInt(this);
     }
 
-    public long describeMaxAge()
+    public int clientFetchMaxWaitMillis()
     {
-        return KAFKA_DESCRIBE_MAX_AGE.getAsInt(this);
+        return KAFKA_CLIENT_FETCH_MAX_WAIT_MILLIS.getAsInt(this);
     }
 
-    public int fetchMaxWaitMillis()
+    public int clientFetchMaxBytes()
     {
-        return KAFKA_FETCH_MAX_WAIT_MILLIS.getAsInt(this);
+        return KAFKA_CLIENT_FETCH_MAX_BYTES.getAsInt(this);
     }
 
-    public int fetchMaxBytes()
+    public int clientFetchPartitionMaxBytes()
     {
-        return KAFKA_FETCH_MAX_BYTES.getAsInt(this);
-    }
-
-    public int fetchPartitionMaxBytes()
-    {
-        return KAFKA_FETCH_PARTITION_MAX_BYTES.get(this);
+        return KAFKA_CLIENT_FETCH_PARTITION_MAX_BYTES.get(this);
     }
 
     public Path cacheDirectory()
@@ -106,9 +111,34 @@ public class KafkaConfiguration extends Configuration
         return KAFKA_CACHE_DIRECTORY.get(this);
     }
 
-    public int cacheSegmentLogBytes()
+    public String cacheCleanupPolicy()
     {
-        return KAFKA_CACHE_SEGMENT_LOG_BYTES.getAsInt(this);
+        return KAFKA_CACHE_CLEANUP_POLICY.get(this);
+    }
+
+    public int cacheMaxMessageBytes()
+    {
+        return KAFKA_CACHE_MAX_MESSAGE_BYTES.get(this);
+    }
+
+    public long cacheRetentionBytes()
+    {
+        return KAFKA_CACHE_RETENTION_BYTES.getAsLong(this);
+    }
+
+    public long cacheRetentionMillis()
+    {
+        return KAFKA_CACHE_RETENTION_MILLIS.getAsLong(this);
+    }
+
+    public long cacheSegmentMillis()
+    {
+        return KAFKA_CACHE_SEGMENT_MILLIS.getAsLong(this);
+    }
+
+    public int cacheSegmentBytes()
+    {
+        return KAFKA_CACHE_SEGMENT_BYTES.getAsInt(this);
     }
 
     public int cacheSegmentIndexBytes()
@@ -124,6 +154,11 @@ public class KafkaConfiguration extends Configuration
     public int cacheSegmentKeysBytes()
     {
         return KAFKA_CACHE_SEGMENT_KEYS_BYTES.getAsInt(this);
+    }
+
+    public boolean cacheServerBootstrap()
+    {
+        return KAFKA_CACHE_SERVER_BOOTSTRAP.getAsBoolean(this);
     }
 
     public boolean cacheClientReconnect()

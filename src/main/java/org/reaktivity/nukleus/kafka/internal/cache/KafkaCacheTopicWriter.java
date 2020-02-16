@@ -17,22 +17,27 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 
 import org.agrona.collections.Int2ObjectHashMap;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSentinelSegment;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheTopicConfig;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheTopicConfigSupplier;
 
 public final class KafkaCacheTopicWriter
 {
     private final String clusterName;
     private final String topicName;
     private final KafkaCacheSegmentSupplier segmentSupplier;
+    private final KafkaCacheTopicConfigSupplier topicConfigSupplier;
     private final Int2ObjectHashMap<KafkaCachePartitionWriter> partitionsById;
 
     KafkaCacheTopicWriter(
         String clusterName,
         String topicName,
-        KafkaCacheSegmentSupplier segmentSupplier)
+        KafkaCacheSegmentSupplier segmentSupplier,
+        KafkaCacheTopicConfigSupplier topicConfigSupplier)
     {
         this.clusterName = clusterName;
         this.topicName = topicName;
         this.segmentSupplier = segmentSupplier;
+        this.topicConfigSupplier = topicConfigSupplier;
         this.partitionsById = new Int2ObjectHashMap<>();
     }
 
@@ -51,6 +56,7 @@ public final class KafkaCacheTopicWriter
         int partitionId)
     {
         final KafkaCacheSentinelSegment sentinel = segmentSupplier.supply(clusterName, topicName, partitionId);
-        return new KafkaCachePartitionWriter(partitionId, sentinel);
+        final KafkaCacheTopicConfig topicConfig = topicConfigSupplier.supply(clusterName, topicName);
+        return new KafkaCachePartitionWriter(partitionId, sentinel, topicConfig);
     }
 }

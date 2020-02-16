@@ -147,7 +147,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
         LongFunction<BudgetDebitor> supplyDebitor,
         Long2ObjectHashMap<MessageConsumer> correlations)
     {
-        this.describeMaxAgeMillis = SECONDS.toMillis(config.describeMaxAge());
+        this.describeMaxAgeMillis = SECONDS.toMillis(config.clientDescribeMaxAge());
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.router = router;
         this.signaler = signaler;

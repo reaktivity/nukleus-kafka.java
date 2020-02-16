@@ -141,7 +141,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
         Long2ObjectHashMap<MessageConsumer> correlations,
         Long2ObjectHashMap<Long2ObjectHashMap<KafkaBrokerInfo>> brokersByRouteId)
     {
-        this.metaMaxAgeMillis = SECONDS.toMillis(config.metaMaxAge());
+        this.metaMaxAgeMillis = SECONDS.toMillis(config.clientMetaMaxAge());
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.router = router;
         this.signaler = signaler;

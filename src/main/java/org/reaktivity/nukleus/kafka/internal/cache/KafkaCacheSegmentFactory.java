@@ -90,7 +90,7 @@ public final class KafkaCacheSegmentFactory
     KafkaCacheSegmentFactory(
         KafkaConfiguration config)
     {
-        this.maxLogCapacity = config.cacheSegmentLogBytes();
+        this.maxLogCapacity = config.cacheSegmentBytes();
         this.maxIndexCapacity = config.cacheSegmentIndexBytes();
         this.maxHashCapacity = config.cacheSegmentHashBytes();
         this.maxKeysCapacity = config.cacheSegmentKeysBytes();

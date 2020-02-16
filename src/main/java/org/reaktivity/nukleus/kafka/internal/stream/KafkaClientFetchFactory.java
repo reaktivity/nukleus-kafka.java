@@ -212,9 +212,9 @@ public final class KafkaClientFetchFactory implements StreamFactory
         Long2ObjectHashMap<MessageConsumer> correlations,
         Long2ObjectHashMap<Long2ObjectHashMap<KafkaBrokerInfo>> brokersByRouteId)
     {
-        this.fetchMaxBytes = config.fetchMaxBytes();
-        this.fetchMaxWaitMillis = config.fetchMaxWaitMillis();
-        this.partitionMaxBytes = config.fetchPartitionMaxBytes();
+        this.fetchMaxBytes = config.clientFetchMaxBytes();
+        this.fetchMaxWaitMillis = config.clientFetchMaxWaitMillis();
+        this.partitionMaxBytes = config.clientFetchPartitionMaxBytes();
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.tcpTypeId = supplyTypeId.applyAsInt("tcp");
         this.router = router;
