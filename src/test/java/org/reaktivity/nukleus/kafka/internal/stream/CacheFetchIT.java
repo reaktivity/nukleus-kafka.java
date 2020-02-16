@@ -18,9 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SEGMENT_BYTES;
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SEGMENT_HASH_BYTES;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SEGMENT_INDEX_BYTES;
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SEGMENT_KEYS_BYTES;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_BOOTSTRAP;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_RECONNECT;
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
@@ -63,8 +61,6 @@ public class CacheFetchIT
         .configure(KAFKA_CACHE_SERVER_RECONNECT, false)
         .configure(KAFKA_CACHE_SEGMENT_BYTES, 1 * 1024 * 1024)
         .configure(KAFKA_CACHE_SEGMENT_INDEX_BYTES, 256 * 1024)
-        .configure(KAFKA_CACHE_SEGMENT_HASH_BYTES, 16 * 1024)
-        .configure(KAFKA_CACHE_SEGMENT_KEYS_BYTES, 16 * 1024)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 

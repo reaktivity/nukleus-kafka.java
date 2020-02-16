@@ -65,8 +65,9 @@ public final class KafkaCache
                 segmentsByClusterTopicPartition.computeIfAbsent(clusterName, c -> new ConcurrentHashMap<>());
         final Map<Integer, KafkaCacheSentinelSegment> sentinelsByPartition =
                 segmentsByTopicPartition.computeIfAbsent(topicName, t -> new ConcurrentHashMap<>());
+        final KafkaCacheTopicConfig topicConfig = supplyTopicConfig(clusterName, topicName);
         return sentinelsByPartition.computeIfAbsent(partitionId,
-            p -> cacheSegmentFactory.newSentinel(initDirectory(clusterName, topicName, partitionId)));
+            p -> cacheSegmentFactory.newSentinel(topicConfig, initDirectory(clusterName, topicName, partitionId)));
     }
 
     public KafkaCacheTopicConfig supplyTopicConfig(

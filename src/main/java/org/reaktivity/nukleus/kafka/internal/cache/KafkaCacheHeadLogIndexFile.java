@@ -24,10 +24,9 @@ public final class KafkaCacheHeadLogIndexFile extends KafkaCacheHeadIndexFile
 {
     KafkaCacheHeadLogIndexFile(
         KafkaCacheHeadSegment segment,
-        MutableDirectBuffer writeBuffer,
-        int maxCapacity)
+        MutableDirectBuffer writeBuffer)
     {
-        super(segment, CACHE_EXTENSION_LOG_INDEX, writeBuffer, maxCapacity);
+        super(segment, CACHE_EXTENSION_LOG_INDEX, writeBuffer, segment.topicConfig.segmentIndexBytes);
     }
 
     public long seekOffset(

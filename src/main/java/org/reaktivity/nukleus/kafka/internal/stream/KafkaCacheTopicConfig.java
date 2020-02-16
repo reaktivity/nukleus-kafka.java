@@ -19,13 +19,13 @@ import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 
 public final class KafkaCacheTopicConfig
 {
-    volatile String cleanupPolicy;
-    volatile int maxMessageBytes;
-    volatile int segmentBytes;
-    volatile int segmentIndexBytes;
-    volatile long segmentMillis;
-    volatile long retentionBytes;
-    volatile long retentionMillis;
+    public volatile String cleanupPolicy;
+    public volatile int maxMessageBytes;
+    public volatile int segmentBytes;
+    public volatile int segmentIndexBytes;
+    public volatile long segmentMillis;
+    public volatile long retentionBytes;
+    public volatile long retentionMillis;
 
     public KafkaCacheTopicConfig(
         KafkaConfiguration config)

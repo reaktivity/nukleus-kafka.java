@@ -39,6 +39,7 @@ import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheTailSegment;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheTopicConfig;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
@@ -69,7 +70,7 @@ public class KafkaCacheSegmentTest
         Path directory = tempFolder.getRoot().toPath();
 
         KafkaCacheSegmentFactory factory = new KafkaCacheSegmentFactory(config);
-        KafkaCacheSegment sentinel = factory.newSentinel(directory);
+        KafkaCacheSegment sentinel = factory.newSentinel(new KafkaCacheTopicConfig(config), directory);
         KafkaCacheHeadSegment head = sentinel.nextSegment(0L);
         KafkaCacheTailSegment tail = head.freezeSegment(1L);
 
@@ -85,7 +86,7 @@ public class KafkaCacheSegmentTest
         Path directory = tempFolder.getRoot().toPath();
 
         KafkaCacheSegmentFactory factory = new KafkaCacheSegmentFactory(config);
-        KafkaCacheSegment sentinel = factory.newSentinel(directory);
+        KafkaCacheSegment sentinel = factory.newSentinel(new KafkaCacheTopicConfig(config), directory);
         KafkaCacheHeadSegment head = sentinel.nextSegment(0L);
 
         int cachedEntries = 1024;
@@ -119,7 +120,7 @@ public class KafkaCacheSegmentTest
         Path directory = tempFolder.getRoot().toPath();
 
         KafkaCacheSegmentFactory factory = new KafkaCacheSegmentFactory(config);
-        KafkaCacheSegment sentinel = factory.newSentinel(directory);
+        KafkaCacheSegment sentinel = factory.newSentinel(new KafkaCacheTopicConfig(config), directory);
         KafkaCacheHeadSegment head = sentinel.nextSegment(0L);
 
         int cachedEntries = 1024;
@@ -153,7 +154,7 @@ public class KafkaCacheSegmentTest
         Path directory = tempFolder.getRoot().toPath();
 
         KafkaCacheSegmentFactory factory = new KafkaCacheSegmentFactory(config);
-        KafkaCacheSegment sentinel = factory.newSentinel(directory);
+        KafkaCacheSegment sentinel = factory.newSentinel(new KafkaCacheTopicConfig(config), directory);
         KafkaCacheHeadSegment head = sentinel.nextSegment(0L);
 
         DirectBuffer testBytes = new UnsafeBuffer("test".getBytes(UTF_8));

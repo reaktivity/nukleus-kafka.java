@@ -41,6 +41,7 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.agrona.io.DirectBufferInputStream;
 import org.agrona.io.ExpandableDirectBufferOutputStream;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheTopicConfig;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
@@ -80,28 +81,21 @@ public final class KafkaCacheSegmentFactory
     private final MutableDirectBuffer diffBuffer = new ExpandableArrayBuffer();
     private final ExpandableDirectBufferOutputStream diffOut = new ExpandableDirectBufferOutputStream();
 
-    private final int maxLogCapacity;
-    private final int maxIndexCapacity;
-    private final int maxHashCapacity;
-    private final int maxKeysCapacity;
     private final MutableDirectBuffer writeBuffer;
     private final CRC32C checksum;
 
     KafkaCacheSegmentFactory(
         KafkaConfiguration config)
     {
-        this.maxLogCapacity = config.cacheSegmentBytes();
-        this.maxIndexCapacity = config.cacheSegmentIndexBytes();
-        this.maxHashCapacity = config.cacheSegmentHashBytes();
-        this.maxKeysCapacity = config.cacheSegmentKeysBytes();
         this.writeBuffer = new UnsafeBuffer(allocateDirect(64 * 1024)); // TODO: configure
         this.checksum = new CRC32C();
     }
 
     KafkaCacheSentinelSegment newSentinel(
+        KafkaCacheTopicConfig topicConfig,
         Path directory)
     {
-        return new KafkaCacheSentinelSegment(directory);
+        return new KafkaCacheSentinelSegment(topicConfig, directory);
     }
 
     KafkaCacheCandidateSegment newCandidate()
@@ -111,16 +105,19 @@ public final class KafkaCacheSegmentFactory
 
     public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
     {
-        protected final KafkaCacheSegment previousSegment;
+        protected final KafkaCacheTopicConfig topicConfig;
         protected final Path directory;
+        protected final KafkaCacheSegment previousSegment;
 
         protected volatile KafkaCacheSegment nextSegment;
 
         protected KafkaCacheSegment(
+            KafkaCacheTopicConfig topicConfig,
             Path directory)
         {
-            this.previousSegment = this;
+            this.topicConfig = topicConfig;
             this.directory = directory;
+            this.previousSegment = this;
         }
 
         protected KafkaCacheSegment(
@@ -129,6 +126,7 @@ public final class KafkaCacheSegmentFactory
         {
             this.previousSegment = previousSegment;
             this.directory = directory;
+            this.topicConfig = previousSegment.topicConfig;
         }
 
         @Override
@@ -270,7 +268,7 @@ public final class KafkaCacheSegmentFactory
 
         KafkaCacheCandidateSegment()
         {
-            super(null);
+            super((KafkaCacheTopicConfig) null, null);
         }
 
         public void baseOffset(
@@ -289,9 +287,10 @@ public final class KafkaCacheSegmentFactory
     final class KafkaCacheSentinelSegment extends KafkaCacheSegment
     {
         private KafkaCacheSentinelSegment(
+            KafkaCacheTopicConfig topicConfig,
             Path directory)
         {
-            super(directory);
+            super(topicConfig, directory);
         }
 
         public KafkaCacheHeadSegment headSegment(
@@ -337,11 +336,11 @@ public final class KafkaCacheSegmentFactory
             super(previousSegment, directory);
             this.baseOffset = baseOffset;
             this.headOffset = OFFSET_LATEST;
-            this.logFile = new KafkaCacheHeadLogFile(this, writeBuffer, maxLogCapacity);
-            this.indexFile = new KafkaCacheHeadLogIndexFile(this, writeBuffer, maxIndexCapacity);
-            this.hashFile = new KafkaCacheHeadHashFile(this, writeBuffer, maxHashCapacity);
-            this.keysFile = new KafkaCacheHeadKeysFile(this, writeBuffer, maxKeysCapacity, previousKeys);
-            this.deltaFile = new KafkaCacheHeadDeltaFile(this, writeBuffer, maxIndexCapacity);
+            this.logFile = new KafkaCacheHeadLogFile(this, writeBuffer);
+            this.indexFile = new KafkaCacheHeadLogIndexFile(this, writeBuffer);
+            this.hashFile = new KafkaCacheHeadHashFile(this, writeBuffer);
+            this.keysFile = new KafkaCacheHeadKeysFile(this, writeBuffer, previousKeys);
+            this.deltaFile = new KafkaCacheHeadDeltaFile(this, writeBuffer);
         }
 
         @Override

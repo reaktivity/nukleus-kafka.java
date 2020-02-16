@@ -32,10 +32,9 @@ public final class KafkaCacheHeadKeysFile extends KafkaCacheHeadIndexFile
     KafkaCacheHeadKeysFile(
         KafkaCacheHeadSegment segment,
         MutableDirectBuffer writeBuffer,
-        int writeCapacity,
         KafkaCacheTailKeysFile previousKeys)
     {
-        super(segment, CACHE_EXTENSION_KEYS_SCAN, writeBuffer, writeCapacity);
+        super(segment, CACHE_EXTENSION_KEYS_SCAN, writeBuffer, segment.topicConfig.segmentIndexBytes);
         this.segment = segment;
         this.previousKeys = previousKeys;
     }

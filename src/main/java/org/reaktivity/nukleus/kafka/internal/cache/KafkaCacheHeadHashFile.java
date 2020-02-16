@@ -30,10 +30,9 @@ public final class KafkaCacheHeadHashFile extends KafkaCacheHeadIndexFile
 
     KafkaCacheHeadHashFile(
         KafkaCacheHeadSegment segment,
-        MutableDirectBuffer writeBuffer,
-        int writeCapacity)
+        MutableDirectBuffer writeBuffer)
     {
-        super(segment, CACHE_EXTENSION_HASH_SCAN, writeBuffer, writeCapacity);
+        super(segment, CACHE_EXTENSION_HASH_SCAN, writeBuffer, segment.topicConfig.segmentIndexBytes);
         this.segment = segment;
     }
 

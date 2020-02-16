@@ -25,10 +25,9 @@ public final class KafkaCacheHeadDeltaFile extends KafkaCacheHeadFile
 {
     KafkaCacheHeadDeltaFile(
         KafkaCacheHeadSegment segment,
-        MutableDirectBuffer writeBuffer,
-        int writeCapacity)
+        MutableDirectBuffer writeBuffer)
     {
-        super(segment, CACHE_EXTENSION_DELTA, writeBuffer, writeCapacity);
+        super(segment, CACHE_EXTENSION_DELTA, writeBuffer, segment.topicConfig.segmentBytes);
     }
 
     public KafkaCacheDeltaFW read(

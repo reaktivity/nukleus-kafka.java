@@ -25,10 +25,9 @@ public final class KafkaCacheHeadLogFile extends KafkaCacheHeadFile
 {
     KafkaCacheHeadLogFile(
         KafkaCacheHeadSegment segment,
-        MutableDirectBuffer writeBuffer,
-        int writeCapacity)
+        MutableDirectBuffer writeBuffer)
     {
-        super(segment, CACHE_EXTENSION_LOG, writeBuffer, writeCapacity);
+        super(segment, CACHE_EXTENSION_LOG, writeBuffer, segment.topicConfig.segmentBytes);
     }
 
     public KafkaCacheEntryFW read(
