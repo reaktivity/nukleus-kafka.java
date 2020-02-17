@@ -523,11 +523,11 @@ public final class KafkaCacheClientDescribeFactory implements StreamFactory
             final ExtensionFW dataEx = extensionRO.tryWrap(extension.buffer(), extension.offset(), extension.limit());
             final KafkaDataExFW kafkaDataEx = dataEx.typeId() == kafkaTypeId ? extension.get(kafkaDataExRO::tryWrap) : null;
             assert kafkaDataEx == null || kafkaDataEx.kind() == KafkaBeginExFW.KIND_DESCRIBE;
-            final KafkaDescribeDataExFW kafkaDescribebDataEx = kafkaDataEx != null ? kafkaDataEx.describe() : null;
+            final KafkaDescribeDataExFW kafkaDescribeDataEx = kafkaDataEx != null ? kafkaDataEx.describe() : null;
 
-            if (kafkaDescribebDataEx != null)
+            if (kafkaDescribeDataEx != null)
             {
-                final ArrayFW<KafkaConfigFW> changedConfigs = kafkaDescribebDataEx.configs();
+                final ArrayFW<KafkaConfigFW> changedConfigs = kafkaDescribeDataEx.configs();
                 if (configValues == null)
                 {
                     configValues = new TreeMap<>();

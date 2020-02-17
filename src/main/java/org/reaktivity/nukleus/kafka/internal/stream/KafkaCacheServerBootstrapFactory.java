@@ -34,6 +34,7 @@ import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaConfigFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaPartitionFW;
@@ -50,6 +51,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.FlushFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBootstrapBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDescribeDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchFlushExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFlushExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaMetaDataExFW;
@@ -60,6 +62,14 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 {
+    private static final String16FW CONFIG_NAME_CLEANUP_POLICY = new String16FW("cleanup.policy");
+    private static final String16FW CONFIG_NAME_MAX_MESSAGE_BYTES = new String16FW("max.message.bytes");
+    private static final String16FW CONFIG_NAME_SEGMENT_BYTES = new String16FW("segment.bytes");
+    private static final String16FW CONFIG_NAME_SEGMENT_INDEX_BYTES = new String16FW("segment.index.bytes");
+    private static final String16FW CONFIG_NAME_SEGMENT_MILLIS = new String16FW("segment.ms");
+    private static final String16FW CONFIG_NAME_RETENTION_BYTES = new String16FW("retention.bytes");
+    private static final String16FW CONFIG_NAME_RETENTION_MILLIS = new String16FW("retention.ms");
+
     private static final long OFFSET_EARLIEST = -2L;
 
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
@@ -282,6 +292,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         private final long authorization;
         private final String topic;
         private final long resolvedId;
+        private final KafkaBootstrapDescribeStream describeStream;
         private final KafkaBootstrapMetaStream metaStream;
         private final List<KafkaBootstrapFetchStream> fetchStreams;
         private final Long2LongHashMap nextOffsetsById;
@@ -311,6 +322,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             this.authorization = authorization;
             this.topic = topic;
             this.resolvedId = resolvedId;
+            this.describeStream = new KafkaBootstrapDescribeStream(this);
             this.metaStream = new KafkaBootstrapMetaStream(this);
             this.fetchStreams = new ArrayList<>();
             this.nextOffsetsById = initialOffsetsById;
@@ -358,7 +370,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             assert state == 0;
             state = KafkaState.openingInitial(state);
 
-            metaStream.doBootstrapMetaInitialBegin(traceId);
+            describeStream.doBootstrapDescribeInitialBegin(traceId);
         }
 
         private void onBootstrapInitialEnd(
@@ -369,6 +381,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             assert !KafkaState.initialClosed(state);
             state = KafkaState.closedInitial(state);
 
+            describeStream.doBootstrapDescribeInitialEndIfNecessary(traceId);
             metaStream.doBootstrapMetaInitialEndIfNecessary(traceId);
             fetchStreams.forEach(f -> f.doBootstrapFetchInitialEndIfNecessary(traceId));
 
@@ -383,6 +396,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             assert !KafkaState.initialClosed(state);
             state = KafkaState.closedInitial(state);
 
+            describeStream.doBootstrapDescribeInitialAbortIfNecessary(traceId);
             metaStream.doBootstrapMetaInitialAbortIfNecessary(traceId);
             fetchStreams.forEach(f -> f.doBootstrapFetchInitialAbortIfNecessary(traceId));
 
@@ -408,6 +422,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
+            describeStream.doBootstrapDescribeReplyReset(traceId);
             metaStream.doBootstrapMetaReplyReset(traceId);
             fetchStreams.forEach(f -> f.doBootstrapFetchReplyReset(traceId));
 
@@ -515,8 +530,16 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             doBootstrapInitialResetIfNecessary(traceId);
             doBootstrapReplyAbortIfNecessary(traceId);
 
+            describeStream.doBootstrapDescribeCleanup(traceId);
             metaStream.doBootstrapMetaCleanup(traceId);
             fetchStreams.forEach(f -> f.doBootstrapFetchCleanup(traceId));
+        }
+
+        private void onBootstrapTopicConfigChanged(
+            long traceId,
+            ArrayFW<KafkaConfigFW> changedConfigs)
+        {
+            metaStream.doBootstrapMetaInitialBeginIfNecessary(traceId);
         }
 
         private void onBootstrapTopicMetaDataChanged(
@@ -586,6 +609,245 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         }
     }
 
+    private final class KafkaBootstrapDescribeStream
+    {
+        private final KafkaBootstrapStream bootstrap;
+
+        private long initialId;
+        private long replyId;
+        private MessageConsumer receiver;
+
+        private int state;
+
+        private int replyBudget;
+
+        private KafkaBootstrapDescribeStream(
+            KafkaBootstrapStream bootstrap)
+        {
+            this.bootstrap = bootstrap;
+        }
+
+        private void doBootstrapDescribeInitialBegin(
+            long traceId)
+        {
+            assert state == 0;
+
+            state = KafkaState.openingInitial(state);
+
+            this.initialId = supplyInitialId.applyAsLong(bootstrap.resolvedId);
+            this.replyId = supplyReplyId.applyAsLong(initialId);
+            this.receiver = router.supplyReceiver(initialId);
+
+            correlations.put(replyId, this::onBootstrapDescribeReply);
+            router.setThrottle(initialId, this::onBootstrapDescribeReply);
+            doBegin(receiver, bootstrap.resolvedId, initialId, traceId, bootstrap.authorization, 0L,
+                ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
+                        .typeId(kafkaTypeId)
+                        .describe(m -> m.topic(bootstrap.topic)
+                                        .configsItem(ci -> ci.set(CONFIG_NAME_CLEANUP_POLICY))
+                                        .configsItem(ci -> ci.set(CONFIG_NAME_MAX_MESSAGE_BYTES))
+                                        .configsItem(ci -> ci.set(CONFIG_NAME_SEGMENT_BYTES))
+                                        .configsItem(ci -> ci.set(CONFIG_NAME_SEGMENT_INDEX_BYTES))
+                                        .configsItem(ci -> ci.set(CONFIG_NAME_SEGMENT_MILLIS))
+                                        .configsItem(ci -> ci.set(CONFIG_NAME_RETENTION_BYTES))
+                                        .configsItem(ci -> ci.set(CONFIG_NAME_RETENTION_MILLIS)))
+                        .build()
+                        .sizeof()));
+        }
+
+        private void doBootstrapDescribeInitialEndIfNecessary(
+            long traceId)
+        {
+            if (!KafkaState.initialClosed(state))
+            {
+                doBootstrapDescribeInitialEnd(traceId);
+            }
+        }
+
+        private void doBootstrapDescribeInitialEnd(
+            long traceId)
+        {
+            state = KafkaState.closedInitial(state);
+
+            doEnd(receiver, bootstrap.resolvedId, initialId, traceId, bootstrap.authorization, EMPTY_EXTENSION);
+        }
+
+        private void doBootstrapDescribeInitialAbortIfNecessary(
+            long traceId)
+        {
+            if (!KafkaState.initialClosed(state))
+            {
+                doBootstrapDescribeInitialAbort(traceId);
+            }
+        }
+
+        private void doBootstrapDescribeInitialAbort(
+            long traceId)
+        {
+            state = KafkaState.closedInitial(state);
+
+            doAbort(receiver, bootstrap.resolvedId, initialId, traceId, bootstrap.authorization, EMPTY_EXTENSION);
+        }
+
+        private void onBootstrapDescribeReply(
+            int msgTypeId,
+            DirectBuffer buffer,
+            int index,
+            int length)
+        {
+            switch (msgTypeId)
+            {
+            case BeginFW.TYPE_ID:
+                final BeginFW begin = beginRO.wrap(buffer, index, index + length);
+                onBootstrapDescribeReplyBegin(begin);
+                break;
+            case DataFW.TYPE_ID:
+                final DataFW data = dataRO.wrap(buffer, index, index + length);
+                onBootstrapDescribeReplyData(data);
+                break;
+            case EndFW.TYPE_ID:
+                final EndFW end = endRO.wrap(buffer, index, index + length);
+                onBootstrapDescribeReplyEnd(end);
+                break;
+            case AbortFW.TYPE_ID:
+                final AbortFW abort = abortRO.wrap(buffer, index, index + length);
+                onBootstrapDescribeReplyAbort(abort);
+                break;
+            case ResetFW.TYPE_ID:
+                final ResetFW reset = resetRO.wrap(buffer, index, index + length);
+                onBootstrapDescribeInitialReset(reset);
+                break;
+            case WindowFW.TYPE_ID:
+                final WindowFW window = windowRO.wrap(buffer, index, index + length);
+                onBootstrapDescribeInitialWindow(window);
+                break;
+            default:
+                break;
+            }
+        }
+
+        private void onBootstrapDescribeReplyBegin(
+            BeginFW begin)
+        {
+            final long traceId = begin.traceId();
+
+            state = KafkaState.openedReply(state);
+
+            doBootstrapDescribeReplyWindow(traceId, 8192);
+        }
+
+        private void onBootstrapDescribeReplyData(
+            DataFW data)
+        {
+            final long traceId = data.traceId();
+            final int reserved = data.reserved();
+            final OctetsFW extension = data.extension();
+
+            replyBudget -= reserved;
+
+            if (replyBudget < 0)
+            {
+                bootstrap.doBootstrapCleanup(traceId);
+            }
+            else
+            {
+                final KafkaDataExFW kafkaDataEx = extension.get(kafkaDataExRO::wrap);
+                final KafkaDescribeDataExFW kafkaDescribeDataEx = kafkaDataEx.describe();
+                final ArrayFW<KafkaConfigFW> changedConfigs = kafkaDescribeDataEx.configs();
+
+                bootstrap.onBootstrapTopicConfigChanged(traceId, changedConfigs);
+
+                doBootstrapDescribeReplyWindow(traceId, reserved);
+            }
+        }
+
+        private void onBootstrapDescribeReplyEnd(
+            EndFW end)
+        {
+            final long traceId = end.traceId();
+
+            state = KafkaState.closedReply(state);
+
+            bootstrap.doBootstrapReplyBeginIfNecessary(traceId);
+            bootstrap.doBootstrapReplyEndIfNecessary(traceId);
+
+            doBootstrapDescribeInitialEndIfNecessary(traceId);
+        }
+
+        private void onBootstrapDescribeReplyAbort(
+            AbortFW abort)
+        {
+            final long traceId = abort.traceId();
+
+            state = KafkaState.closedReply(state);
+
+            bootstrap.doBootstrapReplyAbortIfNecessary(traceId);
+
+            doBootstrapDescribeInitialAbortIfNecessary(traceId);
+        }
+
+        private void onBootstrapDescribeInitialReset(
+            ResetFW reset)
+        {
+            final long traceId = reset.traceId();
+
+            state = KafkaState.closedInitial(state);
+
+            doBootstrapDescribeReplyResetIfNecessary(traceId);
+
+            bootstrap.doBootstrapCleanup(traceId);
+        }
+
+        private void onBootstrapDescribeInitialWindow(
+            WindowFW window)
+        {
+            if (!KafkaState.initialOpened(state))
+            {
+                final long traceId = window.traceId();
+
+                state = KafkaState.openedInitial(state);
+
+                bootstrap.doBootstrapInitialWindowIfNecessary(traceId, 0L, 0, 0);
+            }
+        }
+
+        private void doBootstrapDescribeReplyWindow(
+            long traceId,
+            int credit)
+        {
+            state = KafkaState.openedReply(state);
+
+            replyBudget += credit;
+
+            doWindow(receiver, bootstrap.resolvedId, replyId, traceId, bootstrap.authorization,
+                0L, credit, bootstrap.replyPadding);
+        }
+
+        private void doBootstrapDescribeReplyResetIfNecessary(
+            long traceId)
+        {
+            if (!KafkaState.replyClosed(state))
+            {
+                doBootstrapDescribeReplyReset(traceId);
+            }
+        }
+
+        private void doBootstrapDescribeReplyReset(
+            long traceId)
+        {
+            state = KafkaState.closedReply(state);
+
+            doReset(receiver, bootstrap.resolvedId, replyId, traceId, bootstrap.authorization);
+        }
+
+        private void doBootstrapDescribeCleanup(
+            long traceId)
+        {
+            doBootstrapDescribeInitialAbortIfNecessary(traceId);
+            doBootstrapDescribeReplyResetIfNecessary(traceId);
+        }
+    }
+
     private final class KafkaBootstrapMetaStream
     {
         private final KafkaBootstrapStream bootstrap;
@@ -602,6 +864,15 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             KafkaBootstrapStream mergedFetch)
         {
             this.bootstrap = mergedFetch;
+        }
+
+        private void doBootstrapMetaInitialBeginIfNecessary(
+            long traceId)
+        {
+            if (!KafkaState.initialOpening(state))
+            {
+                doBootstrapMetaInitialBegin(traceId);
+            }
         }
 
         private void doBootstrapMetaInitialBegin(

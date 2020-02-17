@@ -79,6 +79,9 @@ public class ClientDescribeIT
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldReceiveTopicConfigInfoChanged() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_TOPIC_CONFIG");
+        k3po.notifyBarrier("CHANGE_TOPIC_CONFIG");
         k3po.finish();
     }
 }

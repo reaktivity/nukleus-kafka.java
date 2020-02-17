@@ -23,7 +23,7 @@ import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 
 import java.nio.ByteOrder;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -114,7 +114,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
     private final ResourceResponseFW resourceResponseRO = new ResourceResponseFW();
     private final ConfigResponseFW configResponseRO = new ConfigResponseFW();
 
-    private final Map<String, String> newConfigs = new HashMap<>();
+    private final Map<String, String> newConfigs = new LinkedHashMap<>();
     private final List<String> changedConfigs = new ArrayList<>();
 
     private final KafkaDescribeClientDecoder decodeResponse = this::decodeResponse;
@@ -430,12 +430,12 @@ public final class KafkaClientDescribeFactory implements StreamFactory
                 break decode;
             }
 
-            progress = responseHeader.limit();
-
             final int responseSize = responseHeader.length();
 
             if (length >= responseHeader.sizeof() + responseSize)
             {
+                progress = responseHeader.limit();
+
                 final DescribeConfigsResponseFW describeConfigsResponse =
                         describeConfigsResponseRO.tryWrap(buffer, progress, limit);
 
@@ -795,7 +795,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
                 this.network = router.supplyReceiver(initialId);
                 this.decoder = decodeResponse;
                 this.topic = requireNonNull(topic);
-                this.configs = new HashMap<>(configs.size());
+                this.configs = new LinkedHashMap<>(configs.size());
                 configs.forEach(c -> this.configs.put(c, null));
             }
 
@@ -903,6 +903,8 @@ public final class KafkaClientDescribeFactory implements StreamFactory
 
                 state = KafkaState.closedReply(state);
 
+                cleanupDecodeSlotIfNecessary();
+
                 doApplicationEnd(traceId);
             }
 
@@ -1004,6 +1006,8 @@ public final class KafkaClientDescribeFactory implements StreamFactory
                 long authorization)
             {
                 state = KafkaState.closedInitial(state);
+
+                cleanupEncodeSlotIfNecessary();
 
                 doEnd(network, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
             }

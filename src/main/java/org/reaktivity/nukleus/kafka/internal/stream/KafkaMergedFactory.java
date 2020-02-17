@@ -40,6 +40,7 @@ import org.reaktivity.nukleus.kafka.internal.budget.MergedBudgetCreditor;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaConfigFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
@@ -58,6 +59,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ExtensionFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDescribeDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaMergedBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaMetaDataExFW;
@@ -69,6 +71,14 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class KafkaMergedFactory implements StreamFactory
 {
+    private static final String16FW CONFIG_NAME_CLEANUP_POLICY = new String16FW("cleanup.policy");
+    private static final String16FW CONFIG_NAME_MAX_MESSAGE_BYTES = new String16FW("max.message.bytes");
+    private static final String16FW CONFIG_NAME_SEGMENT_BYTES = new String16FW("segment.bytes");
+    private static final String16FW CONFIG_NAME_SEGMENT_INDEX_BYTES = new String16FW("segment.index.bytes");
+    private static final String16FW CONFIG_NAME_SEGMENT_MILLIS = new String16FW("segment.ms");
+    private static final String16FW CONFIG_NAME_RETENTION_BYTES = new String16FW("retention.bytes");
+    private static final String16FW CONFIG_NAME_RETENTION_MILLIS = new String16FW("retention.ms");
+
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
@@ -529,6 +539,7 @@ public final class KafkaMergedFactory implements StreamFactory
         private final long authorization;
         private final String topic;
         private final long resolvedId;
+        private final KafkaUnmergedDescribeStream describeStream;
         private final KafkaUnmergedMetaStream metaStream;
         private final List<KafkaUnmergedFetchStream> fetchStreams;
         private final Long2LongHashMap nextOffsetsById;
@@ -565,6 +576,7 @@ public final class KafkaMergedFactory implements StreamFactory
             this.authorization = authorization;
             this.topic = topic;
             this.resolvedId = resolvedId;
+            this.describeStream = new KafkaUnmergedDescribeStream(this);
             this.metaStream = new KafkaUnmergedMetaStream(this);
             this.fetchStreams = new ArrayList<>();
             this.nextOffsetsById = initialOffsetsById;
@@ -614,7 +626,7 @@ public final class KafkaMergedFactory implements StreamFactory
             assert state == 0;
             state = KafkaState.openingInitial(state);
 
-            metaStream.doMetaInitialBegin(traceId);
+            describeStream.doDescribeInitialBegin(traceId);
         }
 
         private void onMergedInitialEnd(
@@ -625,6 +637,7 @@ public final class KafkaMergedFactory implements StreamFactory
             assert !KafkaState.initialClosed(state);
             state = KafkaState.closedInitial(state);
 
+            describeStream.doDescribeInitialEndIfNecessary(traceId);
             metaStream.doMetaInitialEndIfNecessary(traceId);
             fetchStreams.forEach(f -> f.doFetchInitialEndIfNecessary(traceId));
 
@@ -639,6 +652,7 @@ public final class KafkaMergedFactory implements StreamFactory
             assert !KafkaState.initialClosed(state);
             state = KafkaState.closedInitial(state);
 
+            describeStream.doDescribeInitialAbortIfNecessary(traceId);
             metaStream.doMetaInitialAbortIfNecessary(traceId);
             fetchStreams.forEach(f -> f.doFetchInitialAbortIfNecessary(traceId));
 
@@ -693,6 +707,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
+            describeStream.doDescribeReplyReset(traceId);
             metaStream.doMetaReplyReset(traceId);
             fetchStreams.forEach(f -> f.doFetchReplyReset(traceId));
 
@@ -853,8 +868,16 @@ public final class KafkaMergedFactory implements StreamFactory
             doMergedInitialResetIfNecessary(traceId);
             doMergedReplyAbortIfNecessary(traceId);
 
+            describeStream.doDescribeCleanup(traceId);
             metaStream.doMetaCleanup(traceId);
             fetchStreams.forEach(f -> f.doFetchCleanup(traceId));
+        }
+
+        private void onTopicConfigChanged(
+            long traceId,
+            ArrayFW<KafkaConfigFW> configs)
+        {
+            metaStream.doMetaInitialBeginIfNecessary(traceId);
         }
 
         private void onTopicMetaDataChanged(
@@ -922,6 +945,244 @@ public final class KafkaMergedFactory implements StreamFactory
         }
     }
 
+    private final class KafkaUnmergedDescribeStream
+    {
+        private final KafkaMergedFetchStream mergedFetch;
+
+        private long initialId;
+        private long replyId;
+        private MessageConsumer receiver;
+
+        private int state;
+
+        private int replyBudget;
+
+        private KafkaUnmergedDescribeStream(
+            KafkaMergedFetchStream mergedFetch)
+        {
+            this.mergedFetch = mergedFetch;
+        }
+
+        private void doDescribeInitialBegin(
+            long traceId)
+        {
+            assert state == 0;
+
+            state = KafkaState.openingInitial(state);
+
+            this.initialId = supplyInitialId.applyAsLong(mergedFetch.resolvedId);
+            this.replyId = supplyReplyId.applyAsLong(initialId);
+            this.receiver = router.supplyReceiver(initialId);
+
+            correlations.put(replyId, this::onDescribeReply);
+            router.setThrottle(initialId, this::onDescribeReply);
+            doBegin(receiver, mergedFetch.resolvedId, initialId, traceId, mergedFetch.authorization, 0L,
+                ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
+                        .typeId(kafkaTypeId)
+                        .describe(m -> m.topic(mergedFetch.topic)
+                                        .configsItem(ci -> ci.set(CONFIG_NAME_CLEANUP_POLICY))
+                                        .configsItem(ci -> ci.set(CONFIG_NAME_MAX_MESSAGE_BYTES))
+                                        .configsItem(ci -> ci.set(CONFIG_NAME_SEGMENT_BYTES))
+                                        .configsItem(ci -> ci.set(CONFIG_NAME_SEGMENT_INDEX_BYTES))
+                                        .configsItem(ci -> ci.set(CONFIG_NAME_SEGMENT_MILLIS))
+                                        .configsItem(ci -> ci.set(CONFIG_NAME_RETENTION_BYTES))
+                                        .configsItem(ci -> ci.set(CONFIG_NAME_RETENTION_MILLIS)))
+                        .build()
+                        .sizeof()));
+        }
+
+        private void doDescribeInitialEndIfNecessary(
+            long traceId)
+        {
+            if (!KafkaState.initialClosed(state))
+            {
+                doDescribeInitialEnd(traceId);
+            }
+        }
+
+        private void doDescribeInitialEnd(
+            long traceId)
+        {
+            state = KafkaState.closedInitial(state);
+
+            doEnd(receiver, mergedFetch.resolvedId, initialId, traceId, mergedFetch.authorization, EMPTY_EXTENSION);
+        }
+
+        private void doDescribeInitialAbortIfNecessary(
+            long traceId)
+        {
+            if (!KafkaState.initialClosed(state))
+            {
+                doDescribeInitialAbort(traceId);
+            }
+        }
+
+        private void doDescribeInitialAbort(
+            long traceId)
+        {
+            state = KafkaState.closedInitial(state);
+
+            doAbort(receiver, mergedFetch.resolvedId, initialId, traceId, mergedFetch.authorization, EMPTY_EXTENSION);
+        }
+
+        private void onDescribeReply(
+            int msgTypeId,
+            DirectBuffer buffer,
+            int index,
+            int length)
+        {
+            switch (msgTypeId)
+            {
+            case BeginFW.TYPE_ID:
+                final BeginFW begin = beginRO.wrap(buffer, index, index + length);
+                onDescribeReplyBegin(begin);
+                break;
+            case DataFW.TYPE_ID:
+                final DataFW data = dataRO.wrap(buffer, index, index + length);
+                onDescribeReplyData(data);
+                break;
+            case EndFW.TYPE_ID:
+                final EndFW end = endRO.wrap(buffer, index, index + length);
+                onDescribeReplyEnd(end);
+                break;
+            case AbortFW.TYPE_ID:
+                final AbortFW abort = abortRO.wrap(buffer, index, index + length);
+                onDescribeReplyAbort(abort);
+                break;
+            case ResetFW.TYPE_ID:
+                final ResetFW reset = resetRO.wrap(buffer, index, index + length);
+                onDescribeInitialReset(reset);
+                break;
+            case WindowFW.TYPE_ID:
+                final WindowFW window = windowRO.wrap(buffer, index, index + length);
+                onDescribeInitialWindow(window);
+                break;
+            default:
+                break;
+            }
+        }
+
+        private void onDescribeReplyBegin(
+            BeginFW begin)
+        {
+            final long traceId = begin.traceId();
+
+            state = KafkaState.openedReply(state);
+
+            doDescribeReplyWindow(traceId, 8192);
+        }
+
+        private void onDescribeReplyData(
+            DataFW data)
+        {
+            final long traceId = data.traceId();
+            final int reserved = data.reserved();
+            final OctetsFW extension = data.extension();
+
+            replyBudget -= reserved;
+
+            if (replyBudget < 0)
+            {
+                mergedFetch.doMergedCleanup(traceId);
+            }
+            else
+            {
+                final KafkaDataExFW kafkaDataEx = extension.get(kafkaDataExRO::wrap);
+                final KafkaDescribeDataExFW kafkaDescribeDataEx = kafkaDataEx.describe();
+                final ArrayFW<KafkaConfigFW> configs = kafkaDescribeDataEx.configs();
+                mergedFetch.onTopicConfigChanged(traceId, configs);
+
+                doDescribeReplyWindow(traceId, reserved);
+            }
+        }
+
+        private void onDescribeReplyEnd(
+            EndFW end)
+        {
+            final long traceId = end.traceId();
+
+            state = KafkaState.closedReply(state);
+
+            mergedFetch.doMergedReplyBeginIfNecessary(traceId);
+            mergedFetch.doMergedReplyEndIfNecessary(traceId);
+
+            doDescribeInitialEndIfNecessary(traceId);
+        }
+
+        private void onDescribeReplyAbort(
+            AbortFW abort)
+        {
+            final long traceId = abort.traceId();
+
+            state = KafkaState.closedReply(state);
+
+            mergedFetch.doMergedReplyAbortIfNecessary(traceId);
+
+            doDescribeInitialAbortIfNecessary(traceId);
+        }
+
+        private void onDescribeInitialReset(
+            ResetFW reset)
+        {
+            final long traceId = reset.traceId();
+
+            state = KafkaState.closedInitial(state);
+
+            mergedFetch.doMergedInitialResetIfNecessary(traceId);
+
+            doDescribeReplyResetIfNecessary(traceId);
+        }
+
+        private void onDescribeInitialWindow(
+            WindowFW window)
+        {
+            if (!KafkaState.initialOpened(state))
+            {
+                final long traceId = window.traceId();
+
+                state = KafkaState.openedInitial(state);
+
+                mergedFetch.doMergedInitialWindowIfNecessary(traceId, 0L, 0, 0);
+            }
+        }
+
+        private void doDescribeReplyWindow(
+            long traceId,
+            int credit)
+        {
+            state = KafkaState.openedReply(state);
+
+            replyBudget += credit;
+
+            doWindow(receiver, mergedFetch.resolvedId, replyId, traceId, mergedFetch.authorization,
+                0L, credit, mergedFetch.replyPadding);
+        }
+
+        private void doDescribeReplyResetIfNecessary(
+            long traceId)
+        {
+            if (!KafkaState.replyClosed(state))
+            {
+                doDescribeReplyReset(traceId);
+            }
+        }
+
+        private void doDescribeReplyReset(
+            long traceId)
+        {
+            state = KafkaState.closedReply(state);
+
+            doReset(receiver, mergedFetch.resolvedId, replyId, traceId, mergedFetch.authorization);
+        }
+
+        private void doDescribeCleanup(
+            long traceId)
+        {
+            doDescribeInitialAbortIfNecessary(traceId);
+            doDescribeReplyResetIfNecessary(traceId);
+        }
+    }
+
     private final class KafkaUnmergedMetaStream
     {
         private final KafkaMergedFetchStream mergedFetch;
@@ -938,6 +1199,15 @@ public final class KafkaMergedFactory implements StreamFactory
             KafkaMergedFetchStream mergedFetch)
         {
             this.mergedFetch = mergedFetch;
+        }
+
+        private void doMetaInitialBeginIfNecessary(
+            long traceId)
+        {
+            if (!KafkaState.initialOpening(state))
+            {
+                doMetaInitialBegin(traceId);
+            }
         }
 
         private void doMetaInitialBegin(
@@ -981,7 +1251,7 @@ public final class KafkaMergedFactory implements StreamFactory
         private void doMetaInitialAbortIfNecessary(
             long traceId)
         {
-            if (!KafkaState.initialClosed(state))
+            if (KafkaState.initialOpening(state) && !KafkaState.initialClosed(state))
             {
                 doMetaInitialAbort(traceId);
             }
