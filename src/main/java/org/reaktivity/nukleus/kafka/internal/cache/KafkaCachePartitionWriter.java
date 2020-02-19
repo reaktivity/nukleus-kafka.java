@@ -53,11 +53,6 @@ public final class KafkaCachePartitionWriter
         return partitionId;
     }
 
-    public KafkaCacheTopicConfig config()
-    {
-        return topicConfig;
-    }
-
     public void ensureWritable(
         long offset)
     {
@@ -77,6 +72,14 @@ public final class KafkaCachePartitionWriter
         {
             headSegment = sentinel.headSegment(offset);
         }
+        return headSegment;
+    }
+
+    public KafkaCacheHeadSegment nextSegment(
+        long offset)
+    {
+        headSegment = headSegment.nextSegment(offset);
+
         return headSegment;
     }
 
@@ -117,6 +120,12 @@ public final class KafkaCachePartitionWriter
         }
 
         return headSegment;
+    }
+
+    public long retainsAt(
+        KafkaCacheSegment segment)
+    {
+        return segment.timestamp + topicConfig.segmentMillis;
     }
 
     public long expiresAt(

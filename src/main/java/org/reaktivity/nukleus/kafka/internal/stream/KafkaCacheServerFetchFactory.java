@@ -83,7 +83,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
     private static final int FLAGS_INIT = 0x02;
     private static final int FLAGS_FIN = 0x01;
 
-    private static final int SIGNAL_SEGMENT_EXPIRED = 1;
+    private static final int SIGNAL_SEGMENT_RETAINED = 1;
+    private static final int SIGNAL_SEGMENT_EXPIRED = 2;
 
     private final RouteFW routeRO = new RouteFW();
     private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
@@ -369,7 +370,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         private int state;
 
         private long partitionOffset;
-        private long cancelId = NO_CANCEL_ID;
+        private long retainedId = NO_CANCEL_ID;
+        private long expiredId = NO_CANCEL_ID;
 
         private KafkaCacheServerFetchFanout(
             long routeId,
@@ -590,10 +592,24 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 assert partitionOffset >= 0 && partitionOffset >= nextOffset
                         : String.format("%d >= 0 && %d >= %d", partitionOffset, partitionOffset, nextOffset);
 
-                if (nextHeadSegment != headSegment && cancelId == NO_CANCEL_ID && partition.cleanupPolicyDelete())
+                if (nextHeadSegment != headSegment)
                 {
-                    final long expiresAt = partition.expiresAt(nextHeadSegment.tailSegment());
-                    this.cancelId = signaler.signalAt(expiresAt, routeId, initialId, SIGNAL_SEGMENT_EXPIRED);
+                    if (retainedId != NO_CANCEL_ID)
+                    {
+                        signaler.cancel(retainedId);
+                        this.retainedId = NO_CANCEL_ID;
+                    }
+
+                    assert retainedId == NO_CANCEL_ID;
+
+                    final long retainsAt = partition.retainsAt(nextHeadSegment);
+                    this.retainedId = signaler.signalAt(retainsAt, routeId, initialId, SIGNAL_SEGMENT_RETAINED);
+
+                    if (expiredId == NO_CANCEL_ID && partition.cleanupPolicyDelete())
+                    {
+                        final long expiresAt = partition.expiresAt(nextHeadSegment.tailSegment());
+                        this.expiredId = signaler.signalAt(expiresAt, routeId, initialId, SIGNAL_SEGMENT_EXPIRED);
+                    }
                 }
 
                 nextHeadSegment.writeEntryStart(partitionOffset, timestamp, key, valueLength, deltaType);
@@ -695,10 +711,19 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
             switch (signalId)
             {
+            case SIGNAL_SEGMENT_RETAINED:
+                onServerFanoutInitialSignalSegmentRetained(signal);
+                break;
             case SIGNAL_SEGMENT_EXPIRED:
                 onServerFanoutInitialSignalSegmentExpired(signal);
                 break;
             }
+        }
+
+        private void onServerFanoutInitialSignalSegmentRetained(
+            SignalFW signal)
+        {
+            partition.nextSegment(partitionOffset);
         }
 
         private void onServerFanoutInitialSignalSegmentExpired(
@@ -719,11 +744,11 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             if (segment != segment.headSegment())
             {
                 final long expiresAt = partition.expiresAt(segment);
-                this.cancelId = signaler.signalAt(expiresAt, routeId, initialId, SIGNAL_SEGMENT_EXPIRED);
+                this.expiredId = signaler.signalAt(expiresAt, routeId, initialId, SIGNAL_SEGMENT_EXPIRED);
             }
             else
             {
-                this.cancelId = NO_CANCEL_ID;
+                this.expiredId = NO_CANCEL_ID;
             }
         }
 
