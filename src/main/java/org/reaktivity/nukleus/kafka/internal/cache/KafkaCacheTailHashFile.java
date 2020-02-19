@@ -50,4 +50,10 @@ public final class KafkaCacheTailHashFile extends KafkaCacheTailIndexFile
     {
         return super.reverseScanKey(hash, cursor);
     }
+
+    public void delete(
+        KafkaCacheTailSegment segment)
+    {
+        super.deleteIfExists(segment, CACHE_EXTENSION_HASH_INDEX);
+    }
 }

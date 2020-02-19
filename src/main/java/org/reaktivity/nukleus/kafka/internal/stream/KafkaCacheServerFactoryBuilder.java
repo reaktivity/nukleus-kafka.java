@@ -24,9 +24,11 @@ import java.util.function.ToIntFunction;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.buffer.BufferPool;
+import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicConfigSupplier;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheWriter;
 import org.reaktivity.nukleus.route.AddressFactoryBuilder;
 import org.reaktivity.nukleus.route.RouteManager;
@@ -39,6 +41,7 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
     private final KafkaCacheWriter cache;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final AddressFactoryBuilder addressFactoryBuilder;
+    private final KafkaCacheTopicConfigSupplier supplyTopicConfig;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
 
     private RouteManager router;
@@ -48,6 +51,7 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
     private LongSupplier supplyTraceId;
     private Supplier<BufferPool> supplyBufferPool;
     private ToIntFunction<String> supplyTypeId;
+    private Signaler signaler;
 
     public KafkaCacheServerFactoryBuilder(
         KafkaConfiguration config,
@@ -57,6 +61,7 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
         this.config = config;
         this.cache = cache.newWriter();
         this.supplyCacheRoute = supplyCacheRoute;
+        this.supplyTopicConfig = cache::supplyTopicConfig;
         this.correlations = new Long2ObjectHashMap<>();
         this.addressFactoryBuilder = new KafkaCacheServerAddressFactoryBuilder(config, correlations);
     }
@@ -72,6 +77,14 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
         RouteManager router)
     {
         this.router = router;
+        return this;
+    }
+
+    @Override
+    public KafkaCacheServerFactoryBuilder setSignaler(
+        Signaler signaler)
+    {
+        this.signaler = signaler;
         return this;
     }
 
@@ -134,11 +147,13 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
                 router,
                 writeBuffer,
                 bufferPool,
+                signaler,
                 supplyInitialId,
                 supplyReplyId,
                 supplyTraceId,
                 supplyTypeId,
                 supplyCacheRoute,
+                supplyTopicConfig,
                 correlations);
     }
 }

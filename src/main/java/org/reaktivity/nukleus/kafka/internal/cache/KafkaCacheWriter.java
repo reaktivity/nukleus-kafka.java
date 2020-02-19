@@ -19,22 +19,21 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
-import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheTopicConfigSupplier;
 
 public final class KafkaCacheWriter
 {
     public static final String TYPE_NAME = String.format("%s/cache", KafkaNukleus.NAME);
 
-    private final KafkaCacheSegmentSupplier segmentSupplier;
-    private final KafkaCacheTopicConfigSupplier topicConfigSupplier;
+    private final KafkaCacheSegmentSupplier supplySegment;
+    private final KafkaCacheTopicConfigSupplier supplyTopicConfig;
     private final Map<String, KafkaCacheClusterWriter> clustersByName;
 
     KafkaCacheWriter(
-        KafkaCacheSegmentSupplier segmentSupplier,
-        KafkaCacheTopicConfigSupplier topicConfigSupplier)
+        KafkaCacheSegmentSupplier supplySegment,
+        KafkaCacheTopicConfigSupplier supplyTopicConfig)
     {
-        this.segmentSupplier = segmentSupplier;
-        this.topicConfigSupplier = topicConfigSupplier;
+        this.supplySegment = supplySegment;
+        this.supplyTopicConfig = supplyTopicConfig;
         this.clustersByName = new ConcurrentHashMap<>();
     }
 
@@ -47,6 +46,6 @@ public final class KafkaCacheWriter
     private KafkaCacheClusterWriter newCluster(
         String clusterName)
     {
-        return new KafkaCacheClusterWriter(clusterName, segmentSupplier, topicConfigSupplier);
+        return new KafkaCacheClusterWriter(clusterName, supplySegment, supplyTopicConfig);
     }
 }

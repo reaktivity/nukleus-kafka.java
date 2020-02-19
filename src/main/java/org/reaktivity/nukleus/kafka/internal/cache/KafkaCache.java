@@ -25,7 +25,6 @@ import org.agrona.LangUtil;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSentinelSegment;
-import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheTopicConfig;
 
 public final class KafkaCache
 {

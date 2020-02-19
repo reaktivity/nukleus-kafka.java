@@ -15,13 +15,9 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSentinelSegment;
-
-@FunctionalInterface
-public interface KafkaCacheSegmentSupplier
+public enum KafkaCacheCleanupPolicy
 {
-    KafkaCacheSentinelSegment get(
-        String clusterName,
-        String topicName,
-        int partitionId);
+    COMPACT,
+    DELETE,
+    COMPACT_AND_DELETE
 }

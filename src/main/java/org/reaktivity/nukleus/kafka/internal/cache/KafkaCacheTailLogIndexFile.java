@@ -42,4 +42,10 @@ public final class KafkaCacheTailLogIndexFile extends KafkaCacheTailIndexFile
     {
         return super.scanIndex(cursor);
     }
+
+    public void delete(
+        KafkaCacheTailSegment segment)
+    {
+        super.deleteIfExists(segment, CACHE_EXTENSION_LOG_INDEX);
+    }
 }

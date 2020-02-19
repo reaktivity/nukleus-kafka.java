@@ -27,9 +27,11 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.buffer.BufferPool;
+import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicConfigSupplier;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheWriter;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
@@ -54,11 +56,13 @@ public final class KafkaCacheServerFactory implements StreamFactory
         RouteManager router,
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
+        Signaler signaler,
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTraceId,
         ToIntFunction<String> supplyTypeId,
         LongFunction<KafkaCacheRoute> supplyCacheRoute,
+        KafkaCacheTopicConfigSupplier supplyTopicConfig,
         Long2ObjectHashMap<MessageConsumer> correlations)
     {
         final Int2ObjectHashMap<StreamFactory> streamFactoriesByKind = new Int2ObjectHashMap<>();
@@ -73,10 +77,10 @@ public final class KafkaCacheServerFactory implements StreamFactory
 
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_DESCRIBE, new KafkaCacheServerDescribeFactory(
                 config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
-                supplyTraceId, supplyTypeId, supplyCacheRoute, correlations));
+                supplyTraceId, supplyTypeId, supplyCacheRoute, supplyTopicConfig, correlations));
 
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_FETCH, new KafkaCacheServerFetchFactory(
-                config, cache, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
+                config, cache, router, writeBuffer, bufferPool, signaler, supplyInitialId, supplyReplyId,
                 supplyTraceId, supplyTypeId, supplyCacheRoute, correlations));
 
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);

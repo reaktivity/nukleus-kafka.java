@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -28,6 +30,7 @@ import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.buffer.BufferPool;
+import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessageFunction;
 import org.reaktivity.nukleus.function.MessagePredicate;
@@ -36,6 +39,9 @@ import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheBrokerWriter;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheClusterWriter;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionWriter;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSentinelSegment;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicWriter;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheWriter;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
@@ -61,6 +67,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFlushExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaResetExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.SignalFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
@@ -76,6 +83,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
     private static final int FLAGS_INIT = 0x02;
     private static final int FLAGS_FIN = 0x01;
 
+    private static final int SIGNAL_SEGMENT_EXPIRED = 1;
+
     private final RouteFW routeRO = new RouteFW();
     private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
 
@@ -85,6 +94,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
     private final AbortFW abortRO = new AbortFW();
     private final ResetFW resetRO = new ResetFW();
     private final WindowFW windowRO = new WindowFW();
+    private final SignalFW signalRO = new SignalFW();
     private final ExtensionFW extensionRO = new ExtensionFW();
     private final KafkaBeginExFW kafkaBeginExRO = new KafkaBeginExFW();
     private final KafkaDataExFW kafkaDataExRO = new KafkaDataExFW();
@@ -106,6 +116,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
     private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
     private final BufferPool bufferPool;
+    private final Signaler signaler;
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
@@ -118,6 +129,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         RouteManager router,
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
+        Signaler signaler,
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTraceId,
@@ -130,6 +142,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         this.router = router;
         this.writeBuffer = writeBuffer;
         this.bufferPool = bufferPool;
+        this.signaler = signaler;
         this.supplyInitialId = supplyInitialId;
         this.supplyReplyId = supplyReplyId;
         this.supplyCacheRoute = supplyCacheRoute;
@@ -356,6 +369,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         private int state;
 
         private long partitionOffset;
+        private long cancelId = NO_CANCEL_ID;
 
         private KafkaCacheServerFetchFanout(
             long routeId,
@@ -496,6 +510,10 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 final WindowFW window = windowRO.wrap(buffer, index, index + length);
                 onServerFanoutInitialWindow(window);
                 break;
+            case SignalFW.TYPE_ID:
+                final SignalFW signal = signalRO.wrap(buffer, index, index + length);
+                onServerFanoutInitialSignal(signal);
+                break;
             default:
                 break;
             }
@@ -564,12 +582,26 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 assert partitionId == partition.id();
                 assert partitionOffset >= this.partitionOffset;
 
-                partition.writeEntryStart(partitionOffset, timestamp, key, valueLength, headersSizeMax, deltaType);
+                final KafkaCacheHeadSegment headSegment = partition.headSegment(partitionOffset);
+                final KafkaCacheHeadSegment nextHeadSegment =
+                        partition.nextSegmentIfNecessary(partitionOffset, key, valueLength, headersSizeMax);
+
+                final long nextOffset = nextHeadSegment.nextOffset();
+                assert partitionOffset >= 0 && partitionOffset >= nextOffset
+                        : String.format("%d >= 0 && %d >= %d", partitionOffset, partitionOffset, nextOffset);
+
+                if (nextHeadSegment != headSegment && cancelId == NO_CANCEL_ID && partition.cleanupPolicyDelete())
+                {
+                    final long expiresAt = partition.expiresAt(nextHeadSegment.tailSegment());
+                    this.cancelId = signaler.signalAt(expiresAt, routeId, initialId, SIGNAL_SEGMENT_EXPIRED);
+                }
+
+                nextHeadSegment.writeEntryStart(partitionOffset, timestamp, key, valueLength, deltaType);
             }
 
             if (valueFragment != null)
             {
-                partition.writeEntryContinue(valueFragment);
+                partition.headSegment(partitionOffset).writeEntryContinue(valueFragment);
             }
 
             if ((flags & FLAGS_FIN) != 0x00)
@@ -585,7 +617,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 assert partitionId == partition.id();
                 assert partitionOffset >= this.partitionOffset;
 
-                partition.writeEntryFinish(headers, deltaType);
+                partition.headSegment(partitionOffset).writeEntryFinish(headers, deltaType);
 
                 this.partitionOffset = partitionOffset;
 
@@ -653,6 +685,45 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 state = KafkaState.openedInitial(state);
 
                 members.forEach(s -> s.doServerInitialWindowIfNecessary(traceId, 0L, 0, 0));
+            }
+        }
+
+        private void onServerFanoutInitialSignal(
+            SignalFW signal)
+        {
+            final int signalId = signal.signalId();
+
+            switch (signalId)
+            {
+            case SIGNAL_SEGMENT_EXPIRED:
+                onServerFanoutInitialSignalSegmentExpired(signal);
+                break;
+            }
+        }
+
+        private void onServerFanoutInitialSignalSegmentExpired(
+            SignalFW signal)
+        {
+            final long now = System.currentTimeMillis();
+            final KafkaCacheSentinelSegment sentinel = partition.sentinelSegment();
+
+            KafkaCacheSegment segment = sentinel;
+            while (segment.nextSegment() != null && partition.expiresAt(segment) <= now)
+            {
+                segment = segment.nextSegment();
+            }
+            assert segment != null;
+
+            sentinel.nextSegment(segment);
+
+            if (segment != segment.headSegment())
+            {
+                final long expiresAt = partition.expiresAt(segment);
+                this.cancelId = signaler.signalAt(expiresAt, routeId, initialId, SIGNAL_SEGMENT_EXPIRED);
+            }
+            else
+            {
+                this.cancelId = NO_CANCEL_ID;
             }
         }
 

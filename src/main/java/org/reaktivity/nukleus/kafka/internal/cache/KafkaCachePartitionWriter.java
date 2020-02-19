@@ -20,13 +20,9 @@ import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFacto
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSentinelSegment;
-import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheTopicConfig;
-import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
-import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
-import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
-import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public final class KafkaCachePartitionWriter
 {
@@ -74,36 +70,17 @@ public final class KafkaCachePartitionWriter
         return headSegment != null ? headSegment.nextOffset() : OFFSET_EARLIEST;
     }
 
-    public void writeEntryStart(
-        long offset,
-        long timestamp,
-        KafkaKeyFW key,
-        int valueLength,
-        int headerSizeMax,
-        KafkaDeltaType deltaType)
+    public KafkaCacheHeadSegment headSegment(
+        long offset)
     {
-        final KafkaCacheHeadSegment headSegment = nextSegmentIfNecessary(offset, key, valueLength, headerSizeMax);
-
-        final long nextOffset = headSegment.nextOffset();
-        assert offset >= 0 && offset >= nextOffset : String.format("%d >= 0 && %d >= %d", offset, offset, nextOffset);
-
-        headSegment.writeEntryStart(offset, timestamp, key, valueLength, deltaType);
+        if (headSegment == null)
+        {
+            headSegment = sentinel.headSegment(offset);
+        }
+        return headSegment;
     }
 
-    public void writeEntryContinue(
-        OctetsFW payload)
-    {
-        headSegment.writeEntryContinue(payload);
-    }
-
-    public void writeEntryFinish(
-        ArrayFW<KafkaHeaderFW> headers,
-        KafkaDeltaType deltaType)
-    {
-        headSegment.writeEntryFinish(headers, deltaType);
-    }
-
-    private KafkaCacheHeadSegment nextSegmentIfNecessary(
+    public KafkaCacheHeadSegment nextSegmentIfNecessary(
         long offset,
         KafkaKeyFW key,
         int valueLength,
@@ -140,5 +117,22 @@ public final class KafkaCachePartitionWriter
         }
 
         return headSegment;
+    }
+
+    public long expiresAt(
+        KafkaCacheSegment segment)
+    {
+        return segment.timestamp + topicConfig.retentionMillis;
+    }
+
+    public boolean cleanupPolicyDelete()
+    {
+        return topicConfig.cleanupPolicy == KafkaCacheCleanupPolicy.DELETE ||
+                topicConfig.cleanupPolicy == KafkaCacheCleanupPolicy.COMPACT_AND_DELETE;
+    }
+
+    public KafkaCacheSentinelSegment sentinelSegment()
+    {
+        return sentinel;
     }
 }

@@ -38,6 +38,8 @@ import org.reaktivity.nukleus.function.MessageFunction;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicConfig;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicConfigSupplier;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaConfigFW;
@@ -95,7 +97,9 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
+    private final KafkaCacheTopicConfigSupplier supplyTopicConfig;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
+    private final boolean reconnect;
 
     public KafkaCacheServerDescribeFactory(
         KafkaConfiguration config,
@@ -107,6 +111,7 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
         LongSupplier supplyTraceId,
         ToIntFunction<String> supplyTypeId,
         LongFunction<KafkaCacheRoute> supplyCacheRoute,
+        KafkaCacheTopicConfigSupplier supplyTopicConfig,
         Long2ObjectHashMap<MessageConsumer> correlations)
     {
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
@@ -117,7 +122,9 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
         this.supplyInitialId = supplyInitialId;
         this.supplyReplyId = supplyReplyId;
         this.supplyCacheRoute = supplyCacheRoute;
+        this.supplyTopicConfig = supplyTopicConfig;
         this.correlations = correlations;
+        this.reconnect = config.cacheServerReconnect();
     }
 
     @Override
@@ -165,10 +172,12 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
             KafkaCacheServerDescribeFanout fanout = cacheRoute.serverDescribeFanoutsByTopic.get(topicKey);
             if (fanout == null)
             {
+                final String clusterName = route.localAddress().asString();
+                final KafkaCacheTopicConfig topicConfig = supplyTopicConfig.get(clusterName, topicName);
                 final List<String> configNames = new ArrayList<>();
                 kafkaDescribeBeginEx.configs().forEach(c -> configNames.add(c.asString()));
                 final KafkaCacheServerDescribeFanout newFanout =
-                        new KafkaCacheServerDescribeFanout(resolvedId, authorization, topicName, configNames);
+                        new KafkaCacheServerDescribeFanout(resolvedId, authorization, topicConfig, topicName, configNames);
 
                 cacheRoute.serverDescribeFanoutsByTopic.put(topicKey, newFanout);
                 fanout = newFanout;
@@ -315,6 +324,7 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
     {
         private final long routeId;
         private final long authorization;
+        private final KafkaCacheTopicConfig topicConfig;
         private final String topic;
         private final List<String> configNames;
         private final List<KafkaCacheServerDescribeStream> members;
@@ -329,6 +339,7 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
         private KafkaCacheServerDescribeFanout(
             long routeId,
             long authorization,
+            KafkaCacheTopicConfig topicConfig,
             String topic,
             List<String> configNames)
         {
@@ -336,6 +347,7 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
             this.authorization = authorization;
             this.topic = topic;
             this.configNames = configNames;
+            this.topicConfig = topicConfig;
             this.members = new ArrayList<>();
         }
 
@@ -445,11 +457,19 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
         {
             final long traceId = reset.traceId();
 
-            members.forEach(s -> s.doDescribeInitialResetIfNecessary(traceId));
-
             state = KafkaState.closedInitial(state);
 
             doDescribeFanoutReplyResetIfNecessary(traceId);
+
+            if (reconnect)
+            {
+                System.out.format("TODO: progressive back-off, DESCRIBE\n");
+                doDescribeFanoutInitialBeginIfNecessary(traceId);
+            }
+            else
+            {
+                members.forEach(s -> s.doDescribeInitialResetIfNecessary(traceId));
+            }
         }
 
         private void onDescribeFanoutInitialWindow(
@@ -534,12 +554,22 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
                 }
 
                 configValues.clear();
-                changedConfigs.forEach(c -> configValues.put(c.name().asString(), c.value().asString()));
-
+                changedConfigs.forEach(this::onDescribeFanoutConfigChanged);
                 members.forEach(s -> s.doDescribeReplyDataIfNecessary(traceId, kafkaDataEx));
             }
 
             doDescribeFanoutReplyWindow(traceId, reserved);
+        }
+
+        private void onDescribeFanoutConfigChanged(
+            KafkaConfigFW config)
+        {
+            final String16FW configName = config.name();
+            final String16FW configValue = config.value();
+
+            topicConfig.onTopicConfigChanged(configName, configValue);
+
+            configValues.put(configName.asString(), configValue.asString());
         }
 
         private void onDescribeFanoutReplyEnd(

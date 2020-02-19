@@ -13,12 +13,12 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.kafka.internal.stream;
+package org.reaktivity.nukleus.kafka.internal.cache;
 
 @FunctionalInterface
 public interface KafkaCacheTopicConfigSupplier
 {
-    KafkaCacheTopicConfig supply(
+    KafkaCacheTopicConfig get(
         String clusterName,
         String topicName);
 }

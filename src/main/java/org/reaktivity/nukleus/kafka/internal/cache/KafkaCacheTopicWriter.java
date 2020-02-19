@@ -17,27 +17,25 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 
 import org.agrona.collections.Int2ObjectHashMap;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSentinelSegment;
-import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheTopicConfig;
-import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheTopicConfigSupplier;
 
 public final class KafkaCacheTopicWriter
 {
     private final String clusterName;
     private final String topicName;
-    private final KafkaCacheSegmentSupplier segmentSupplier;
-    private final KafkaCacheTopicConfigSupplier topicConfigSupplier;
+    private final KafkaCacheSegmentSupplier supplySegment;
+    private final KafkaCacheTopicConfigSupplier supplyTopicConfig;
     private final Int2ObjectHashMap<KafkaCachePartitionWriter> partitionsById;
 
     KafkaCacheTopicWriter(
         String clusterName,
         String topicName,
-        KafkaCacheSegmentSupplier segmentSupplier,
-        KafkaCacheTopicConfigSupplier topicConfigSupplier)
+        KafkaCacheSegmentSupplier supplySegment,
+        KafkaCacheTopicConfigSupplier supplyTopicConfig)
     {
         this.clusterName = clusterName;
         this.topicName = topicName;
-        this.segmentSupplier = segmentSupplier;
-        this.topicConfigSupplier = topicConfigSupplier;
+        this.supplySegment = supplySegment;
+        this.supplyTopicConfig = supplyTopicConfig;
         this.partitionsById = new Int2ObjectHashMap<>();
     }
 
@@ -55,8 +53,8 @@ public final class KafkaCacheTopicWriter
     private KafkaCachePartitionWriter newPartition(
         int partitionId)
     {
-        final KafkaCacheSentinelSegment sentinel = segmentSupplier.supply(clusterName, topicName, partitionId);
-        final KafkaCacheTopicConfig topicConfig = topicConfigSupplier.supply(clusterName, topicName);
+        final KafkaCacheSentinelSegment sentinel = supplySegment.get(clusterName, topicName, partitionId);
+        final KafkaCacheTopicConfig topicConfig = supplyTopicConfig.get(clusterName, topicName);
         return new KafkaCachePartitionWriter(partitionId, sentinel, topicConfig);
     }
 }

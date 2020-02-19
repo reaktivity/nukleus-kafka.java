@@ -27,7 +27,9 @@ import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.Kafk
 public final class KafkaCacheTailKeysFile extends KafkaCacheTailIndexFile
 {
     private final long baseOffset;
-    final KafkaCacheTailKeysFile previousKeys;
+
+    volatile KafkaCacheTailKeysFile previousKeys;
+    volatile KafkaCacheTailKeysFile nextKeys;
 
     KafkaCacheTailKeysFile(
         KafkaCacheTailSegment segment,
@@ -75,5 +77,11 @@ public final class KafkaCacheTailKeysFile extends KafkaCacheTailIndexFile
             cursor = super.reverseScanKey(hash, cursor(cursorIndex(cursor), deltaOffset));
         }
         return cursor;
+    }
+
+    public void delete(
+        KafkaCacheTailSegment segment)
+    {
+        super.deleteIfExists(segment, CACHE_EXTENSION_KEYS_INDEX);
     }
 }

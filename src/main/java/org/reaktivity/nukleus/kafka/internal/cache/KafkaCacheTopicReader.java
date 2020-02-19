@@ -23,19 +23,19 @@ public final class KafkaCacheTopicReader
 {
     private final String clusterName;
     private final String topicName;
-    private final KafkaCacheSegmentSupplier segmentSupplier;
+    private final KafkaCacheSegmentSupplier supplySegment;
     private final Int2ObjectHashMap<KafkaCachePartitionReader> partitionsById;
     private final KafkaCacheCandidateSegment candidate;
 
     KafkaCacheTopicReader(
         String clusterName,
         String topicName,
-        KafkaCacheSegmentSupplier segmentSupplier,
+        KafkaCacheSegmentSupplier supplySegment,
         KafkaCacheCandidateSegment candidate)
     {
         this.clusterName = clusterName;
         this.topicName = topicName;
-        this.segmentSupplier = segmentSupplier;
+        this.supplySegment = supplySegment;
         this.candidate = candidate;
         this.partitionsById = new Int2ObjectHashMap<>();
     }
@@ -54,7 +54,7 @@ public final class KafkaCacheTopicReader
     private KafkaCachePartitionReader newPartition(
         int partitionId)
     {
-        final KafkaCacheSentinelSegment sentinel = segmentSupplier.supply(clusterName, topicName, partitionId);
+        final KafkaCacheSentinelSegment sentinel = supplySegment.get(clusterName, topicName, partitionId);
         return new KafkaCachePartitionReader(partitionId, sentinel, candidate);
     }
 }

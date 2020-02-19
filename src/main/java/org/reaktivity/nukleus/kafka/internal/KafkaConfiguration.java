@@ -20,6 +20,7 @@ import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_CACHE_DIRECTOR
 import java.nio.file.Path;
 
 import org.reaktivity.nukleus.Configuration;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCleanupPolicy;
 
 public class KafkaConfiguration extends Configuration
 {
@@ -31,7 +32,7 @@ public class KafkaConfiguration extends Configuration
     public static final IntPropertyDef KAFKA_CLIENT_FETCH_MAX_BYTES;
     public static final IntPropertyDef KAFKA_CLIENT_FETCH_PARTITION_MAX_BYTES;
     public static final PropertyDef<Path> KAFKA_CACHE_DIRECTORY;
-    public static final PropertyDef<String> KAFKA_CACHE_CLEANUP_POLICY;
+    public static final PropertyDef<KafkaCacheCleanupPolicy> KAFKA_CACHE_CLEANUP_POLICY;
     public static final IntPropertyDef KAFKA_CACHE_MAX_MESSAGE_BYTES;
     public static final LongPropertyDef KAFKA_CACHE_RETENTION_MILLIS;
     public static final LongPropertyDef KAFKA_CACHE_RETENTION_BYTES;
@@ -56,7 +57,8 @@ public class KafkaConfiguration extends Configuration
         KAFKA_CACHE_SERVER_BOOTSTRAP = config.property("cache.server.bootstrap", true);
         KAFKA_CACHE_SERVER_RECONNECT = config.property("cache.server.reconnect", true);
         KAFKA_CACHE_CLIENT_RECONNECT = config.property("cache.client.reconnect", false);
-        KAFKA_CACHE_CLEANUP_POLICY = config.property("cache.cleanup.policy", "delete");
+        KAFKA_CACHE_CLEANUP_POLICY = config.property(KafkaCacheCleanupPolicy.class, "cache.cleanup.policy",
+                KafkaConfiguration::cleanupPolicy, "delete");
         KAFKA_CACHE_MAX_MESSAGE_BYTES = config.property("cache.max.message.bytes", 1000012);
         KAFKA_CACHE_RETENTION_MILLIS = config.property("cache.retention.ms", 604800000L);
         KAFKA_CACHE_RETENTION_BYTES = config.property("cache.retention.bytes", -1L);
@@ -107,7 +109,7 @@ public class KafkaConfiguration extends Configuration
         return KAFKA_CACHE_DIRECTORY.get(this);
     }
 
-    public String cacheCleanupPolicy()
+    public KafkaCacheCleanupPolicy cacheCleanupPolicy()
     {
         return KAFKA_CACHE_CLEANUP_POLICY.get(this);
     }
@@ -162,5 +164,12 @@ public class KafkaConfiguration extends Configuration
         String cacheDirectory)
     {
         return REAKTOR_CACHE_DIRECTORY.get(config).resolve(cacheDirectory);
+    }
+
+    private static KafkaCacheCleanupPolicy cleanupPolicy(
+        Configuration config,
+        String cleanupPolicy)
+    {
+        return KafkaCacheCleanupPolicy.valueOf(cleanupPolicy.toUpperCase());
     }
 }

@@ -209,7 +209,6 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
         //       requires cursor condition retain memento of last match index
         final int cursorIndex = cursorIndex(cursor);
         final int cursorValue = cursorValue(cursor);
-        assert cursorIndex >= 0;
 
         final DirectBuffer buffer = readableBuf;
         final int capacity = readCapacity;

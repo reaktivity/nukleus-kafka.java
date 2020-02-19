@@ -675,7 +675,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         private void doBootstrapDescribeInitialAbortIfNecessary(
             long traceId)
         {
-            if (!KafkaState.initialClosed(state))
+            if (KafkaState.initialOpening(state) && !KafkaState.initialClosed(state))
             {
                 doBootstrapDescribeInitialAbort(traceId);
             }
@@ -826,7 +826,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         private void doBootstrapDescribeReplyResetIfNecessary(
             long traceId)
         {
-            if (!KafkaState.replyClosed(state))
+            if (KafkaState.replyOpening(state) && !KafkaState.replyClosed(state))
             {
                 doBootstrapDescribeReplyReset(traceId);
             }
@@ -916,7 +916,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         private void doBootstrapMetaInitialAbortIfNecessary(
             long traceId)
         {
-            if (!KafkaState.initialClosed(state))
+            if (KafkaState.initialOpening(state) && !KafkaState.initialClosed(state))
             {
                 doBootstrapMetaInitialAbort(traceId);
             }
@@ -1067,7 +1067,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         private void doBootstrapMetaReplyResetIfNecessary(
             long traceId)
         {
-            if (!KafkaState.replyClosed(state))
+            if (KafkaState.replyOpening(state) && !KafkaState.replyClosed(state))
             {
                 doBootstrapMetaReplyReset(traceId);
             }
@@ -1160,7 +1160,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         private void doBootstrapFetchInitialAbortIfNecessary(
             long traceId)
         {
-            if (!KafkaState.initialClosed(state))
+            if (KafkaState.initialOpening(state) && !KafkaState.initialClosed(state))
             {
                 doBootstrapFetchInitialAbort(traceId);
             }
@@ -1315,7 +1315,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         private void doBootstrapFetchReplyResetIfNecessary(
             long traceId)
         {
-            if (!KafkaState.replyClosed(state))
+            if (KafkaState.replyOpening(state) && !KafkaState.replyClosed(state))
             {
                 doBootstrapFetchReplyReset(traceId);
             }

@@ -36,4 +36,10 @@ public final class KafkaCacheTailLogFile extends KafkaCacheTailFile
         assert entry != null;
         return entry.tryWrap(readableBuf, position, readCapacity);
     }
+
+    public void delete(
+        KafkaCacheTailSegment segment)
+    {
+        super.deleteIfExists(segment, CACHE_EXTENSION_LOG);
+    }
 }

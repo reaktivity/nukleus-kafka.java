@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.agrona.DirectBuffer;
@@ -44,6 +45,20 @@ public abstract class KafkaCacheTailFile
 
         this.readableBuf = new UnsafeBuffer(readableByteBuf);
         this.readCapacity = readableByteBuf.capacity();
+    }
+
+    protected final void deleteIfExists(
+        KafkaCacheTailSegment segment,
+        String extension)
+    {
+        try
+        {
+            Files.deleteIfExists(segment.cacheFile(extension));
+        }
+        catch (IOException ex)
+        {
+            LangUtil.rethrowUnchecked(ex);
+        }
     }
 
     private static ByteBuffer readInit(

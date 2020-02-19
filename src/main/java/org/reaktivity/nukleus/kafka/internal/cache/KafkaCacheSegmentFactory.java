@@ -20,6 +20,7 @@ import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursor;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.previousIndex;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType.JSON_PATCH;
 
 import java.nio.ByteBuffer;
@@ -41,7 +42,6 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.agrona.io.DirectBufferInputStream;
 import org.agrona.io.ExpandableDirectBufferOutputStream;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
-import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheTopicConfig;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
@@ -107,8 +107,9 @@ public final class KafkaCacheSegmentFactory
     {
         protected final KafkaCacheTopicConfig topicConfig;
         protected final Path directory;
-        protected final KafkaCacheSegment previousSegment;
+        protected final long timestamp;
 
+        protected volatile KafkaCacheSegment previousSegment;
         protected volatile KafkaCacheSegment nextSegment;
 
         protected KafkaCacheSegment(
@@ -118,6 +119,7 @@ public final class KafkaCacheSegmentFactory
             this.topicConfig = topicConfig;
             this.directory = directory;
             this.previousSegment = this;
+            this.timestamp = System.currentTimeMillis();
         }
 
         protected KafkaCacheSegment(
@@ -127,6 +129,7 @@ public final class KafkaCacheSegmentFactory
             this.previousSegment = previousSegment;
             this.directory = directory;
             this.topicConfig = previousSegment.topicConfig;
+            this.timestamp = System.currentTimeMillis();
         }
 
         @Override
@@ -174,7 +177,7 @@ public final class KafkaCacheSegmentFactory
             return nextSegment.headSegment();
         }
 
-        protected KafkaCacheHeadSegment headSegment()
+        public KafkaCacheHeadSegment headSegment()
         {
             KafkaCacheHeadSegment headSegment = null;
 
@@ -185,6 +188,19 @@ public final class KafkaCacheSegmentFactory
 
             return headSegment;
         }
+
+        public KafkaCacheTailSegment tailSegment()
+        {
+            KafkaCacheTailSegment tailSegment = null;
+
+            if (previousSegment != null)
+            {
+                tailSegment = previousSegment.tailSegment();
+            }
+
+            return tailSegment;
+        }
+
 
         public abstract long baseOffset();
 
@@ -284,7 +300,7 @@ public final class KafkaCacheSegmentFactory
         }
     }
 
-    final class KafkaCacheSentinelSegment extends KafkaCacheSegment
+    public final class KafkaCacheSentinelSegment extends KafkaCacheSegment
     {
         private KafkaCacheSentinelSegment(
             KafkaCacheTopicConfig topicConfig,
@@ -300,13 +316,49 @@ public final class KafkaCacheSegmentFactory
         }
 
         @Override
+        public KafkaCacheTailSegment tailSegment()
+        {
+            return null;
+        }
+
+        @Override
         public long baseOffset()
         {
             return OFFSET_EARLIEST;
         }
+
+        public void nextSegment(
+            KafkaCacheSegment segment)
+        {
+            assert segment != null;
+
+            if (nextSegment != segment)
+            {
+                KafkaCacheSegment expiredSegment = nextSegment;
+
+                this.nextSegment = segment;
+                segment.previousSegment = this;
+
+                while (expiredSegment != segment)
+                {
+                    final KafkaCacheTailSegment tailSegment = expiredSegment.tailSegment();
+                    assert tailSegment == expiredSegment;
+
+                    if (tailSegment.tailKeys.nextKeys != null)
+                    {
+                        tailSegment.tailKeys.nextKeys.previousKeys = null;
+                        tailSegment.tailKeys.nextKeys = null;
+                    }
+
+                    tailSegment.delete();
+
+                    expiredSegment = expiredSegment.nextSegment;
+                }
+            }
+        }
     }
 
-    final class KafkaCacheHeadSegment extends KafkaCacheSegment
+    public final class KafkaCacheHeadSegment extends KafkaCacheSegment
     {
         private final long baseOffset;
         final KafkaCacheHeadLogFile logFile;
@@ -325,6 +377,14 @@ public final class KafkaCacheSegmentFactory
             long baseOffset)
         {
             this(previousSegment, directory, baseOffset, null);
+        }
+
+        private KafkaCacheHeadSegment(
+            KafkaCacheTailSegment previousSegment,
+            Path directory,
+            long baseOffset)
+        {
+            this(previousSegment, directory, baseOffset, previousSegment.tailKeys);
         }
 
         private KafkaCacheHeadSegment(
@@ -417,7 +477,7 @@ public final class KafkaCacheSegmentFactory
         }
 
         @Override
-        protected KafkaCacheHeadSegment headSegment()
+        public KafkaCacheHeadSegment headSegment()
         {
             return this;
         }
@@ -434,9 +494,15 @@ public final class KafkaCacheSegmentFactory
             hashFile.toHashIndex();
             keysFile.toKeysIndex();
 
-            final KafkaCacheTailSegment tailSegment = new KafkaCacheTailSegment(previousSegment, directory, baseOffset);
-            final KafkaCacheTailKeysFile tailKeys = new KafkaCacheTailKeysFile(tailSegment, keysFile.previousKeys);
-            tailSegment.nextSegment = new KafkaCacheHeadSegment(this, directory, nextOffset, tailKeys);
+            final KafkaCacheTailSegment tailSegment =
+                    new KafkaCacheTailSegment(previousSegment, directory, baseOffset, keysFile.previousKeys);
+            tailSegment.nextSegment = new KafkaCacheHeadSegment(tailSegment, directory, nextOffset);
+
+            if (keysFile.previousKeys != null)
+            {
+                keysFile.previousKeys.nextKeys = tailSegment.tailKeys;
+            }
+
             previousSegment.nextSegment = tailSegment;
             this.nextSegment = tailSegment.nextSegment;
 
@@ -465,7 +531,7 @@ public final class KafkaCacheSegmentFactory
             writeEntryFinish(headers, deltaType);
         }
 
-        void writeEntryStart(
+        public void writeEntryStart(
             long offset,
             long timestamp,
             KafkaKeyFW key,
@@ -517,7 +583,7 @@ public final class KafkaCacheSegmentFactory
             keysFile.write(keysInfo, 0, keysInfo.capacity());
         }
 
-        void writeEntryContinue(
+        public void writeEntryContinue(
             OctetsFW payload)
         {
             final int logRemaining = logFile.writeCapacity - logFile.readCapacity;
@@ -527,7 +593,7 @@ public final class KafkaCacheSegmentFactory
             logFile.write(payload.buffer(), payload.offset(), payload.sizeof());
         }
 
-        void writeEntryFinish(
+        public void writeEntryFinish(
             ArrayFW<KafkaHeaderFW> headers,
             KafkaDeltaType deltaType)
         {
@@ -620,7 +686,7 @@ public final class KafkaCacheSegmentFactory
                         break ancestor;
                     }
 
-                    final long nextHashCursor = reverseScanHash((int) hash, hashCursor);
+                    final long nextHashCursor = reverseScanHash((int) hash, previousIndex(hashCursor));
                     if (nextHashCursor == NEXT_SEGMENT || nextHashCursor == RETRY_SEGMENT)
                     {
                         break;
@@ -658,8 +724,9 @@ public final class KafkaCacheSegmentFactory
                                     break ancestor;
                                 }
 
-                                final long nextAncestorCursor = ancestorSegment.reverseScanHash((int) hash, ancestorCursor);
-                                if (nextAncestorCursor < 0)
+                                final long nextAncestorCursor =
+                                        ancestorSegment.reverseScanHash((int) hash, previousIndex(ancestorCursor));
+                                if (nextAncestorCursor == NEXT_SEGMENT || nextAncestorCursor == RETRY_SEGMENT)
                                 {
                                     break;
                                 }
@@ -668,8 +735,8 @@ public final class KafkaCacheSegmentFactory
                             }
                         }
 
-                        final long nextKeyCursor = previousKeys.reverseScanKey((int) hash, keyCursor);
-                        if (nextKeyCursor < 0)
+                        final long nextKeyCursor = previousKeys.reverseScanKey((int) hash, previousIndex(keyCursor));
+                        if (nextKeyCursor == NEXT_SEGMENT || nextKeyCursor == RETRY_SEGMENT)
                         {
                             break;
                         }
@@ -688,15 +755,18 @@ public final class KafkaCacheSegmentFactory
     final class KafkaCacheTailSegment extends KafkaCacheSegment
     {
         private final long baseOffset;
+
         final KafkaCacheTailLogFile logFile;
         final KafkaCacheTailLogIndexFile indexFile;
         final KafkaCacheTailHashFile hashFile;
         final KafkaCacheTailDeltaFile deltaFile;
+        final KafkaCacheTailKeysFile tailKeys;
 
         private KafkaCacheTailSegment(
             KafkaCacheSegment previousSegment,
             Path directory,
-            long baseOffset)
+            long baseOffset,
+            KafkaCacheTailKeysFile previousKeys)
         {
             super(previousSegment, directory);
             this.baseOffset = baseOffset;
@@ -704,12 +774,19 @@ public final class KafkaCacheSegmentFactory
             this.indexFile = new KafkaCacheTailLogIndexFile(this);
             this.hashFile = new KafkaCacheTailHashFile(this);
             this.deltaFile = new KafkaCacheTailDeltaFile(this);
+            this.tailKeys = new KafkaCacheTailKeysFile(this, previousKeys);
         }
 
         @Override
         public long baseOffset()
         {
             return baseOffset;
+        }
+
+        @Override
+        public KafkaCacheTailSegment tailSegment()
+        {
+            return this;
         }
 
         @Override
@@ -764,6 +841,15 @@ public final class KafkaCacheSegmentFactory
             KafkaCacheDeltaFW entry)
         {
             return deltaFile.read(position, entry);
+        }
+
+        private void delete()
+        {
+            logFile.delete(this);
+            indexFile.delete(this);
+            hashFile.delete(this);
+            deltaFile.delete(this);
+            tailKeys.delete(this);
         }
     }
 }

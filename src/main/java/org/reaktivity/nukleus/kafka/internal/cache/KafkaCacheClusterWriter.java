@@ -18,24 +18,22 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheTopicConfigSupplier;
-
 public final class KafkaCacheClusterWriter
 {
     private final String clusterName;
-    private final KafkaCacheSegmentSupplier segmentSupplier;
+    private final KafkaCacheSegmentSupplier supplySegment;
     private final Map<Long, KafkaCacheBrokerWriter> brokersById;
     private final Map<String, KafkaCacheTopicWriter> topicsByName;
-    private final KafkaCacheTopicConfigSupplier topicConfigSupplier;
+    private final KafkaCacheTopicConfigSupplier supplyTopicConfig;
 
     KafkaCacheClusterWriter(
         String clusterName,
-        KafkaCacheSegmentSupplier segmentSupplier,
-        KafkaCacheTopicConfigSupplier topicConfigSupplier)
+        KafkaCacheSegmentSupplier supplySegment,
+        KafkaCacheTopicConfigSupplier supplyTopicConfig)
     {
         this.clusterName = clusterName;
-        this.segmentSupplier = segmentSupplier;
-        this.topicConfigSupplier = topicConfigSupplier;
+        this.supplySegment = supplySegment;
+        this.supplyTopicConfig = supplyTopicConfig;
         this.brokersById = new ConcurrentHashMap<>();
         this.topicsByName = new ConcurrentHashMap<>();
     }
@@ -55,12 +53,12 @@ public final class KafkaCacheClusterWriter
     private KafkaCacheBrokerWriter newBroker(
         long brokerId)
     {
-        return new KafkaCacheBrokerWriter(clusterName, brokerId, segmentSupplier, topicConfigSupplier);
+        return new KafkaCacheBrokerWriter(clusterName, brokerId, supplySegment, supplyTopicConfig);
     }
 
     private KafkaCacheTopicWriter newTopic(
         String topicName)
     {
-        return new KafkaCacheTopicWriter(clusterName, topicName, segmentSupplier, topicConfigSupplier);
+        return new KafkaCacheTopicWriter(clusterName, topicName, supplySegment, supplyTopicConfig);
     }
 }
