@@ -577,7 +577,6 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
             assert partitionOffset >= this.partitionOffset;
             this.partitionOffset = partitionOffset;
-            this.partition.ensureSeekable();
 
             members.forEach(s -> s.doClientReplyDataIfNecessary(traceId));
 

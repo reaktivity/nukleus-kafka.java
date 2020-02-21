@@ -26,13 +26,14 @@ import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.agrona.DirectBuffer;
 import org.agrona.LangUtil;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
 
 public abstract class KafkaCacheHeadFile
 {
@@ -42,13 +43,13 @@ public abstract class KafkaCacheHeadFile
     private final MappedByteBuffer readableByteBuf;
 
     protected final long baseOffset;
-    protected final DirectBuffer readableBuf;
+    protected final MutableDirectBuffer readableBuf;
 
     protected volatile int writeCapacity;
     protected volatile int readCapacity;
 
     protected KafkaCacheHeadFile(
-        KafkaCacheHeadSegment segment,
+        KafkaCacheSegment segment,
         String extension,
         MutableDirectBuffer writeBuffer,
         int writeCapacity)
@@ -68,6 +69,20 @@ public abstract class KafkaCacheHeadFile
     int available()
     {
         return writeCapacity - readCapacity;
+    }
+
+    protected void deleteIfExists(
+        KafkaCacheSegment segment,
+        String extension)
+    {
+        try
+        {
+            Files.deleteIfExists(segment.cacheFile(extension));
+        }
+        catch (IOException ex)
+        {
+            LangUtil.rethrowUnchecked(ex);
+        }
     }
 
     protected boolean write(
@@ -123,7 +138,7 @@ public abstract class KafkaCacheHeadFile
 
         try (FileChannel channel = FileChannel.open(file, CREATE, READ, WRITE))
         {
-            mapped = channel.map(MapMode.READ_ONLY, 0, capacity);
+            mapped = channel.map(MapMode.READ_WRITE, 0, capacity);
             channel.truncate(0L);
         }
         catch (IOException ex)

@@ -36,6 +36,10 @@ public class KafkaConfiguration extends Configuration
     public static final IntPropertyDef KAFKA_CACHE_MAX_MESSAGE_BYTES;
     public static final LongPropertyDef KAFKA_CACHE_RETENTION_MILLIS;
     public static final LongPropertyDef KAFKA_CACHE_RETENTION_BYTES;
+    public static final LongPropertyDef KAFKA_CACHE_DELETE_RETENTION_MILLIS;
+    public static final LongPropertyDef KAFKA_CACHE_MIN_COMPACTION_LAG_MILLIS;
+    public static final LongPropertyDef KAFKA_CACHE_MAX_COMPACTION_LAG_MILLIS;
+    public static final DoublePropertyDef KAFKA_CACHE_MIN_CLEANABLE_DIRTY_RATIO;
     public static final LongPropertyDef KAFKA_CACHE_SEGMENT_MILLIS;
     public static final IntPropertyDef KAFKA_CACHE_SEGMENT_BYTES;
     public static final IntPropertyDef KAFKA_CACHE_SEGMENT_INDEX_BYTES;
@@ -62,6 +66,10 @@ public class KafkaConfiguration extends Configuration
         KAFKA_CACHE_MAX_MESSAGE_BYTES = config.property("cache.max.message.bytes", 1000012);
         KAFKA_CACHE_RETENTION_MILLIS = config.property("cache.retention.ms", 604800000L);
         KAFKA_CACHE_RETENTION_BYTES = config.property("cache.retention.bytes", -1L);
+        KAFKA_CACHE_DELETE_RETENTION_MILLIS = config.property("cache.delete.retention.ms", 86400000L);
+        KAFKA_CACHE_MIN_COMPACTION_LAG_MILLIS = config.property("cache.min.compaction.lag.ms", 0L);
+        KAFKA_CACHE_MAX_COMPACTION_LAG_MILLIS = config.property("cache.max.compaction.lag.ms", Long.MAX_VALUE);
+        KAFKA_CACHE_MIN_CLEANABLE_DIRTY_RATIO = config.property("cache.min.cleanable.dirty.ratio", 0.5);
         KAFKA_CACHE_SEGMENT_MILLIS = config.property("cache.segment.ms", 604800000L);
         KAFKA_CACHE_SEGMENT_BYTES = config.property("cache.segment.bytes", 0x40000000);
         KAFKA_CACHE_SEGMENT_INDEX_BYTES = config.property("cache.segment.index.bytes", 0xA00000);
@@ -132,6 +140,26 @@ public class KafkaConfiguration extends Configuration
     public long cacheSegmentMillis()
     {
         return KAFKA_CACHE_SEGMENT_MILLIS.getAsLong(this);
+    }
+
+    public long cacheDeleteRetentionMillis()
+    {
+        return KAFKA_CACHE_DELETE_RETENTION_MILLIS.getAsLong(this);
+    }
+
+    public long cacheMinCompactionLagMillis()
+    {
+        return KAFKA_CACHE_MIN_COMPACTION_LAG_MILLIS.getAsLong(this);
+    }
+
+    public long cacheMaxCompactionLagMillis()
+    {
+        return KAFKA_CACHE_MAX_COMPACTION_LAG_MILLIS.getAsLong(this);
+    }
+
+    public double cacheMinCleanableDirtyRatio()
+    {
+        return KAFKA_CACHE_MIN_CLEANABLE_DIRTY_RATIO.getAsDouble(this);
     }
 
     public int cacheSegmentBytes()

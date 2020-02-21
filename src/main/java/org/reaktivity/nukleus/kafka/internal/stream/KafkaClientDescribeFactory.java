@@ -462,7 +462,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
                     final String topic = resource.name().asString();
                     final int resourceError = resource.errorCode();
                     final int configCount = resource.configCount();
-                    if (resourceError != 0 || !client.topic.equals(topic) || configCount != client.configs.size())
+                    if (resourceError != 0 || !client.topic.equals(topic))
                     {
                         client.decoder = decodeIgnoreAll;
                         break decode;
@@ -1240,7 +1240,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
                     final String newConfigValue = newConfigs.get(configName);
                     final String oldConfigValue = entry.setValue(newConfigValue);
 
-                    if (!newConfigValue.equals(oldConfigValue))
+                    if (!Objects.equals(newConfigValue, oldConfigValue))
                     {
                         changedConfigs.add(configName);
                     }

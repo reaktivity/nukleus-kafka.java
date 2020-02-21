@@ -22,14 +22,14 @@ import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFacto
 import java.nio.file.Path;
 
 import org.agrona.MutableDirectBuffer;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
 
 public final class KafkaCacheHeadHashFile extends KafkaCacheHeadIndexFile
 {
-    private final KafkaCacheHeadSegment segment;
+    private final KafkaCacheSegment segment;
 
     KafkaCacheHeadHashFile(
-        KafkaCacheHeadSegment segment,
+        KafkaCacheSegment segment,
         MutableDirectBuffer writeBuffer)
     {
         super(segment, CACHE_EXTENSION_HASH_SCAN, writeBuffer, segment.topicConfig.segmentIndexBytes);

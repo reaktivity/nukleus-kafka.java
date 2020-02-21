@@ -75,7 +75,7 @@ public final class KafkaCachePartitionWriter
         return headSegment;
     }
 
-    public KafkaCacheHeadSegment nextSegment(
+    public KafkaCacheSegment nextSegment(
         long offset)
     {
         headSegment = headSegment.nextSegment(offset);
@@ -122,22 +122,32 @@ public final class KafkaCachePartitionWriter
         return headSegment;
     }
 
-    public long retainsAt(
+    public long retainAt(
         KafkaCacheSegment segment)
     {
         return segment.timestamp + topicConfig.segmentMillis;
     }
 
-    public long expiresAt(
+    public long deleteAt(
         KafkaCacheSegment segment)
     {
         return segment.timestamp + topicConfig.retentionMillis;
     }
 
+    public long compactAt(
+        KafkaCacheSegment segment)
+    {
+        return segment.markCleanableAt(topicConfig);
+    }
+
     public boolean cleanupPolicyDelete()
     {
-        return topicConfig.cleanupPolicy == KafkaCacheCleanupPolicy.DELETE ||
-                topicConfig.cleanupPolicy == KafkaCacheCleanupPolicy.COMPACT_AND_DELETE;
+        return topicConfig.cleanupPolicy.delete();
+    }
+
+    public boolean cleanupPolicyCompact()
+    {
+        return topicConfig.cleanupPolicy.compact();
     }
 
     public KafkaCacheSentinelSegment sentinelSegment()

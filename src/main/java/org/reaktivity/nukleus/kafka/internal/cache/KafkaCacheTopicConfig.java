@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static java.lang.Double.parseDouble;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.BiConsumer;
@@ -33,6 +35,11 @@ public final class KafkaCacheTopicConfig
     private static final String16FW RETENTION_BYTES = new String16FW("retention.bytes");
     private static final String16FW RETENTION_MILLIS = new String16FW("retention.ms");
 
+    private static final String16FW DELETE_RETENTION_MILLIS = new String16FW("delete.retention.ms");
+    private static final String16FW MIN_COMPACTION_LAG_MILLIS = new String16FW("min.compaction.lag.ms");
+    private static final String16FW MAX_COMPACTION_LAG_MILLIS = new String16FW("max.compaction.lag.ms");
+    private static final String16FW MIN_CLEANABLE_DIRTY_RATIO = new String16FW("min.cleanable.dirty.ratio");
+
     private static final String16FW CLEANUP_POLICY_COMPACT = new String16FW("compact");
     private static final String16FW CLEANUP_POLICY_DELETE = new String16FW("delete");
     private static final String16FW CLEANUP_POLICY_COMPACT_DELETE = new String16FW("compact, delete");
@@ -45,11 +52,16 @@ public final class KafkaCacheTopicConfig
     public volatile long retentionBytes;
     public volatile long retentionMillis;
 
+    public volatile long deleteRetentionMillis;
+    public volatile long minCompactionLagMillis;
+    public volatile long maxCompactionLagMillis;
+    public volatile double minCleanableDirtyRatio;
+
     private static final Map<String16FW, BiConsumer<KafkaCacheTopicConfig, String16FW>> CHANGE_HANDLERS;
 
     static
     {
-        final HashMap<String16FW, BiConsumer<KafkaCacheTopicConfig, String16FW>> changeHandlers = new HashMap<>();
+        final Map<String16FW, BiConsumer<KafkaCacheTopicConfig, String16FW>> changeHandlers = new HashMap<>();
         changeHandlers.put(CLEANUP_POLICY, KafkaCacheTopicConfig::onCleanupPolicyChanged);
         changeHandlers.put(MAX_MESSAGE_BYTES, KafkaCacheTopicConfig::onMaxMessageBytesChanged);
         changeHandlers.put(SEGMENT_BYTES, KafkaCacheTopicConfig::onSegmentBytesChanged);
@@ -57,6 +69,10 @@ public final class KafkaCacheTopicConfig
         changeHandlers.put(SEGMENT_MILLIS, KafkaCacheTopicConfig::onSegmentMillisChanged);
         changeHandlers.put(RETENTION_BYTES, KafkaCacheTopicConfig::onRetentionBytesChanged);
         changeHandlers.put(RETENTION_MILLIS, KafkaCacheTopicConfig::onRetentionMillisChanged);
+        changeHandlers.put(DELETE_RETENTION_MILLIS, KafkaCacheTopicConfig::onDeleteRetentionMillisChanged);
+        changeHandlers.put(MIN_COMPACTION_LAG_MILLIS, KafkaCacheTopicConfig::onMinCompactionLagMillisChanged);
+        changeHandlers.put(MAX_COMPACTION_LAG_MILLIS, KafkaCacheTopicConfig::onMaxCompactionLagMillisChanged);
+        changeHandlers.put(MIN_CLEANABLE_DIRTY_RATIO, KafkaCacheTopicConfig::onMinCleanableDirtyRatioChanged);
         CHANGE_HANDLERS = changeHandlers;
     }
 
@@ -70,7 +86,10 @@ public final class KafkaCacheTopicConfig
         this.segmentMillis = config.cacheSegmentMillis();
         this.retentionBytes = config.cacheRetentionBytes();
         this.retentionMillis = config.cacheRetentionMillis();
-
+        this.deleteRetentionMillis = config.cacheDeleteRetentionMillis();
+        this.minCompactionLagMillis = config.cacheMinCompactionLagMillis();
+        this.maxCompactionLagMillis = config.cacheMaxCompactionLagMillis();
+        this.minCleanableDirtyRatio = config.cacheMinCleanableDirtyRatio();
     }
 
     public void onTopicConfigChanged(
@@ -103,7 +122,7 @@ public final class KafkaCacheTopicConfig
         else
         {
             System.out.format("Unrecognized cleanup policy: %s\n", value.asString());
-            topicConfig.cleanupPolicy = null;
+            topicConfig.cleanupPolicy = KafkaCacheCleanupPolicy.UNKNOWN;
         }
     }
 
@@ -111,47 +130,90 @@ public final class KafkaCacheTopicConfig
         KafkaCacheTopicConfig topicConfig,
         String16FW value)
     {
-        final DirectBuffer text = value.value();
-        topicConfig.maxMessageBytes = text.parseIntAscii(0, text.capacity());
+        topicConfig.maxMessageBytes = parseIntAscii(value);
     }
 
     private static void onSegmentBytesChanged(
         KafkaCacheTopicConfig topicConfig,
         String16FW value)
     {
-        final DirectBuffer text = value.value();
-        topicConfig.segmentBytes = text.parseIntAscii(0, text.capacity());
+        topicConfig.segmentBytes = parseIntAscii(value);
     }
 
     private static void onSegmentIndexBytesChanged(
         KafkaCacheTopicConfig topicConfig,
         String16FW value)
     {
-        final DirectBuffer text = value.value();
-        topicConfig.segmentIndexBytes = text.parseIntAscii(0, text.capacity());
+        topicConfig.segmentIndexBytes = parseIntAscii(value);
     }
 
     private static void onSegmentMillisChanged(
         KafkaCacheTopicConfig topicConfig,
         String16FW value)
     {
-        final DirectBuffer text = value.value();
-        topicConfig.segmentMillis = text.parseLongAscii(0, text.capacity());
+        topicConfig.segmentMillis = parseLongAscii(value);
     }
 
     private static void onRetentionBytesChanged(
         KafkaCacheTopicConfig topicConfig,
         String16FW value)
     {
-        final DirectBuffer text = value.value();
-        topicConfig.retentionBytes = text.parseLongAscii(0, text.capacity());
+        topicConfig.retentionBytes = parseLongAscii(value);
     }
 
     private static void onRetentionMillisChanged(
         KafkaCacheTopicConfig topicConfig,
         String16FW value)
     {
+        topicConfig.retentionMillis = parseLongAscii(value);
+    }
+
+    private static void onDeleteRetentionMillisChanged(
+        KafkaCacheTopicConfig topicConfig,
+        String16FW value)
+    {
+        topicConfig.deleteRetentionMillis = parseLongAscii(value);
+    }
+
+    private static void onMinCompactionLagMillisChanged(
+        KafkaCacheTopicConfig topicConfig,
+        String16FW value)
+    {
+        topicConfig.minCompactionLagMillis = parseLongAscii(value);
+    }
+
+    private static void onMaxCompactionLagMillisChanged(
+        KafkaCacheTopicConfig topicConfig,
+        String16FW value)
+    {
+        topicConfig.maxCompactionLagMillis = parseLongAscii(value);
+    }
+
+    private static void onMinCleanableDirtyRatioChanged(
+        KafkaCacheTopicConfig topicConfig,
+        String16FW value)
+    {
+        topicConfig.minCleanableDirtyRatio = parseDoubleAscii(value);
+    }
+
+    private static int parseIntAscii(
+        String16FW value)
+    {
         final DirectBuffer text = value.value();
-        topicConfig.retentionMillis = text.parseLongAscii(0, text.capacity());
+        return text.parseIntAscii(0, text.capacity());
+    }
+
+    private static long parseLongAscii(
+        String16FW value)
+    {
+        final DirectBuffer text = value.value();
+        return text.parseLongAscii(0, text.capacity());
+    }
+
+    private static double parseDoubleAscii(
+        String16FW value)
+    {
+        final DirectBuffer text = value.value();
+        return parseDouble(text.getStringWithoutLengthAscii(0, text.capacity()));
     }
 }

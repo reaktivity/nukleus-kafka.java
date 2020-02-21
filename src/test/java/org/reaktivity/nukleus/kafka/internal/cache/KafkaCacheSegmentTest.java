@@ -99,7 +99,7 @@ public class KafkaCacheSegmentTest
                                   .value(keyBytes, 0, keyBytes.capacity())
                                   .build();
 
-            head.writeEntry(offset, currentTimeMillis(), key, headers, null, NONE);
+            head.writeEntry(offset, currentTimeMillis(), key, headers, null, null, NONE);
         }
 
         KafkaCacheTailSegment tail = head.freezeSegment(cachedEntries);
@@ -133,7 +133,7 @@ public class KafkaCacheSegmentTest
                                   .value(keyBytes, 0, keyBytes.capacity())
                                   .build();
 
-            head.writeEntry(offset, currentTimeMillis(), key, headers, null, NONE);
+            head.writeEntry(offset, currentTimeMillis(), key, headers, null, null, NONE);
         }
 
         KafkaCacheTailSegment tail = head.freezeSegment(cachedEntries);
@@ -174,7 +174,7 @@ public class KafkaCacheSegmentTest
             .set(testBytes, 0, testBytes.capacity())
             .build();
 
-        head.writeEntry(1, currentTimeMillis(), key, headers, value, NONE);
+        head.writeEntry(1, currentTimeMillis(), key, headers, value, null, NONE);
 
         CRC32C checksum = new CRC32C();
         checksum.update(key.buffer().byteArray(), 0, key.sizeof());

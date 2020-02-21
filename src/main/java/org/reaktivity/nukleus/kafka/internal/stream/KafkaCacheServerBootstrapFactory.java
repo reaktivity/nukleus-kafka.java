@@ -69,6 +69,10 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
     private static final String16FW CONFIG_NAME_SEGMENT_MILLIS = new String16FW("segment.ms");
     private static final String16FW CONFIG_NAME_RETENTION_BYTES = new String16FW("retention.bytes");
     private static final String16FW CONFIG_NAME_RETENTION_MILLIS = new String16FW("retention.ms");
+    private static final String16FW CONFIG_NAME_DELETE_RETENTION_MILLIS = new String16FW("delete.retention.ms");
+    private static final String16FW CONFIG_NAME_MIN_COMPACTION_LAG_MILLIS = new String16FW("min.compaction.lag.ms");
+    private static final String16FW CONFIG_NAME_MAX_COMPACTION_LAG_MILLIS = new String16FW("max.compaction.lag.ms");
+    private static final String16FW CONFIG_NAME_MIN_CLEANABLE_DIRTY_RATIO = new String16FW("min.cleanable.dirty.ratio");
 
     private static final long OFFSET_EARLIEST = -2L;
 
@@ -650,7 +654,11 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
                                         .configsItem(ci -> ci.set(CONFIG_NAME_SEGMENT_INDEX_BYTES))
                                         .configsItem(ci -> ci.set(CONFIG_NAME_SEGMENT_MILLIS))
                                         .configsItem(ci -> ci.set(CONFIG_NAME_RETENTION_BYTES))
-                                        .configsItem(ci -> ci.set(CONFIG_NAME_RETENTION_MILLIS)))
+                                        .configsItem(ci -> ci.set(CONFIG_NAME_RETENTION_MILLIS))
+                                        .configsItem(ci -> ci.set(CONFIG_NAME_DELETE_RETENTION_MILLIS))
+                                        .configsItem(ci -> ci.set(CONFIG_NAME_MIN_COMPACTION_LAG_MILLIS))
+                                        .configsItem(ci -> ci.set(CONFIG_NAME_MAX_COMPACTION_LAG_MILLIS))
+                                        .configsItem(ci -> ci.set(CONFIG_NAME_MIN_CLEANABLE_DIRTY_RATIO)))
                         .build()
                         .sizeof()));
         }

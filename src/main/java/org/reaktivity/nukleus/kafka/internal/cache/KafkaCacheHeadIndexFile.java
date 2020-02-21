@@ -39,12 +39,12 @@ import org.agrona.LangUtil;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Int2IntHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
 
 public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
 {
     protected KafkaCacheHeadIndexFile(
-        KafkaCacheHeadSegment segment,
+        KafkaCacheSegment segment,
         String extension,
         MutableDirectBuffer writeBuffer,
         int writeCapacity)
@@ -355,7 +355,6 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
 
                 if (compareIndex > maxIndex)
                 {
-                    uniqueIndex += Long.BYTES;
                     break outer;
                 }
             }
@@ -366,6 +365,8 @@ public abstract class KafkaCacheHeadIndexFile extends KafkaCacheHeadFile
             buffer.putLong(uniqueIndex, buffer.getLong(compareIndex));
             compareIndex += Long.BYTES;
         }
+
+        uniqueIndex += Long.BYTES;
 
         return uniqueIndex;
     }

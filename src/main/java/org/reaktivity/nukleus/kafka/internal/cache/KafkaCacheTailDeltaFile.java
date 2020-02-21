@@ -42,4 +42,13 @@ public final class KafkaCacheTailDeltaFile extends KafkaCacheTailFile
     {
         super.deleteIfExists(segment, CACHE_EXTENSION_DELTA);
     }
+
+    public void deleteIfEmpty(
+        KafkaCacheTailSegment segment)
+    {
+        if (readCapacity == 0)
+        {
+            super.deleteIfExists(segment, CACHE_EXTENSION_DELTA);
+        }
+    }
 }

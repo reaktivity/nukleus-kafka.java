@@ -25,12 +25,12 @@ import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheIndexRecord.
 
 import org.agrona.DirectBuffer;
 import org.agrona.collections.Int2IntHashMap;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheTailSegment;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
 
 public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
 {
     protected KafkaCacheTailIndexFile(
-        KafkaCacheTailSegment segment,
+        KafkaCacheSegment segment,
         String extension)
     {
         super(segment, extension);
@@ -157,21 +157,23 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
             final int midIndex = (lowIndex + highIndex) >>> 1;
             final long indexEntry = buffer.getLong(midIndex << 3);
             final int indexKey = indexKey(indexEntry);
-            final int comparison = compareUnsigned(indexKey, key);
+            final int compareKey = compareUnsigned(indexKey, key);
 
-            if (comparison < 0)
+            if (compareKey < 0)
             {
                 lowIndex = midIndex + 1;
             }
-            else if (comparison > 0)
+            else if (compareKey > 0)
             {
                 highIndex = midIndex - 1;
             }
             else
             {
-                while (lowIndex > 0)
+                highIndex = midIndex;
+
+                while (highIndex < lastIndex)
                 {
-                    final int candidateIndex = lowIndex - 1;
+                    final int candidateIndex = highIndex + 1;
                     assert candidateIndex >= 0;
 
                     final long candidateEntry = buffer.getLong(candidateIndex << 3);
@@ -182,25 +184,25 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
                         break;
                     }
 
-                    lowIndex = candidateIndex;
+                    highIndex = candidateIndex;
                 }
 
-                assert lowIndex <= lastIndex;
+                assert highIndex <= lastIndex;
                 break;
             }
         }
 
-        assert lowIndex >= 0;
-        if (lowIndex <= lastIndex)
+        assert highIndex >= 0;
+        if (highIndex <= lastIndex)
         {
-            final long indexEntry = buffer.getLong(lowIndex << 3);
-            return cursor(lowIndex, indexValue(indexEntry));
+            final long indexEntry = buffer.getLong(highIndex << 3);
+            return cursor(highIndex, indexValue(indexEntry));
         }
 
         return NEXT_SEGMENT;
     }
 
-    protected long reverseScanKey(
+    public long reverseScanKey(
         int key,
         long cursor)
     {

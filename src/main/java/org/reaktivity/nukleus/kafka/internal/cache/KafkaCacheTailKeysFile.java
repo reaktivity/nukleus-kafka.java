@@ -22,6 +22,7 @@ import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.CACHE_EXTENSION_KEYS_INDEX;
 
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheTailSegment;
 
 public final class KafkaCacheTailKeysFile extends KafkaCacheTailIndexFile
@@ -32,7 +33,7 @@ public final class KafkaCacheTailKeysFile extends KafkaCacheTailIndexFile
     volatile KafkaCacheTailKeysFile nextKeys;
 
     KafkaCacheTailKeysFile(
-        KafkaCacheTailSegment segment,
+        KafkaCacheSegment segment,
         KafkaCacheTailKeysFile previousKeys)
     {
         super(segment, CACHE_EXTENSION_KEYS_INDEX);
@@ -83,5 +84,37 @@ public final class KafkaCacheTailKeysFile extends KafkaCacheTailIndexFile
         KafkaCacheTailSegment segment)
     {
         super.deleteIfExists(segment, CACHE_EXTENSION_KEYS_INDEX);
+
+        if (previousKeys != null)
+        {
+            previousKeys.nextKeys = nextKeys;
+        }
+
+        if (nextKeys != null)
+        {
+            nextKeys.previousKeys = previousKeys;
+        }
+    }
+
+    public KafkaCacheTailKeysFile previousKeys()
+    {
+        return previousKeys;
+    }
+
+    public void replaces(
+        KafkaCacheTailKeysFile dirtyKeys)
+    {
+        previousKeys = dirtyKeys.previousKeys;
+        nextKeys = dirtyKeys.nextKeys;
+
+        if (previousKeys != null)
+        {
+            previousKeys.nextKeys = this;
+        }
+
+        if (nextKeys != null)
+        {
+            nextKeys.previousKeys = this;
+        }
     }
 }

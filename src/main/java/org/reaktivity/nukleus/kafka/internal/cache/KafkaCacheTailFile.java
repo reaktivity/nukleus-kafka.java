@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static java.nio.file.StandardOpenOption.READ;
+import static java.nio.file.StandardOpenOption.WRITE;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -24,20 +25,21 @@ import java.nio.channels.FileChannel.MapMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-import org.agrona.DirectBuffer;
 import org.agrona.LangUtil;
+import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheTailSegment;
 
 public abstract class KafkaCacheTailFile
 {
     private static final ByteBuffer EMPTY_BUFFER = ByteBuffer.allocate(0);
 
-    protected final DirectBuffer readableBuf;
+    protected final MutableDirectBuffer readableBuf;
     protected final int readCapacity;
 
     protected KafkaCacheTailFile(
-        KafkaCacheTailSegment segment,
+        KafkaCacheSegment segment,
         String extension)
     {
         final Path tailFile = segment.cacheFile(extension);
@@ -66,7 +68,7 @@ public abstract class KafkaCacheTailFile
     {
         ByteBuffer mapped = null;
 
-        try (FileChannel channel = FileChannel.open(file, READ))
+        try (FileChannel channel = FileChannel.open(file, READ, WRITE))
         {
             if (channel.size() == 0)
             {
@@ -74,7 +76,7 @@ public abstract class KafkaCacheTailFile
             }
             else
             {
-                mapped = channel.map(MapMode.READ_ONLY, 0, channel.size());
+                mapped = channel.map(MapMode.READ_WRITE, 0, channel.size());
             }
         }
         catch (IOException ex)

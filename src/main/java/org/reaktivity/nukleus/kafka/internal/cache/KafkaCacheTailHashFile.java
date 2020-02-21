@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursor;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorIndex;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.CACHE_EXTENSION_HASH_INDEX;
@@ -33,8 +35,12 @@ public final class KafkaCacheTailHashFile extends KafkaCacheTailIndexFile
         int hash,
         int position)
     {
-        final long cursor = super.seekKey(hash);
-        return super.scanKey(hash, cursor(cursorIndex(cursor), position));
+        long cursor = super.seekKey(hash);
+        if (cursor != RETRY_SEGMENT && cursor != NEXT_SEGMENT)
+        {
+            cursor = super.scanKey(hash, cursor(cursorIndex(cursor), position));
+        }
+        return cursor;
     }
 
     public long scanHash(
@@ -42,6 +48,18 @@ public final class KafkaCacheTailHashFile extends KafkaCacheTailIndexFile
         long cursor)
     {
         return super.scanKey(hash, cursor);
+    }
+
+    public long reverseSeekHash(
+        int hash,
+        int position)
+    {
+        long cursor = super.reverseSeekKey(hash);
+        if (cursor != RETRY_SEGMENT && cursor != NEXT_SEGMENT)
+        {
+            cursor = super.reverseScanKey(hash, cursor(cursorIndex(cursor), position));
+        }
+        return cursor;
     }
 
     public long reverseScanHash(

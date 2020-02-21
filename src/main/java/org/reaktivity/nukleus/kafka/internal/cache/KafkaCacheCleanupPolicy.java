@@ -17,7 +17,56 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 
 public enum KafkaCacheCleanupPolicy
 {
-    COMPACT,
-    DELETE,
+    COMPACT
+    {
+        public boolean compact()
+        {
+            return true;
+        }
+
+        public boolean delete()
+        {
+            return false;
+        }
+    },
+    DELETE
+    {
+        public boolean compact()
+        {
+            return false;
+        }
+
+        public boolean delete()
+        {
+            return true;
+        }
+    },
     COMPACT_AND_DELETE
+    {
+        public boolean compact()
+        {
+            return true;
+        }
+
+        public boolean delete()
+        {
+            return true;
+        }
+    },
+    UNKNOWN
+    {
+        public boolean compact()
+        {
+            return false;
+        }
+
+        public boolean delete()
+        {
+            return false;
+        }
+    };
+
+    public abstract boolean compact();
+
+    public abstract boolean delete();
 }

@@ -18,13 +18,13 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.CACHE_EXTENSION_DELTA;
 
 import org.agrona.MutableDirectBuffer;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheDeltaFW;
 
 public final class KafkaCacheHeadDeltaFile extends KafkaCacheHeadFile
 {
     KafkaCacheHeadDeltaFile(
-        KafkaCacheHeadSegment segment,
+        KafkaCacheSegment segment,
         MutableDirectBuffer writeBuffer)
     {
         super(segment, CACHE_EXTENSION_DELTA, writeBuffer, segment.topicConfig.segmentBytes);
@@ -37,5 +37,14 @@ public final class KafkaCacheHeadDeltaFile extends KafkaCacheHeadFile
         assert position >= 0;
         assert delta != null;
         return delta.tryWrap(readableBuf, position, readCapacity);
+    }
+
+    public void deleteIfEmpty(
+        KafkaCacheSegment segment)
+    {
+        if (readCapacity == 0)
+        {
+            super.deleteIfExists(segment, CACHE_EXTENSION_DELTA);
+        }
     }
 }

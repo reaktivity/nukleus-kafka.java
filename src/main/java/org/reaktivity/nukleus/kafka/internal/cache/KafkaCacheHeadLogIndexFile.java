@@ -18,12 +18,12 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.CACHE_EXTENSION_LOG_INDEX;
 
 import org.agrona.MutableDirectBuffer;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
 
 public final class KafkaCacheHeadLogIndexFile extends KafkaCacheHeadIndexFile
 {
     KafkaCacheHeadLogIndexFile(
-        KafkaCacheHeadSegment segment,
+        KafkaCacheSegment segment,
         MutableDirectBuffer writeBuffer)
     {
         super(segment, CACHE_EXTENSION_LOG_INDEX, writeBuffer, segment.topicConfig.segmentIndexBytes);

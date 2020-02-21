@@ -1,4 +1,4 @@
-/*
+    /*
  * Copyright 2016-2020 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
@@ -36,6 +36,7 @@ scope internal
           int64 offset;
           int64 timestamp;
           int64 ancestor;
+          int32 flags = 0;  // 0x01 = DIRTY
           int32 deltaPosition = -1;
           kafka::KafkaKey key;
           int32 valueLen;

@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static java.lang.System.currentTimeMillis;
 import static java.nio.ByteBuffer.allocateDirect;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
@@ -22,6 +23,8 @@ import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.previousIndex;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType.JSON_PATCH;
+import static org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW.FIELD_OFFSET_DELTA_POSITION;
+import static org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW.FIELD_OFFSET_FLAGS;
 
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
@@ -36,13 +39,13 @@ import javax.json.spi.JsonProvider;
 
 import org.agrona.DirectBuffer;
 import org.agrona.ExpandableArrayBuffer;
-import org.agrona.IoUtil;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.agrona.io.DirectBufferInputStream;
 import org.agrona.io.ExpandableDirectBufferOutputStream;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
+import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
@@ -67,10 +70,14 @@ public final class KafkaCacheSegmentFactory
     public static final String CACHE_EXTENSION_KEYS_INDEX = "kindex";
     public static final String CACHE_EXTENSION_DELTA = "delta";
 
+    private static final int CACHE_ENTRY_FLAGS_DIRTY = 0x01;
+
     private final KafkaCacheEntryFW ancestorEntryRO = new KafkaCacheEntryFW();
     private final KafkaCacheEntryFW headEntryRO = new KafkaCacheEntryFW();
+    private final KafkaCacheEntryFW logEntryRO = new KafkaCacheEntryFW();
+    private final KafkaCacheDeltaFW deltaRO = new KafkaCacheDeltaFW();
 
-    private final MutableDirectBuffer entryInfo = new UnsafeBuffer(new byte[3 * Long.BYTES + Integer.BYTES]);
+    private final MutableDirectBuffer entryInfo = new UnsafeBuffer(new byte[3 * Long.BYTES + 2 * Integer.BYTES]);
     private final MutableDirectBuffer valueInfo = new UnsafeBuffer(new byte[Integer.BYTES]);
     private final MutableDirectBuffer indexInfo = new UnsafeBuffer(new byte[Integer.BYTES + Integer.BYTES]);
     private final MutableDirectBuffer hashInfo = new UnsafeBuffer(new byte[Integer.BYTES + Integer.BYTES]);
@@ -98,9 +105,19 @@ public final class KafkaCacheSegmentFactory
         return new KafkaCacheSentinelSegment(topicConfig, directory);
     }
 
-    KafkaCacheCandidateSegment newCandidate()
+    private long computeHash(
+        Flyweight keyOrHeader)
     {
-        return new KafkaCacheCandidateSegment();
+        // TODO: compute null key hash in advance
+        final DirectBuffer buffer = keyOrHeader.buffer();
+        final ByteBuffer byteBuffer = buffer.byteBuffer();
+        byteBuffer.clear();
+        assert byteBuffer != null;
+        checksum.reset();
+        byteBuffer.position(keyOrHeader.offset());
+        byteBuffer.limit(keyOrHeader.limit());
+        checksum.update(byteBuffer);
+        return checksum.getValue();
     }
 
     public abstract class KafkaCacheSegment implements Comparable<KafkaCacheSegment>
@@ -111,6 +128,7 @@ public final class KafkaCacheSegmentFactory
 
         protected volatile KafkaCacheSegment previousSegment;
         protected volatile KafkaCacheSegment nextSegment;
+        protected int dirtyBytes;
 
         protected KafkaCacheSegment(
             KafkaCacheTopicConfig topicConfig,
@@ -201,7 +219,6 @@ public final class KafkaCacheSegmentFactory
             return tailSegment;
         }
 
-
         public abstract long baseOffset();
 
         public long seekOffset(
@@ -244,6 +261,13 @@ public final class KafkaCacheSegmentFactory
             return NEXT_SEGMENT;
         }
 
+        public KafkaCacheEntryFW findAndMarkAncestor(
+            KafkaKeyFW key,
+            long keyHash)
+        {
+            return null;
+        }
+
         public KafkaCacheEntryFW readLog(
             int position,
             KafkaCacheEntryFW entry)
@@ -256,6 +280,21 @@ public final class KafkaCacheSegmentFactory
             KafkaCacheDeltaFW delta)
         {
             return null;
+        }
+
+        public long markCleanableAt(
+            KafkaCacheTopicConfig topicConfig)
+        {
+            return Long.MAX_VALUE;
+        }
+
+        public long cleanableAt()
+        {
+            return Long.MAX_VALUE;
+        }
+
+        public void clean()
+        {
         }
 
         protected KafkaCacheSegment freezeSegment(
@@ -275,28 +314,6 @@ public final class KafkaCacheSegmentFactory
             KafkaCacheSegment that)
         {
             return baseOffset() == that.baseOffset();
-        }
-    }
-
-    public final class KafkaCacheCandidateSegment extends KafkaCacheSegment
-    {
-        private long baseOffset;
-
-        KafkaCacheCandidateSegment()
-        {
-            super((KafkaCacheTopicConfig) null, null);
-        }
-
-        public void baseOffset(
-            long baseOffset)
-        {
-            this.baseOffset = baseOffset;
-        }
-
-        @Override
-        public long baseOffset()
-        {
-            return baseOffset;
         }
     }
 
@@ -336,19 +353,10 @@ public final class KafkaCacheSegmentFactory
             {
                 KafkaCacheSegment expiredSegment = nextSegment;
 
-                this.nextSegment = segment;
-                segment.previousSegment = this;
-
                 while (expiredSegment != segment)
                 {
                     final KafkaCacheTailSegment tailSegment = expiredSegment.tailSegment();
                     assert tailSegment == expiredSegment;
-
-                    if (tailSegment.tailKeys.nextKeys != null)
-                    {
-                        tailSegment.tailKeys.nextKeys.previousKeys = null;
-                        tailSegment.tailKeys.nextKeys = null;
-                    }
 
                     tailSegment.delete();
 
@@ -370,6 +378,8 @@ public final class KafkaCacheSegmentFactory
         private long headOffset;
         private int headPosition;
         private KafkaCacheEntryFW ancestor;
+        private long dirtySince = -1L;
+        private long cleanableAt = Long.MAX_VALUE;
 
         private KafkaCacheHeadSegment(
             KafkaCacheSegment previousSegment,
@@ -494,8 +504,10 @@ public final class KafkaCacheSegmentFactory
             hashFile.toHashIndex();
             keysFile.toKeysIndex();
 
+            final KafkaCacheTailKeysFile tailKeys = new KafkaCacheTailKeysFile(this, keysFile.previousKeys);
             final KafkaCacheTailSegment tailSegment =
-                    new KafkaCacheTailSegment(previousSegment, directory, baseOffset, keysFile.previousKeys);
+                    new KafkaCacheTailSegment(previousSegment, directory, baseOffset, tailKeys);
+            tailSegment.deltaFile.deleteIfEmpty(tailSegment);
             tailSegment.nextSegment = new KafkaCacheHeadSegment(tailSegment, directory, nextOffset);
 
             if (keysFile.previousKeys != null)
@@ -506,10 +518,9 @@ public final class KafkaCacheSegmentFactory
             previousSegment.nextSegment = tailSegment;
             this.nextSegment = tailSegment.nextSegment;
 
-            if (deltaFile.readCapacity == 0)
-            {
-                IoUtil.delete(cacheFile(CACHE_EXTENSION_DELTA).toFile(), true);
-            }
+            tailSegment.dirtySince = dirtySince;
+            tailSegment.dirtyBytes = dirtyBytes;
+            tailSegment.cleanableAt = cleanableAt;
 
             return tailSegment;
         }
@@ -520,10 +531,12 @@ public final class KafkaCacheSegmentFactory
             KafkaKeyFW key,
             ArrayFW<KafkaHeaderFW> headers,
             OctetsFW value,
+            KafkaCacheEntryFW ancestor,
             KafkaDeltaType deltaType)
         {
+            final long hash = computeHash(key);
             final int valueLength = value != null ? value.sizeof() : -1;
-            writeEntryStart(offset, timestamp, key, valueLength, deltaType);
+            writeEntryStart(offset, timestamp, key, hash, valueLength, ancestor, deltaType);
             if (value != null)
             {
                 writeEntryContinue(value);
@@ -531,28 +544,25 @@ public final class KafkaCacheSegmentFactory
             writeEntryFinish(headers, deltaType);
         }
 
+        public long computeHash(
+            Flyweight keyOrHeader)
+        {
+            return KafkaCacheSegmentFactory.this.computeHash(keyOrHeader);
+        }
+
         public void writeEntryStart(
             long offset,
             long timestamp,
             KafkaKeyFW key,
+            long keyHash,
             int valueLength,
+            KafkaCacheEntryFW ancestor,
             KafkaDeltaType deltaType)
         {
             assert offset > this.headOffset;
             this.headOffset = offset;
             this.headPosition = logFile.readCapacity;
 
-            // TODO: compute null key hash in advance
-            final DirectBuffer buffer = key.buffer();
-            final ByteBuffer byteBuffer = buffer.byteBuffer();
-            byteBuffer.clear();
-            assert byteBuffer != null;
-            checksum.reset();
-            byteBuffer.position(key.offset());
-            byteBuffer.limit(key.limit());
-            checksum.update(byteBuffer);
-            final long hash = checksum.getValue();
-            final KafkaCacheEntryFW ancestor = findAncestor(key, hash);
             final long ancestorOffset = ancestor != null ? ancestor.offset$() : -1L;
             final int deltaPosition = deltaType == JSON_PATCH &&
                                       ancestor != null && ancestor.valueLen() != -1 &&
@@ -566,19 +576,20 @@ public final class KafkaCacheSegmentFactory
             entryInfo.putLong(0, headOffset);
             entryInfo.putLong(Long.BYTES, timestamp);
             entryInfo.putLong(Long.BYTES + Long.BYTES, ancestorOffset);
-            entryInfo.putInt(Long.BYTES + Long.BYTES + Long.BYTES, deltaPosition);
+            entryInfo.putInt(Long.BYTES + Long.BYTES + Long.BYTES, 0x00);
+            entryInfo.putInt(Long.BYTES + Long.BYTES + Long.BYTES + Integer.BYTES, deltaPosition);
             valueInfo.putInt(0, valueLength);
 
             logFile.write(entryInfo, 0, entryInfo.capacity());
             logFile.write(key.buffer(), key.offset(), key.sizeof());
             logFile.write(valueInfo, 0, valueInfo.capacity());
 
-            final long hashEntry = hash << 32 | headPosition;
+            final long hashEntry = keyHash << 32 | headPosition;
             hashInfo.putLong(0, hashEntry);
             hashFile.write(hashInfo, 0, hashInfo.capacity());
 
             final int deltaBaseOffset = 0;
-            final long keyEntry = hash << 32 | deltaBaseOffset;
+            final long keyEntry = keyHash << 32 | deltaBaseOffset;
             keysInfo.putLong(0, keyEntry);
             keysFile.write(keysInfo, 0, keysInfo.capacity());
         }
@@ -614,11 +625,7 @@ public final class KafkaCacheSegmentFactory
                 byteBuffer.clear();
                 headers.forEach(h ->
                 {
-                    checksum.reset();
-                    byteBuffer.position(h.offset());
-                    byteBuffer.limit(h.limit());
-                    checksum.update(byteBuffer);
-                    final long hash = checksum.getValue();
+                    final long hash = computeHash(h);
                     hashInfo.putLong(0, (hash << 32) | headPosition);
                     hashFile.write(hashInfo, 0, hashInfo.capacity());
                 });
@@ -666,11 +673,13 @@ public final class KafkaCacheSegmentFactory
             }
         }
 
-        private KafkaCacheEntryFW findAncestor(
+        @Override
+        public KafkaCacheEntryFW findAndMarkAncestor(
             KafkaKeyFW key,
             long hash)
         {
             KafkaCacheEntryFW ancestor = null;
+
             ancestor:
             if (key.length() != -1)
             {
@@ -678,11 +687,12 @@ public final class KafkaCacheSegmentFactory
                 while (hashCursor != NEXT_SEGMENT && hashCursor != RETRY_SEGMENT)
                 {
                     final int position = cursorValue(hashCursor);
-                    final KafkaCacheEntryFW cacheEntry = logFile.read(position, ancestorEntryRO);
+                    final KafkaCacheEntryFW cacheEntry = readLog(position, ancestorEntryRO);
                     assert cacheEntry != null;
                     if (key.equals(cacheEntry.key()))
                     {
                         ancestor = cacheEntry;
+                        markDirty(ancestor);
                         break ancestor;
                     }
 
@@ -695,60 +705,84 @@ public final class KafkaCacheSegmentFactory
                     hashCursor = nextHashCursor;
                 }
                 assert hashCursor == NEXT_SEGMENT || hashCursor == RETRY_SEGMENT;
-
-                KafkaCacheTailKeysFile previousKeys = keysFile.previousKeys;
-                while (previousKeys != null)
-                {
-                    long keyCursor = previousKeys.reverseSeekKey((int) hash, Integer.MAX_VALUE);
-                    while (keyCursor != NEXT_SEGMENT && keyCursor != RETRY_SEGMENT)
-                    {
-                        final long ancestorBaseOffset = previousKeys.baseOffset(keyCursor);
-
-                        KafkaCacheSegment ancestorSegment = this;
-                        while (ancestorSegment != null && ancestorSegment.baseOffset() > ancestorBaseOffset)
-                        {
-                            ancestorSegment = ancestorSegment.previousSegment;
-                        }
-
-                        if (ancestorSegment != null && ancestorSegment.baseOffset() == ancestorBaseOffset)
-                        {
-                            long ancestorCursor = ancestorSegment.reverseSeekHash((int) hash, Integer.MAX_VALUE);
-                            while (ancestorCursor != NEXT_SEGMENT && ancestorCursor != RETRY_SEGMENT)
-                            {
-                                final int position = cursorValue(ancestorCursor);
-                                final KafkaCacheEntryFW cacheEntry = ancestorSegment.readLog(position, ancestorEntryRO);
-                                assert cacheEntry != null;
-                                if (key.equals(cacheEntry.key()))
-                                {
-                                    ancestor = cacheEntry;
-                                    break ancestor;
-                                }
-
-                                final long nextAncestorCursor =
-                                        ancestorSegment.reverseScanHash((int) hash, previousIndex(ancestorCursor));
-                                if (nextAncestorCursor == NEXT_SEGMENT || nextAncestorCursor == RETRY_SEGMENT)
-                                {
-                                    break;
-                                }
-
-                                ancestorCursor = nextAncestorCursor;
-                            }
-                        }
-
-                        final long nextKeyCursor = previousKeys.reverseScanKey((int) hash, previousIndex(keyCursor));
-                        if (nextKeyCursor == NEXT_SEGMENT || nextKeyCursor == RETRY_SEGMENT)
-                        {
-                            break;
-                        }
-
-                        keyCursor = nextKeyCursor;
-                    }
-
-                    previousKeys = previousKeys.previousKeys;
-                }
             }
 
             return ancestor;
+        }
+
+        public KafkaCacheTailKeysFile previousKeys()
+        {
+            return keysFile.previousKeys;
+        }
+
+        public KafkaCacheSegment findAncestorSegment(
+            long ancestorBaseOffset)
+        {
+            KafkaCacheSegment ancestorSegment = this;
+            while (ancestorSegment != null && ancestorSegment.baseOffset() > ancestorBaseOffset)
+            {
+                ancestorSegment = ancestorSegment.previousSegment;
+            }
+            return ancestorSegment;
+        }
+
+        @Override
+        public long markCleanableAt(
+            KafkaCacheTopicConfig topicConfig)
+        {
+            if (cleanableAt == Long.MAX_VALUE && dirtySince != -1L)
+            {
+                long newCleanableAt = Long.MAX_VALUE;
+
+                final double cleanableDirtyRatio = cleanableDirtyRatio();
+                if (cleanableDirtyRatio >= topicConfig.minCleanableDirtyRatio)
+                {
+                    final long now = System.currentTimeMillis();
+
+                    newCleanableAt = Math.min(dirtySince + topicConfig.minCompactionLagMillis, now);
+                }
+                else if (cleanableDirtyRatio != 0.0 && topicConfig.maxCompactionLagMillis != Long.MAX_VALUE)
+                {
+                    final long now = System.currentTimeMillis();
+
+                    newCleanableAt = Math.min(dirtySince + topicConfig.maxCompactionLagMillis, now);
+                }
+
+                this.cleanableAt = newCleanableAt;
+            }
+
+            return cleanableAt;
+        }
+
+        @Override
+        public long cleanableAt()
+        {
+            return cleanableAt;
+        }
+
+        @Override
+        public void clean()
+        {
+            // TODO: clean head
+        }
+
+        private double cleanableDirtyRatio()
+        {
+            final int readCapacity = logFile.readCapacity;
+            return readCapacity == 0 ? 0.0 : (double) dirtyBytes / readCapacity;
+        }
+
+        private void markDirty(
+            KafkaCacheEntryFW ancestor)
+        {
+            assert ancestor.buffer() == logFile.readableBuf;
+            logFile.readableBuf.putInt(ancestor.offset() + FIELD_OFFSET_FLAGS, CACHE_ENTRY_FLAGS_DIRTY);
+
+            if (dirtyBytes == 0)
+            {
+                this.dirtySince = currentTimeMillis();
+            }
+            this.dirtyBytes += ancestor.sizeof();
         }
     }
 
@@ -762,11 +796,14 @@ public final class KafkaCacheSegmentFactory
         final KafkaCacheTailDeltaFile deltaFile;
         final KafkaCacheTailKeysFile tailKeys;
 
+        private long dirtySince = -1L;
+        private long cleanableAt = Long.MAX_VALUE;
+
         private KafkaCacheTailSegment(
             KafkaCacheSegment previousSegment,
             Path directory,
             long baseOffset,
-            KafkaCacheTailKeysFile previousKeys)
+            KafkaCacheTailKeysFile tailKeys)
         {
             super(previousSegment, directory);
             this.baseOffset = baseOffset;
@@ -774,7 +811,7 @@ public final class KafkaCacheSegmentFactory
             this.indexFile = new KafkaCacheTailLogIndexFile(this);
             this.hashFile = new KafkaCacheTailHashFile(this);
             this.deltaFile = new KafkaCacheTailDeltaFile(this);
-            this.tailKeys = new KafkaCacheTailKeysFile(this, previousKeys);
+            this.tailKeys = tailKeys;
         }
 
         @Override
@@ -820,11 +857,55 @@ public final class KafkaCacheSegmentFactory
         }
 
         @Override
+        public long reverseSeekHash(
+            int hash,
+            int position)
+        {
+            return hashFile.reverseSeekHash(hash, position);
+        }
+
+        @Override
         public long reverseScanHash(
             int hash,
             long record)
         {
             return hashFile.reverseScanHash(hash, record);
+        }
+
+        @Override
+        public KafkaCacheEntryFW findAndMarkAncestor(
+            KafkaKeyFW key,
+            long keyHash)
+        {
+            KafkaCacheEntryFW ancestor = null;
+
+            ancestor:
+            if (key.length() != -1)
+            {
+                long ancestorCursor = reverseSeekHash((int) keyHash, Integer.MAX_VALUE);
+                while (ancestorCursor != NEXT_SEGMENT && ancestorCursor != RETRY_SEGMENT)
+                {
+                    final int position = cursorValue(ancestorCursor);
+                    final KafkaCacheEntryFW cacheEntry = readLog(position, ancestorEntryRO);
+                    assert cacheEntry != null;
+                    if (key.equals(cacheEntry.key()))
+                    {
+                        ancestor = cacheEntry;
+                        markDirty(ancestor);
+                        break ancestor;
+                    }
+
+                    final long nextAncestorCursor = reverseScanHash((int) keyHash, previousIndex(ancestorCursor));
+                    if (nextAncestorCursor == NEXT_SEGMENT || nextAncestorCursor == RETRY_SEGMENT)
+                    {
+                        break;
+                    }
+
+                    ancestorCursor = nextAncestorCursor;
+                }
+            }
+
+            return ancestor;
         }
 
         @Override
@@ -843,13 +924,171 @@ public final class KafkaCacheSegmentFactory
             return deltaFile.read(position, entry);
         }
 
+        @Override
+        public long markCleanableAt(
+            KafkaCacheTopicConfig topicConfig)
+        {
+            if (cleanableAt == Long.MAX_VALUE && dirtySince != -1L)
+            {
+                long newCleanableAt = Long.MAX_VALUE;
+
+                final double cleanableDirtyRatio = cleanableDirtyRatio();
+                if (cleanableDirtyRatio >= topicConfig.minCleanableDirtyRatio)
+                {
+                    final long now = System.currentTimeMillis();
+
+                    newCleanableAt = Math.min(dirtySince + topicConfig.minCompactionLagMillis, now);
+                }
+                else if (cleanableDirtyRatio != 0.0 && topicConfig.maxCompactionLagMillis != Long.MAX_VALUE)
+                {
+                    final long now = System.currentTimeMillis();
+
+                    newCleanableAt = Math.min(dirtySince + topicConfig.maxCompactionLagMillis, now);
+                }
+
+                this.cleanableAt = newCleanableAt;
+            }
+
+            return cleanableAt;
+        }
+
+        @Override
+        public long cleanableAt()
+        {
+            return cleanableAt;
+        }
+
+        @Override
+        public void clean()
+        {
+            // TODO: use temporary files plus move to avoid corrupted log on restart
+            logFile.delete(this);
+            indexFile.delete(this);
+            hashFile.delete(this);
+            deltaFile.delete(this);
+            tailKeys.delete(this);
+
+            KafkaCacheHeadLogFile cleanLogFile = new KafkaCacheHeadLogFile(this, writeBuffer);
+            KafkaCacheHeadLogIndexFile cleanIndexFile = new KafkaCacheHeadLogIndexFile(this, writeBuffer);
+            KafkaCacheHeadHashFile cleanHashFile = new KafkaCacheHeadHashFile(this, writeBuffer);
+            KafkaCacheHeadDeltaFile cleanDeltaFile = new KafkaCacheHeadDeltaFile(this, writeBuffer);
+            KafkaCacheHeadKeysFile cleanKeysFile = new KafkaCacheHeadKeysFile(this, writeBuffer, tailKeys.previousKeys);
+
+            final MutableDirectBuffer log = logFile.readableBuf;
+            final int logCapacity = logFile.readCapacity;
+            final DirectBuffer delta = deltaFile.readableBuf;
+            final int deltaCapacity = deltaFile.readCapacity;
+            for (int cleanLogPosition = 0, cleanDeltaPosition = 0; cleanLogPosition < logCapacity; )
+            {
+                final KafkaCacheEntryFW logEntry = logEntryRO.wrap(log, cleanLogPosition, logCapacity);
+                final int logEntryLength = logEntry.sizeof();
+                if ((logEntry.flags() & CACHE_ENTRY_FLAGS_DIRTY) == 0)
+                {
+                    final long logOffset = logEntry.offset$();
+                    final KafkaKeyFW key = logEntry.key();
+                    final int deltaPosition = logEntry.deltaPosition();
+                    final long keyHash = computeHash(key);
+
+                    cleanLogFile.write(log, cleanLogPosition, logEntryLength);
+
+                    final long offsetDelta = (int)(logOffset - baseOffset);
+                    indexInfo.putLong(0, (offsetDelta << 32) | cleanLogPosition);
+                    cleanIndexFile.write(indexInfo, 0, indexInfo.capacity());
+
+                    final long hashEntry = keyHash << 32 | cleanLogPosition;
+                    hashInfo.putLong(0, hashEntry);
+                    cleanHashFile.write(hashInfo, 0, hashInfo.capacity());
+
+                    if (deltaPosition != -1)
+                    {
+                        log.putInt(cleanLogPosition + FIELD_OFFSET_DELTA_POSITION, cleanDeltaPosition);
+                        final KafkaCacheDeltaFW deltaEntry = deltaRO.wrap(log, deltaPosition, deltaCapacity);
+                        final int deltaEntryLength = deltaEntry.sizeof();
+                        cleanDeltaFile.write(delta, cleanDeltaPosition, deltaEntryLength);
+                        cleanDeltaPosition += deltaEntryLength;
+                        assert cleanDeltaPosition <= deltaCapacity;
+                    }
+
+                    // note: keys cleanup must also retain non-zero base offsets when spanning multiple segments
+                    final int deltaBaseOffset = 0;
+                    final long keyEntry = keyHash << 32 | deltaBaseOffset;
+                    keysInfo.putLong(0, keyEntry);
+                    cleanKeysFile.write(keysInfo, 0, keysInfo.capacity());
+                }
+                cleanLogPosition += logEntryLength;
+            }
+
+            cleanLogFile.freeze();
+            cleanIndexFile.freeze();
+            cleanHashFile.freeze();
+            cleanDeltaFile.freeze();
+
+            cleanHashFile.toHashIndex();
+            cleanKeysFile.toKeysIndex();
+
+            KafkaCacheTailKeysFile cleanTailKeys = new KafkaCacheTailKeysFile(this, tailKeys.previousKeys);
+            cleanTailKeys.nextKeys = tailKeys.nextKeys;
+
+            final KafkaCacheTailSegment cleanSegment =
+                    new KafkaCacheTailSegment(previousSegment, directory, baseOffset, cleanTailKeys);
+            cleanSegment.deltaFile.deleteIfEmpty(cleanSegment);
+
+            cleanSegment.replaces(this);
+
+            if (cleanSegment.empty())
+            {
+                cleanSegment.delete();
+            }
+        }
+
+        private void replaces(
+            KafkaCacheTailSegment dirtySegment)
+        {
+            tailKeys.replaces(dirtySegment.tailKeys);
+
+            previousSegment = dirtySegment.previousSegment;
+            nextSegment = dirtySegment.nextSegment;
+
+            previousSegment.nextSegment = this;
+            nextSegment.previousSegment = this;
+        }
+
+        private boolean empty()
+        {
+            return logFile.readCapacity == 0;
+        }
+
+        private double cleanableDirtyRatio()
+        {
+            final int readCapacity = logFile.readCapacity;
+            return readCapacity == 0 ? 0.0 : (double) dirtyBytes / readCapacity;
+        }
+
+        private void markDirty(
+            KafkaCacheEntryFW ancestor)
+        {
+            assert ancestor.buffer() == logFile.readableBuf;
+            logFile.readableBuf.putInt(ancestor.offset() + FIELD_OFFSET_FLAGS, CACHE_ENTRY_FLAGS_DIRTY);
+
+            if (dirtyBytes == 0)
+            {
+                this.dirtySince = currentTimeMillis();
+            }
+            this.dirtyBytes += ancestor.sizeof();
+        }
+
         private void delete()
         {
             logFile.delete(this);
             indexFile.delete(this);
             hashFile.delete(this);
             deltaFile.delete(this);
+
+            // TODO: reassess when tailKeys spans multiple segments
             tailKeys.delete(this);
+
+            previousSegment.nextSegment = nextSegment;
+            nextSegment.previousSegment = previousSegment;
         }
     }
 }

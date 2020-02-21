@@ -15,31 +15,20 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import static java.util.Collections.singleton;
-
-import java.util.NavigableSet;
-import java.util.TreeSet;
-
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheCandidateSegment;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSentinelSegment;
 
 public final class KafkaCachePartitionReader
 {
     private final int partitionId;
-    private final NavigableSet<KafkaCacheSegment> segments;
-    private final KafkaCacheCandidateSegment candidate;
-
-    private KafkaCacheSegment latest;
+    private final KafkaCacheSentinelSegment sentinel;
 
     KafkaCachePartitionReader(
         int partitionId,
-        KafkaCacheSegment segment,
-        KafkaCacheCandidateSegment candidate)
+        KafkaCacheSentinelSegment sentinel)
     {
         this.partitionId = partitionId;
-        this.segments = new TreeSet<>(singleton(segment));
-        this.candidate = candidate;
-        this.latest = segment;
+        this.sentinel = sentinel;
     }
 
     public int id()
@@ -50,27 +39,26 @@ public final class KafkaCachePartitionReader
     public KafkaCacheSegment seekNotAfter(
         long offset)
     {
-        ensureSeekable();
-        candidate.baseOffset(offset);
-        return segments.floor(candidate);
+        KafkaCacheSegment segment = sentinel.headSegment();
+
+        while (segment != sentinel && segment.baseOffset() > offset)
+        {
+            segment = segment.previousSegment;
+        }
+
+        return segment;
     }
 
     public KafkaCacheSegment seekNotBefore(
         long offset)
     {
-        ensureSeekable();
-        candidate.baseOffset(offset);
-        return segments.ceiling(candidate);
-    }
+        KafkaCacheSegment segment = sentinel;
 
-    public void ensureSeekable()
-    {
-        KafkaCacheSegment nextSegment = latest.nextSegment();
-        while (nextSegment != null)
+        while (segment != null && segment.baseOffset() < offset)
         {
-            segments.add(nextSegment);
-            latest = nextSegment;
-            nextSegment = latest.nextSegment();
+            segment = segment.nextSegment;
         }
+
+        return segment;
     }
 }

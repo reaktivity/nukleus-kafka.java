@@ -47,7 +47,7 @@ public final class KafkaCache
 
     public KafkaCacheReader newReader()
     {
-        return new KafkaCacheReader(this::supplySegment, cacheSegmentFactory.newCandidate());
+        return new KafkaCacheReader(this::supplySegment);
     }
 
     public KafkaCacheWriter newWriter()
