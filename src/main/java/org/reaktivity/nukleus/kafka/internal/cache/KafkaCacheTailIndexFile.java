@@ -95,8 +95,7 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
             }
         }
 
-        assert lowIndex >= 0;
-        if (lowIndex <= lastIndex)
+        if (0 <= lowIndex && lowIndex <= lastIndex)
         {
             final long indexEntry = buffer.getLong(lowIndex << 3);
             return cursor(lowIndex, indexValue(indexEntry));
@@ -192,8 +191,7 @@ public abstract class KafkaCacheTailIndexFile extends KafkaCacheTailFile
             }
         }
 
-        assert highIndex >= 0;
-        if (highIndex <= lastIndex)
+        if (0 <= highIndex && highIndex <= lastIndex)
         {
             final long indexEntry = buffer.getLong(highIndex << 3);
             return cursor(highIndex, indexValue(indexEntry));

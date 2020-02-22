@@ -857,11 +857,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             KafkaCacheSegment segment = sentinel.nextSegment();
             while (segment != null)
             {
-                if (segment.cleanableAt() <= now)
-                {
-                    segment.clean();
-                }
-
+                segment.clean(now);
                 segment = segment.nextSegment();
             }
 

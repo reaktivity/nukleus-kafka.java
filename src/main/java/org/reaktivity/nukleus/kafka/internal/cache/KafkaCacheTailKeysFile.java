@@ -117,4 +117,10 @@ public final class KafkaCacheTailKeysFile extends KafkaCacheTailIndexFile
             nextKeys.previousKeys = this;
         }
     }
+
+    @Override
+    public String toString()
+    {
+        return String.format("%s %d", getClass().getSimpleName(), baseOffset);
+    }
 }

@@ -288,12 +288,8 @@ public final class KafkaCacheSegmentFactory
             return Long.MAX_VALUE;
         }
 
-        public long cleanableAt()
-        {
-            return Long.MAX_VALUE;
-        }
-
-        public void clean()
+        public void clean(
+            long now)
         {
         }
 
@@ -755,13 +751,8 @@ public final class KafkaCacheSegmentFactory
         }
 
         @Override
-        public long cleanableAt()
-        {
-            return cleanableAt;
-        }
-
-        @Override
-        public void clean()
+        public void clean(
+            long now)
         {
             // TODO: clean head
         }
@@ -953,91 +944,98 @@ public final class KafkaCacheSegmentFactory
         }
 
         @Override
-        public long cleanableAt()
+        public void clean(
+            long now)
         {
-            return cleanableAt;
-        }
-
-        @Override
-        public void clean()
-        {
-            // TODO: use temporary files plus move to avoid corrupted log on restart
-            logFile.delete(this);
-            indexFile.delete(this);
-            hashFile.delete(this);
-            deltaFile.delete(this);
-            tailKeys.delete(this);
-
-            KafkaCacheHeadLogFile cleanLogFile = new KafkaCacheHeadLogFile(this, writeBuffer);
-            KafkaCacheHeadLogIndexFile cleanIndexFile = new KafkaCacheHeadLogIndexFile(this, writeBuffer);
-            KafkaCacheHeadHashFile cleanHashFile = new KafkaCacheHeadHashFile(this, writeBuffer);
-            KafkaCacheHeadDeltaFile cleanDeltaFile = new KafkaCacheHeadDeltaFile(this, writeBuffer);
-            KafkaCacheHeadKeysFile cleanKeysFile = new KafkaCacheHeadKeysFile(this, writeBuffer, tailKeys.previousKeys);
-
-            final MutableDirectBuffer log = logFile.readableBuf;
-            final int logCapacity = logFile.readCapacity;
-            final DirectBuffer delta = deltaFile.readableBuf;
-            final int deltaCapacity = deltaFile.readCapacity;
-            for (int cleanLogPosition = 0, cleanDeltaPosition = 0; cleanLogPosition < logCapacity; )
+            if (cleanableAt <= now)
             {
-                final KafkaCacheEntryFW logEntry = logEntryRO.wrap(log, cleanLogPosition, logCapacity);
-                final int logEntryLength = logEntry.sizeof();
-                if ((logEntry.flags() & CACHE_ENTRY_FLAGS_DIRTY) == 0)
+                // TODO: use temporary files plus move to avoid corrupted log on restart
+                logFile.delete(this);
+                indexFile.delete(this);
+                hashFile.delete(this);
+                deltaFile.delete(this);
+                tailKeys.delete(this);
+
+                KafkaCacheHeadLogFile cleanLogFile = new KafkaCacheHeadLogFile(this, writeBuffer);
+                KafkaCacheHeadLogIndexFile cleanIndexFile = new KafkaCacheHeadLogIndexFile(this, writeBuffer);
+                KafkaCacheHeadHashFile cleanHashFile = new KafkaCacheHeadHashFile(this, writeBuffer);
+                KafkaCacheHeadDeltaFile cleanDeltaFile = new KafkaCacheHeadDeltaFile(this, writeBuffer);
+                KafkaCacheHeadKeysFile cleanKeysFile = new KafkaCacheHeadKeysFile(this, writeBuffer, tailKeys.previousKeys);
+
+                final MutableDirectBuffer log = logFile.readableBuf;
+                final int logCapacity = logFile.readCapacity;
+                final DirectBuffer delta = deltaFile.readableBuf;
+                final int deltaCapacity = deltaFile.readCapacity;
+
+                final MutableDirectBuffer cleanLog = cleanLogFile.readableBuf;
+                int cleanLogPosition = 0;
+                int cleanDeltaPosition = 0;
+                for (int logPosition = 0; logPosition < logCapacity; )
                 {
-                    final long logOffset = logEntry.offset$();
-                    final KafkaKeyFW key = logEntry.key();
-                    final int deltaPosition = logEntry.deltaPosition();
-                    final long keyHash = computeHash(key);
+                    final KafkaCacheEntryFW logEntry = logEntryRO.wrap(log, logPosition, logCapacity);
+                    final int logEntryLength = logEntry.sizeof();
 
-                    cleanLogFile.write(log, cleanLogPosition, logEntryLength);
-
-                    final long offsetDelta = (int)(logOffset - baseOffset);
-                    indexInfo.putLong(0, (offsetDelta << 32) | cleanLogPosition);
-                    cleanIndexFile.write(indexInfo, 0, indexInfo.capacity());
-
-                    final long hashEntry = keyHash << 32 | cleanLogPosition;
-                    hashInfo.putLong(0, hashEntry);
-                    cleanHashFile.write(hashInfo, 0, hashInfo.capacity());
-
-                    if (deltaPosition != -1)
+                    if ((logEntry.flags() & CACHE_ENTRY_FLAGS_DIRTY) == 0)
                     {
-                        log.putInt(cleanLogPosition + FIELD_OFFSET_DELTA_POSITION, cleanDeltaPosition);
-                        final KafkaCacheDeltaFW deltaEntry = deltaRO.wrap(log, deltaPosition, deltaCapacity);
-                        final int deltaEntryLength = deltaEntry.sizeof();
-                        cleanDeltaFile.write(delta, cleanDeltaPosition, deltaEntryLength);
-                        cleanDeltaPosition += deltaEntryLength;
-                        assert cleanDeltaPosition <= deltaCapacity;
+                        final long logOffset = logEntry.offset$();
+                        final KafkaKeyFW key = logEntry.key();
+                        final int deltaPosition = logEntry.deltaPosition();
+                        final long keyHash = computeHash(key);
+
+                        final long offsetDelta = (int)(logOffset - baseOffset);
+                        indexInfo.putLong(0, (offsetDelta << 32) | cleanLogPosition);
+                        cleanIndexFile.write(indexInfo, 0, indexInfo.capacity());
+
+                        final long hashEntry = keyHash << 32 | cleanLogPosition;
+                        hashInfo.putLong(0, hashEntry);
+                        cleanHashFile.write(hashInfo, 0, hashInfo.capacity());
+
+                        cleanLogFile.write(log, logPosition, logEntryLength);
+                        if (deltaPosition != -1)
+                        {
+                            cleanLog.putInt(cleanLogPosition + FIELD_OFFSET_DELTA_POSITION, cleanDeltaPosition);
+
+                            final KafkaCacheDeltaFW deltaEntry = deltaRO.wrap(log, deltaPosition, deltaCapacity);
+                            final int deltaEntryLength = deltaEntry.sizeof();
+                            cleanDeltaFile.write(delta, cleanDeltaPosition, deltaEntryLength);
+                            cleanDeltaPosition += deltaEntryLength;
+                            assert cleanDeltaPosition <= deltaCapacity;
+                        }
+
+                        // note: keys cleanup must also retain non-zero base offsets when spanning multiple segments
+                        final int deltaBaseOffset = 0;
+                        final long keyEntry = keyHash << 32 | deltaBaseOffset;
+                        keysInfo.putLong(0, keyEntry);
+                        cleanKeysFile.write(keysInfo, 0, keysInfo.capacity());
+
+                        cleanLogPosition += logEntryLength;
+                        assert cleanLogPosition <= logCapacity;
                     }
 
-                    // note: keys cleanup must also retain non-zero base offsets when spanning multiple segments
-                    final int deltaBaseOffset = 0;
-                    final long keyEntry = keyHash << 32 | deltaBaseOffset;
-                    keysInfo.putLong(0, keyEntry);
-                    cleanKeysFile.write(keysInfo, 0, keysInfo.capacity());
+                    logPosition += logEntryLength;
                 }
-                cleanLogPosition += logEntryLength;
-            }
 
-            cleanLogFile.freeze();
-            cleanIndexFile.freeze();
-            cleanHashFile.freeze();
-            cleanDeltaFile.freeze();
+                cleanLogFile.freeze();
+                cleanIndexFile.freeze();
+                cleanHashFile.freeze();
+                cleanDeltaFile.freeze();
 
-            cleanHashFile.toHashIndex();
-            cleanKeysFile.toKeysIndex();
+                cleanHashFile.toHashIndex();
+                cleanKeysFile.toKeysIndex();
 
-            KafkaCacheTailKeysFile cleanTailKeys = new KafkaCacheTailKeysFile(this, tailKeys.previousKeys);
-            cleanTailKeys.nextKeys = tailKeys.nextKeys;
+                KafkaCacheTailKeysFile cleanTailKeys = new KafkaCacheTailKeysFile(this, tailKeys.previousKeys);
+                cleanTailKeys.nextKeys = tailKeys.nextKeys;
 
-            final KafkaCacheTailSegment cleanSegment =
-                    new KafkaCacheTailSegment(previousSegment, directory, baseOffset, cleanTailKeys);
-            cleanSegment.deltaFile.deleteIfEmpty(cleanSegment);
+                final KafkaCacheTailSegment cleanSegment =
+                        new KafkaCacheTailSegment(previousSegment, directory, baseOffset, cleanTailKeys);
+                cleanSegment.deltaFile.deleteIfEmpty(cleanSegment);
 
-            cleanSegment.replaces(this);
+                cleanSegment.replaces(this);
 
-            if (cleanSegment.empty())
-            {
-                cleanSegment.delete();
+                if (cleanSegment.empty())
+                {
+                    cleanSegment.delete();
+                }
             }
         }
 

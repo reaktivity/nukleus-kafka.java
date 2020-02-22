@@ -17,20 +17,6 @@ scope internal
 {
     scope cache
     {
-        struct KafkaCacheKey
-        {
-            varint32 length;
-            octets[length] value = null;
-        }
-
-        struct KafkaCacheHeader
-        {
-            varint32 nameLen;
-            octets[nameLen] name;  // UTF-8
-            varint32 valueLen;
-            octets[valueLen] value = null;
-        }
-
         struct KafkaCacheEntry
         {
           int64 offset;
