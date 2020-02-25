@@ -37,6 +37,12 @@ public final class KafkaCacheView extends KafkaCacheObjects.ReadOnly
         return topicsByName.computeIfAbsent(name, this::newTopicView);
     }
 
+    @Override
+    protected void onClosed()
+    {
+        topicsByName.values().forEach(KafkaCacheTopicView::close);
+    }
+
     private KafkaCacheTopicView newTopicView(
         String name)
     {

@@ -691,6 +691,15 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
             logFile.writeInt(ancestor.offset() + FIELD_OFFSET_FLAGS, CACHE_ENTRY_FLAGS_DIRTY);
             segment.markDirtyBytes(ancestor.sizeof());
         }
+
+        @Override
+        protected void onClosed()
+        {
+            if (segment != null)
+            {
+                segment.close();
+            }
+        }
     }
 
     private static Path createDirectories(

@@ -71,4 +71,9 @@ public final class KafkaCacheSegmentView extends KafkaCacheObjects.ReadOnly
     {
         return String.format("[%s] %s[%d] @ %d", getClass().getSimpleName(), name(), index(), baseOffset());
     }
+
+    @Override
+    protected void onClosed()
+    {
+    }
 }

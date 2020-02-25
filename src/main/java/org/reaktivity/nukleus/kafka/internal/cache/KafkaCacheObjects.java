@@ -61,9 +61,7 @@ public final class KafkaCacheObjects
             return references.get();
         }
 
-        protected void onClosed()
-        {
-        }
+        protected abstract void onClosed();
 
         final void release()
         {
@@ -78,7 +76,7 @@ public final class KafkaCacheObjects
         }
     }
 
-    public static class ReadOnly implements AutoCloseable
+    public abstract static class ReadOnly implements AutoCloseable
     {
         private final Runnable release;
         private volatile boolean closed;
@@ -105,9 +103,7 @@ public final class KafkaCacheObjects
             return closed;
         }
 
-        protected void onClosed()
-        {
-        }
+        protected abstract void onClosed();
     }
 
     private KafkaCacheObjects()

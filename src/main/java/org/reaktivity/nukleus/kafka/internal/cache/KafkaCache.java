@@ -53,6 +53,12 @@ public final class KafkaCache extends KafkaCacheObjects.ReadWrite<KafkaCacheView
         return this;
     }
 
+    @Override
+    protected void onClosed()
+    {
+        topicsByName.values().forEach(KafkaCacheTopic::close);
+    }
+
     private KafkaCacheTopic newTopic(
             String name)
     {
