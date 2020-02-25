@@ -234,6 +234,21 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
         return head;
     }
 
+    public void writeEntry(
+        long offset,
+        long timestamp,
+        KafkaKeyFW key,
+        ArrayFW<KafkaHeaderFW> headers,
+        OctetsFW value,
+        KafkaCacheEntryFW ancestor,
+        KafkaDeltaType deltaType)
+    {
+        final long keyHash = computeHash(key);
+        writeEntryStart(offset, timestamp, key, keyHash, value != null ? value.sizeof() : -1, ancestor, deltaType);
+        writeEntryContinue(value);
+        writeEntryFinish(headers, deltaType);
+    }
+
     public void writeEntryStart(
         long offset,
         long timestamp,
