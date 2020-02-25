@@ -19,6 +19,7 @@ import static java.nio.ByteBuffer.allocate;
 import static java.nio.ByteOrder.nativeOrder;
 import static java.nio.file.StandardOpenOption.APPEND;
 import static java.nio.file.StandardOpenOption.CREATE;
+import static java.nio.file.StandardOpenOption.READ;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
@@ -28,6 +29,7 @@ import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheIndexRecord.SIZEOF_INDEX_RECORD;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheIndexRecord.indexEntry;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheIndexRecord.indexKey;
 
 import java.io.File;
 import java.nio.ByteBuffer;
@@ -276,6 +278,61 @@ public class KafkaCacheIndexFileTest
             Path sortedFile = new File(tempFolder.getRoot(), "sorted").toPath();
 
             indexFile.sortByKey(workingFile, sortedFile);
+
+            ByteBuffer indexEntryHolder = allocate(SIZEOF_INDEX_RECORD).order(nativeOrder());
+            try (FileChannel channel = FileChannel.open(sortedFile, READ))
+            {
+                assert channel.size() == SIZEOF_INDEX_RECORD * entries;
+
+                int previousIndexKey = 0;
+                while (channel.position() < channel.size())
+                {
+                    indexEntryHolder.clear();
+                    int read = channel.read(indexEntryHolder);
+                    assert read == SIZEOF_INDEX_RECORD;
+                    indexEntryHolder.flip();
+
+                    long indexEntry = indexEntryHolder.getLong();
+                    int indexKey = indexKey(indexEntry);
+
+                    assert indexKey >= previousIndexKey;
+                    previousIndexKey = indexKey;
+                }
+            }
+        }
+    }
+
+    public static class SortedByValueWithDuplicatesTest
+    {
+        @Rule
+        public TemporaryFolder tempFolder = new TemporaryFolder();
+
+        private KafkaCacheIndexFile.SortedByValue indexFile;
+        private int key;
+        private int entries;
+
+        @Before
+        public void initEntries() throws Exception
+        {
+            Random random = ThreadLocalRandom.current();
+            File tempFile = tempFolder.newFile();
+
+            entries = 1024;
+            ByteBuffer indexEntryHolder = allocate(SIZEOF_INDEX_RECORD).order(nativeOrder());
+            try (FileChannel channel = FileChannel.open(tempFile.toPath(), CREATE, APPEND))
+            {
+                for (int indexKey = 0; indexKey < entries; indexKey++)
+                {
+                    long indexEntry = indexEntry((entries - indexKey - 1) >> 1, indexKey >> 1);
+                    indexEntryHolder.clear();
+                    indexEntryHolder.putLong(indexEntry);
+                    indexEntryHolder.flip();
+                    channel.write(indexEntryHolder);
+                }
+            }
+
+            key = random.nextInt(entries >> 1);
+            indexFile = new KafkaCacheIndexFile.SortedByValue(tempFile.toPath());
         }
 
         @Test
@@ -285,6 +342,27 @@ public class KafkaCacheIndexFileTest
             Path sortedFile = new File(tempFolder.getRoot(), "sorted").toPath();
 
             indexFile.sortByKeyUnique(workingFile, sortedFile);
+
+            ByteBuffer indexEntryHolder = allocate(SIZEOF_INDEX_RECORD).order(nativeOrder());
+            try (FileChannel channel = FileChannel.open(sortedFile, READ))
+            {
+                assert channel.size() <= SIZEOF_INDEX_RECORD * entries;
+
+                int previousIndexKey = -1;
+                while (channel.position() < channel.size())
+                {
+                    indexEntryHolder.clear();
+                    int read = channel.read(indexEntryHolder);
+                    assert read == SIZEOF_INDEX_RECORD;
+                    indexEntryHolder.flip();
+
+                    long indexEntry = indexEntryHolder.getLong();
+                    int indexKey = indexKey(indexEntry);
+
+                    assert indexKey > previousIndexKey;
+                    previousIndexKey = indexKey;
+                }
+            }
         }
     }
 }
