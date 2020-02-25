@@ -20,23 +20,19 @@ import static org.junit.Assert.assertEquals;
 import org.junit.Test;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 
-public class KafkaCacheViewTest
+public class KafkaCacheTopicTest
 {
     @Test
-    public void shouldCloseTopics() throws Exception
+    public void shouldClosePartitions() throws Exception
     {
         KafkaConfiguration config = new KafkaConfiguration();
-        KafkaCache cache = new KafkaCache(config, "cache");
-        KafkaCacheView cacheView = cache.acquire(KafkaCacheView::new);
+        KafkaCacheTopic topic = new KafkaCacheTopic(config, "test");
 
-        KafkaCacheTopic topic = cache.supplyTopic("test");
-        KafkaCacheTopicView topicView = cacheView.supplyTopicView("test");
+        KafkaCachePartition partition = topic.supplyPartition(0);
 
-        cache.close();
-        cacheView.close();
+        topic.close();
 
-        assert topicView.closed();
-        assert topic.closed();
+        assert partition.closed();
     }
 
     @Test
@@ -44,10 +40,9 @@ public class KafkaCacheViewTest
     {
         KafkaConfiguration config = new KafkaConfiguration();
 
-        try (KafkaCache cache = new KafkaCache(config, "test");
-                KafkaCacheView cacheView = cache.acquire(KafkaCacheView::new))
+        try (KafkaCacheTopic topic = new KafkaCacheTopic(config, "test"))
         {
-            assertEquals("test", cacheView.name());
+            assertEquals("test", topic.name());
         }
     }
 
@@ -56,10 +51,9 @@ public class KafkaCacheViewTest
     {
         KafkaConfiguration config = new KafkaConfiguration();
 
-        try (KafkaCache cache = new KafkaCache(config, "test");
-                KafkaCacheView cacheView = cache.acquire(KafkaCacheView::new))
+        try (KafkaCacheTopic topic = new KafkaCacheTopic(config, "test"))
         {
-            assertEquals("[KafkaCacheView] test", cacheView.toString());
+            assertEquals("[KafkaCacheTopic] test +1", topic.toString());
         }
     }
 }

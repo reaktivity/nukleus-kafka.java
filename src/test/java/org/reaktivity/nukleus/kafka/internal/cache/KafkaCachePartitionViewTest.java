@@ -15,12 +15,15 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static org.junit.Assert.assertEquals;
+
 import java.nio.file.Path;
 
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionView.NodeView;
 
 public class KafkaCachePartitionViewTest
 {
@@ -40,5 +43,52 @@ public class KafkaCachePartitionViewTest
 
         assert partitionView.sentinel().closed();
         assert partition.sentinel().closed();
+    }
+
+    @Test
+    public void shouldDescribeNameAndId() throws Exception
+    {
+        Path location = tempFolder.newFolder().toPath();
+        KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
+
+        try (KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
+                KafkaCachePartitionView partitionView = partition.acquire(KafkaCachePartitionView::new))
+        {
+            assertEquals("test", partitionView.name());
+            assertEquals(0, partitionView.id());
+        }
+    }
+
+    @Test
+    public void shouldDescribeObject() throws Exception
+    {
+        Path location = tempFolder.newFolder().toPath();
+        KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
+
+        try (KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
+                KafkaCachePartitionView partitionView = partition.acquire(KafkaCachePartitionView::new))
+        {
+            assertEquals("[KafkaCachePartitionView] test[0]", partitionView.toString());
+        }
+    }
+
+    public static class NodeViewTest
+    {
+        @Rule
+        public TemporaryFolder tempFolder = new TemporaryFolder();
+
+        @Test
+        public void shouldDescribeObject() throws Exception
+        {
+            Path location = tempFolder.newFolder().toPath();
+            KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
+
+            try (KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
+                    KafkaCachePartitionView partitionView = partition.acquire(KafkaCachePartitionView::new))
+            {
+                final NodeView sentinel = partitionView.sentinel();
+                assertEquals("[NodeView] sentinel", sentinel.toString());
+            }
+        }
     }
 }

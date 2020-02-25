@@ -31,10 +31,21 @@ public final class KafkaCacheView extends KafkaCacheObjects.ReadOnly
         this.topicsByName = new HashMap<>();
     }
 
+    public String name()
+    {
+        return cache.name();
+    }
+
     public KafkaCacheTopicView supplyTopicView(
         String name)
     {
         return topicsByName.computeIfAbsent(name, this::newTopicView);
+    }
+
+    @Override
+    public String toString()
+    {
+        return String.format("[%s] %s", getClass().getSimpleName(), name());
     }
 
     @Override

@@ -29,6 +29,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.function.Function;
 import java.util.zip.CRC32C;
 
 import javax.json.JsonArray;
@@ -142,13 +143,15 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
         node.previous = head;
         node.next = sentinel;
         node.previous.next = node;
-        node.next().previous = node;
+        node.next.previous = node;
 
         if (!head.sentinel())
         {
             final KafkaCacheSegment tail = head.segment.freeze();
             head.replace(tail);
             head.close();
+
+            node.previous = head.replacement;
         }
 
         return node;
@@ -484,14 +487,14 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
         private volatile KafkaCachePartition.Node next;
         private volatile KafkaCachePartition.Node replacement;
 
-        private Node()
+        Node()
         {
             this.segment = null;
             this.previous = this;
             this.next = this;
         }
 
-        private Node(
+        Node(
             KafkaCacheSegment segment)
         {
             this.segment = requireNonNull(segment);
@@ -690,6 +693,13 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
             final KafkaCacheFile logFile = segment.logFile();
             logFile.writeInt(ancestor.offset() + FIELD_OFFSET_FLAGS, CACHE_ENTRY_FLAGS_DIRTY);
             segment.markDirtyBytes(ancestor.sizeof());
+        }
+
+        @Override
+        public String toString()
+        {
+            Function<KafkaCacheSegment, String> baseOffset = s -> s != null ? Long.toString(s.baseOffset()) : "sentinel";
+            return String.format("[%s] %s +%d", getClass().getSimpleName(), baseOffset.apply(segment), references());
         }
 
         @Override

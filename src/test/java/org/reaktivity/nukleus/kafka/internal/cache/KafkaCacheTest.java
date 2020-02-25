@@ -20,22 +20,18 @@ import static org.junit.Assert.assertEquals;
 import org.junit.Test;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 
-public class KafkaCacheViewTest
+public class KafkaCacheTest
 {
     @Test
     public void shouldCloseTopics() throws Exception
     {
         KafkaConfiguration config = new KafkaConfiguration();
         KafkaCache cache = new KafkaCache(config, "cache");
-        KafkaCacheView cacheView = cache.acquire(KafkaCacheView::new);
 
         KafkaCacheTopic topic = cache.supplyTopic("test");
-        KafkaCacheTopicView topicView = cacheView.supplyTopicView("test");
 
         cache.close();
-        cacheView.close();
 
-        assert topicView.closed();
         assert topic.closed();
     }
 
@@ -44,10 +40,9 @@ public class KafkaCacheViewTest
     {
         KafkaConfiguration config = new KafkaConfiguration();
 
-        try (KafkaCache cache = new KafkaCache(config, "test");
-                KafkaCacheView cacheView = cache.acquire(KafkaCacheView::new))
+        try (KafkaCache cache = new KafkaCache(config, "test"))
         {
-            assertEquals("test", cacheView.name());
+            assertEquals("test", cache.name());
         }
     }
 
@@ -56,10 +51,9 @@ public class KafkaCacheViewTest
     {
         KafkaConfiguration config = new KafkaConfiguration();
 
-        try (KafkaCache cache = new KafkaCache(config, "test");
-                KafkaCacheView cacheView = cache.acquire(KafkaCacheView::new))
+        try (KafkaCache cache = new KafkaCache(config, "test"))
         {
-            assertEquals("[KafkaCacheView] test", cacheView.toString());
+            assertEquals("[KafkaCache] test +1", cache.toString());
         }
     }
 }

@@ -35,6 +35,11 @@ public final class KafkaCache extends KafkaCacheObjects.ReadWrite<KafkaCacheView
         this.topicsByName = new ConcurrentHashMap<>();
     }
 
+    public String name()
+    {
+        return name;
+    }
+
     public KafkaCacheTopic supplyTopic(
         String name)
     {
@@ -44,7 +49,7 @@ public final class KafkaCache extends KafkaCacheObjects.ReadWrite<KafkaCacheView
     @Override
     public String toString()
     {
-        return String.format("[%s] %s", getClass().getSimpleName(), name);
+        return String.format("[%s] %s +%d", getClass().getSimpleName(), name, references());
     }
 
     @Override

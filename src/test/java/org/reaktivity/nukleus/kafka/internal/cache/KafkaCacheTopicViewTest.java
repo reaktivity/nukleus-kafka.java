@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static org.junit.Assert.assertEquals;
+
 import org.junit.Test;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 
@@ -35,5 +37,29 @@ public class KafkaCacheTopicViewTest
 
         assert partitionView.closed();
         assert partition.closed();
+    }
+
+    @Test
+    public void shouldDescribeName() throws Exception
+    {
+        KafkaConfiguration config = new KafkaConfiguration();
+
+        try (KafkaCacheTopic topic = new KafkaCacheTopic(config, "test");
+                KafkaCacheTopicView topicView = topic.acquire(KafkaCacheTopicView::new))
+        {
+            assertEquals("test", topicView.name());
+        }
+    }
+
+    @Test
+    public void shouldDescribeObject() throws Exception
+    {
+        KafkaConfiguration config = new KafkaConfiguration();
+
+        try (KafkaCacheTopic topic = new KafkaCacheTopic(config, "test");
+                KafkaCacheTopicView topicView = topic.acquire(KafkaCacheTopicView::new))
+        {
+            assertEquals("[KafkaCacheTopicView] test", topicView.toString());
+        }
     }
 }

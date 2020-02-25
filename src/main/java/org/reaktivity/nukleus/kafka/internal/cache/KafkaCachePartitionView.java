@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import java.util.function.Function;
+
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.Node;
 
 public final class KafkaCachePartitionView extends KafkaCacheObjects.ReadOnly
@@ -163,6 +165,13 @@ public final class KafkaCachePartitionView extends KafkaCacheObjects.ReadOnly
             }
 
             return replacement;
+        }
+
+        @Override
+        public String toString()
+        {
+            Function<KafkaCacheSegmentView, String> baseOffset = s -> s != null ? Long.toString(s.baseOffset()) : "sentinel";
+            return String.format("[%s] %s", getClass().getSimpleName(), baseOffset.apply(segment));
         }
 
         @Override
