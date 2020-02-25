@@ -15,30 +15,32 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import java.util.LinkedHashMap;
+import java.util.HashMap;
 import java.util.Map;
 
-public final class KafkaCacheReader
+public final class KafkaCacheView extends KafkaCacheObjects.ReadOnly
 {
-    private final KafkaCacheSegmentSupplier supplySegment;
-    private final Map<String, KafkaCacheClusterReader> clustersByName;
+    private final Map<String, KafkaCacheTopicView> topicsByName;
+    private final KafkaCache cache;
 
-    KafkaCacheReader(
-        KafkaCacheSegmentSupplier supplySegment)
+    public KafkaCacheView(
+        KafkaCache cache)
     {
-        this.supplySegment = supplySegment;
-        this.clustersByName = new LinkedHashMap<>();
+        super(cache);
+        this.cache = cache;
+        this.topicsByName = new HashMap<>();
     }
 
-    public KafkaCacheClusterReader supplyCluster(
-        String clusterName)
+    public KafkaCacheTopicView supplyTopicView(
+        String name)
     {
-        return clustersByName.computeIfAbsent(clusterName, this::newCluster);
+        return topicsByName.computeIfAbsent(name, this::newTopicView);
     }
 
-    private KafkaCacheClusterReader newCluster(
-        String clusterName)
+    private KafkaCacheTopicView newTopicView(
+        String name)
     {
-        return new KafkaCacheClusterReader(clusterName, supplySegment);
+        KafkaCacheTopic topic = cache.supplyTopic(name);
+        return topic.acquire(KafkaCacheTopicView::new);
     }
 }

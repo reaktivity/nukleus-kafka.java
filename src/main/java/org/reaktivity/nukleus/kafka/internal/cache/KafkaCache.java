@@ -15,87 +15,47 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.agrona.LangUtil;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
-import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSentinelSegment;
 
-public final class KafkaCache
+public final class KafkaCache extends KafkaCacheObjects.ReadWrite<KafkaCacheView, KafkaCache>
 {
-    public static final String TYPE_NAME = String.format("%s/cache", KafkaNukleus.NAME);
-
     private final KafkaConfiguration config;
-    private final KafkaCacheSegmentFactory cacheSegmentFactory;
-    private final Map<String, Map<String, Map<Integer, KafkaCacheSentinelSegment>>> segmentsByClusterTopicPartition;
-
-    private final Map<String, Map<String, KafkaCacheTopicConfig>> topicConfigsByClusterTopic;
+    private final String name;
+    private final Map<String, KafkaCacheTopic> topicsByName;
 
     public KafkaCache(
-        KafkaConfiguration config)
+        KafkaConfiguration config,
+        String name)
     {
         this.config = config;
-        this.cacheSegmentFactory = new KafkaCacheSegmentFactory(config);
-        this.segmentsByClusterTopicPartition = new ConcurrentHashMap<>();
-        this.topicConfigsByClusterTopic = new ConcurrentHashMap<>();
+        this.name = name;
+        this.topicsByName = new ConcurrentHashMap<>();
     }
 
-    public KafkaCacheReader newReader()
+    public KafkaCacheTopic supplyTopic(
+        String name)
     {
-        return new KafkaCacheReader(this::supplySegment);
+        return topicsByName.computeIfAbsent(name, this::newTopic);
     }
 
-    public KafkaCacheWriter newWriter()
+    @Override
+    public String toString()
     {
-        return new KafkaCacheWriter(this::supplySegment, this::supplyTopicConfig);
+        return String.format("[%s] %s", getClass().getSimpleName(), name);
     }
 
-    public KafkaCacheSentinelSegment supplySegment(
-        String clusterName,
-        String topicName,
-        int partitionId)
+    @Override
+    protected KafkaCache self()
     {
-        final Map<String, Map<Integer, KafkaCacheSentinelSegment>> segmentsByTopicPartition =
-                segmentsByClusterTopicPartition.computeIfAbsent(clusterName, c -> new ConcurrentHashMap<>());
-        final Map<Integer, KafkaCacheSentinelSegment> sentinelsByPartition =
-                segmentsByTopicPartition.computeIfAbsent(topicName, t -> new ConcurrentHashMap<>());
-        final KafkaCacheTopicConfig topicConfig = supplyTopicConfig(clusterName, topicName);
-        return sentinelsByPartition.computeIfAbsent(partitionId,
-            p -> cacheSegmentFactory.newSentinel(topicConfig, initDirectory(clusterName, topicName, partitionId)));
+        return this;
     }
 
-    public KafkaCacheTopicConfig supplyTopicConfig(
-        String clusterName,
-        String topicName)
+    private KafkaCacheTopic newTopic(
+            String name)
     {
-        final Map<String, KafkaCacheTopicConfig> topicConfigsByTopic =
-                topicConfigsByClusterTopic.computeIfAbsent(clusterName, c -> new ConcurrentHashMap<>());
-        return topicConfigsByTopic.computeIfAbsent(topicName, t -> new KafkaCacheTopicConfig(config));
-    }
-
-    private Path initDirectory(
-        String clusterName,
-        String topicName,
-        int partitionId)
-    {
-        final Path cacheDirectory = config.cacheDirectory();
-        final String partitionName = String.format("%s-%d", topicName, partitionId);
-        final Path directory = cacheDirectory.resolve(clusterName).resolve(partitionName);
-
-        try
-        {
-            Files.createDirectories(directory);
-        }
-        catch (IOException ex)
-        {
-            LangUtil.rethrowUnchecked(ex);
-        }
-
-        return directory;
+        return new KafkaCacheTopic(config, name);
     }
 }

@@ -15,10 +15,25 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-@FunctionalInterface
-public interface KafkaCacheTopicConfigSupplier
+import org.junit.Test;
+import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
+
+public class KafkaCacheTopicViewTest
 {
-    KafkaCacheTopicConfig get(
-        String clusterName,
-        String topicName);
+    @Test
+    public void shouldClosePartitions() throws Exception
+    {
+        KafkaConfiguration config = new KafkaConfiguration();
+        KafkaCacheTopic topic = new KafkaCacheTopic(config, "test");
+        KafkaCacheTopicView topicView = topic.acquire(KafkaCacheTopicView::new);
+
+        KafkaCachePartition partition = topic.supplyPartition(0);
+        KafkaCachePartitionView partitionView = topicView.supplyPartitionView(0);
+
+        topic.close();
+        topicView.close();
+
+        assert partitionView.closed();
+        assert partition.closed();
+    }
 }

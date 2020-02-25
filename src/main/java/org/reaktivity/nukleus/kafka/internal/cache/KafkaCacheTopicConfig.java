@@ -92,7 +92,7 @@ public final class KafkaCacheTopicConfig
         this.minCleanableDirtyRatio = config.cacheMinCleanableDirtyRatio();
     }
 
-    public void onTopicConfigChanged(
+    public void onChanged(
         String16FW configName,
         String16FW configValue)
     {

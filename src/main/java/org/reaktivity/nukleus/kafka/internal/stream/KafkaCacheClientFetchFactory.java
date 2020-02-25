@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
@@ -37,13 +38,13 @@ import org.reaktivity.nukleus.function.MessageFunction;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheClusterReader;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorFactory;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorFactory.KafkaCacheCursor;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionReader;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheReader;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicReader;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorFactory.KafkaFilterCondition;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionView;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionView.NodeView;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicView;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheView;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
@@ -111,20 +112,19 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
     private final KafkaCacheEntryFW entryRO = new KafkaCacheEntryFW();
 
     private final int kafkaTypeId;
-    private final KafkaCacheReader cacheReader;
     private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
     private final BufferPool bufferPool;
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
     private final LongFunction<BudgetDebitor> supplyDebitor;
+    private final Function<String, KafkaCacheView> supplyCacheView;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
     private final KafkaCacheCursorFactory cursorFactory;
 
     public KafkaCacheClientFetchFactory(
         KafkaConfiguration config,
-        KafkaCacheReader cacheReader,
         RouteManager router,
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
@@ -133,17 +133,18 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         LongSupplier supplyTraceId,
         ToIntFunction<String> supplyTypeId,
         LongFunction<BudgetDebitor> supplyDebitor,
+        Function<String, KafkaCacheView> supplyCacheView,
         LongFunction<KafkaCacheRoute> supplyCacheRoute,
         Long2ObjectHashMap<MessageConsumer> correlations)
     {
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
-        this.cacheReader = cacheReader;
         this.router = router;
         this.writeBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
         this.bufferPool = bufferPool;
         this.supplyInitialId = supplyInitialId;
         this.supplyReplyId = supplyReplyId;
         this.supplyDebitor = supplyDebitor;
+        this.supplyCacheView = supplyCacheView;
         this.supplyCacheRoute = supplyCacheRoute;
         this.correlations = correlations;
         this.cursorFactory = new KafkaCacheCursorFactory(writeBuffer);
@@ -198,17 +199,17 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final long partitionOffset = progress.partitionOffset();
             final KafkaCacheRoute cacheRoute = supplyCacheRoute.apply(resolvedId);
             final long partitionKey = cacheRoute.topicPartitionKey(topicName, partitionId);
-            final KafkaCacheCursor cursor = cursorFactory.newCursor(filters, deltaType);
+            final KafkaFilterCondition condition = cursorFactory.asCondition(filters);
 
             KafkaCacheClientFetchFanout fanout = cacheRoute.clientFetchFanoutsByTopicPartition.get(partitionKey);
             if (fanout == null)
             {
-                final String clusterName = route.remoteAddress().asString();
-                final KafkaCacheClusterReader cluster = cacheReader.supplyCluster(clusterName);
-                final KafkaCacheTopicReader topic = cluster.supplyTopic(topicName);
-                final KafkaCachePartitionReader partition = topic.supplyPartition(partitionId);
+                final String cacheName = route.remoteAddress().asString();
+                final KafkaCacheView cache = supplyCacheView.apply(cacheName);
+                final KafkaCacheTopicView topic = cache.supplyTopicView(topicName);
+                final KafkaCachePartitionView partition = topic.supplyPartitionView(partitionId);
                 final KafkaCacheClientFetchFanout newFanout =
-                        new KafkaCacheClientFetchFanout(resolvedId, authorization, topic, partition);
+                        new KafkaCacheClientFetchFanout(resolvedId, authorization, partition);
 
                 cacheRoute.clientFetchFanoutsByTopicPartition.put(partitionKey, newFanout);
                 fanout = newFanout;
@@ -224,7 +225,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         affinity,
                         authorization,
                         partitionOffset,
-                        cursor,
+                        condition,
                         deltaType)::onClientMessage;
             }
         }
@@ -362,8 +363,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
     {
         private final long routeId;
         private final long authorization;
-        private final KafkaCacheTopicReader topic;
-        private final KafkaCachePartitionReader partition;
+        private final KafkaCachePartitionView partition;
         private final List<KafkaCacheClientFetchStream> members;
 
         private long initialId;
@@ -377,12 +377,10 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private KafkaCacheClientFetchFanout(
             long routeId,
             long authorization,
-            KafkaCacheTopicReader topic,
-            KafkaCachePartitionReader partition)
+            KafkaCachePartitionView partition)
         {
             this.routeId = routeId;
             this.authorization = authorization;
-            this.topic = topic;
             this.partition = partition;
             this.partitionOffset = OFFSET_MAXIMUM;
             this.members = new ArrayList<>();
@@ -476,7 +474,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             doBegin(receiver, routeId, initialId, traceId, authorization, 0L,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
-                        .fetch(f -> f.topic(topic.name())
+                        .fetch(f -> f.topic(partition.name())
                                      .partition(p -> p.partitionId(partition.id())
                                                       .partitionOffset(partitionOffset))
                                      .deltaType(t -> t.set(KafkaDeltaType.NONE)))
@@ -687,7 +685,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long affinity,
             long authorization,
             long partitionOffset,
-            KafkaCacheCursor cursor,
+            KafkaFilterCondition condition,
             KafkaDeltaType deltaType)
         {
             this.group = group;
@@ -698,7 +696,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.affinity = affinity;
             this.authorization = authorization;
             this.partitionOffset = partitionOffset;
-            this.cursor = cursor;
+            this.cursor = cursorFactory.newCursor(condition, deltaType); // move to partition view
             this.deltaType = deltaType;
         }
 
@@ -830,18 +828,20 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
             else if (partitionOffset == OFFSET_EARLIEST)
             {
-                this.partitionOffset = group.partition.seekNotBefore(0L).baseOffset();
+                final NodeView segmentNode = group.partition.seekNotBefore(0L);
+                assert !segmentNode.sentinel();
+                this.partitionOffset = segmentNode.segment().baseOffset();
             }
             assert partitionOffset >= 0;
 
-            final KafkaCacheSegment segment = group.partition.seekNotAfter(partitionOffset);
-            cursor.init(segment, partitionOffset);
+            final NodeView segmentNode = group.partition.seekNotAfter(partitionOffset);
+            cursor.init(segmentNode, partitionOffset);
 
             router.setThrottle(replyId, this::onClientMessage);
             doBegin(sender, routeId, replyId, traceId, authorization, affinity,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
-                        .fetch(f -> f.topic(group.topic.name())
+                        .fetch(f -> f.topic(group.partition.name())
                                      .partition(p -> p.partitionId(group.partition.id())
                                                       .partitionOffset(partitionOffset))
                                      .deltaType(t -> t.set(deltaType)))

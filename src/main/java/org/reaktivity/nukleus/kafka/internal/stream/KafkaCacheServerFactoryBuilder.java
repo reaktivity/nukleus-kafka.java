@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import java.util.function.Function;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
@@ -28,8 +29,6 @@ import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicConfigSupplier;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheWriter;
 import org.reaktivity.nukleus.route.AddressFactoryBuilder;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
@@ -38,10 +37,9 @@ import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryBuilder
 {
     private final KafkaConfiguration config;
-    private final KafkaCacheWriter cache;
+    private final Function<String, KafkaCache> supplyCache;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final AddressFactoryBuilder addressFactoryBuilder;
-    private final KafkaCacheTopicConfigSupplier supplyTopicConfig;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
 
     private RouteManager router;
@@ -55,13 +53,12 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
 
     public KafkaCacheServerFactoryBuilder(
         KafkaConfiguration config,
-        KafkaCache cache,
+        Function<String, KafkaCache> supplyCache,
         LongFunction<KafkaCacheRoute> supplyCacheRoute)
     {
         this.config = config;
-        this.cache = cache.newWriter();
+        this.supplyCache = supplyCache;
         this.supplyCacheRoute = supplyCacheRoute;
-        this.supplyTopicConfig = cache::supplyTopicConfig;
         this.correlations = new Long2ObjectHashMap<>();
         this.addressFactoryBuilder = new KafkaCacheServerAddressFactoryBuilder(config, correlations);
     }
@@ -143,7 +140,6 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
 
         return new KafkaCacheServerFactory(
                 config,
-                cache,
                 router,
                 writeBuffer,
                 bufferPool,
@@ -152,8 +148,8 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
                 supplyReplyId,
                 supplyTraceId,
                 supplyTypeId,
+                supplyCache,
                 supplyCacheRoute,
-                supplyTopicConfig,
                 correlations);
     }
 }

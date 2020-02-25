@@ -15,6 +15,9 @@
  */
 package org.reaktivity.nukleus.kafka.internal;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 import org.reaktivity.nukleus.Nukleus;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
 
@@ -23,13 +26,13 @@ public final class KafkaNukleus implements Nukleus
     public static final String NAME = "kafka";
 
     private final KafkaConfiguration config;
-    private final KafkaCache cache;
+    private final Map<String, KafkaCache> cachesByName;
 
     KafkaNukleus(
         KafkaConfiguration config)
     {
         this.config = config;
-        this.cache = new KafkaCache(config);
+        this.cachesByName = new ConcurrentHashMap<>();
     }
 
     @Override
@@ -47,11 +50,18 @@ public final class KafkaNukleus implements Nukleus
     @Override
     public KafkaElektron supplyElektron()
     {
-        return new KafkaElektron(config, cache);
+        return new KafkaElektron(config, this::supplyCache);
     }
 
-    public KafkaCache cache()
+    public KafkaCache supplyCache(
+        String name)
     {
-        return cache;
+        return cachesByName.computeIfAbsent(name, this::newCache);
+    }
+
+    private KafkaCache newCache(
+        String name)
+    {
+        return new KafkaCache(config, name);
     }
 }

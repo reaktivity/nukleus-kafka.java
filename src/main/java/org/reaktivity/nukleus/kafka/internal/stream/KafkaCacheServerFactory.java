@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_RECONNECT;
 
+import java.util.function.Function;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
@@ -31,8 +32,7 @@ import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicConfigSupplier;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheWriter;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ExtensionFW;
@@ -52,7 +52,6 @@ public final class KafkaCacheServerFactory implements StreamFactory
 
     KafkaCacheServerFactory(
         KafkaConfiguration config,
-        KafkaCacheWriter cache,
         RouteManager router,
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
@@ -61,8 +60,8 @@ public final class KafkaCacheServerFactory implements StreamFactory
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTraceId,
         ToIntFunction<String> supplyTypeId,
+        Function<String, KafkaCache> supplyCache,
         LongFunction<KafkaCacheRoute> supplyCacheRoute,
-        KafkaCacheTopicConfigSupplier supplyTopicConfig,
         Long2ObjectHashMap<MessageConsumer> correlations)
     {
         final Int2ObjectHashMap<StreamFactory> streamFactoriesByKind = new Int2ObjectHashMap<>();
@@ -77,11 +76,11 @@ public final class KafkaCacheServerFactory implements StreamFactory
 
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_DESCRIBE, new KafkaCacheServerDescribeFactory(
                 config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
-                supplyTraceId, supplyTypeId, supplyCacheRoute, supplyTopicConfig, correlations));
+                supplyTraceId, supplyTypeId, supplyCache, supplyCacheRoute, correlations));
 
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_FETCH, new KafkaCacheServerFetchFactory(
-                config, cache, router, writeBuffer, bufferPool, signaler, supplyInitialId, supplyReplyId,
-                supplyTraceId, supplyTypeId, supplyCacheRoute, correlations));
+                config, router, writeBuffer, bufferPool, signaler, supplyInitialId, supplyReplyId,
+                supplyTraceId, supplyTypeId, supplyCache, supplyCacheRoute, correlations));
 
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.correlations = correlations;

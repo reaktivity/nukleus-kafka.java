@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursor;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorIndex;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.maxByValue;
@@ -24,7 +25,6 @@ import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.nextIndex;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.nextValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.previousIndex;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.POSITION_UNSET;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -36,7 +36,7 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.LongHashSet;
 import org.agrona.collections.MutableBoolean;
 import org.agrona.concurrent.UnsafeBuffer;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionView.NodeView;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW;
@@ -56,6 +56,8 @@ public final class KafkaCacheCursorFactory
     private final CRC32C checksum;
     private final KafkaFilterCondition nullKeyInfo;
 
+    public static final int POSITION_UNSET = -1;
+
     public KafkaCacheCursorFactory(
         MutableDirectBuffer writeBuffer)
     {
@@ -65,19 +67,19 @@ public final class KafkaCacheCursorFactory
     }
 
     public KafkaCacheCursor newCursor(
-        ArrayFW<KafkaFilterFW> filters,
+        KafkaFilterCondition condition,
         KafkaDeltaType deltaType)
     {
-        return new KafkaCacheCursor(asCondition(filters), deltaType);
+        return new KafkaCacheCursor(condition, deltaType);
     }
 
-    public final class KafkaCacheCursor
+    public final class KafkaCacheCursor implements AutoCloseable
     {
         private final KafkaFilterCondition condition;
         private final KafkaDeltaType deltaType;
         private final LongHashSet deltaKeyOffsets; // TODO: bounded LongHashCache, evict -> discard
 
-        private KafkaCacheSegment segment;
+        private NodeView segmentNode;
         private long offset;
         private long cursor;
 
@@ -91,12 +93,12 @@ public final class KafkaCacheCursorFactory
         }
 
         public void init(
-            KafkaCacheSegment segment,
+            NodeView segmentNode,
             long offset)
         {
-            this.segment = segment;
+            this.segmentNode = segmentNode;
             this.offset = offset;
-            final long cursor = condition.reset(segment, offset, POSITION_UNSET);
+            final long cursor = condition.reset(segmentNode, offset, POSITION_UNSET);
             this.cursor = cursor == RETRY_SEGMENT || cursor == NEXT_SEGMENT ? 0L : cursor;
         }
 
@@ -104,92 +106,106 @@ public final class KafkaCacheCursorFactory
             KafkaCacheEntryFW cacheEntry)
         {
             KafkaCacheEntryFW nextEntry = null;
-            KafkaCacheSegment nextSegment = segment;
 
-            while (nextSegment != null && nextEntry == null)
+            if (segmentNode.replacement() != null)
             {
-                final long nextCursor = condition.next(cursor);
+                segmentNode.close();
+                segmentNode = segmentNode.replacement();
+            }
 
-                if (nextCursor == RETRY_SEGMENT)
+            next:
+            while (nextEntry == null)
+            {
+                final long cursorNext = condition.next(cursor);
+
+                if (cursorNext == RETRY_SEGMENT)
                 {
-                    break;
+                    break next;
                 }
-                else if (nextCursor == NEXT_SEGMENT)
+
+                if (cursorNext == NEXT_SEGMENT)
                 {
-                    nextSegment = segment.nextSegment();
-                    if (nextSegment != null)
+                    if (segmentNode.next().sentinel())
                     {
-                        segment = nextSegment;
-                        cursor = condition.reset(segment, offset, POSITION_UNSET);
-                    }
-                }
-                else
-                {
-                    final int cursorIndex = cursorIndex(nextCursor);
-                    assert cursorIndex >= 0;
-
-                    final int position = cursorValue(nextCursor);
-                    assert position >= 0;
-
-                    nextEntry = segment.readLog(position, cacheEntry);
-                    assert nextEntry != null;
-
-                    if (!condition.test(nextEntry))
-                    {
-                        nextEntry = null;
+                        break next;
                     }
 
-                    if (nextEntry != null && deltaType != KafkaDeltaType.NONE)
+                    segmentNode = segmentNode.next();
+                    final long cursor = condition.reset(segmentNode, offset, POSITION_UNSET);
+                    this.cursor = cursor == RETRY_SEGMENT || cursor == NEXT_SEGMENT ? 0L : cursor;
+                    continue;
+                }
+
+                final int index = cursorIndex(cursorNext);
+                assert index >= 0;
+
+                final int position = cursorValue(cursorNext);
+                assert position >= 0;
+
+                final KafkaCacheSegmentView segment = segmentNode.segment();
+                assert segment != null;
+
+                final KafkaCacheFile logFile = segment.logFile();
+                assert logFile != null;
+
+                nextEntry = logFile.readBytes(position, cacheEntry::wrap);
+                assert nextEntry != null;
+
+                if (!condition.test(nextEntry))
+                {
+                    nextEntry = null;
+                }
+
+                if (nextEntry != null && deltaType != KafkaDeltaType.NONE)
+                {
+                    final long ancestorOffset = nextEntry.ancestor();
+
+                    if (nextEntry.valueLen() == -1)
                     {
-                        final long ancestorOffset = nextEntry.ancestor();
+                        deltaKeyOffsets.remove(ancestorOffset);
+                    }
+                    else
+                    {
+                        final long partitionOffset = nextEntry.offset$();
+                        final int deltaPosition = nextEntry.deltaPosition();
 
-                        if (nextEntry.valueLen() == -1)
+                        if (ancestorOffset != -1)
                         {
-                            deltaKeyOffsets.remove(ancestorOffset);
-                        }
-                        else
-                        {
-                            final long partitionOffset = nextEntry.offset$();
-                            final int deltaPosition = nextEntry.deltaPosition();
-
-                            if (ancestorOffset != -1)
+                            if (deltaPosition != -1 && deltaKeyOffsets.remove(ancestorOffset))
                             {
-                                if (deltaPosition != -1 && deltaKeyOffsets.remove(ancestorOffset))
-                                {
-                                    final KafkaCacheDeltaFW delta = segment.readDelta(deltaPosition, deltaRO);
+                                final KafkaCacheFile deltaFile = segment.deltaFile();
+                                final KafkaCacheDeltaFW delta = deltaFile.readBytes(deltaPosition, deltaRO::wrap);
 
-                                    final DirectBuffer entryBuffer = nextEntry.buffer();
-                                    final KafkaKeyFW key = nextEntry.key();
-                                    final int entryOffset = nextEntry.offset();
-                                    final ArrayFW<KafkaHeaderFW> headers = nextEntry.headers();
+                                final DirectBuffer entryBuffer = nextEntry.buffer();
+                                final KafkaKeyFW key = nextEntry.key();
+                                final int entryOffset = nextEntry.offset();
+                                final ArrayFW<KafkaHeaderFW> headers = nextEntry.headers();
 
-                                    final int sizeofEntryHeader = key.limit() - nextEntry.offset();
-                                    writeBuffer.putBytes(0, entryBuffer, entryOffset, sizeofEntryHeader);
-                                    writeBuffer.putBytes(sizeofEntryHeader, delta.buffer(), delta.offset(), delta.sizeof());
-                                    writeBuffer.putBytes(sizeofEntryHeader + delta.sizeof(),
-                                            headers.buffer(), headers.offset(), headers.sizeof());
+                                final int sizeofEntryHeader = key.limit() - nextEntry.offset();
+                                writeBuffer.putBytes(0, entryBuffer, entryOffset, sizeofEntryHeader);
+                                writeBuffer.putBytes(sizeofEntryHeader, delta.buffer(), delta.offset(), delta.sizeof());
+                                writeBuffer.putBytes(sizeofEntryHeader + delta.sizeof(),
+                                        headers.buffer(), headers.offset(), headers.sizeof());
 
-                                    final int sizeofEntry = sizeofEntryHeader + delta.sizeof() + headers.sizeof();
-                                    nextEntry = cacheEntry.wrap(writeBuffer, 0, sizeofEntry);
-                                }
-                                else
-                                {
-                                    // TODO: consider moving message to next segment if delta exceeds size limit instead
-                                    //       still need to handle implicit snapshot case
-                                    writeBuffer.putBytes(0, nextEntry.buffer(), nextEntry.offset(), nextEntry.sizeof());
-                                    writeBuffer.putLong(KafkaCacheEntryFW.FIELD_OFFSET_ANCESTOR, -1L);
-
-                                    nextEntry = cacheEntry.wrap(writeBuffer, 0, writeBuffer.capacity());
-                                }
+                                final int sizeofEntry = sizeofEntryHeader + delta.sizeof() + headers.sizeof();
+                                nextEntry = cacheEntry.wrap(writeBuffer, 0, sizeofEntry);
                             }
+                            else
+                            {
+                                // TODO: consider moving message to next segmentNode if delta exceeds size limit instead
+                                //       still need to handle implicit snapshot case
+                                writeBuffer.putBytes(0, nextEntry.buffer(), nextEntry.offset(), nextEntry.sizeof());
+                                writeBuffer.putLong(KafkaCacheEntryFW.FIELD_OFFSET_ANCESTOR, -1L);
 
-                            deltaKeyOffsets.add(partitionOffset);
+                                nextEntry = cacheEntry.wrap(writeBuffer, 0, writeBuffer.capacity());
+                            }
                         }
 
+                        deltaKeyOffsets.add(partitionOffset);
                     }
-
-                    this.cursor = nextCursor;
                 }
+
+                this.cursor = cursorNext;
             }
 
             return nextEntry;
@@ -204,17 +220,23 @@ public final class KafkaCacheCursorFactory
         }
 
         @Override
+        public void close()
+        {
+            segmentNode.close();
+        }
+
+        @Override
         public String toString()
         {
-            return String.format("%s[offset %d, cursor %016x, segment %s, condition %s]",
-                    getClass().getSimpleName(), offset, cursor, segment, condition);
+            return String.format("%s[offset %d, cursor %016x, segmentNode %s, condition %s]",
+                    getClass().getSimpleName(), offset, cursor, segmentNode, condition);
         }
     }
 
-    private abstract static class KafkaFilterCondition
+    public abstract static class KafkaFilterCondition
     {
         public abstract long reset(
-            KafkaCacheSegment segment,
+            NodeView segmentNode,
             long offset,
             int position);
 
@@ -226,24 +248,43 @@ public final class KafkaCacheCursorFactory
 
         private static final class None extends KafkaFilterCondition
         {
-            private KafkaCacheSegment segment;
+            private KafkaCacheIndexFile indexFile;
 
             @Override
             public long reset(
-                KafkaCacheSegment segment,
+                NodeView segmentNode,
                 long offset,
                 int position)
             {
-                this.segment = segment;
                 assert position == POSITION_UNSET;
-                return segment.seekOffset(offset);
+
+                long cursor = NEXT_SEGMENT;
+
+                if (!segmentNode.sentinel())
+                {
+                    final KafkaCacheSegmentView segment = segmentNode.segment();
+                    assert segment != null;
+                    final KafkaCacheIndexFile indexFile = segment.indexFile();
+                    assert indexFile != null;
+
+                    this.indexFile = indexFile;
+
+                    final int offsetDelta = (int)(offset - segment.baseOffset());
+                    cursor = indexFile.first(offsetDelta);
+                }
+                else
+                {
+                    this.indexFile = null;
+                }
+
+                return cursor;
             }
 
             @Override
             public long next(
                 long cursor)
             {
-                return segment.scanOffset(cursor);
+                return indexFile != null ? indexFile.resolve(cursor) : NEXT_SEGMENT;
             }
 
             @Override
@@ -264,32 +305,52 @@ public final class KafkaCacheCursorFactory
         {
             private final int hash;
             private final DirectBuffer value;
-            private final UnsafeBuffer comparable;
+            private final DirectBuffer comparable;
 
-            private KafkaCacheSegment segment;
+            private KafkaCacheIndexFile hashFile;
 
             @Override
             public final long reset(
-                KafkaCacheSegment segment,
+                NodeView segmentNode,
                 long offset,
                 int position)
             {
-                this.segment = segment;
+                long cursor = NEXT_SEGMENT;
 
-                if (position == POSITION_UNSET)
+                if (!segmentNode.sentinel())
                 {
-                    final long cursor = segment.seekOffset(offset);
-                    position = cursorValue(cursor);
+                    final KafkaCacheSegmentView segment = segmentNode.segment();
+                    assert segment != null;
+                    final KafkaCacheIndexFile hashFile = segment.hashFile();
+                    assert hashFile != null;
+
+                    this.hashFile = hashFile;
+
+                    if (position == POSITION_UNSET)
+                    {
+                        final KafkaCacheIndexFile indexFile = segment.indexFile();
+                        assert indexFile != null;
+                        final int offsetDelta = (int)(offset - segment.baseOffset());
+                        position = cursorValue(indexFile.first(offsetDelta));
+                    }
+
+                    final long cursorFirstHash = hashFile.first(hash);
+                    final long cursorFirstHashWithPosition = cursor(cursorIndex(cursorFirstHash), position);
+                    cursor = hashFile.ceiling(hash, cursorFirstHashWithPosition);
+                }
+                else
+                {
+                    this.hashFile = null;
                 }
 
-                return segment.seekHash(hash, position);
+                return cursor;
             }
 
             @Override
             public final long next(
                 long cursor)
             {
-                return segment.scanHash(hash, cursor);
+                return hashFile != null ? hashFile.ceiling(hash, cursor) : NEXT_SEGMENT;
             }
 
             @Override
@@ -369,25 +430,44 @@ public final class KafkaCacheCursorFactory
 
             @Override
             public long reset(
-                KafkaCacheSegment segment,
+                NodeView segmentNode,
                 long offset,
                 int position)
             {
-                if (position == POSITION_UNSET)
+                long nextCursorMin = NEXT_SEGMENT;
+
+                if (!segmentNode.sentinel())
                 {
-                    final long cursor = segment.seekOffset(offset);
-                    position = cursorValue(cursor);
+                    final KafkaCacheSegmentView segment = segmentNode.segment();
+                    assert segment != null;
+
+                    if (position == POSITION_UNSET)
+                    {
+                        final KafkaCacheIndexFile indexFile = segment.indexFile();
+                        assert indexFile != null;
+                        final int offsetDelta = (int)(offset - segment.baseOffset());
+                        position = cursorValue(indexFile.first(offsetDelta));
+                    }
+
+                    long nextCursorMax = 0;
+
+                    for (int i = 0; i < conditions.size(); i++)
+                    {
+                        final KafkaFilterCondition condition = conditions.get(i);
+                        final long nextCursor = condition.reset(segmentNode, offset, position);
+
+                        nextCursorMin = minByValue(nextCursor, nextCursorMin);
+                        nextCursorMax = maxByValue(nextCursor, nextCursorMax);
+                    }
+
+                    if (nextCursorMax == RETRY_SEGMENT ||
+                        nextCursorMax == NEXT_SEGMENT)
+                    {
+                        nextCursorMin = nextCursorMax;
+                    }
                 }
 
-                long nextCursorMax = 0;
-                for (int i = 0; i < conditions.size(); i++)
-                {
-                    final KafkaFilterCondition condition = conditions.get(i);
-                    final long nextCursor = condition.reset(segment, offset, position);
-                    nextCursorMax = maxByValue(nextCursor, nextCursorMax);
-                }
-
-                return nextCursorMax;
+                return nextCursorMin;
             }
 
             @Override
@@ -456,22 +536,32 @@ public final class KafkaCacheCursorFactory
 
             @Override
             public long reset(
-                KafkaCacheSegment segment,
+                NodeView segmentNode,
                 long offset,
                 int position)
             {
-                if (position == POSITION_UNSET)
-                {
-                    final long cursor = segment.seekOffset(offset);
-                    position = cursorValue(cursor);
-                }
+                long nextCursorMin = NEXT_SEGMENT;
 
-                long nextCursorMin = RETRY_SEGMENT;
-                for (int i = 0; i < conditions.size(); i++)
+                if (!segmentNode.sentinel())
                 {
-                    final KafkaFilterCondition condition = conditions.get(i);
-                    final long nextCursor = condition.reset(segment, offset, position);
-                    nextCursorMin = minByValue(nextCursor, nextCursorMin);
+                    final KafkaCacheSegmentView segment = segmentNode.segment();
+                    assert segment != null;
+
+                    if (position == POSITION_UNSET)
+                    {
+                        final KafkaCacheIndexFile indexFile = segment.indexFile();
+                        assert indexFile != null;
+                        final int offsetDelta = (int)(offset - segment.baseOffset());
+                        position = cursorValue(indexFile.first(offsetDelta));
+                    }
+
+                    nextCursorMin = NEXT_SEGMENT;
+                    for (int i = 0; i < conditions.size(); i++)
+                    {
+                        final KafkaFilterCondition condition = conditions.get(i);
+                        final long nextCursor = condition.reset(segmentNode, offset, position);
+                        nextCursorMin = minByValue(nextCursor, nextCursorMin);
+                    }
                 }
 
                 return nextCursorMin;
@@ -481,7 +571,7 @@ public final class KafkaCacheCursorFactory
             public long next(
                 long cursor)
             {
-                long nextCursorMin = RETRY_SEGMENT;
+                long nextCursorMin = NEXT_SEGMENT;
                 for (int i = 0; i < conditions.size(); i++)
                 {
                     final KafkaFilterCondition condition = conditions.get(i);
@@ -539,7 +629,7 @@ public final class KafkaCacheCursorFactory
         }
     }
 
-    private KafkaFilterCondition asCondition(
+    public KafkaFilterCondition asCondition(
         ArrayFW<KafkaFilterFW> filters)
     {
         KafkaFilterCondition condition;

@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import java.util.function.Function;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
@@ -26,8 +27,7 @@ import org.reaktivity.nukleus.budget.BudgetDebitor;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheReader;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheView;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
@@ -35,7 +35,7 @@ import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 public final class KafkaCacheClientFactoryBuilder implements KafkaStreamFactoryBuilder
 {
     private final KafkaConfiguration config;
-    private final KafkaCacheReader cache;
+    private final Function<String, KafkaCacheView> supplyCacheView;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
 
     private RouteManager router;
@@ -51,11 +51,11 @@ public final class KafkaCacheClientFactoryBuilder implements KafkaStreamFactoryB
 
     public KafkaCacheClientFactoryBuilder(
         KafkaConfiguration config,
-        KafkaCache cache,
+        Function<String, KafkaCacheView> supplyCacheView,
         LongFunction<KafkaCacheRoute> supplyCacheRoute)
     {
         this.config = config;
-        this.cache = cache.newReader();
+        this.supplyCacheView = supplyCacheView;
         this.supplyCacheRoute = supplyCacheRoute;
     }
 
@@ -146,7 +146,6 @@ public final class KafkaCacheClientFactoryBuilder implements KafkaStreamFactoryB
 
         return new KafkaCacheClientFactory(
                 config,
-                cache,
                 router,
                 signaler,
                 writeBuffer,
@@ -157,6 +156,7 @@ public final class KafkaCacheClientFactoryBuilder implements KafkaStreamFactoryB
                 supplyTypeId,
                 supplyBudgetId,
                 supplyDebitor,
+                supplyCacheView,
                 supplyCacheRoute);
     }
 }

@@ -36,7 +36,8 @@ import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopic;
 import org.reaktivity.reaktor.ReaktorConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
@@ -67,14 +68,15 @@ public class CacheFetchIT
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
 
-    private KafkaCacheSegment partition;
+    private KafkaCachePartition partition;
 
     @Before
     public void initPartition()
     {
         final KafkaNukleus nukleus = reaktor.nukleus(KafkaNukleus.class);
-        final KafkaCache cache = nukleus.cache();
-        this.partition = cache.supplySegment("kafka-cache#0", "test", 0);
+        final KafkaCache cache = nukleus.supplyCache("kafka-cache#0");
+        final KafkaCacheTopic topic = cache.supplyTopic("test");
+        this.partition = topic.supplyPartition(0);
     }
 
     @Test
@@ -125,7 +127,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldRequestPartitionOffset() throws Exception
     {
-        partition.nextSegment(1L);
+        partition.append(1L);
         k3po.finish();
     }
 
@@ -160,7 +162,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageKey() throws Exception
     {
-        partition.nextSegment(1L);
+        partition.append(1L);
         k3po.finish();
     }
 
@@ -172,7 +174,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageKeyNull() throws Exception
     {
-        partition.nextSegment(1L);
+        partition.append(1L);
         k3po.finish();
     }
 
@@ -184,7 +186,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageKeyWithValueNull() throws Exception
     {
-        partition.nextSegment(3L);
+        partition.append(3L);
         k3po.finish();
     }
 
@@ -196,7 +198,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageKeyWithValueDistinct() throws Exception
     {
-        partition.nextSegment(4L);
+        partition.append(4L);
         k3po.finish();
     }
 
@@ -208,7 +210,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageKeyWithHeader() throws Exception
     {
-        partition.nextSegment(5L);
+        partition.append(5L);
         k3po.finish();
     }
 
@@ -220,7 +222,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageKeyDistinct() throws Exception
     {
-        partition.nextSegment(6L);
+        partition.append(6L);
         k3po.finish();
     }
 
@@ -232,7 +234,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageValue() throws Exception
     {
-        partition.nextSegment(10L);
+        partition.append(10L);
         k3po.finish();
     }
 
@@ -244,7 +246,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageValueNull() throws Exception
     {
-        partition.nextSegment(11L);
+        partition.append(11L);
         k3po.finish();
     }
 
@@ -257,7 +259,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageValue10k() throws Exception
     {
-        partition.nextSegment(12L);
+        partition.append(12L);
         k3po.finish();
     }
 
@@ -270,7 +272,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageValue100k() throws Exception
     {
-        partition.nextSegment(12L);
+        partition.append(12L);
         k3po.finish();
     }
 
@@ -318,7 +320,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageValueDistinct() throws Exception
     {
-        partition.nextSegment(16L);
+        partition.append(16L);
         k3po.finish();
     }
 
@@ -330,7 +332,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageHeader() throws Exception
     {
-        partition.nextSegment(20L);
+        partition.append(20L);
         k3po.finish();
     }
 
@@ -342,7 +344,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageHeaderNull() throws Exception
     {
-        partition.nextSegment(21L);
+        partition.append(21L);
         k3po.finish();
     }
 
@@ -354,7 +356,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageHeadersDistinct() throws Exception
     {
-        partition.nextSegment(22L);
+        partition.append(22L);
         k3po.finish();
     }
 
@@ -366,7 +368,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessageHeadersRepeated() throws Exception
     {
-        partition.nextSegment(23L);
+        partition.append(23L);
         k3po.finish();
     }
 
@@ -378,7 +380,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithNoFilter() throws Exception
     {
-        partition.nextSegment(1L);
+        partition.append(1L);
         k3po.finish();
     }
 
@@ -390,7 +392,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithKeyFilter() throws Exception
     {
-        partition.nextSegment(1L);
+        partition.append(1L);
         k3po.finish();
     }
 
@@ -402,7 +404,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithKeyAndHeaderFilter() throws Exception
     {
-        partition.nextSegment(1L);
+        partition.append(1L);
         k3po.finish();
     }
 
@@ -414,7 +416,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithKeyOrHeaderFilter() throws Exception
     {
-        partition.nextSegment(1L);
+        partition.append(1L);
         k3po.finish();
     }
 
@@ -426,7 +428,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithHeaderFilter() throws Exception
     {
-        partition.nextSegment(1L);
+        partition.append(1L);
         k3po.finish();
     }
 
@@ -438,7 +440,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithHeaderAndHeaderFilter() throws Exception
     {
-        partition.nextSegment(1L);
+        partition.append(1L);
         k3po.finish();
     }
 
@@ -450,7 +452,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithHeaderOrHeaderFilter() throws Exception
     {
-        partition.nextSegment(1L);
+        partition.append(1L);
         k3po.finish();
     }
 
@@ -462,7 +464,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithKeyAndHeaderOrHeaderFilter() throws Exception
     {
-        partition.nextSegment(1L);
+        partition.append(1L);
         k3po.finish();
     }
 
@@ -474,7 +476,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithKeyOrHeaderAndHeaderFilter() throws Exception
     {
-        partition.nextSegment(1L);
+        partition.append(1L);
         k3po.finish();
     }
 
@@ -486,7 +488,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveJsonPatchMessagesWithNoFilter() throws Exception
     {
-        partition.nextSegment(1L);
+        partition.append(1L);
         k3po.finish();
     }
 
@@ -498,7 +500,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveJsonPatchMessagesWithHeaderFilter() throws Exception
     {
-        partition.nextSegment(1L);
+        partition.append(1L);
         k3po.finish();
     }
 
@@ -510,7 +512,7 @@ public class CacheFetchIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveJsonPatchMessagesWithKeyAndHeaderFilter() throws Exception
     {
-        partition.nextSegment(1L);
+        partition.append(1L);
         k3po.finish();
     }
 }

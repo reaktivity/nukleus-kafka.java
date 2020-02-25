@@ -19,6 +19,8 @@ import static java.lang.Integer.toUnsignedLong;
 
 public final class KafkaCacheIndexRecord
 {
+    public static final int SIZEOF_INDEX_RECORD = Long.BYTES;
+
     public static int indexKey(
         long indexEntry)
     {

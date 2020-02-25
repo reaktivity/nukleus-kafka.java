@@ -15,179 +15,48 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import static java.lang.System.currentTimeMillis;
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursor;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorIndex;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
-import static org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType.NONE;
+import static org.junit.Assert.assertNotEquals;
 
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
-import java.util.zip.CRC32C;
 
-import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
-import org.agrona.collections.Int2IntHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
-import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheHeadSegment;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheSegment;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegmentFactory.KafkaCacheTailSegment;
-import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
-import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
-import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 
 public class KafkaCacheSegmentTest
 {
     @Rule
     public TemporaryFolder tempFolder = new TemporaryFolder();
 
-    private KafkaKeyFW.Builder keyRW;
-    private ArrayFW.Builder<KafkaHeaderFW.Builder, KafkaHeaderFW> headersRW;
-
-    @Before
-    public void setup()
-    {
-        this.keyRW = new KafkaKeyFW.Builder()
-                .wrap(new UnsafeBuffer(ByteBuffer.allocate(1024)), 0, 1024);
-
-        this.headersRW = new ArrayFW.Builder<>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
-                .wrap(new UnsafeBuffer(ByteBuffer.allocate(1024)), 0, 1024);
-    }
-
     @Test
-    public void shouldFreezeSegment()
+    public void shouldFreeze() throws Exception
     {
-        KafkaConfiguration config = new KafkaConfiguration();
-        Path directory = tempFolder.getRoot().toPath();
+        KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
+        Path location = tempFolder.getRoot().toPath();
+        MutableDirectBuffer appendBuf = new UnsafeBuffer(ByteBuffer.allocate(0));
 
-        KafkaCacheSegmentFactory factory = new KafkaCacheSegmentFactory(config);
-        KafkaCacheSegment sentinel = factory.newSentinel(new KafkaCacheTopicConfig(config), directory);
-        KafkaCacheHeadSegment head = sentinel.nextSegment(0L);
-        KafkaCacheTailSegment tail = head.freezeSegment(1L);
-
-        assertEquals(head.nextSegment, tail.nextSegment);
-        assertEquals(head.previousSegment, tail.previousSegment);
-        assertEquals(head.previousSegment.nextSegment, tail);
-    }
-
-    @Test
-    public void shouldSortHashScan()
-    {
-        KafkaConfiguration config = new KafkaConfiguration();
-        Path directory = tempFolder.getRoot().toPath();
-
-        KafkaCacheSegmentFactory factory = new KafkaCacheSegmentFactory(config);
-        KafkaCacheSegment sentinel = factory.newSentinel(new KafkaCacheTopicConfig(config), directory);
-        KafkaCacheHeadSegment head = sentinel.nextSegment(0L);
-
-        int cachedEntries = 1024;
-        MutableDirectBuffer keyBytes = new UnsafeBuffer(new byte[Long.BYTES]);
-        ArrayFW<KafkaHeaderFW> headers = headersRW.build();
-        for (long offset = 0; offset < cachedEntries; offset++)
+        try (KafkaCacheSegment head = new KafkaCacheSegment(location, config, "test", 0, 1L, appendBuf);
+                KafkaCacheSegment tail = head.freeze())
         {
-            keyBytes.putLong(0, offset);
-            KafkaKeyFW key = keyRW.rewrap()
-                                  .length(keyBytes.capacity())
-                                  .value(keyBytes, 0, keyBytes.capacity())
-                                  .build();
-
-            head.writeEntry(offset, currentTimeMillis(), key, headers, null, null, NONE);
+            assertEquals(head.location(), tail.location());
+            assertEquals(head.name(), tail.name());
+            assertEquals(head.index(), tail.index());
+            assertEquals(head.baseOffset(), tail.baseOffset());
+            assertEquals(head.logFile().location(), tail.logFile().location());
+            assertEquals(head.logFile().capacity(), tail.logFile().capacity());
+            assertEquals(head.deltaFile().location(), tail.deltaFile().location());
+            assertEquals(head.deltaFile().capacity(), tail.deltaFile().capacity());
+            assertEquals(head.indexFile().location(), tail.indexFile().location());
+            assertEquals(head.indexFile().capacity(), tail.indexFile().capacity());
+            assertNotEquals(head.hashFile().location(), tail.hashFile().location());
+            assertEquals(head.hashFile().capacity(), tail.hashFile().capacity());
+            assertNotEquals(head.keysFile().location(), tail.keysFile().location());
+            assertEquals(head.keysFile().capacity(), tail.keysFile().capacity());
         }
-
-        KafkaCacheTailSegment tail = head.freezeSegment(cachedEntries);
-
-        Int2IntHashMap hashScan = head.hashFile.toMap();
-        Int2IntHashMap hashIndex = tail.hashFile.toMap();
-
-        assertEquals(cachedEntries, hashScan.size());
-        assertEquals(cachedEntries, hashIndex.size());
-        assertEquals(hashScan, hashIndex);
-    }
-
-    @Test
-    public void shouldSortKeysScan()
-    {
-        KafkaConfiguration config = new KafkaConfiguration();
-        Path directory = tempFolder.getRoot().toPath();
-
-        KafkaCacheSegmentFactory factory = new KafkaCacheSegmentFactory(config);
-        KafkaCacheSegment sentinel = factory.newSentinel(new KafkaCacheTopicConfig(config), directory);
-        KafkaCacheHeadSegment head = sentinel.nextSegment(0L);
-
-        int cachedEntries = 1024;
-        MutableDirectBuffer keyBytes = new UnsafeBuffer(new byte[Long.BYTES]);
-        ArrayFW<KafkaHeaderFW> headers = headersRW.build();
-        for (long offset = 0; offset < cachedEntries; offset++)
-        {
-            keyBytes.putLong(0, offset >> 1);
-            KafkaKeyFW key = keyRW.rewrap()
-                                  .length(keyBytes.capacity())
-                                  .value(keyBytes, 0, keyBytes.capacity())
-                                  .build();
-
-            head.writeEntry(offset, currentTimeMillis(), key, headers, null, null, NONE);
-        }
-
-        KafkaCacheTailSegment tail = head.freezeSegment(cachedEntries);
-
-        Int2IntHashMap keysScan = head.keysFile.toMap();
-        Int2IntHashMap keysIndex = tail.headSegment().keysFile.previousKeys.toMap();
-
-        assertEquals(cachedEntries >> 1, keysScan.size());
-        assertEquals(cachedEntries >> 1, keysIndex.size());
-        assertEquals(keysScan, keysIndex);
-    }
-
-    @Test
-    public void shouldScanHash()
-    {
-        KafkaConfiguration config = new KafkaConfiguration();
-        Path directory = tempFolder.getRoot().toPath();
-
-        KafkaCacheSegmentFactory factory = new KafkaCacheSegmentFactory(config);
-        KafkaCacheSegment sentinel = factory.newSentinel(new KafkaCacheTopicConfig(config), directory);
-        KafkaCacheHeadSegment head = sentinel.nextSegment(0L);
-
-        DirectBuffer testBytes = new UnsafeBuffer("test".getBytes(UTF_8));
-        KafkaKeyFW key = new KafkaKeyFW.Builder()
-            .wrap(new UnsafeBuffer(ByteBuffer.allocate(1024)), 0, 1024)
-            .length(4)
-            .value(testBytes, 0, testBytes.capacity())
-            .build();
-
-        ArrayFW<KafkaHeaderFW> headers = new ArrayFW.Builder<>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
-            .wrap(new UnsafeBuffer(ByteBuffer.allocate(1024)), 0, 1024)
-            .item(h -> h.nameLen(testBytes.capacity()).name(testBytes, 0, testBytes.capacity())
-                        .valueLen(testBytes.capacity()).value(testBytes, 0, testBytes.capacity()))
-            .build();
-
-        OctetsFW value = new OctetsFW.Builder()
-            .wrap(new UnsafeBuffer(ByteBuffer.allocate(1024)), 0, 1024)
-            .set(testBytes, 0, testBytes.capacity())
-            .build();
-
-        head.writeEntry(1, currentTimeMillis(), key, headers, value, null, NONE);
-
-        CRC32C checksum = new CRC32C();
-        checksum.update(key.buffer().byteArray(), 0, key.sizeof());
-        int hash = (int) checksum.getValue();
-
-        long headCursor = head.scanHash(hash, cursor(0, 0));
-
-        final KafkaCacheSegment tail = head.freezeSegment(1L);
-
-        long tailCursor = tail.scanHash(hash, cursor(0, 0));
-
-        assertEquals(0, cursorIndex(headCursor));
-        assertEquals(0, cursorValue(headCursor));
-        assertEquals(headCursor, tailCursor);
     }
 }

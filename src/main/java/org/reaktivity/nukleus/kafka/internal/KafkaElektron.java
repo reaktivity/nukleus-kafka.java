@@ -20,11 +20,14 @@ import static org.reaktivity.nukleus.route.RouteKind.CACHE_SERVER;
 import static org.reaktivity.nukleus.route.RouteKind.CLIENT;
 
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Function;
 
 import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.Elektron;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheView;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheClientFactoryBuilder;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheRoute;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheServerFactoryBuilder;
@@ -36,20 +39,25 @@ import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 
 final class KafkaElektron implements Elektron
 {
+    private final Function<String, KafkaCache> supplyCache;
+    private final Map<String, KafkaCacheView> cachesByName;
     private final Long2ObjectHashMap<KafkaCacheRoute> cacheRoutesById;
     private final Map<RouteKind, KafkaStreamFactoryBuilder> streamFactoryBuilders;
     private final Map<RouteKind, AddressFactoryBuilder> addressFactoryBuilders;
 
     KafkaElektron(
         KafkaConfiguration config,
-        KafkaCache cache)
+        Function<String, KafkaCache> supplyCache)
     {
+        this.supplyCache = supplyCache;
+        this.cachesByName = new HashMap<>();
         this.cacheRoutesById = new Long2ObjectHashMap<>();
 
         Map<RouteKind, KafkaStreamFactoryBuilder> streamFactoryBuilders = new EnumMap<>(RouteKind.class);
         streamFactoryBuilders.put(CLIENT, new KafkaClientFactoryBuilder(config));
-        streamFactoryBuilders.put(CACHE_SERVER, new KafkaCacheServerFactoryBuilder(config, cache, this::supplyCacheRoute));
-        streamFactoryBuilders.put(CACHE_CLIENT, new KafkaCacheClientFactoryBuilder(config, cache, this::supplyCacheRoute));
+        streamFactoryBuilders.put(CACHE_SERVER, new KafkaCacheServerFactoryBuilder(config, supplyCache, this::supplyCacheRoute));
+        streamFactoryBuilders.put(CACHE_CLIENT,
+                new KafkaCacheClientFactoryBuilder(config, this::supplyCacheView, this::supplyCacheRoute));
         this.streamFactoryBuilders = streamFactoryBuilders;
 
         Map<RouteKind, AddressFactoryBuilder> addressFactoryBuilders = new EnumMap<>(RouteKind.class);
@@ -90,5 +98,18 @@ final class KafkaElektron implements Elektron
         long routeId)
     {
         return cacheRoutesById.computeIfAbsent(routeId, KafkaCacheRoute::new);
+    }
+
+    private KafkaCacheView supplyCacheView(
+        String name)
+    {
+        return cachesByName.computeIfAbsent(name, this::newCacheView);
+    }
+
+    private KafkaCacheView newCacheView(
+        String name)
+    {
+        KafkaCache cache = supplyCache.apply(name);
+        return cache.acquire(KafkaCacheView::new);
     }
 }
