@@ -38,25 +38,14 @@ public class KafkaCachePartitionViewTest
         KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
         KafkaCachePartitionView partitionView = partition.acquire(KafkaCachePartitionView::new);
 
+        partition.append(10L);
+        partitionView.sentinel().next();
+
         partition.close();
         partitionView.close();
 
         assert partitionView.sentinel().closed();
         assert partition.sentinel().closed();
-    }
-
-    @Test
-    public void shouldDescribeNameAndId() throws Exception
-    {
-        Path location = tempFolder.newFolder().toPath();
-        KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
-
-        try (KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
-                KafkaCachePartitionView partitionView = partition.acquire(KafkaCachePartitionView::new))
-        {
-            assertEquals("test", partitionView.name());
-            assertEquals(0, partitionView.id());
-        }
     }
 
     @Test
@@ -68,6 +57,8 @@ public class KafkaCachePartitionViewTest
         try (KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
                 KafkaCachePartitionView partitionView = partition.acquire(KafkaCachePartitionView::new))
         {
+            assertEquals("test", partitionView.name());
+            assertEquals(0, partitionView.id());
             assertEquals("[KafkaCachePartitionView] test[0]", partitionView.toString());
         }
     }

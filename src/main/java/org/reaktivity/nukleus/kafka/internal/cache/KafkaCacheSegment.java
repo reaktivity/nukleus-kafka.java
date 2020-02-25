@@ -26,7 +26,7 @@ public final class KafkaCacheSegment extends KafkaCacheObjects.ReadWrite<KafkaCa
 {
     private final Path location;
     private final String name;
-    private final int index;
+    private final int id;
     private final long baseOffset;
     private final long timestamp;
 
@@ -50,7 +50,7 @@ public final class KafkaCacheSegment extends KafkaCacheObjects.ReadWrite<KafkaCa
         this(segment.location,
                 config,
                 segment.name,
-                segment.index,
+                segment.id,
                 segment.baseOffset,
                 appendBuf);
     }
@@ -59,13 +59,13 @@ public final class KafkaCacheSegment extends KafkaCacheObjects.ReadWrite<KafkaCa
         Path location,
         KafkaCacheTopicConfig config,
         String name,
-        int index,
+        int id,
         long baseOffset,
         MutableDirectBuffer appendBuf)
     {
         this.location = location;
         this.name = name;
-        this.index = index;
+        this.id = id;
         this.baseOffset = baseOffset;
         this.lastOffset = OFFSET_LATEST;
         this.timestamp = currentTimeMillis();
@@ -79,13 +79,13 @@ public final class KafkaCacheSegment extends KafkaCacheObjects.ReadWrite<KafkaCa
     public KafkaCacheSegment(
         Path location,
         String name,
-        int index,
+        int id,
         long baseOffset,
         long lastOffset)
     {
         this.location = location;
         this.name = name;
-        this.index = index;
+        this.id = id;
         this.baseOffset = baseOffset;
         this.lastOffset = lastOffset;
         this.timestamp = currentTimeMillis();
@@ -106,9 +106,9 @@ public final class KafkaCacheSegment extends KafkaCacheObjects.ReadWrite<KafkaCa
         return name;
     }
 
-    public int index()
+    public int id()
     {
-        return index;
+        return id;
     }
 
     public long baseOffset()
@@ -171,7 +171,7 @@ public final class KafkaCacheSegment extends KafkaCacheObjects.ReadWrite<KafkaCa
         hashFile.freeze();
         keysFile.freeze();
 
-        final KafkaCacheSegment frozen = new KafkaCacheSegment(location, name, index, baseOffset, lastOffset);
+        final KafkaCacheSegment frozen = new KafkaCacheSegment(location, name, id, baseOffset, lastOffset);
 
         frozen.dirtySince = dirtySince;
         frozen.dirtyBytes = dirtyBytes;
@@ -225,7 +225,7 @@ public final class KafkaCacheSegment extends KafkaCacheObjects.ReadWrite<KafkaCa
     @Override
     public String toString()
     {
-        return String.format("[%s] %s[%d] @ %d +%d", getClass().getSimpleName(), name, index, baseOffset, references());
+        return String.format("[%s] %s[%d] @ %d +%d", getClass().getSimpleName(), name, id, baseOffset, references());
     }
 
     @Override

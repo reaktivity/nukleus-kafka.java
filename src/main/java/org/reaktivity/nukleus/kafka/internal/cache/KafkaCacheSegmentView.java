@@ -31,9 +31,9 @@ public final class KafkaCacheSegmentView extends KafkaCacheObjects.ReadOnly
         return segment.name();
     }
 
-    public int index()
+    public int id()
     {
-        return segment.index();
+        return segment.id();
     }
 
     public long baseOffset()
@@ -69,7 +69,7 @@ public final class KafkaCacheSegmentView extends KafkaCacheObjects.ReadOnly
     @Override
     public String toString()
     {
-        return String.format("[%s] %s[%d] @ %d", getClass().getSimpleName(), name(), index(), baseOffset());
+        return String.format("[%s] %s[%d] @ %d", getClass().getSimpleName(), name(), id(), baseOffset());
     }
 
     @Override

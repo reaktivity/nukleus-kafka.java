@@ -191,7 +191,7 @@ public class KafkaCachePartitionTest
     }
 
     @Test
-    public void shouldDescribeNameAndId() throws Exception
+    public void shouldDescribeObject() throws Exception
     {
         Path location = tempFolder.newFolder().toPath();
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
@@ -200,17 +200,6 @@ public class KafkaCachePartitionTest
         {
             assertEquals("test", partition.name());
             assertEquals(0, partition.id());
-        }
-    }
-
-    @Test
-    public void shouldDescribeObject() throws Exception
-    {
-        Path location = tempFolder.newFolder().toPath();
-        KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
-
-        try (KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0))
-        {
             assertEquals("[KafkaCachePartition] test[0] +1", partition.toString());
         }
     }

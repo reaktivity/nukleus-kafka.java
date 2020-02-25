@@ -36,23 +36,13 @@ public class KafkaCacheTopicTest
     }
 
     @Test
-    public void shouldDescribeName() throws Exception
-    {
-        KafkaConfiguration config = new KafkaConfiguration();
-
-        try (KafkaCacheTopic topic = new KafkaCacheTopic(config, "test"))
-        {
-            assertEquals("test", topic.name());
-        }
-    }
-
-    @Test
     public void shouldDescribeObject() throws Exception
     {
         KafkaConfiguration config = new KafkaConfiguration();
 
         try (KafkaCacheTopic topic = new KafkaCacheTopic(config, "test"))
         {
+            assertEquals("test", topic.name());
             assertEquals("[KafkaCacheTopic] test +1", topic.toString());
         }
     }

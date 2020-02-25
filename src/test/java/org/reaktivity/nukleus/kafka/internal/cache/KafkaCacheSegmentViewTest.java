@@ -42,6 +42,9 @@ public class KafkaCacheSegmentViewTest
         try (KafkaCacheSegment segment = new KafkaCacheSegment(location, config, "test", 0, 1L, appendBuf);
                 KafkaCacheSegmentView segmentView = segment.acquire(KafkaCacheSegmentView::new))
         {
+            assertEquals("test", segmentView.name());
+            assertEquals(0, segmentView.id());
+            assertEquals(1L, segmentView.baseOffset());
             assertEquals("[KafkaCacheSegmentView] test[0] @ 1", segmentView.toString());
         }
     }

@@ -45,7 +45,7 @@ public class KafkaCacheSegmentTest
         {
             assertEquals(head.location(), tail.location());
             assertEquals(head.name(), tail.name());
-            assertEquals(head.index(), tail.index());
+            assertEquals(head.id(), tail.id());
             assertEquals(head.baseOffset(), tail.baseOffset());
             assertEquals(head.logFile().location(), tail.logFile().location());
             assertEquals(head.logFile().capacity(), tail.logFile().capacity());
@@ -69,6 +69,9 @@ public class KafkaCacheSegmentTest
 
         try (KafkaCacheSegment segment = new KafkaCacheSegment(location, config, "test", 0, 1L, appendBuf))
         {
+            assertEquals("test", segment.name());
+            assertEquals(0, segment.id());
+            assertEquals(1L, segment.baseOffset());
             assertEquals("[KafkaCacheSegment] test[0] @ 1 +1", segment.toString());
         }
     }

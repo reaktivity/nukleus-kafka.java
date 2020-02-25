@@ -40,18 +40,6 @@ public class KafkaCacheViewTest
     }
 
     @Test
-    public void shouldDescribeName() throws Exception
-    {
-        KafkaConfiguration config = new KafkaConfiguration();
-
-        try (KafkaCache cache = new KafkaCache(config, "test");
-                KafkaCacheView cacheView = cache.acquire(KafkaCacheView::new))
-        {
-            assertEquals("test", cacheView.name());
-        }
-    }
-
-    @Test
     public void shouldDescribeObject() throws Exception
     {
         KafkaConfiguration config = new KafkaConfiguration();
@@ -59,6 +47,7 @@ public class KafkaCacheViewTest
         try (KafkaCache cache = new KafkaCache(config, "test");
                 KafkaCacheView cacheView = cache.acquire(KafkaCacheView::new))
         {
+            assertEquals("test", cacheView.name());
             assertEquals("[KafkaCacheView] test", cacheView.toString());
         }
     }

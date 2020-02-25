@@ -36,7 +36,7 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 
-public abstract class KafkaCacheFile
+public class KafkaCacheFile implements AutoCloseable
 {
     private static final String EXT_LOG = ".log";
     private static final String EXT_DELTA = ".delta";
@@ -297,6 +297,7 @@ public abstract class KafkaCacheFile
         return String.format("[%s] %s (%d)", getClass().getSimpleName(), location.getFileName(), capacity);
     }
 
+    @Override
     public void close()
     {
         IoUtil.unmap(mappedByteBuf);

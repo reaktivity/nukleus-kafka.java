@@ -40,18 +40,6 @@ public class KafkaCacheTopicViewTest
     }
 
     @Test
-    public void shouldDescribeName() throws Exception
-    {
-        KafkaConfiguration config = new KafkaConfiguration();
-
-        try (KafkaCacheTopic topic = new KafkaCacheTopic(config, "test");
-                KafkaCacheTopicView topicView = topic.acquire(KafkaCacheTopicView::new))
-        {
-            assertEquals("test", topicView.name());
-        }
-    }
-
-    @Test
     public void shouldDescribeObject() throws Exception
     {
         KafkaConfiguration config = new KafkaConfiguration();
@@ -59,6 +47,7 @@ public class KafkaCacheTopicViewTest
         try (KafkaCacheTopic topic = new KafkaCacheTopic(config, "test");
                 KafkaCacheTopicView topicView = topic.acquire(KafkaCacheTopicView::new))
         {
+            assertEquals("test", topicView.name());
             assertEquals("[KafkaCacheTopicView] test", topicView.toString());
         }
     }
