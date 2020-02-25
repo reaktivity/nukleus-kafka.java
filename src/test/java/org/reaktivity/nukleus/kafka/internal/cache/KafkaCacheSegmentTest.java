@@ -59,4 +59,17 @@ public class KafkaCacheSegmentTest
             assertEquals(head.keysFile().capacity(), tail.keysFile().capacity());
         }
     }
+
+    @Test
+    public void shouldDescribeObject() throws Exception
+    {
+        KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
+        Path location = tempFolder.getRoot().toPath();
+        MutableDirectBuffer appendBuf = new UnsafeBuffer(ByteBuffer.allocate(0));
+
+        try (KafkaCacheSegment segment = new KafkaCacheSegment(location, config, "test", 0, 1L, appendBuf))
+        {
+            assertEquals("[KafkaCacheSegment] test[0] @ 1 +1", segment.toString());
+        }
+    }
 }

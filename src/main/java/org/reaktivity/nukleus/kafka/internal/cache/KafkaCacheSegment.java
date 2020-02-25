@@ -225,7 +225,7 @@ public final class KafkaCacheSegment extends KafkaCacheObjects.ReadWrite<KafkaCa
     @Override
     public String toString()
     {
-        return String.format("[%s] %s[%d] @ %d", getClass().getSimpleName(), name, index, baseOffset);
+        return String.format("[%s] %s[%d] @ %d +%d", getClass().getSimpleName(), name, index, baseOffset, references());
     }
 
     @Override
