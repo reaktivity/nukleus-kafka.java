@@ -102,7 +102,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
     private static final int SIGNAL_NEXT_REQUEST = 1;
 
-    private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(new UnsafeBuffer(new byte[0]), 0, 0);
+    private static final DirectBuffer EMPTY_BUFFER = new UnsafeBuffer();
+    private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(EMPTY_BUFFER, 0, 0);
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
     private static final byte[] ANY_IP_ADDR = new byte[4];
 
@@ -1045,8 +1046,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                         final int headerCount = recordTrailer.headerCount();
                         final int headersOffset = recordTrailer.limit();
                         final int headersLength = recordLimit - headersOffset;
-                        final DirectBuffer headers = headersRO;
-                        headers.wrap(buffer, headersOffset, headersLength);
+                        final DirectBuffer headers = wrapHeaders(buffer, headersOffset, headersLength);
 
                         progress += sizeofRecord;
 
@@ -2388,6 +2388,20 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 }
             }
         }
+    }
+
+    private DirectBuffer wrapHeaders(
+        DirectBuffer buffer,
+        int offset,
+        int length)
+    {
+        DirectBuffer headers = EMPTY_BUFFER;
+        if (length != 0)
+        {
+            headers = headersRO;
+            headers.wrap(buffer, offset, length);
+        }
+        return headers;
     }
 
     private static KafkaKeyFW.Builder setKey(
