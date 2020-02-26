@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -24,6 +25,7 @@ public final class KafkaCache extends KafkaCacheObjects.ReadWrite<KafkaCacheView
 {
     private final KafkaConfiguration config;
     private final String name;
+    private final Path location;
     private final Map<String, KafkaCacheTopic> topicsByName;
 
     public KafkaCache(
@@ -32,6 +34,7 @@ public final class KafkaCache extends KafkaCacheObjects.ReadWrite<KafkaCacheView
     {
         this.config = config;
         this.name = name;
+        this.location = config.cacheDirectory().resolve(name);
         this.topicsByName = new ConcurrentHashMap<>();
     }
 
@@ -65,8 +68,8 @@ public final class KafkaCache extends KafkaCacheObjects.ReadWrite<KafkaCacheView
     }
 
     private KafkaCacheTopic newTopic(
-            String name)
+        String name)
     {
-        return new KafkaCacheTopic(config, name);
+        return new KafkaCacheTopic(location, config, name);
     }
 }

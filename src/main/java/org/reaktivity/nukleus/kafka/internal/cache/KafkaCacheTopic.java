@@ -29,10 +29,11 @@ public final class KafkaCacheTopic extends KafkaCacheObjects.ReadWrite<KafkaCach
     private final Map<Integer, KafkaCachePartition> partitionsById;
 
     public KafkaCacheTopic(
+        Path location,
         KafkaConfiguration config,
         String name)
     {
-        this.location = config.cacheDirectory();
+        this.location = location;
         this.config = new KafkaCacheTopicConfig(config);
         this.name = name;
         this.partitionsById = new ConcurrentHashMap<>();

@@ -17,6 +17,8 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static org.junit.Assert.assertEquals;
 
+import java.nio.file.Path;
+
 import org.junit.Test;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 
@@ -26,7 +28,8 @@ public class KafkaCacheTopicTest
     public void shouldClosePartitions() throws Exception
     {
         KafkaConfiguration config = new KafkaConfiguration();
-        KafkaCacheTopic topic = new KafkaCacheTopic(config, "test");
+        Path location = config.cacheDirectory().resolve("cache");
+        KafkaCacheTopic topic = new KafkaCacheTopic(location, config, "test");
 
         KafkaCachePartition partition = topic.supplyPartition(0);
 
@@ -39,8 +42,9 @@ public class KafkaCacheTopicTest
     public void shouldDescribeObject() throws Exception
     {
         KafkaConfiguration config = new KafkaConfiguration();
+        Path location = config.cacheDirectory().resolve("cache");
 
-        try (KafkaCacheTopic topic = new KafkaCacheTopic(config, "test"))
+        try (KafkaCacheTopic topic = new KafkaCacheTopic(location, config, "test"))
         {
             assertEquals("test", topic.name());
             assertEquals("[KafkaCacheTopic] test +1", topic.toString());
