@@ -124,7 +124,7 @@ public class KafkaCacheObjectsTest
         }
     }
 
-    private static final class TestReadOnly extends ReadOnly
+    private static final class TestReadOnly extends ReadOnly<TestReadOnly, TestReadWrite>
     {
         private final CountDownLatch latch;
 
@@ -133,6 +133,12 @@ public class KafkaCacheObjectsTest
         {
             super(writer);
             this.latch = writer.latch;
+        }
+
+        @Override
+        protected TestReadOnly self()
+        {
+            return this;
         }
 
         @Override

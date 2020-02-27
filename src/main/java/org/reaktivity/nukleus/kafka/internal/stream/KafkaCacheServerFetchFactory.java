@@ -855,11 +855,10 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             final long now = currentTimeMillis();
 
             Node segmentNode = partition.sentinel().next();
-            while (!segmentNode.sentinel())
+            while (!segmentNode.next().sentinel()) // avoid cleaning head
             {
                 segmentNode.clean(now);
                 segmentNode.close();
-                assert segmentNode.replacement() != null;
                 segmentNode = segmentNode.next();
             }
 

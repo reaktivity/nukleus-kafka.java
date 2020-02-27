@@ -18,7 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 import java.util.HashMap;
 import java.util.Map;
 
-public final class KafkaCacheView extends KafkaCacheObjects.ReadOnly
+public final class KafkaCacheView extends KafkaCacheObjects.ReadOnly<KafkaCacheView, KafkaCache>
 {
     private final Map<String, KafkaCacheTopicView> topicsByName;
     private final KafkaCache cache;
@@ -46,6 +46,12 @@ public final class KafkaCacheView extends KafkaCacheObjects.ReadOnly
     public String toString()
     {
         return String.format("[%s] %s", getClass().getSimpleName(), name());
+    }
+
+    @Override
+    protected KafkaCacheView self()
+    {
+        return this;
     }
 
     @Override

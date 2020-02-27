@@ -38,10 +38,9 @@ import org.reaktivity.nukleus.function.MessageFunction;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorFactory;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorFactory.KafkaCacheCursor;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorFactory.KafkaFilterCondition;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionView;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionView.KafkaCacheCursor;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionView.KafkaFilterCondition;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionView.NodeView;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopicView;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheView;
@@ -114,6 +113,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
     private final int kafkaTypeId;
     private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
+    private final MutableDirectBuffer deltaBuffer;
     private final BufferPool bufferPool;
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
@@ -121,7 +121,6 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
     private final Function<String, KafkaCacheView> supplyCacheView;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
-    private final KafkaCacheCursorFactory cursorFactory;
 
     public KafkaCacheClientFetchFactory(
         KafkaConfiguration config,
@@ -140,6 +139,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.router = router;
         this.writeBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
+        this.deltaBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
         this.bufferPool = bufferPool;
         this.supplyInitialId = supplyInitialId;
         this.supplyReplyId = supplyReplyId;
@@ -147,7 +147,6 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         this.supplyCacheView = supplyCacheView;
         this.supplyCacheRoute = supplyCacheRoute;
         this.correlations = correlations;
-        this.cursorFactory = new KafkaCacheCursorFactory(writeBuffer);
     }
 
     @Override
@@ -199,7 +198,6 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final long partitionOffset = progress.partitionOffset();
             final KafkaCacheRoute cacheRoute = supplyCacheRoute.apply(resolvedId);
             final long partitionKey = cacheRoute.topicPartitionKey(topicName, partitionId);
-            final KafkaFilterCondition condition = cursorFactory.asCondition(filters);
 
             KafkaCacheClientFetchFanout fanout = cacheRoute.clientFetchFanoutsByTopicPartition.get(partitionKey);
             if (fanout == null)
@@ -217,6 +215,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
             if (fanout != null)
             {
+                final KafkaFilterCondition condition = fanout.partition.asCondition(filters);
+
                 newStream = new KafkaCacheClientFetchStream(
                         fanout,
                         sender,
@@ -696,7 +696,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.affinity = affinity;
             this.authorization = authorization;
             this.partitionOffset = partitionOffset;
-            this.cursor = cursorFactory.newCursor(condition, deltaType); // move to partition view
+            this.cursor = group.partition.newCursor(deltaBuffer, condition, deltaType);
             this.deltaType = deltaType;
         }
 
@@ -889,7 +889,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final int reservedMax = remaining + replyPadding;
             final int reservedMin = lengthMin + replyPadding;
 
-            assert partitionOffset >= this.partitionOffset;
+            assert partitionOffset >= this.partitionOffset : String.format("%d >= %d", partitionOffset, this.partitionOffset);
 
             flush:
             if (replyBudget >= reservedMin)
@@ -1069,7 +1069,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             state = KafkaState.closedReply(state);
             doEnd(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
-            doCleanupDebitorIfNecessary();
+            doCleanupClient();
         }
 
         private void doClientReplyAbort(
@@ -1077,7 +1077,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             state = KafkaState.closedReply(state);
             doAbort(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
-            doCleanupDebitorIfNecessary();
+            doCleanupClient();
         }
 
         private void doClientReplyEndIfNecessary(
@@ -1133,20 +1133,22 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final long traceId = reset.traceId();
 
             state = KafkaState.closedReply(state);
-            doCleanupDebitorIfNecessary();
+            doCleanupClient();
 
             group.onClientFanoutMemberClosed(traceId, this);
 
             doInitialResetIfNecessary(traceId);
         }
 
-        private void doCleanupDebitorIfNecessary()
+        private void doCleanupClient()
         {
             if (replyDebitor != null && replyDebitorIndex != NO_DEBITOR_INDEX)
             {
                 replyDebitor.release(replyBudgetId, replyId);
                 replyDebitorIndex = NO_DEBITOR_INDEX;
             }
+
+            cursor.close();
         }
     }
 }

@@ -51,6 +51,24 @@ public class KafkaCacheFileTest
     }
 
     @Test
+    public void shouldAppendBytesThenFreeze() throws Exception
+    {
+        Path location = tempFolder.newFile().toPath();
+        int capacity = 1024;
+        MutableDirectBuffer appendBuf = new UnsafeBuffer(ByteBuffer.allocate(1024));
+
+        try (KafkaCacheFile file = new KafkaCacheFile(location, capacity, appendBuf))
+        {
+            file.appendBytes(new UnsafeBuffer("Hello, world".getBytes(UTF_8)));
+            file.freeze();
+
+            assertEquals(0, file.available());
+        }
+
+        assertEquals("Hello, world", new String(Files.readAllBytes(location), UTF_8));
+    }
+
+    @Test
     public void shouldWriteBytes() throws Exception
     {
         File tempFile = tempFolder.newFile();

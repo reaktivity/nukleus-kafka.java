@@ -78,7 +78,7 @@ public class KafkaCachePartitionViewTest
                     KafkaCachePartitionView partitionView = partition.acquire(KafkaCachePartitionView::new))
             {
                 final NodeView sentinel = partitionView.sentinel();
-                assertEquals("[NodeView] sentinel", sentinel.toString());
+                assertEquals("[NodeView] sentinel +1", sentinel.toString());
             }
         }
     }

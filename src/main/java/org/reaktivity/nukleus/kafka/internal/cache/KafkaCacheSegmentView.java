@@ -15,7 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-public final class KafkaCacheSegmentView extends KafkaCacheObjects.ReadOnly
+public final class KafkaCacheSegmentView extends KafkaCacheObjects.ReadOnly<KafkaCacheSegmentView, KafkaCacheSegment>
 {
     private final KafkaCacheSegment segment;
 
@@ -69,7 +69,13 @@ public final class KafkaCacheSegmentView extends KafkaCacheObjects.ReadOnly
     @Override
     public String toString()
     {
-        return String.format("[%s] %s[%d] @ %d", getClass().getSimpleName(), name(), id(), baseOffset());
+        return String.format("[%s] %s[%d] @ %d +%d", getClass().getSimpleName(), name(), id(), baseOffset(), references());
+    }
+
+    @Override
+    protected KafkaCacheSegmentView self()
+    {
+        return this;
     }
 
     @Override

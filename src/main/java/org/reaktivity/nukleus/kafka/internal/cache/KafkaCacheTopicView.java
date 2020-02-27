@@ -17,7 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 
 import org.agrona.collections.Int2ObjectHashMap;
 
-public final class KafkaCacheTopicView extends KafkaCacheObjects.ReadOnly
+public final class KafkaCacheTopicView extends KafkaCacheObjects.ReadOnly<KafkaCacheTopicView, KafkaCacheTopic>
 {
     private final KafkaCacheTopic topic;
     private final Int2ObjectHashMap<KafkaCachePartitionView> partitionsById;
@@ -45,6 +45,12 @@ public final class KafkaCacheTopicView extends KafkaCacheObjects.ReadOnly
     public String toString()
     {
         return String.format("[%s] %s", getClass().getSimpleName(), name());
+    }
+
+    @Override
+    protected KafkaCacheTopicView self()
+    {
+        return this;
     }
 
     @Override

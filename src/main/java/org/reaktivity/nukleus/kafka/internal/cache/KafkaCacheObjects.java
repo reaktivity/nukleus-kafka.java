@@ -20,7 +20,7 @@ import java.util.function.Function;
 
 public final class KafkaCacheObjects
 {
-    public abstract static class ReadWrite<R extends ReadOnly, T extends ReadWrite<R, T>> implements AutoCloseable
+    public abstract static class ReadWrite<R extends ReadOnly<R, W>, W extends ReadWrite<R, W>> implements AutoCloseable
     {
         private final AtomicInteger references;
         private volatile boolean closed;
@@ -31,10 +31,10 @@ public final class KafkaCacheObjects
             this.references = new AtomicInteger(1);
         }
 
-        protected abstract T self();
+        protected abstract W self();
 
         public final R acquire(
-            Function<T, R> factory)
+            Function<W, R> factory)
         {
             assert !closed;
             references.incrementAndGet();
@@ -76,31 +76,47 @@ public final class KafkaCacheObjects
         }
     }
 
-    public abstract static class ReadOnly implements AutoCloseable
+    public abstract static class ReadOnly<R extends ReadOnly<R, W>, W extends ReadWrite<R, W>> implements AutoCloseable
     {
-        private final Runnable release;
+        private final W referee;
         private volatile boolean closed;
+        private volatile int references;
 
         protected ReadOnly(
-            ReadWrite<?, ?> releaser)
+            W referee)
         {
-            this.release = releaser::release;
+            this.referee = referee;
+            this.references = 1;
+        }
+
+        protected abstract R self();
+
+        public final R acquire()
+        {
+            assert !closed;
+            references++;
+            return self();
         }
 
         @Override
         public final void close()
         {
-            if (!closed)
+            if (!closed && --references == 0)
             {
                 closed = true;
                 onClosed();
-                release.run();
+                referee.release();
             }
         }
 
         public final boolean closed()
         {
             return closed;
+        }
+
+        protected final int references()
+        {
+            return references;
         }
 
         protected abstract void onClosed();

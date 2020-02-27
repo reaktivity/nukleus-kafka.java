@@ -61,10 +61,10 @@ public class KafkaCacheFile implements AutoCloseable
     private final MappedByteBuffer mappedByteBuf;
     private final MutableDirectBuffer mappedBuf;
     private final FileChannel appender;
-    private final int maxCapacity;
     private final MutableDirectBuffer appendBuf;
     private final ByteBuffer appendByteBuf;
 
+    private volatile int maxCapacity;
     private volatile int capacity;   // only ever increases
     private int markValue;
 
@@ -266,6 +266,7 @@ public class KafkaCacheFile implements AutoCloseable
             if (appender != null)
             {
                 appender.close();
+                maxCapacity = capacity;
             }
         }
         catch (IOException ex)

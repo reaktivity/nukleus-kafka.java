@@ -170,9 +170,9 @@ public class KafkaCachePartitionTest
             Node node30a = node20a.next();
 
             assertNotSame(node10, node10a);
-            assertSame(node10.replacement(), node10a);
+            assertSame(node10.replacedBy(), node10a);
             assertNotSame(node20, node20a);
-            assertSame(node20.replacement(), node20a);
+            assertSame(node20.replacedBy(), node20a);
             assertSame(node30, node30a);
         }
     }
@@ -264,7 +264,7 @@ public class KafkaCachePartitionTest
                 tail10.clean(now);
                 tail10.close();
 
-                Node clean10 = tail10.replacement();
+                Node clean10 = tail10.replacedBy();
 
                 assertNotNull(clean10);
                 assertEquals("[Node] 10 +0", head10.toString());

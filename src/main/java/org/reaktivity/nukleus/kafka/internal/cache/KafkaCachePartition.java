@@ -46,6 +46,7 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.agrona.io.DirectBufferInputStream;
 import org.agrona.io.ExpandableDirectBufferOutputStream;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionView.NodeView;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
@@ -151,7 +152,8 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
             head.replace(tail);
             head.close();
 
-            node.previous = head.replacement;
+            assert node.previous == head.replacedBy;
+            assert head.replacedBy.next == node;
         }
 
         return node;
@@ -160,11 +162,11 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
     public Node seekNotBefore(
         long offset)
     {
-        Node node = sentinel.next();
+        Node node = sentinel.next;
 
         while (node != sentinel && node.segment.baseOffset() < offset)
         {
-            node = node.next();
+            node = node.next;
         }
 
         return node;
@@ -173,7 +175,7 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
     public Node seekNotAfter(
         long offset)
     {
-        Node node = sentinel.previous();
+        Node node = sentinel.previous;
 
         while (node != sentinel && node.segment.baseOffset() > offset)
         {
@@ -468,12 +470,12 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
     @Override
     protected void onClosed()
     {
-        Node node = sentinel.next();
+        Node node = sentinel.next;
 
         while (node != sentinel)
         {
             node.close();
-            node = node.next();
+            node = node.next;
         }
 
         node.close();
@@ -494,13 +496,13 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
         return checksum.getValue();
     }
 
-    public final class Node extends KafkaCacheObjects.ReadWrite<KafkaCachePartitionView.NodeView, Node>
+    public final class Node extends KafkaCacheObjects.ReadWrite<NodeView, Node>
     {
         private final KafkaCacheSegment segment;
 
         private volatile KafkaCachePartition.Node previous;
         private volatile KafkaCachePartition.Node next;
-        private volatile KafkaCachePartition.Node replacement;
+        private volatile KafkaCachePartition.Node replacedBy;
 
         Node()
         {
@@ -543,9 +545,9 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
             return segment;
         }
 
-        public Node replacement()
+        public Node replacedBy()
         {
-            return replacement;
+            return replacedBy;
         }
 
         public Node seekAncestor(
@@ -563,36 +565,37 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
 
         public void remove()
         {
-            assert this.replacement == null;
+            assert this.replacedBy == null;
 
             next.previous = previous;
-            previous.next = next();
+            previous.next = next;
 
-            this.replacement = next;
-            this.next = sentinel;
-            this.previous = sentinel;
+            //this.next = sentinel;
+            //this.previous = sentinel;
         }
 
         public void replace(
             KafkaCacheSegment segment)
         {
-            assert this.replacement == null;
+            assert this.replacedBy == null;
 
-            KafkaCachePartition.Node replacement = new KafkaCachePartition.Node(segment);
-            replacement.next = next;
-            replacement.previous = previous;
+            KafkaCachePartition.Node replacedBy = new KafkaCachePartition.Node(segment);
+            replacedBy.next = next;
+            replacedBy.previous = previous;
 
-            this.next.previous = replacement;
-            this.previous.next = replacement;
+            this.next.previous = replacedBy;
+            this.previous.next = replacedBy;
 
-            this.replacement = replacement;
-            this.next = sentinel;
-            this.previous = sentinel;
+            this.replacedBy = replacedBy;
+            //this.next = sentinel;
+            //this.previous = sentinel;
         }
 
         public void clean(
             long now)
         {
+            assert next != sentinel; // not head segment
+
             if (segment.cleanableAt() <= now)
             {
                 // TODO: use temporary files plus move to avoid corrupted log on restart
