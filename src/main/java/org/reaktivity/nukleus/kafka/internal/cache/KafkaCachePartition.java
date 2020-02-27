@@ -46,7 +46,6 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.agrona.io.DirectBufferInputStream;
 import org.agrona.io.ExpandableDirectBufferOutputStream;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionView.NodeView;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
@@ -56,7 +55,7 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheDeltaFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 
-public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<KafkaCachePartitionView, KafkaCachePartition>
+public final class KafkaCachePartition
 {
     private static final String FORMAT_PARTITION_DIRECTORY = "%s-%d";
 
@@ -149,11 +148,7 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
         if (!head.sentinel())
         {
             final KafkaCacheSegment tail = head.segment.freeze();
-            head.replace(tail);
-            head.close();
-
-            assert node.previous == head.replacedBy;
-            assert head.replacedBy.next == node;
+            head.segment(tail);
         }
 
         return node;
@@ -458,27 +453,7 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
     @Override
     public String toString()
     {
-        return String.format("[%s] %s[%d] +%d", getClass().getSimpleName(), name, id, references());
-    }
-
-    @Override
-    protected KafkaCachePartition self()
-    {
-        return this;
-    }
-
-    @Override
-    protected void onClosed()
-    {
-        Node node = sentinel.next;
-
-        while (node != sentinel)
-        {
-            node.close();
-            node = node.next;
-        }
-
-        node.close();
+        return String.format("[%s] %s[%d]", getClass().getSimpleName(), name, id);
     }
 
     private long computeHash(
@@ -496,13 +471,11 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
         return checksum.getValue();
     }
 
-    public final class Node extends KafkaCacheObjects.ReadWrite<NodeView, Node>
+    public final class Node
     {
-        private final KafkaCacheSegment segment;
-
+        private volatile KafkaCacheSegment segment;
         private volatile KafkaCachePartition.Node previous;
         private volatile KafkaCachePartition.Node next;
-        private volatile KafkaCachePartition.Node replacedBy;
 
         Node()
         {
@@ -517,12 +490,6 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
             this.segment = requireNonNull(segment);
             this.previous = sentinel;
             this.next = sentinel;
-        }
-
-        @Override
-        protected Node self()
-        {
-            return this;
         }
 
         public boolean sentinel()
@@ -545,11 +512,6 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
             return segment;
         }
 
-        public Node replacedBy()
-        {
-            return replacedBy;
-        }
-
         public Node seekAncestor(
             long baseOffset)
         {
@@ -565,30 +527,20 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
 
         public void remove()
         {
-            assert this.replacedBy == null;
+            assert segment != null;
+            segment.close();
+            segment = null;
 
             next.previous = previous;
             previous.next = next;
-
-            //this.next = sentinel;
-            //this.previous = sentinel;
         }
 
-        public void replace(
+        public void segment(
             KafkaCacheSegment segment)
         {
-            assert this.replacedBy == null;
-
-            KafkaCachePartition.Node replacedBy = new KafkaCachePartition.Node(segment);
-            replacedBy.next = next;
-            replacedBy.previous = previous;
-
-            this.next.previous = replacedBy;
-            this.previous.next = replacedBy;
-
-            this.replacedBy = replacedBy;
-            //this.next = sentinel;
-            //this.previous = sentinel;
+            assert segment != null;
+            this.segment.close();
+            this.segment = segment;
         }
 
         public void clean(
@@ -661,7 +613,7 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
                 }
                 else
                 {
-                    replace(frozen);
+                    segment(frozen);
                 }
             }
         }
@@ -717,16 +669,7 @@ public final class KafkaCachePartition extends KafkaCacheObjects.ReadWrite<Kafka
         public String toString()
         {
             Function<KafkaCacheSegment, String> baseOffset = s -> s != null ? Long.toString(s.baseOffset()) : "sentinel";
-            return String.format("[%s] %s +%d", getClass().getSimpleName(), baseOffset.apply(segment), references());
-        }
-
-        @Override
-        protected void onClosed()
-        {
-            if (segment != null)
-            {
-                segment.close();
-            }
+            return String.format("[%s] %s", getClass().getSimpleName(), baseOffset.apply(segment));
         }
     }
 

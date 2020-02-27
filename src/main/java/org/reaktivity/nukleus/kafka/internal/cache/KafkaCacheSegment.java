@@ -22,7 +22,7 @@ import java.nio.file.Path;
 
 import org.agrona.MutableDirectBuffer;
 
-public final class KafkaCacheSegment extends KafkaCacheObjects.ReadWrite<KafkaCacheSegmentView, KafkaCacheSegment>
+public final class KafkaCacheSegment extends KafkaCacheObject<KafkaCacheSegment>
 {
     private final Path location;
     private final String name;

@@ -25,17 +25,16 @@ import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 public class KafkaCacheTopicTest
 {
     @Test
-    public void shouldClosePartitions() throws Exception
+    public void shouldSupplyPartition() throws Exception
     {
         KafkaConfiguration config = new KafkaConfiguration();
         Path location = config.cacheDirectory().resolve("cache");
         KafkaCacheTopic topic = new KafkaCacheTopic(location, config, "test");
 
-        KafkaCachePartition partition = topic.supplyPartition(0);
+        KafkaCachePartition partitionA = topic.supplyPartition(0);
+        KafkaCachePartition partitionB = topic.supplyPartition(0);
 
-        topic.close();
-
-        assert partition.closed();
+        assert partitionA == partitionB;
     }
 
     @Test
@@ -44,10 +43,9 @@ public class KafkaCacheTopicTest
         KafkaConfiguration config = new KafkaConfiguration();
         Path location = config.cacheDirectory().resolve("cache");
 
-        try (KafkaCacheTopic topic = new KafkaCacheTopic(location, config, "test"))
-        {
-            assertEquals("test", topic.name());
-            assertEquals("[KafkaCacheTopic] test +1", topic.toString());
-        }
+        KafkaCacheTopic topic = new KafkaCacheTopic(location, config, "test");
+
+        assertEquals("test", topic.name());
+        assertEquals("[KafkaCacheTopic] test", topic.toString());
     }
 }

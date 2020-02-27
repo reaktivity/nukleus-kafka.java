@@ -833,7 +833,6 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             while (!segmentNode.sentinel() && partition.deleteAt(segmentNode.segment()) <= now)
             {
                 segmentNode.remove();
-                segmentNode.close();
                 segmentNode = segmentNode.next();
             }
             assert segmentNode != null;
@@ -858,7 +857,6 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             while (!segmentNode.next().sentinel()) // avoid cleaning head
             {
                 segmentNode.clean(now);
-                segmentNode.close();
                 segmentNode = segmentNode.next();
             }
 

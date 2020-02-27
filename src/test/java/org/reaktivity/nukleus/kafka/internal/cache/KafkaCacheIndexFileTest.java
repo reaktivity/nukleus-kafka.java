@@ -308,13 +308,11 @@ public class KafkaCacheIndexFileTest
         public TemporaryFolder tempFolder = new TemporaryFolder();
 
         private KafkaCacheIndexFile.SortedByValue indexFile;
-        private int key;
         private int entries;
 
         @Before
         public void initEntries() throws Exception
         {
-            Random random = ThreadLocalRandom.current();
             File tempFile = tempFolder.newFile();
 
             entries = 1024;
@@ -331,7 +329,6 @@ public class KafkaCacheIndexFileTest
                 }
             }
 
-            key = random.nextInt(entries >> 1);
             indexFile = new KafkaCacheIndexFile.SortedByValue(tempFile.toPath());
         }
 

@@ -21,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 
-public final class KafkaCacheTopic extends KafkaCacheObjects.ReadWrite<KafkaCacheTopicView, KafkaCacheTopic>
+public final class KafkaCacheTopic
 {
     private final Path location;
     private final String name;
@@ -58,19 +58,7 @@ public final class KafkaCacheTopic extends KafkaCacheObjects.ReadWrite<KafkaCach
     @Override
     public String toString()
     {
-        return String.format("[%s] %s +%d", getClass().getSimpleName(), name, references());
-    }
-
-    @Override
-    protected KafkaCacheTopic self()
-    {
-        return this;
-    }
-
-    @Override
-    protected void onClosed()
-    {
-        partitionsById.values().forEach(KafkaCachePartition::close);
+        return String.format("[%s] %s", getClass().getSimpleName(), name);
     }
 
     private KafkaCachePartition newPartition(

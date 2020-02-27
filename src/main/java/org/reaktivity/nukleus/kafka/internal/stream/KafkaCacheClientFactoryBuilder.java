@@ -27,7 +27,7 @@ import org.reaktivity.nukleus.budget.BudgetDebitor;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheView;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
 import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
@@ -35,7 +35,7 @@ import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 public final class KafkaCacheClientFactoryBuilder implements KafkaStreamFactoryBuilder
 {
     private final KafkaConfiguration config;
-    private final Function<String, KafkaCacheView> supplyCacheView;
+    private final Function<String, KafkaCache> supplyCache;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
 
     private RouteManager router;
@@ -51,11 +51,11 @@ public final class KafkaCacheClientFactoryBuilder implements KafkaStreamFactoryB
 
     public KafkaCacheClientFactoryBuilder(
         KafkaConfiguration config,
-        Function<String, KafkaCacheView> supplyCacheView,
+        Function<String, KafkaCache> supplyCache,
         LongFunction<KafkaCacheRoute> supplyCacheRoute)
     {
         this.config = config;
-        this.supplyCacheView = supplyCacheView;
+        this.supplyCache = supplyCache;
         this.supplyCacheRoute = supplyCacheRoute;
     }
 
@@ -156,7 +156,7 @@ public final class KafkaCacheClientFactoryBuilder implements KafkaStreamFactoryB
                 supplyTypeId,
                 supplyBudgetId,
                 supplyDebitor,
-                supplyCacheView,
+                supplyCache,
                 supplyCacheRoute);
     }
 }

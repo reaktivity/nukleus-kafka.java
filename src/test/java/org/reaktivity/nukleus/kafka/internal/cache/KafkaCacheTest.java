@@ -23,27 +23,24 @@ import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 public class KafkaCacheTest
 {
     @Test
-    public void shouldCloseTopics() throws Exception
+    public void shouldSupplyTopic() throws Exception
     {
         KafkaConfiguration config = new KafkaConfiguration();
         KafkaCache cache = new KafkaCache(config, "cache");
 
-        KafkaCacheTopic topic = cache.supplyTopic("test");
+        KafkaCacheTopic topic1 = cache.supplyTopic("test");
+        KafkaCacheTopic topic2 = cache.supplyTopic("test");
 
-        cache.close();
-
-        assert topic.closed();
+        assert topic1 == topic2;
     }
 
     @Test
     public void shouldDescribeObject() throws Exception
     {
         KafkaConfiguration config = new KafkaConfiguration();
+        KafkaCache cache = new KafkaCache(config, "test");
 
-        try (KafkaCache cache = new KafkaCache(config, "test"))
-        {
-            assertEquals("test", cache.name());
-            assertEquals("[KafkaCache] test +1", cache.toString());
-        }
+        assertEquals("test", cache.name());
+        assertEquals("[KafkaCache] test", cache.toString());
     }
 }

@@ -34,7 +34,7 @@ import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.budget.KafkaMergedBudgetAccountant;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheView;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ExtensionFW;
@@ -64,7 +64,7 @@ public final class KafkaCacheClientFactory implements StreamFactory
         ToIntFunction<String> supplyTypeId,
         LongSupplier supplyBudgetId,
         LongFunction<BudgetDebitor> supplyDebitor,
-        Function<String, KafkaCacheView> supplyCacheView,
+        Function<String, KafkaCache> supplyCache,
         LongFunction<KafkaCacheRoute> supplyCacheRoute)
     {
         final Long2ObjectHashMap<MessageConsumer> correlations = new Long2ObjectHashMap<>();
@@ -80,7 +80,7 @@ public final class KafkaCacheClientFactory implements StreamFactory
 
         final KafkaCacheClientFetchFactory cacheFetchFactory = new KafkaCacheClientFetchFactory(
                 config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId, supplyTraceId,
-                supplyTypeId, accountant::supplyDebitor, supplyCacheView, supplyCacheRoute, correlations);
+                supplyTypeId, accountant::supplyDebitor, supplyCache, supplyCacheRoute, correlations);
 
         final KafkaMergedFactory cacheMergedFactory = new KafkaMergedFactory(
                 config, router, writeBuffer, supplyInitialId, supplyReplyId, supplyTraceId, supplyTypeId,

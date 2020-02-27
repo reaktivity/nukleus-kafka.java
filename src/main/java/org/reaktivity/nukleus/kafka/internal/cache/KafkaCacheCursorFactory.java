@@ -29,7 +29,6 @@ import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Function;
 import java.util.zip.CRC32C;
 
 import org.agrona.DirectBuffer;
@@ -38,7 +37,6 @@ import org.agrona.collections.LongHashSet;
 import org.agrona.collections.MutableBoolean;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.Node;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartitionView.NodeView;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW;
@@ -50,235 +48,65 @@ import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheDeltaFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 
-public final class KafkaCachePartitionView extends KafkaCacheObjects.ReadOnly<KafkaCachePartitionView, KafkaCachePartition>
+public final class KafkaCacheCursorFactory
 {
     private final KafkaCacheDeltaFW deltaRO = new KafkaCacheDeltaFW();
 
-    private final KafkaCachePartition partition;
-    private final NodeView sentinel;
+    private final MutableDirectBuffer writeBuffer;
     private final CRC32C checksum;
     private final KafkaFilterCondition nullKeyInfo;
 
-    public KafkaCachePartitionView(
-        KafkaCachePartition partition)
-    {
-        super(partition);
-        this.partition = partition;
-        this.sentinel = partition.sentinel().acquire(NodeView::new);
+    public static final int POSITION_UNSET = -1;
 
+    public KafkaCacheCursorFactory(
+        MutableDirectBuffer writeBuffer)
+    {
+        this.writeBuffer = writeBuffer;
         this.checksum = new CRC32C();
         this.nullKeyInfo = initNullKeyInfo(checksum);
     }
 
-    public String name()
-    {
-        return partition.name();
-    }
-
-    public int id()
-    {
-        return partition.id();
-    }
-
-    public NodeView sentinel()
-    {
-        return sentinel;
-    }
-
-    public NodeView seekNotBefore(
-        long offset)
-    {
-        NodeView node = sentinel.next();
-
-        while (node != sentinel && node.segment.baseOffset() < offset)
-        {
-            node = node.next();
-        }
-
-        return node;
-    }
-
-    public NodeView seekNotAfter(
-        long offset)
-    {
-        NodeView node = sentinel.previous();
-
-        while (node != sentinel && node.segment.baseOffset() > offset)
-        {
-            node = node.previous;
-        }
-
-        return node;
-    }
-
-    @Override
-    public String toString()
-    {
-        return String.format("[%s] %s[%d]", getClass().getSimpleName(), name(), id());
-    }
-
-    @Override
-    protected KafkaCachePartitionView self()
-    {
-        return this;
-    }
-
-    @Override
-    protected void onClosed()
-    {
-        NodeView node = sentinel.next();
-
-        while (node != sentinel)
-        {
-            node.close();
-            node = node.next();
-        }
-
-        node.close();
-    }
-
-    public final class NodeView extends KafkaCacheObjects.ReadOnly<NodeView, Node>
-    {
-        private final KafkaCachePartition.Node node;
-        private final KafkaCacheSegmentView segment;
-
-        private NodeView previous;
-        private NodeView next;
-        private NodeView replacedBy;
-
-        NodeView(
-            KafkaCachePartition.Node node)
-        {
-            super(node);
-            this.node = node;
-            this.segment = node.segment() != null ? node.segment().acquire(KafkaCacheSegmentView::new) : null;
-            this.previous = sentinel != null ? sentinel : this;
-            this.next = sentinel != null ? sentinel : this;
-        }
-
-        public KafkaCacheSegmentView segment()
-        {
-            return segment;
-        }
-
-        public boolean sentinel()
-        {
-            return this == sentinel;
-        }
-
-        public NodeView previous()
-        {
-            return previous;
-        }
-
-        public NodeView next()
-        {
-            if (next.node.sentinel())
-            {
-                KafkaCachePartition.Node nodeNext = node.next();
-                if (!nodeNext.sentinel())
-                {
-                    NodeView newNode = nodeNext.acquire(NodeView::new);
-                    newNode.previous = this;
-                    newNode.next = next;
-                    next.previous = newNode;
-
-                    this.next = newNode;
-                    assert next.segment != null;
-                }
-            }
-
-            return next;
-        }
-
-        public NodeView replacement()
-        {
-            if (replacedBy == null)
-            {
-                Node nodeReplacedBy = node.replacedBy();
-                while (nodeReplacedBy != null && nodeReplacedBy.replacedBy() != null)
-                {
-                    nodeReplacedBy = nodeReplacedBy.replacedBy();
-                }
-
-                if (nodeReplacedBy != null)
-                {
-                    NodeView newReplacedBy = nodeReplacedBy.acquire(NodeView::new);
-                    newReplacedBy.previous = previous;
-                    newReplacedBy.next = next;
-                    next.previous = newReplacedBy;
-                    previous.next = newReplacedBy;
-
-                    this.replacedBy = newReplacedBy;
-                }
-            }
-
-            return replacedBy;
-        }
-
-        @Override
-        public String toString()
-        {
-            Function<KafkaCacheSegmentView, String> baseOffset = s -> s != null ? Long.toString(s.baseOffset()) : "sentinel";
-            return String.format("[%s] %s +%d", getClass().getSimpleName(), baseOffset.apply(segment), references());
-        }
-
-        @Override
-        protected NodeView self()
-        {
-            return this;
-        }
-
-        @Override
-        protected void onClosed()
-        {
-            if (this != sentinel)
-            {
-                assert segment != null;
-                segment.close();
-            }
-        }
-    }
-
-    public static final int POSITION_UNSET = -1;
-
     public KafkaCacheCursor newCursor(
-        MutableDirectBuffer deltaBuffer,
         KafkaFilterCondition condition,
         KafkaDeltaType deltaType)
     {
-        return new KafkaCacheCursor(deltaBuffer, condition, deltaType);
+        return new KafkaCacheCursor(condition, deltaType);
     }
 
     public final class KafkaCacheCursor implements AutoCloseable
     {
-        private final MutableDirectBuffer deltaBuffer;
         private final KafkaFilterCondition condition;
         private final KafkaDeltaType deltaType;
         private final LongHashSet deltaKeyOffsets; // TODO: bounded LongHashCache, evict -> discard
 
-        private NodeView segmentNode;
+        private Node segmentNode;
+        private KafkaCacheSegment segment;
         private long offset;
         private long cursor;
 
         KafkaCacheCursor(
-            MutableDirectBuffer deltaBuffer,
             KafkaFilterCondition condition,
             KafkaDeltaType deltaType)
         {
-            this.deltaBuffer = deltaBuffer;
             this.condition = condition;
             this.deltaType = deltaType;
             this.deltaKeyOffsets = new LongHashSet();
         }
 
         public void init(
-            NodeView segmentNode,
+            Node segmentNode,
             long offset)
         {
-            this.segmentNode = sentinelOrAcquire(segmentNode);
+            assert this.segmentNode == null;
+            assert this.segment == null;
+
+            final KafkaCacheSegment segment = segmentNode.segment();
+            assert segment != null;
+
+            this.segmentNode = segmentNode;
+            this.segment = segment.acquire();
             this.offset = offset;
-            final long cursor = condition.reset(segmentNode, offset, POSITION_UNSET);
+            final long cursor = condition.reset(segment, offset, POSITION_UNSET);
             this.cursor = cursor == RETRY_SEGMENT || cursor == NEXT_SEGMENT ? 0L : cursor;
         }
 
@@ -299,15 +127,17 @@ public final class KafkaCachePartitionView extends KafkaCacheObjects.ReadOnly<Ka
 
                 if (cursorNext == NEXT_SEGMENT)
                 {
-                    if (segmentNode.next().sentinel())
+                    final Node segmentNext = segmentNode.next();
+                    if (segmentNext.sentinel())
                     {
                         break next;
                     }
 
-                    sentinelOrClose(segmentNode);
-                    segmentNode = sentinelOrAcquire(segmentNode.next());
+                    segment.release();
+                    segmentNode = segmentNext;
+                    segment = segmentNext.segment().acquire();
 
-                    final long cursor = condition.reset(segmentNode, offset, POSITION_UNSET);
+                    final long cursor = condition.reset(segment, offset, POSITION_UNSET);
                     this.cursor = cursor == RETRY_SEGMENT || cursor == NEXT_SEGMENT ? 0L : cursor;
                     continue;
                 }
@@ -318,7 +148,6 @@ public final class KafkaCachePartitionView extends KafkaCacheObjects.ReadOnly<Ka
                 final int position = cursorValue(cursorNext);
                 assert position >= 0;
 
-                final KafkaCacheSegmentView segment = segmentNode.segment();
                 assert segment != null;
 
                 final KafkaCacheFile logFile = segment.logFile();
@@ -358,22 +187,22 @@ public final class KafkaCachePartitionView extends KafkaCacheObjects.ReadOnly<Ka
                                 final ArrayFW<KafkaHeaderFW> headers = nextEntry.headers();
 
                                 final int sizeofEntryHeader = key.limit() - nextEntry.offset();
-                                deltaBuffer.putBytes(0, entryBuffer, entryOffset, sizeofEntryHeader);
-                                deltaBuffer.putBytes(sizeofEntryHeader, delta.buffer(), delta.offset(), delta.sizeof());
-                                deltaBuffer.putBytes(sizeofEntryHeader + delta.sizeof(),
+                                writeBuffer.putBytes(0, entryBuffer, entryOffset, sizeofEntryHeader);
+                                writeBuffer.putBytes(sizeofEntryHeader, delta.buffer(), delta.offset(), delta.sizeof());
+                                writeBuffer.putBytes(sizeofEntryHeader + delta.sizeof(),
                                         headers.buffer(), headers.offset(), headers.sizeof());
 
                                 final int sizeofEntry = sizeofEntryHeader + delta.sizeof() + headers.sizeof();
-                                nextEntry = cacheEntry.wrap(deltaBuffer, 0, sizeofEntry);
+                                nextEntry = cacheEntry.wrap(writeBuffer, 0, sizeofEntry);
                             }
                             else
                             {
                                 // TODO: consider moving message to next segmentNode if delta exceeds size limit instead
                                 //       still need to handle implicit snapshot case
-                                deltaBuffer.putBytes(0, nextEntry.buffer(), nextEntry.offset(), nextEntry.sizeof());
-                                deltaBuffer.putLong(KafkaCacheEntryFW.FIELD_OFFSET_ANCESTOR, -1L);
+                                writeBuffer.putBytes(0, nextEntry.buffer(), nextEntry.offset(), nextEntry.sizeof());
+                                writeBuffer.putLong(KafkaCacheEntryFW.FIELD_OFFSET_ANCESTOR, -1L);
 
-                                nextEntry = cacheEntry.wrap(deltaBuffer, 0, deltaBuffer.capacity());
+                                nextEntry = cacheEntry.wrap(writeBuffer, 0, writeBuffer.capacity());
                             }
                         }
 
@@ -393,21 +222,13 @@ public final class KafkaCachePartitionView extends KafkaCacheObjects.ReadOnly<Ka
             assert offset > this.offset;
             this.offset = offset;
             this.cursor = nextIndex(nextValue(cursor));
-
-            final NodeView segmentNodeReplacement = segmentNode.replacement();
-            if (segmentNodeReplacement != null)
-            {
-                segmentNode.close();
-                segmentNode = sentinelOrAcquire(segmentNodeReplacement);
-                final long cursor = condition.reset(segmentNode, offset, POSITION_UNSET);
-                this.cursor = cursor == RETRY_SEGMENT || cursor == NEXT_SEGMENT ? 0L : cursor;
-            }
         }
 
         @Override
         public void close()
         {
-            sentinelOrClose(segmentNode);
+            segment.release();
+            segmentNode = null;
         }
 
         @Override
@@ -416,27 +237,12 @@ public final class KafkaCachePartitionView extends KafkaCacheObjects.ReadOnly<Ka
             return String.format("%s[offset %d, cursor %016x, segmentNode %s, condition %s]",
                     getClass().getSimpleName(), offset, cursor, segmentNode, condition);
         }
-
-        private void sentinelOrClose(
-            NodeView segmentNode)
-        {
-            if (!segmentNode.sentinel())
-            {
-                segmentNode.close();
-            }
-        }
-
-        private NodeView sentinelOrAcquire(
-            NodeView segmentNode)
-        {
-            return segmentNode.sentinel() ? segmentNode : segmentNode.acquire();
-        }
     }
 
     public abstract static class KafkaFilterCondition
     {
         public abstract long reset(
-            NodeView segmentNode,
+            KafkaCacheSegment segment,
             long offset,
             int position);
 
@@ -452,7 +258,7 @@ public final class KafkaCachePartitionView extends KafkaCacheObjects.ReadOnly<Ka
 
             @Override
             public long reset(
-                NodeView segmentNode,
+                KafkaCacheSegment segment,
                 long offset,
                 int position)
             {
@@ -460,10 +266,8 @@ public final class KafkaCachePartitionView extends KafkaCacheObjects.ReadOnly<Ka
 
                 long cursor = NEXT_SEGMENT;
 
-                if (!segmentNode.sentinel())
+                if (segment != null)
                 {
-                    final KafkaCacheSegmentView segment = segmentNode.segment();
-                    assert segment != null;
                     final KafkaCacheIndexFile indexFile = segment.indexFile();
                     assert indexFile != null;
 
@@ -511,16 +315,14 @@ public final class KafkaCachePartitionView extends KafkaCacheObjects.ReadOnly<Ka
 
             @Override
             public final long reset(
-                NodeView segmentNode,
+                KafkaCacheSegment segment,
                 long offset,
                 int position)
             {
                 long cursor = NEXT_SEGMENT;
 
-                if (!segmentNode.sentinel())
+                if (segment != null)
                 {
-                    final KafkaCacheSegmentView segment = segmentNode.segment();
-                    assert segment != null;
                     final KafkaCacheIndexFile hashFile = segment.hashFile();
                     assert hashFile != null;
 
@@ -630,17 +432,14 @@ public final class KafkaCachePartitionView extends KafkaCacheObjects.ReadOnly<Ka
 
             @Override
             public long reset(
-                NodeView segmentNode,
+                KafkaCacheSegment segment,
                 long offset,
                 int position)
             {
                 long nextCursorMin = NEXT_SEGMENT;
 
-                if (!segmentNode.sentinel())
+                if (segment != null)
                 {
-                    final KafkaCacheSegmentView segment = segmentNode.segment();
-                    assert segment != null;
-
                     if (position == POSITION_UNSET)
                     {
                         final KafkaCacheIndexFile indexFile = segment.indexFile();
@@ -654,7 +453,7 @@ public final class KafkaCachePartitionView extends KafkaCacheObjects.ReadOnly<Ka
                     for (int i = 0; i < conditions.size(); i++)
                     {
                         final KafkaFilterCondition condition = conditions.get(i);
-                        final long nextCursor = condition.reset(segmentNode, offset, position);
+                        final long nextCursor = condition.reset(segment, offset, position);
 
                         nextCursorMin = minByValue(nextCursor, nextCursorMin);
                         nextCursorMax = maxByValue(nextCursor, nextCursorMax);
@@ -736,17 +535,14 @@ public final class KafkaCachePartitionView extends KafkaCacheObjects.ReadOnly<Ka
 
             @Override
             public long reset(
-                NodeView segmentNode,
+                KafkaCacheSegment segment,
                 long offset,
                 int position)
             {
                 long nextCursorMin = NEXT_SEGMENT;
 
-                if (!segmentNode.sentinel())
+                if (segment != null)
                 {
-                    final KafkaCacheSegmentView segment = segmentNode.segment();
-                    assert segment != null;
-
                     if (position == POSITION_UNSET)
                     {
                         final KafkaCacheIndexFile indexFile = segment.indexFile();
@@ -759,7 +555,7 @@ public final class KafkaCachePartitionView extends KafkaCacheObjects.ReadOnly<Ka
                     for (int i = 0; i < conditions.size(); i++)
                     {
                         final KafkaFilterCondition condition = conditions.get(i);
-                        final long nextCursor = condition.reset(segmentNode, offset, position);
+                        final long nextCursor = condition.reset(segment, offset, position);
                         nextCursorMin = minByValue(nextCursor, nextCursorMin);
                     }
                 }

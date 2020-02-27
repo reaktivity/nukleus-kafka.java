@@ -45,31 +45,17 @@ public class KafkaCachePartitionTest
     public TemporaryFolder tempFolder = new TemporaryFolder();
 
     @Test
-    public void shouldCloseNodes() throws Exception
+    public void shouldSeekNotAfterNotFound() throws Exception
     {
         Path location = tempFolder.newFolder().toPath();
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
         KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
 
-        partition.close();
+        partition.append(10);
+        partition.append(20);
+        partition.append(30);
 
-        assert partition.sentinel().closed();
-    }
-
-    @Test
-    public void shouldSeekNotAfterNotFound() throws Exception
-    {
-        Path location = tempFolder.newFolder().toPath();
-        KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
-
-        try (KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0))
-        {
-            partition.append(10);
-            partition.append(20);
-            partition.append(30);
-
-            assertEquals(partition.sentinel(), partition.seekNotAfter(5));
-        }
+        assertEquals(partition.sentinel(), partition.seekNotAfter(5));
     }
 
     @Test
@@ -77,15 +63,13 @@ public class KafkaCachePartitionTest
     {
         Path location = tempFolder.newFolder().toPath();
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
+        KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
 
-        try (KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0))
-        {
-            partition.append(10);
-            partition.append(20);
-            partition.append(30);
+        partition.append(10);
+        partition.append(20);
+        partition.append(30);
 
-            assertEquals(10, partition.seekNotAfter(10).segment().baseOffset());
-        }
+        assertEquals(10, partition.seekNotAfter(10).segment().baseOffset());
     }
 
     @Test
@@ -93,15 +77,13 @@ public class KafkaCachePartitionTest
     {
         Path location = tempFolder.newFolder().toPath();
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
+        KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
 
-        try (KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0))
-        {
-            partition.append(10);
-            partition.append(20);
-            partition.append(30);
+        partition.append(10);
+        partition.append(20);
+        partition.append(30);
 
-            assertEquals(10, partition.seekNotAfter(15).segment().baseOffset());
-        }
+        assertEquals(10, partition.seekNotAfter(15).segment().baseOffset());
     }
 
     @Test
@@ -109,15 +91,13 @@ public class KafkaCachePartitionTest
     {
         Path location = tempFolder.newFolder().toPath();
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
+        KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
 
-        try (KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0))
-        {
-            partition.append(10);
-            partition.append(20);
-            partition.append(30);
+        partition.append(10);
+        partition.append(20);
+        partition.append(30);
 
-            assertEquals(partition.sentinel(), partition.seekNotBefore(35));
-        }
+        assertEquals(partition.sentinel(), partition.seekNotBefore(35));
     }
 
     @Test
@@ -125,15 +105,13 @@ public class KafkaCachePartitionTest
     {
         Path location = tempFolder.newFolder().toPath();
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
+        KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
 
-        try (KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0))
-        {
-            partition.append(10);
-            partition.append(20);
-            partition.append(30);
+        partition.append(10);
+        partition.append(20);
+        partition.append(30);
 
-            assertEquals(10, partition.seekNotBefore(10).segment().baseOffset());
-        }
+        assertEquals(10, partition.seekNotBefore(10).segment().baseOffset());
     }
 
     @Test
@@ -141,15 +119,13 @@ public class KafkaCachePartitionTest
     {
         Path location = tempFolder.newFolder().toPath();
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
+        KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
 
-        try (KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0))
-        {
-            partition.append(10);
-            partition.append(20);
-            partition.append(30);
+        partition.append(10);
+        partition.append(20);
+        partition.append(30);
 
-            assertEquals(20, partition.seekNotBefore(15).segment().baseOffset());
-        }
+        assertEquals(20, partition.seekNotBefore(15).segment().baseOffset());
     }
 
     @Test
@@ -157,24 +133,20 @@ public class KafkaCachePartitionTest
     {
         Path location = tempFolder.newFolder().toPath();
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
+        KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
 
-        try (KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0))
-        {
-            Node node10 = partition.append(10);
-            Node node20 = partition.append(20);
-            Node node30 = partition.append(30);
+        Node node10 = partition.append(10);
+        KafkaCacheSegment node10s = node10.segment();
 
-            Node sentinel = partition.sentinel();
-            Node node10a = sentinel.next();
-            Node node20a = node10a.next();
-            Node node30a = node20a.next();
+        Node node20 = partition.append(20);
+        KafkaCacheSegment node20s = node20.segment();
 
-            assertNotSame(node10, node10a);
-            assertSame(node10.replacedBy(), node10a);
-            assertNotSame(node20, node20a);
-            assertSame(node20.replacedBy(), node20a);
-            assertSame(node30, node30a);
-        }
+        Node node30 = partition.append(30);
+        KafkaCacheSegment node30s = node30.segment();
+
+        assertNotSame(node10s, node10.segment());
+        assertNotSame(node20s, node20.segment());
+        assertSame(node30s, node30.segment());
     }
 
     @Test
@@ -182,24 +154,21 @@ public class KafkaCachePartitionTest
     {
         Path location = tempFolder.newFolder().toPath();
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
+        KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
 
-        try (KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0))
-        {
-            partition.append(10);
-            partition.append(20);
-            partition.append(30);
+        partition.append(10);
+        partition.append(20);
+        partition.append(30);
 
-            Node sentinel = partition.sentinel();
-            Node node10 = sentinel.next();
-            Node node20 = node10.next();
-            Node node30 = node20.next();
+        Node sentinel = partition.sentinel();
+        Node node10 = sentinel.next();
+        Node node20 = node10.next();
+        Node node30 = node20.next();
 
-            node20.remove();
-            node20.close();
+        node20.remove();
 
-            assertSame(node10, node30.previous());
-            assertSame(node30, node10.next());
-        }
+        assertSame(node10, node30.previous());
+        assertSame(node30, node10.next());
     }
 
     @Test
@@ -207,13 +176,11 @@ public class KafkaCachePartitionTest
     {
         Path location = tempFolder.newFolder().toPath();
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
+        KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
 
-        try (KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0))
-        {
-            assertEquals("test", partition.name());
-            assertEquals(0, partition.id());
-            assertEquals("[KafkaCachePartition] test[0] +1", partition.toString());
-        }
+        assertEquals("test", partition.name());
+        assertEquals(0, partition.id());
+        assertEquals("[KafkaCachePartition] test[0]", partition.toString());
     }
 
     public static class NodeTest
@@ -246,31 +213,33 @@ public class KafkaCachePartitionTest
 
             KafkaCacheEntryFW ancestorRO = new KafkaCacheEntryFW();
 
-            try (KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
-                    Node head10 = partition.append(10L))
-            {
-                partition.writeEntry(11L, 0L, key, headers, value, null, KafkaDeltaType.NONE);
+            KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
+            Node head10 = partition.append(10L);
+            KafkaCacheSegment head10s = head10.segment();
 
-                long keyHash = partition.computeKeyHash(key);
-                KafkaCacheEntryFW ancestor = head10.findAndMarkAncestor(key, keyHash, ancestorRO);
+            partition.writeEntry(11L, 0L, key, headers, value, null, KafkaDeltaType.NONE);
 
-                partition.writeEntry(12L, 0L, key, headers, value, ancestor, KafkaDeltaType.NONE);
+            long keyHash = partition.computeKeyHash(key);
+            KafkaCacheEntryFW ancestor = head10.findAndMarkAncestor(key, keyHash, ancestorRO);
 
-                Node head15 = partition.append(15L);
-                Node tail10 = head15.previous();
+            partition.writeEntry(12L, 0L, key, headers, value, ancestor, KafkaDeltaType.NONE);
 
-                long now = currentTimeMillis();
-                tail10.segment().cleanableAt(now);
-                tail10.clean(now);
-                tail10.close();
+            Node head15 = partition.append(15L);
+            KafkaCacheSegment head15s = head15.segment();
+            Node tail10 = head15.previous();
+            KafkaCacheSegment tail10s = tail10.segment();
 
-                Node clean10 = tail10.replacedBy();
+            long now = currentTimeMillis();
+            tail10s.cleanableAt(now);
+            tail10.clean(now);
 
-                assertNotNull(clean10);
-                assertEquals("[Node] 10 +0", head10.toString());
-                assertEquals("[Node] 10 +0", tail10.toString());
-                assertEquals("[Node] 10 +1", clean10.toString());
-            }
+            KafkaCacheSegment clean10s = tail10.segment();
+
+            assertNotNull(clean10s);
+            assertEquals("[KafkaCacheSegment] test[0] @ 10 +0", head10s.toString());
+            assertEquals("[KafkaCacheSegment] test[0] @ 10 +0", tail10s.toString());
+            assertEquals("[KafkaCacheSegment] test[0] @ 10 +1", clean10s.toString());
+            assertEquals("[KafkaCacheSegment] test[0] @ 15 +1", head15s.toString());
         }
 
         @Test
@@ -296,23 +265,22 @@ public class KafkaCachePartitionTest
 
             KafkaCacheEntryFW ancestorRO = new KafkaCacheEntryFW();
 
-            try (KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
-                    Node head10 = partition.append(10L))
-            {
-                partition.writeEntry(11L, 0L, key, headers, value, null, KafkaDeltaType.NONE);
+            KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
+            Node head10 = partition.append(10L);
 
-                long keyHash = partition.computeKeyHash(key);
-                KafkaCacheEntryFW ancestor = head10.findAndMarkAncestor(key, keyHash, ancestorRO);
+            partition.writeEntry(11L, 0L, key, headers, value, null, KafkaDeltaType.NONE);
 
-                partition.writeEntry(12L, 0L, key, headers, value, ancestor, KafkaDeltaType.NONE);
+            long keyHash = partition.computeKeyHash(key);
+            KafkaCacheEntryFW ancestor = head10.findAndMarkAncestor(key, keyHash, ancestorRO);
 
-                Node head15 = partition.append(15L);
-                Node tail10 = head15.previous();
+            partition.writeEntry(12L, 0L, key, headers, value, ancestor, KafkaDeltaType.NONE);
 
-                Node seek10 = head15.seekAncestor(10L);
+            Node head15 = partition.append(15L);
+            Node tail10 = head15.previous();
 
-                assertEquals(seek10, tail10);
-            }
+            Node seek10 = head15.seekAncestor(10L);
+
+            assertEquals(seek10, tail10);
         }
 
         @Test
@@ -321,11 +289,10 @@ public class KafkaCachePartitionTest
             Path location = tempFolder.newFolder().toPath();
             KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
 
-            try (KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
-                    Node node10 = partition.append(10L))
-            {
-                assertEquals("[Node] 10 +1", node10.toString());
-            }
+            KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
+            Node node10 = partition.append(10L);
+
+            assertEquals("[Node] 10", node10.toString());
         }
 
         @Test
@@ -334,11 +301,10 @@ public class KafkaCachePartitionTest
             Path location = tempFolder.newFolder().toPath();
             KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
 
-            try (KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0))
-            {
-                Node sentinel = partition.sentinel();
-                assertEquals("[Node] sentinel +1", sentinel.toString());
-            }
+            KafkaCachePartition partition = new KafkaCachePartition(location, config, "test", 0);
+            Node sentinel = partition.sentinel();
+
+            assertEquals("[Node] sentinel", sentinel.toString());
         }
     }
 }
