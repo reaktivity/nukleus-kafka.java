@@ -44,8 +44,8 @@ public class KafkaConfiguration extends Configuration
     public static final IntPropertyDef KAFKA_CACHE_SEGMENT_BYTES;
     public static final IntPropertyDef KAFKA_CACHE_SEGMENT_INDEX_BYTES;
     public static final BooleanPropertyDef KAFKA_CACHE_SERVER_BOOTSTRAP;
-    public static final BooleanPropertyDef KAFKA_CACHE_CLIENT_RECONNECT;
-    public static final BooleanPropertyDef KAFKA_CACHE_SERVER_RECONNECT;
+    public static final IntPropertyDef KAFKA_CACHE_CLIENT_RECONNECT_DELAY;
+    public static final IntPropertyDef KAFKA_CACHE_SERVER_RECONNECT_DELAY;
 
     private static final ConfigurationDef KAFKA_CONFIG;
 
@@ -59,8 +59,8 @@ public class KafkaConfiguration extends Configuration
         KAFKA_CLIENT_FETCH_PARTITION_MAX_BYTES = config.property("client.fetch.partition.max.bytes", 50 * 1024 * 1024);
         KAFKA_CACHE_DIRECTORY = config.property(Path.class, "cache.directory", (c, v) -> cacheDirectory(c, v), KafkaNukleus.NAME);
         KAFKA_CACHE_SERVER_BOOTSTRAP = config.property("cache.server.bootstrap", true);
-        KAFKA_CACHE_SERVER_RECONNECT = config.property("cache.server.reconnect", true);
-        KAFKA_CACHE_CLIENT_RECONNECT = config.property("cache.client.reconnect", false);
+        KAFKA_CACHE_SERVER_RECONNECT_DELAY = config.property("cache.server.reconnect", 5);
+        KAFKA_CACHE_CLIENT_RECONNECT_DELAY = config.property("cache.client.reconnect", 0);
         KAFKA_CACHE_CLEANUP_POLICY = config.property(KafkaCacheCleanupPolicy.class, "cache.cleanup.policy",
                 KafkaConfiguration::cleanupPolicy, "delete");
         KAFKA_CACHE_MAX_MESSAGE_BYTES = config.property("cache.max.message.bytes", 1000012);
@@ -177,14 +177,14 @@ public class KafkaConfiguration extends Configuration
         return KAFKA_CACHE_SERVER_BOOTSTRAP.getAsBoolean(this);
     }
 
-    public boolean cacheClientReconnect()
+    public int cacheClientReconnect()
     {
-        return KAFKA_CACHE_CLIENT_RECONNECT.getAsBoolean(this);
+        return KAFKA_CACHE_CLIENT_RECONNECT_DELAY.getAsInt(this);
     }
 
-    public boolean cacheServerReconnect()
+    public int cacheServerReconnect()
     {
-        return KAFKA_CACHE_SERVER_RECONNECT.getAsBoolean(this);
+        return KAFKA_CACHE_SERVER_RECONNECT_DELAY.getAsInt(this);
     }
 
     private static Path cacheDirectory(

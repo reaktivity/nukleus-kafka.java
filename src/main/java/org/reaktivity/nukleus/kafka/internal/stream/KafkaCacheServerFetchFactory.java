@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.lang.System.currentTimeMillis;
+import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
@@ -126,10 +127,11 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
     private final Signaler signaler;
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
+    private final LongSupplier supplyTraceId;
     private final Function<String, KafkaCache> supplyCache;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
-    private final boolean reconnect;
+    private final int reconnectDelay;
 
     public KafkaCacheServerFetchFactory(
         KafkaConfiguration config,
@@ -152,10 +154,11 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         this.signaler = signaler;
         this.supplyInitialId = supplyInitialId;
         this.supplyReplyId = supplyReplyId;
+        this.supplyTraceId = supplyTraceId;
         this.supplyCache = supplyCache;
         this.supplyCacheRoute = supplyCacheRoute;
         this.correlations = correlations;
-        this.reconnect = config.cacheServerReconnect();
+        this.reconnectDelay = config.cacheServerReconnect();
     }
 
     @Override
@@ -362,6 +365,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
     final class KafkaCacheServerFetchFanout
     {
+        private static final int SIGNAL_RECONNECT = 1;
         private final long routeId;
         private final long authorization;
         private final KafkaCachePartition partition;
@@ -578,7 +582,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 final int deferred = kafkaFetchDataEx.deferred();
                 final int partitionId = kafkaFetchDataEx.partition().partitionId();
                 final long partitionOffset = kafkaFetchDataEx.partition().partitionOffset();
-                final int headersSizeMax = kafkaFetchDataEx.headersSizeMax();
+                final int headersSizeMax = Math.max(kafkaFetchDataEx.headers().sizeof(), kafkaFetchDataEx.headersSizeMax());
                 final long timestamp = kafkaFetchDataEx.timestamp();
                 final KafkaKeyFW key = kafkaFetchDataEx.key();
                 final KafkaDeltaFW delta = kafkaFetchDataEx.delta();
@@ -587,7 +591,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 assert delta.type().get() == KafkaDeltaType.NONE;
                 assert delta.ancestorOffset() == -1L;
                 assert partitionId == partition.id();
-                assert partitionOffset >= this.partitionOffset;
+                assert partitionOffset >= this.partitionOffset : String.format("%d >= %d", partitionOffset, this.partitionOffset);
 
                 final KafkaCachePartition.Node head = partition.head();
                 final KafkaCachePartition.Node nextHead =
@@ -692,12 +696,15 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                     long keyCursor = previousKeys.last(keyHash);
                     while (keyCursor != NEXT_SEGMENT && keyCursor != RETRY_SEGMENT)
                     {
-                        final long baseOffset = previousSegment.baseOffset() + cursorValue(keyCursor);
-                        final Node ancestorNode = previousNode.seekAncestor(baseOffset);
+                        final int keyBaseOffsetDelta = cursorValue(keyCursor);
+                        assert keyBaseOffsetDelta <= 0;
+                        final long keyBaseOffset = previousSegment.baseOffset() + keyBaseOffsetDelta;
+                        final Node ancestorNode = previousNode.seekAncestor(keyBaseOffset);
                         if (!ancestorNode.sentinel())
                         {
                             final KafkaCacheSegment segment = ancestorNode.segment();
-                            assert segment.baseOffset() == baseOffset;
+                            final long ancestorBase = segment.baseOffset();
+                            assert ancestorBase == keyBaseOffset : String.format("%d == %d", ancestorBase, keyBaseOffset);
                             ancestorEntry = ancestorNode.findAndMarkAncestor(key, keyHash, ancestorEntryRO);
                             if (ancestorEntry != null)
                             {
@@ -768,7 +775,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
             doServerFanoutReplyResetIfNecessary(traceId);
 
-            if (reconnect)
+            if (reconnectDelay != 0)
             {
                 // TODO: coordinate to maintain KafkaCachePartition single writer
                 final KafkaResetExFW kafkaResetEx = extension.get(kafkaResetExRO::tryWrap);
@@ -776,14 +783,27 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
                 if (error != ERROR_NOT_LEADER_FOR_PARTITION)
                 {
-                    System.out.format("TODO: progressive back-off, FETCH error %d\n", error);
-                    doServerFanoutInitialBeginIfNecessary(traceId);
+                    signaler.signalAt(
+                        currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
+                        SIGNAL_RECONNECT,
+                        this::onServerFanoutSignal);
                 }
             }
             else
             {
                 members.forEach(s -> s.doServerInitialResetIfNecessary(traceId));
             }
+        }
+
+        private void onServerFanoutSignal(
+            int signalId)
+        {
+            assert signalId == SIGNAL_RECONNECT;
+
+            final long traceId = supplyTraceId.getAsLong();
+
+            System.out.format("FETCH reconnect\n");
+            doServerFanoutInitialBeginIfNecessary(traceId);
         }
 
         private void onServerFanoutInitialWindow(

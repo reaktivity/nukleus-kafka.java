@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static java.lang.Integer.compareUnsigned;
+import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 import static java.nio.file.StandardOpenOption.READ;
 import static java.nio.file.StandardOpenOption.WRITE;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
@@ -32,6 +33,7 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 
 import org.agrona.IoUtil;
 import org.agrona.LangUtil;
@@ -40,6 +42,7 @@ import org.agrona.concurrent.UnsafeBuffer;
 
 public abstract class KafkaCacheIndexFile extends KafkaCacheFile
 {
+
     protected KafkaCacheIndexFile(
         Path location,
         int capacity,
@@ -339,18 +342,24 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
 
     public static class SortedByValue extends KafkaCacheIndexFile
     {
+        private final long[] sortSpace;
+
         protected SortedByValue(
             Path location,
             int capacity,
-            MutableDirectBuffer appendBuf)
+            MutableDirectBuffer appendBuf,
+            long[] sortSpace)
         {
             super(location, capacity, appendBuf);
+            this.sortSpace = sortSpace;
         }
 
         protected SortedByValue(
-            Path location)
+            Path location,
+            long[] sortSpace)
         {
             super(location);
+            this.sortSpace = sortSpace;
         }
 
         @Override
@@ -515,7 +524,7 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
             try
             {
                 final Path unsortedFile = location();
-                Files.copy(unsortedFile, workingFile);
+                Files.copy(unsortedFile, workingFile, REPLACE_EXISTING);
 
                 try (FileChannel channel = FileChannel.open(workingFile, READ, WRITE))
                 {
@@ -531,7 +540,7 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
                     LangUtil.rethrowUnchecked(ex);
                 }
 
-                Files.move(workingFile, sortedFile);
+                Files.move(workingFile, sortedFile, REPLACE_EXISTING);
                 Files.delete(unsortedFile);
             }
             catch (IOException ex)
@@ -547,7 +556,7 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
             try
             {
                 final Path unsortedFile = location();
-                Files.copy(unsortedFile, workingFile);
+                Files.copy(unsortedFile, workingFile, REPLACE_EXISTING);
 
                 try (FileChannel channel = FileChannel.open(workingFile, READ, WRITE))
                 {
@@ -566,7 +575,7 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
                     LangUtil.rethrowUnchecked(ex);
                 }
 
-                Files.move(workingFile, sortedFile);
+                Files.move(workingFile, sortedFile, REPLACE_EXISTING);
                 Files.delete(unsortedFile);
             }
             catch (IOException ex)
@@ -579,19 +588,20 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
             MutableDirectBuffer buffer)
         {
             final int capacity = buffer.capacity();
+            final int length = capacity >> 3;
 
-            // TODO: better O(N) sort algorithm
-            final int maxIndex = capacity - Long.BYTES;
-            for (int index = 0, priorIndex = index; index < maxIndex; priorIndex = index += Long.BYTES)
+                assert sortSpace != null && length <= sortSpace.length;
+
+            for (int index = 0, offset = 0; index < length; index++, offset += Long.BYTES)
             {
-                final long candidate = buffer.getLong(index + Long.BYTES);
-                while (priorIndex >= 0 &&
-                       Long.compareUnsigned(candidate, buffer.getLong(priorIndex)) < 0)
-                {
-                    buffer.putLong(priorIndex + Long.BYTES, buffer.getLong(priorIndex));
-                    priorIndex -= Long.BYTES;
-                }
-                buffer.putLong(priorIndex + Long.BYTES, candidate);
+                sortSpace[index] = buffer.getLong(offset);
+            }
+
+            Arrays.sort(sortSpace, 0, length);
+
+            for (int index = 0, offset = 0; index < length; index++, offset += Long.BYTES)
+            {
+                buffer.putLong(offset, sortSpace[index]);
             }
         }
 

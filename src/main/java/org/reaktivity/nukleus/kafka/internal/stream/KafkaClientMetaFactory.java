@@ -421,12 +421,12 @@ public final class KafkaClientMetaFactory implements StreamFactory
                 break decode;
             }
 
-            progress = responseHeader.limit();
-
             final int responseSize = responseHeader.length();
 
             if (length >= responseHeader.sizeof() + responseSize)
             {
+                progress = responseHeader.limit();
+
                 final MetadataResponseFW metadataResponse = metadataResponseRO.tryWrap(buffer, progress, limit);
                 if (metadataResponse == null)
                 {
@@ -1214,13 +1214,9 @@ public final class KafkaClientMetaFactory implements StreamFactory
                     {
                         doApplicationEnd(traceId);
                     }
-                    else
+                    else if (reserved > 0)
                     {
-                        final int credit = progress - offset;
-                        if (credit > 0)
-                        {
-                            doNetworkWindow(traceId, budgetId, credit, 0);
-                        }
+                        doNetworkWindow(traceId, budgetId, reserved, 0);
                     }
                 }
             }

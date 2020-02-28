@@ -15,6 +15,9 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static java.lang.System.currentTimeMillis;
+import static java.util.concurrent.TimeUnit.SECONDS;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -29,8 +32,9 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Int2IntHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
-import org.reaktivity.nukleus.Configuration.BooleanPropertyDef;
+import org.reaktivity.nukleus.Configuration.IntPropertyDef;
 import org.reaktivity.nukleus.buffer.BufferPool;
+import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessageFunction;
 import org.reaktivity.nukleus.function.MessagePredicate;
@@ -90,35 +94,40 @@ public final class KafkaCacheMetaFactory implements StreamFactory
     private final MutableDirectBuffer writeBuffer;
     private final MutableDirectBuffer extBuffer;
     private final BufferPool bufferPool;
+    private final Signaler signaler;
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
+    private final LongSupplier supplyTraceId;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
-    private final boolean reconnect;
+    private final int reconnectDelay;
 
     public KafkaCacheMetaFactory(
         KafkaConfiguration config,
         RouteManager router,
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
+        Signaler signaler,
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTraceId,
         ToIntFunction<String> supplyTypeId,
         LongFunction<KafkaCacheRoute> supplyCacheRoute,
         Long2ObjectHashMap<MessageConsumer> correlations,
-        BooleanPropertyDef reconnect)
+        IntPropertyDef reconnectDelay)
     {
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.router = router;
         this.writeBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
         this.extBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
         this.bufferPool = bufferPool;
+        this.signaler = signaler;
         this.supplyInitialId = supplyInitialId;
         this.supplyReplyId = supplyReplyId;
+        this.supplyTraceId = supplyTraceId;
         this.supplyCacheRoute = supplyCacheRoute;
         this.correlations = correlations;
-        this.reconnect = reconnect.getAsBoolean(config);
+        this.reconnectDelay = reconnectDelay.getAsInt(config);
     }
 
     @Override
@@ -311,6 +320,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
 
     final class KafkaCacheMetaFanout
     {
+        private static final int SIGNAL_RECONNECT = 1;
         private final long routeId;
         private final long authorization;
         private final String topic;
@@ -462,10 +472,12 @@ public final class KafkaCacheMetaFactory implements StreamFactory
 
             doMetaFanoutReplyResetIfNecessary(traceId);
 
-            if (reconnect)
+            if (reconnectDelay != 0)
             {
-                System.out.println("TODO: progressive back-off, META");
-                doMetaFanoutInitialBeginIfNecessary(traceId);
+                signaler.signalAt(
+                        currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
+                        SIGNAL_RECONNECT,
+                        this::onMetaFanoutSignal);
             }
             else
             {
@@ -582,15 +594,28 @@ public final class KafkaCacheMetaFactory implements StreamFactory
 
             doMetaFanoutInitialAbortIfNecessary(traceId);
 
-            if (reconnect)
+            if (reconnectDelay != 0)
             {
-                System.out.println("TODO: progressive back-off");
-                doMetaFanoutInitialBeginIfNecessary(traceId);
+                signaler.signalAt(
+                        currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
+                        SIGNAL_RECONNECT,
+                        this::onMetaFanoutSignal);
             }
             else
             {
                 members.forEach(s -> s.doMetaReplyAbortIfNecessary(traceId));
             }
+        }
+
+        private void onMetaFanoutSignal(
+            int signalId)
+        {
+            assert signalId == SIGNAL_RECONNECT;
+
+            final long traceId = supplyTraceId.getAsLong();
+
+            System.out.format("META reconnect\n");
+            doMetaFanoutInitialBeginIfNecessary(traceId);
         }
 
         private void doMetaFanoutReplyResetIfNecessary(

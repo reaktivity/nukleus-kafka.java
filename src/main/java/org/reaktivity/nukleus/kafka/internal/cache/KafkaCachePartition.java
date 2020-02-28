@@ -61,6 +61,10 @@ public final class KafkaCachePartition
 
     private static final int CACHE_ENTRY_FLAGS_DIRTY = 0x01;
 
+    public static final int OFFSET_EARLIEST = -2;
+
+    public static final int OFFSET_LATEST = -1;
+
     private final KafkaCacheEntryFW headEntryRO = new KafkaCacheEntryFW();
     private final KafkaCacheEntryFW logEntryRO = new KafkaCacheEntryFW();
     private final KafkaCacheDeltaFW deltaEntryRO = new KafkaCacheDeltaFW();
@@ -73,11 +77,12 @@ public final class KafkaCachePartition
     private final MutableDirectBuffer diffBuffer = new ExpandableArrayBuffer();
     private final ExpandableDirectBufferOutputStream diffOut = new ExpandableDirectBufferOutputStream();
 
-    private final MutableDirectBuffer appendBuf;
     private final Path location;
     private final KafkaCacheTopicConfig config;
     private final String name;
     private final int id;
+    private final MutableDirectBuffer appendBuf;
+    private final long[] sortSpace;
     private final Node sentinel;
     private final CRC32C checksum;
 
@@ -85,9 +90,6 @@ public final class KafkaCachePartition
 
     private KafkaCacheEntryFW ancestorEntry;
 
-    public static final int OFFSET_EARLIEST = -2;
-
-    public static final int OFFSET_LATEST = -1;
 
     public KafkaCachePartition(
         Path location,
@@ -100,6 +102,7 @@ public final class KafkaCachePartition
         this.name = name;
         this.id = id;
         this.appendBuf = new UnsafeBuffer(allocateDirect(64 * 1024)); // TODO: configure
+        this.sortSpace = new long[config.segmentIndexBytes >> 3];
         this.sentinel = new Node();
         this.checksum = new CRC32C();
         this.progress = OFFSET_EARLIEST;
@@ -138,7 +141,7 @@ public final class KafkaCachePartition
 
         final Node head = sentinel.previous;
 
-        KafkaCacheSegment segment = new KafkaCacheSegment(location, config, name, id, offset, appendBuf);
+        KafkaCacheSegment segment = new KafkaCacheSegment(location, config, name, id, offset, appendBuf, sortSpace);
         Node node = new Node(segment);
         node.previous = head;
         node.next = sentinel;
@@ -305,10 +308,10 @@ public final class KafkaCachePartition
         final Node head = sentinel.previous;
         assert head != sentinel;
 
-        final KafkaCacheSegment segment = head.segment;
-        assert segment != null;
+        final KafkaCacheSegment headSegment = head.segment;
+        assert headSegment != null;
 
-        final KafkaCacheFile logFile = segment.logFile();
+        final KafkaCacheFile logFile = headSegment.logFile();
 
         final int logAvailable = logFile.available();
         final int logRequired = payload.sizeof();
@@ -324,21 +327,21 @@ public final class KafkaCachePartition
         final Node head = sentinel.previous;
         assert head != sentinel;
 
-        final KafkaCacheSegment segment = head.segment;
-        assert segment != null;
+        final KafkaCacheSegment headSegment = head.segment;
+        assert headSegment != null;
 
-        final KafkaCacheFile logFile = segment.logFile();
-        final KafkaCacheFile deltaFile = segment.deltaFile();
-        final KafkaCacheFile hashFile = segment.hashFile();
-        final KafkaCacheFile indexFile = segment.indexFile();
+        final KafkaCacheFile logFile = headSegment.logFile();
+        final KafkaCacheFile deltaFile = headSegment.deltaFile();
+        final KafkaCacheFile hashFile = headSegment.hashFile();
+        final KafkaCacheFile indexFile = headSegment.indexFile();
 
         final int logAvailable = logFile.available();
         final int logRequired = headers.sizeof();
-        assert logAvailable >= logRequired;
+        assert logAvailable >= logRequired : String.format("%s %d >= %d", headSegment, logAvailable, logRequired);
 
         logFile.appendBytes(headers);
 
-        final long offsetDelta = (int)(progress - segment.baseOffset());
+        final long offsetDelta = (int)(progress - headSegment.baseOffset());
         final long indexEntry = (offsetDelta << 32) | logFile.markValue();
 
         if (!headers.isEmpty())
@@ -393,7 +396,7 @@ public final class KafkaCachePartition
             deltaFile.appendBytes(diffBuffer, 0, Integer.BYTES + deltaLength);
         }
 
-        segment.lastOffset(progress);
+        headSegment.lastOffset(progress);
     }
 
     public long retainAt(
@@ -553,7 +556,7 @@ public final class KafkaCachePartition
                 // TODO: use temporary files plus move to avoid corrupted log on restart
                 segment.delete();
 
-                final KafkaCacheSegment appender = new KafkaCacheSegment(segment, config, appendBuf);
+                final KafkaCacheSegment appender = new KafkaCacheSegment(segment, config, appendBuf, sortSpace);
                 final KafkaCacheFile logFile = segment.logFile();
                 final KafkaCacheFile deltaFile = segment.deltaFile();
 

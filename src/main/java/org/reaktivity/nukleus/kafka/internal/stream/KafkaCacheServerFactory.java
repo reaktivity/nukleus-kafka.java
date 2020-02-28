@@ -15,7 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_RECONNECT;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_RECONNECT_DELAY;
 
 import java.util.function.Function;
 import java.util.function.LongFunction;
@@ -71,11 +71,11 @@ public final class KafkaCacheServerFactory implements StreamFactory
                 supplyTraceId, supplyTypeId, correlations));
 
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_META, new KafkaCacheMetaFactory(
-                config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
-                supplyTraceId, supplyTypeId, supplyCacheRoute, correlations, KAFKA_CACHE_SERVER_RECONNECT));
+                config, router, writeBuffer, bufferPool, signaler, supplyInitialId, supplyReplyId,
+                supplyTraceId, supplyTypeId, supplyCacheRoute, correlations, KAFKA_CACHE_SERVER_RECONNECT_DELAY));
 
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_DESCRIBE, new KafkaCacheServerDescribeFactory(
-                config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId,
+                config, router, writeBuffer, bufferPool, signaler, supplyInitialId, supplyReplyId,
                 supplyTraceId, supplyTypeId, supplyCache, supplyCacheRoute, correlations));
 
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_FETCH, new KafkaCacheServerFetchFactory(

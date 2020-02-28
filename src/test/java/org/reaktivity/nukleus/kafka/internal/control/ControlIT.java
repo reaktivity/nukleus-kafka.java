@@ -18,7 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.control;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_BOOTSTRAP;
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_RECONNECT;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_RECONNECT_DELAY;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -50,7 +50,7 @@ public class ControlIT
             .responseBufferCapacity(1024)
             .counterValuesBufferCapacity(4096)
             .configure(KAFKA_CACHE_SERVER_BOOTSTRAP, false)
-            .configure(KAFKA_CACHE_SERVER_RECONNECT, false)
+            .configure(KAFKA_CACHE_SERVER_RECONNECT_DELAY, 0)
             .configure(ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE, false);
 
     @Rule

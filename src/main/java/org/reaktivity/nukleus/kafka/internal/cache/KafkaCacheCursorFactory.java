@@ -100,12 +100,12 @@ public final class KafkaCacheCursorFactory
             assert this.segmentNode == null;
             assert this.segment == null;
 
-            final KafkaCacheSegment segment = segmentNode.segment();
-            assert segment != null;
 
             this.segmentNode = segmentNode;
-            this.segment = segment.acquire();
             this.offset = offset;
+
+            assert segmentNode.segment() != null;
+            this.segment = segmentNode.segment().acquire();
             final long cursor = condition.reset(segment, offset, POSITION_UNSET);
             this.cursor = cursor == RETRY_SEGMENT || cursor == NEXT_SEGMENT ? 0L : cursor;
         }
@@ -222,6 +222,19 @@ public final class KafkaCacheCursorFactory
             assert offset > this.offset;
             this.offset = offset;
             this.cursor = nextIndex(nextValue(cursor));
+
+            assert segmentNode != null;
+            assert segment != null;
+
+            final KafkaCacheSegment newSegment = segmentNode.segment();
+            if (segment != newSegment)
+            {
+                segment.release();
+                segment = newSegment.acquire();
+
+                final long cursor = condition.reset(segment, offset, POSITION_UNSET);
+                this.cursor = cursor == RETRY_SEGMENT || cursor == NEXT_SEGMENT ? 0L : cursor;
+            }
         }
 
         @Override

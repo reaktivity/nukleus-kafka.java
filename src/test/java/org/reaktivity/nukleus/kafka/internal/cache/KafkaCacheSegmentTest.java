@@ -39,8 +39,9 @@ public class KafkaCacheSegmentTest
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
         Path location = tempFolder.getRoot().toPath();
         MutableDirectBuffer appendBuf = new UnsafeBuffer(ByteBuffer.allocate(0));
+        long[] sortSpace = new long[0];
 
-        try (KafkaCacheSegment head = new KafkaCacheSegment(location, config, "test", 0, 1L, appendBuf);
+        try (KafkaCacheSegment head = new KafkaCacheSegment(location, config, "test", 0, 1L, appendBuf, sortSpace);
                 KafkaCacheSegment tail = head.freeze())
         {
             assertEquals(head.location(), tail.location());
@@ -66,8 +67,9 @@ public class KafkaCacheSegmentTest
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
         Path location = tempFolder.getRoot().toPath();
         MutableDirectBuffer appendBuf = new UnsafeBuffer(ByteBuffer.allocate(0));
+        long[] sortSpace = new long[0];
 
-        try (KafkaCacheSegment segment = new KafkaCacheSegment(location, config, "test", 0, 1L, appendBuf))
+        try (KafkaCacheSegment segment = new KafkaCacheSegment(location, config, "test", 0, 1L, appendBuf, sortSpace))
         {
             assertEquals("test", segment.name());
             assertEquals(0, segment.id());

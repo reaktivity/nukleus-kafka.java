@@ -45,14 +45,16 @@ public final class KafkaCacheSegment extends KafkaCacheObject<KafkaCacheSegment>
     public KafkaCacheSegment(
         KafkaCacheSegment segment,
         KafkaCacheTopicConfig config,
-        MutableDirectBuffer appendBuf)
+        MutableDirectBuffer appendBuf,
+        long[] sortSpace)
     {
         this(segment.location,
                 config,
                 segment.name,
                 segment.id,
                 segment.baseOffset,
-                appendBuf);
+                appendBuf,
+                sortSpace);
     }
 
     public KafkaCacheSegment(
@@ -61,7 +63,8 @@ public final class KafkaCacheSegment extends KafkaCacheObject<KafkaCacheSegment>
         String name,
         int id,
         long baseOffset,
-        MutableDirectBuffer appendBuf)
+        MutableDirectBuffer appendBuf,
+        long[] sortSpace)
     {
         this.location = location;
         this.name = name;
@@ -72,8 +75,8 @@ public final class KafkaCacheSegment extends KafkaCacheObject<KafkaCacheSegment>
         this.logFile = new KafkaCacheFile.Log(location, baseOffset, config.segmentBytes, appendBuf);
         this.deltaFile = new KafkaCacheFile.Delta(location, baseOffset, config.segmentBytes, appendBuf);
         this.indexFile = new KafkaCacheFile.Index(location, baseOffset, config.segmentIndexBytes, appendBuf);
-        this.hashFile = new KafkaCacheFile.HashScan(location, baseOffset, config.segmentIndexBytes, appendBuf);
-        this.keysFile = new KafkaCacheFile.KeysScan(location, baseOffset, config.segmentIndexBytes, appendBuf);
+        this.hashFile = new KafkaCacheFile.HashScan(location, baseOffset, config.segmentIndexBytes, appendBuf, sortSpace);
+        this.keysFile = new KafkaCacheFile.KeysScan(location, baseOffset, config.segmentIndexBytes, appendBuf, sortSpace);
     }
 
     public KafkaCacheSegment(

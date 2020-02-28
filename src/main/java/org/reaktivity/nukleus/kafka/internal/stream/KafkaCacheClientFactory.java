@@ -15,7 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_CLIENT_RECONNECT;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_CLIENT_RECONNECT_DELAY;
 
 import java.util.function.Function;
 import java.util.function.LongFunction;
@@ -71,8 +71,8 @@ public final class KafkaCacheClientFactory implements StreamFactory
         final KafkaMergedBudgetAccountant accountant = new KafkaMergedBudgetAccountant(supplyBudgetId, supplyDebitor);
 
         final KafkaCacheMetaFactory cacheMetaFactory = new KafkaCacheMetaFactory(
-                config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId, supplyTraceId,
-                supplyTypeId, supplyCacheRoute, correlations, KAFKA_CACHE_CLIENT_RECONNECT);
+                config, router, writeBuffer, bufferPool, signaler, supplyInitialId, supplyReplyId, supplyTraceId,
+                supplyTypeId, supplyCacheRoute, correlations, KAFKA_CACHE_CLIENT_RECONNECT_DELAY);
 
         final KafkaCacheClientDescribeFactory cacheDescribeFactory = new KafkaCacheClientDescribeFactory(
                 config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId, supplyTraceId,

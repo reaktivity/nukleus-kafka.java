@@ -15,7 +15,9 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static java.lang.System.currentTimeMillis;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +36,7 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.buffer.BufferPool;
+import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessageFunction;
 import org.reaktivity.nukleus.function.MessagePredicate;
@@ -95,18 +98,21 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
     private final MutableDirectBuffer writeBuffer;
     private final MutableDirectBuffer extBuffer;
     private final BufferPool bufferPool;
+    private final Signaler signaler;
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
+    private final LongSupplier supplyTraceId;
     private final Function<String, KafkaCache> supplyCache;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
-    private final boolean reconnect;
+    private final int reconnectDelay;
 
     public KafkaCacheServerDescribeFactory(
         KafkaConfiguration config,
         RouteManager router,
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
+        Signaler signaler,
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTraceId,
@@ -120,12 +126,14 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
         this.writeBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
         this.extBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
         this.bufferPool = bufferPool;
+        this.signaler = signaler;
         this.supplyInitialId = supplyInitialId;
         this.supplyReplyId = supplyReplyId;
+        this.supplyTraceId = supplyTraceId;
         this.supplyCache = supplyCache;
         this.supplyCacheRoute = supplyCacheRoute;
         this.correlations = correlations;
-        this.reconnect = config.cacheServerReconnect();
+        this.reconnectDelay = config.cacheServerReconnect();
     }
 
     @Override
@@ -324,6 +332,7 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
 
     final class KafkaCacheServerDescribeFanout
     {
+        private static final int SIGNAL_RECONNECT = 1;
         private final long routeId;
         private final long authorization;
         private final KafkaCacheTopic topic;
@@ -461,15 +470,28 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
 
             doDescribeFanoutReplyResetIfNecessary(traceId);
 
-            if (reconnect)
+            if (reconnectDelay != 0)
             {
-                System.out.format("TODO: progressive back-off, DESCRIBE\n");
-                doDescribeFanoutInitialBeginIfNecessary(traceId);
+                signaler.signalAt(
+                    currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
+                    SIGNAL_RECONNECT,
+                    this::onDescribeFanoutSignal);
             }
             else
             {
                 members.forEach(s -> s.doDescribeInitialResetIfNecessary(traceId));
             }
+        }
+
+        private void onDescribeFanoutSignal(
+            int signalId)
+        {
+            assert signalId == SIGNAL_RECONNECT;
+
+            final long traceId = supplyTraceId.getAsLong();
+
+            System.out.format("DESCRIBE reconnect\n");
+            doDescribeFanoutInitialBeginIfNecessary(traceId);
         }
 
         private void onDescribeFanoutInitialWindow(

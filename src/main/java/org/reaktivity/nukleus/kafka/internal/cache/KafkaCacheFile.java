@@ -16,7 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static java.nio.file.StandardOpenOption.APPEND;
-import static java.nio.file.StandardOpenOption.CREATE;
+import static java.nio.file.StandardOpenOption.CREATE_NEW;
 import static java.nio.file.StandardOpenOption.READ;
 import static java.nio.file.StandardOpenOption.WRITE;
 import static java.util.Objects.requireNonNull;
@@ -48,7 +48,7 @@ public class KafkaCacheFile implements AutoCloseable
     private static final String EXT_KSCAN_WORK = ".kscan.work";
     private static final String EXT_KINDEX = ".kindex";
 
-    private static final String FORMAT_FILE = "%%016x%s";
+    private static final String FORMAT_FILE = "%%019d%s";
     private static final String FORMAT_LOG_FILE = String.format(FORMAT_FILE, EXT_LOG);
     private static final String FORMAT_DELTA_FILE = String.format(FORMAT_FILE, EXT_DELTA);
     private static final String FORMAT_INDEX_FILE = String.format(FORMAT_FILE, EXT_INDEX);
@@ -185,8 +185,12 @@ public class KafkaCacheFile implements AutoCloseable
                 appendBuf.putBytes(0, srcBuffer, srcIndex, length);
                 appendByteBuf.limit(length);
 
-                final int written = appender.write(appendByteBuf);
-                assert written == length;
+                int written = 0;
+                while (written < length)
+                {
+                    written += appender.write(appendByteBuf);
+                }
+                assert written == length : String.format("%d == %d", written, length);
 
                 capacity += written;
                 assert capacity <= maxCapacity;
@@ -310,7 +314,9 @@ public class KafkaCacheFile implements AutoCloseable
     {
         MappedByteBuffer mapped = null;
 
-        try (FileChannel channel = FileChannel.open(file, CREATE, READ, WRITE))
+        IoUtil.delete(file.toFile(), true);
+
+        try (FileChannel channel = FileChannel.open(file, CREATE_NEW, READ, WRITE))
         {
             mapped = channel.map(MapMode.READ_WRITE, 0, capacity);
             channel.truncate(0L);
@@ -404,9 +410,10 @@ public class KafkaCacheFile implements AutoCloseable
             Path location,
             long baseOffset,
             int capacity,
-            MutableDirectBuffer appendBuf)
+            MutableDirectBuffer appendBuf,
+            long[] sortSpace)
         {
-            super(location.resolve(String.format(FORMAT_HSCAN_FILE, baseOffset)), capacity, appendBuf);
+            super(location.resolve(String.format(FORMAT_HSCAN_FILE, baseOffset)), capacity, appendBuf, sortSpace);
         }
 
         @Override
@@ -439,9 +446,10 @@ public class KafkaCacheFile implements AutoCloseable
             Path location,
             long baseOffset,
             int capacity,
-            MutableDirectBuffer appendBuf)
+            MutableDirectBuffer appendBuf,
+            long[] sortSpace)
         {
-            super(location.resolve(String.format(FORMAT_KSCAN_FILE, baseOffset)), capacity, appendBuf);
+            super(location.resolve(String.format(FORMAT_KSCAN_FILE, baseOffset)), capacity, appendBuf, sortSpace);
         }
 
         @Override
