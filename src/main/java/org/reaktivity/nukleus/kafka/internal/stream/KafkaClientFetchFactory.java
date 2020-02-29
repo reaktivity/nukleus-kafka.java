@@ -134,6 +134,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
     private final WindowFW.Builder windowRW = new WindowFW.Builder();
     private final KafkaBeginExFW.Builder kafkaBeginExRW = new KafkaBeginExFW.Builder();
     private final KafkaDataExFW.Builder kafkaDataExRW = new KafkaDataExFW.Builder();
+    private final KafkaResetExFW.Builder kafkaResetExRW = new KafkaResetExFW.Builder();
     private final TcpBeginExFW.Builder tcpBeginExRW = new TcpBeginExFW.Builder();
 
     private final RequestHeaderFW.Builder requestHeaderRW = new RequestHeaderFW.Builder();
@@ -466,13 +467,15 @@ public final class KafkaClientFetchFactory implements StreamFactory
         long routeId,
         long streamId,
         long traceId,
-        long authorization)
+        long authorization,
+        Flyweight extension)
     {
         final ResetFW reset = resetRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                .routeId(routeId)
                .streamId(streamId)
                .traceId(traceId)
                .authorization(authorization)
+               .extension(extension.buffer(), extension.offset(), extension.sizeof())
                .build();
 
         sender.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
@@ -1597,7 +1600,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
             state = KafkaState.closedInitial(state);
             //client.stream = nullIfClosed(state, client.stream);
 
-            doReset(application, routeId, initialId, traceId, client.authorization);
+            doReset(application, routeId, initialId, traceId, client.authorization, extension);
         }
 
         private void doApplicationAbortIfNecessary(
@@ -1688,7 +1691,6 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
             private KafkaFetchClientDecoder decoder;
             private LongLongConsumer encoder;
-            private final KafkaResetExFW.Builder resetExRW = new KafkaResetExFW.Builder();
 
             KafkaFetchClient(
                 long routeId,
@@ -1972,7 +1974,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
             {
                 if (!KafkaState.replyClosed(state))
                 {
-                    doReset(network, routeId, replyId, traceId, authorization);
+                    doReset(network, routeId, replyId, traceId, authorization, EMPTY_OCTETS);
                     state = KafkaState.closedReply(state);
                 }
 
@@ -2261,10 +2263,10 @@ public final class KafkaClientFetchFactory implements StreamFactory
                     this.partitionOffset = partitionOffset;
                     break;
                 default:
-                    final KafkaResetExFW resetEx = resetExRW.wrap(extBuffer, 0, extBuffer.capacity())
-                                                            .typeId(kafkaTypeId)
-                                                            .error(errorCode)
-                                                            .build();
+                    final KafkaResetExFW resetEx = kafkaResetExRW.wrap(extBuffer, 0, extBuffer.capacity())
+                                                                 .typeId(kafkaTypeId)
+                                                                 .error(errorCode)
+                                                                 .build();
                     cleanupApplication(traceId, resetEx);
                     doNetworkEnd(traceId, authorization);
                     break;
@@ -2293,10 +2295,10 @@ public final class KafkaClientFetchFactory implements StreamFactory
                     doEncodeRequestIfNecessary(traceId, initialBudgetId);
                     break;
                 default:
-                    final KafkaResetExFW resetEx = resetExRW.wrap(extBuffer, 0, extBuffer.capacity())
-                                                            .typeId(kafkaTypeId)
-                                                            .error(errorCode)
-                                                            .build();
+                    final KafkaResetExFW resetEx = kafkaResetExRW.wrap(extBuffer, 0, extBuffer.capacity())
+                                                                 .typeId(kafkaTypeId)
+                                                                 .error(errorCode)
+                                                                 .build();
                     cleanupApplication(traceId, resetEx);
                     doNetworkEnd(traceId, authorization);
                     break;

@@ -208,7 +208,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 final KafkaCacheTopic topic = cache.supplyTopic(topicName);
                 final KafkaCachePartition partition = topic.supplyPartition(partitionId);
                 final KafkaCacheClientFetchFanout newFanout =
-                        new KafkaCacheClientFetchFanout(resolvedId, authorization, partition);
+                        new KafkaCacheClientFetchFanout(resolvedId, authorization, affinity, partition);
 
                 cacheRoute.clientFetchFanoutsByTopicPartition.put(partitionKey, newFanout);
                 fanout = newFanout;
@@ -216,6 +216,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
             if (fanout != null)
             {
+                assert fanout.affinity == affinity || fanout.state == 0;
+                fanout.affinity = affinity;
+
                 final KafkaFilterCondition condition = cursorFactory.asCondition(filters);
 
                 newStream = new KafkaCacheClientFetchStream(
@@ -367,6 +370,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private final KafkaCachePartition partition;
         private final List<KafkaCacheClientFetchStream> members;
 
+        private long affinity;
         private long initialId;
         private long replyId;
         private MessageConsumer receiver;
@@ -378,6 +382,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private KafkaCacheClientFetchFanout(
             long routeId,
             long authorization,
+            long affinity,
             KafkaCachePartition partition)
         {
             this.routeId = routeId;
@@ -385,6 +390,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.partition = partition;
             this.partitionOffset = OFFSET_MAXIMUM;
             this.members = new ArrayList<>();
+            this.affinity = affinity;
         }
 
         private void onClientFanoutMemberOpening(
@@ -472,10 +478,10 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
             correlations.put(replyId, this::onClientFanoutMessage);
             router.setThrottle(initialId, this::onClientFanoutMessage);
-            doBegin(receiver, routeId, initialId, traceId, authorization, 0L,
+            doBegin(receiver, routeId, initialId, traceId, authorization, affinity,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
-                        .fetch(f -> f.topic(partition.name())
+                        .fetch(f -> f.topic(partition.topic())
                                      .partition(p -> p.partitionId(partition.id())
                                                       .partitionOffset(partitionOffset))
                                      .deltaType(t -> t.set(KafkaDeltaType.NONE)))
@@ -597,7 +603,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             final long traceId = abort.traceId();
 
-            members.forEach(s -> s.doReplyAbortIfNecessary(traceId));
+            members.forEach(s -> s.doClientReplyAbortIfNecessary(traceId));
 
             state = KafkaState.closedReply(state);
         }
@@ -765,7 +771,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
             group.onClientFanoutMemberClosed(traceId, this);
 
-            doReplyAbortIfNecessary(traceId);
+            doClientReplyAbortIfNecessary(traceId);
         }
 
         private void doClientInitialWindowIfNecessary(
@@ -842,7 +848,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             doBegin(sender, routeId, replyId, traceId, authorization, affinity,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
-                        .fetch(f -> f.topic(group.partition.name())
+                        .fetch(f -> f.topic(group.partition.topic())
                                      .partition(p -> p.partitionId(group.partition.id())
                                                       .partitionOffset(partitionOffset))
                                      .deltaType(t -> t.set(deltaType)))
@@ -1090,7 +1096,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
         }
 
-        private void doReplyAbortIfNecessary(
+        private void doClientReplyAbortIfNecessary(
             long traceId)
         {
             if (KafkaState.replyOpening(state) && !KafkaState.replyClosed(state))

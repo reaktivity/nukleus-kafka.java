@@ -17,7 +17,6 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.lang.System.currentTimeMillis;
 import static java.util.Objects.requireNonNull;
-import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 
 import java.util.Objects;
@@ -60,6 +59,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ExtensionFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaResetExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.SignalFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
@@ -68,8 +68,12 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class KafkaClientMetaFactory implements StreamFactory
 {
+    private static final int ERROR_NONE = 0;
+
     private static final int SIGNAL_NEXT_REQUEST = 1;
 
+    private static final DirectBuffer EMPTY_BUFFER = new UnsafeBuffer();
+    private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(EMPTY_BUFFER, 0, 0);
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
 
     private static final short METADATA_API_KEY = 3;
@@ -96,6 +100,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
     private final WindowFW.Builder windowRW = new WindowFW.Builder();
     private final KafkaBeginExFW.Builder kafkaBeginExRW = new KafkaBeginExFW.Builder();
     private final KafkaDataExFW.Builder kafkaDataExRW = new KafkaDataExFW.Builder();
+    private final KafkaResetExFW.Builder kafkaResetExRW = new KafkaResetExFW.Builder();
 
     private final RequestHeaderFW.Builder requestHeaderRW = new RequestHeaderFW.Builder();
     private final MetadataRequestFW.Builder metadataRequestRW = new MetadataRequestFW.Builder();
@@ -114,7 +119,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
 
     private final MessageFunction<RouteFW> wrapRoute = (t, b, i, l) -> routeRO.wrap(b, i, i + l);
 
-    private final long metaMaxAgeMillis;
+    private final long maxAgeMillis;
     private final int kafkaTypeId;
     private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
@@ -141,7 +146,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
         Long2ObjectHashMap<MessageConsumer> correlations,
         Long2ObjectHashMap<Long2ObjectHashMap<KafkaBrokerInfo>> brokersByRouteId)
     {
-        this.metaMaxAgeMillis = SECONDS.toMillis(config.clientMetaMaxAge());
+        this.maxAgeMillis = Math.min(config.clientMetaMaxAgeMillis(), config.clientMaxIdleMillis() >> 1);
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.router = router;
         this.signaler = signaler;
@@ -371,13 +376,15 @@ public final class KafkaClientMetaFactory implements StreamFactory
         long routeId,
         long streamId,
         long traceId,
-        long authorization)
+        long authorization,
+        Flyweight extension)
     {
         final ResetFW reset = resetRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                .routeId(routeId)
                .streamId(streamId)
                .traceId(traceId)
                .authorization(authorization)
+               .extension(extension.buffer(), extension.offset(), extension.sizeof())
                .build();
 
         sender.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
@@ -468,53 +475,54 @@ public final class KafkaClientMetaFactory implements StreamFactory
 
                 final int topicCount = metadataResponsePart2.topicCount();
                 assert topicCount == 1;
-                for (int topicIndex = 0; topicIndex < topicCount; topicIndex++)
+
+                final TopicMetadataFW topicMetadata = topicMetadataRO.tryWrap(buffer, progress, limit);
+                if (topicMetadata == null)
                 {
-                    final TopicMetadataFW topicMetadata = topicMetadataRO.tryWrap(buffer, progress, limit);
-                    if (topicMetadata == null)
-                    {
-                        client.decoder = decodeIgnoreAll;
-                        break decode;
-                    }
-
-                    progress = topicMetadata.limit();
-
-                    final String topic = topicMetadata.topic().asString();
-                    final int topicError = topicMetadata.errorCode();
-                    if (topicError != 0 || !client.topic.equals(topic))
-                    {
-                        client.decoder = decodeIgnoreAll;
-                        break decode;
-                    }
-
-                    newPartitions.clear();
-                    final int partitionCount = topicMetadata.partitionCount();
-                    for (int partitionIndex = 0; partitionIndex < partitionCount; partitionIndex++)
-                    {
-                        final PartitionMetadataFW partition = partitionMetadataRO.tryWrap(buffer, progress, limit);
-                        if (partition == null)
-                        {
-                            client.decoder = decodeIgnoreAll;
-                            break decode;
-                        }
-
-                        progress = partition.limit();
-
-                        final int partitionError = partition.errorCode();
-                        if (partitionError != 0)
-                        {
-                            client.decoder = decodeIgnoreAll;
-                            break decode;
-                        }
-
-                        final int partitionId = partition.partitionId();
-                        final int leaderId = partition.leader();
-
-                        newPartitions.put(partitionId, leaderId);
-                    }
-
-                    client.onDecodeResponse(traceId, newPartitions);
+                    client.decoder = decodeIgnoreAll;
+                    break decode;
                 }
+
+                progress = topicMetadata.limit();
+
+                final String topic = topicMetadata.topic().asString();
+                final int topicError = topicMetadata.errorCode();
+
+                client.onDecodeTopic(traceId, client.authorization, topicError, topic);
+                // TODO: use different decoder for partitions
+                if (topicError != ERROR_NONE || !client.topic.equals(topic))
+                {
+                    client.decoder = decodeIgnoreAll;
+                    break decode;
+                }
+
+                newPartitions.clear();
+                final int partitionCount = topicMetadata.partitionCount();
+                for (int partitionIndex = 0; partitionIndex < partitionCount; partitionIndex++)
+                {
+                    final PartitionMetadataFW partition = partitionMetadataRO.tryWrap(buffer, progress, limit);
+                    if (partition == null)
+                    {
+                        client.decoder = decodeIgnoreAll;
+                        break decode;
+                    }
+
+                    progress = partition.limit();
+
+                    final int partitionError = partition.errorCode();
+                    if (partitionError != 0)
+                    {
+                        client.decoder = decodeIgnoreAll;
+                        break decode;
+                    }
+
+                    final int partitionId = partition.partitionId();
+                    final int leaderId = partition.leader();
+
+                    newPartitions.put(partitionId, leaderId);
+                }
+
+                client.onDecodePartitions(traceId, newPartitions);
             }
         }
 
@@ -743,12 +751,13 @@ public final class KafkaClientMetaFactory implements StreamFactory
         }
 
         private void doApplicationReset(
-            long traceId)
+            long traceId,
+            Flyweight extension)
         {
             state = KafkaState.closedInitial(state);
             //client.stream = nullIfClosed(state, client.stream);
 
-            doReset(application, routeId, initialId, traceId, client.authorization);
+            doReset(application, routeId, initialId, traceId, client.authorization, extension);
         }
 
         private void doApplicationAbortIfNecessary(
@@ -761,19 +770,21 @@ public final class KafkaClientMetaFactory implements StreamFactory
         }
 
         private void doApplicationResetIfNecessary(
-            long traceId)
+            long traceId,
+            Flyweight extension)
         {
             if (KafkaState.initialOpening(state) && !KafkaState.initialClosed(state))
             {
-                doApplicationReset(traceId);
+                doApplicationReset(traceId, extension);
             }
         }
 
         private void cleanupApplication(
-            long traceId)
+            long traceId,
+            Flyweight extension)
         {
             doApplicationAbortIfNecessary(traceId);
-            doApplicationResetIfNecessary(traceId);
+            doApplicationResetIfNecessary(traceId, extension);
         }
 
         private final class KafkaMetaClient
@@ -1045,7 +1056,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
             {
                 if (!KafkaState.replyClosed(state))
                 {
-                    doReset(network, routeId, replyId, traceId, authorization);
+                    doReset(network, routeId, replyId, traceId, authorization, EMPTY_OCTETS);
                     state = KafkaState.closedReply(state);
                 }
 
@@ -1232,7 +1243,29 @@ public final class KafkaClientMetaFactory implements StreamFactory
                 brokers.put(brokerId, new KafkaBrokerInfo(brokerId, host, port));
             }
 
-            private void onDecodeResponse(
+            private void onDecodeTopic(
+                long traceId,
+                long authorization,
+                int errorCode,
+                String topic)
+            {
+                switch (errorCode)
+                {
+                case ERROR_NONE:
+                    assert topic.equals(this.topic);
+                    break;
+                default:
+                    final KafkaResetExFW resetEx = kafkaResetExRW.wrap(extBuffer, 0, extBuffer.capacity())
+                                                                 .typeId(kafkaTypeId)
+                                                                 .error(errorCode)
+                                                                 .build();
+                    cleanupApplication(traceId, resetEx);
+                    doNetworkEnd(traceId, authorization);
+                    break;
+                }
+            }
+
+            private void onDecodePartitions(
                 long traceId,
                 Int2IntHashMap newPartitions)
             {
@@ -1253,7 +1286,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
                 }
 
                 nextResponseId++;
-                signaler.signalAt(currentTimeMillis() + metaMaxAgeMillis, routeId, initialId, SIGNAL_NEXT_REQUEST);
+                signaler.signalAt(currentTimeMillis() + maxAgeMillis, routeId, initialId, SIGNAL_NEXT_REQUEST);
             }
 
             private void cleanupNetwork(
@@ -1262,7 +1295,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
                 doNetworkResetIfNecessary(traceId);
                 doNetworkAbortIfNecessary(traceId);
 
-                cleanupApplication(traceId);
+                cleanupApplication(traceId, EMPTY_OCTETS);
             }
 
             private void cleanupDecodeSlotIfNecessary()

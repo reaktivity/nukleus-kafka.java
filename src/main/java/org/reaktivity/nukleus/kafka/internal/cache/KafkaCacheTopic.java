@@ -24,6 +24,7 @@ import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 public final class KafkaCacheTopic
 {
     private final Path location;
+    private final String cache;
     private final String name;
     private final KafkaCacheTopicConfig config;
     private final Map<Integer, KafkaCachePartition> partitionsById;
@@ -31,12 +32,19 @@ public final class KafkaCacheTopic
     public KafkaCacheTopic(
         Path location,
         KafkaConfiguration config,
+        String cache,
         String name)
     {
         this.location = location;
         this.config = new KafkaCacheTopicConfig(config);
+        this.cache = cache;
         this.name = name;
         this.partitionsById = new ConcurrentHashMap<>();
+    }
+
+    public String cache()
+    {
+        return cache;
     }
 
     public String name()
@@ -58,12 +66,12 @@ public final class KafkaCacheTopic
     @Override
     public String toString()
     {
-        return String.format("[%s] %s", getClass().getSimpleName(), name);
+        return String.format("[%s] %s", cache, name);
     }
 
     private KafkaCachePartition newPartition(
         int id)
     {
-        return new KafkaCachePartition(location, config, name, id);
+        return new KafkaCachePartition(location, config, cache, name, id);
     }
 }

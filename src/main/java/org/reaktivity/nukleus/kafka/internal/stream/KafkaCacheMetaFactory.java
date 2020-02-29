@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
@@ -40,6 +41,8 @@ import org.reaktivity.nukleus.function.MessageFunction;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopic;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaPartitionFW;
@@ -56,6 +59,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaMetaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaMetaDataExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaResetExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.route.RouteManager;
@@ -64,6 +68,8 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 public final class KafkaCacheMetaFactory implements StreamFactory
 {
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
+
+    private static final int SIGNAL_RECONNECT = 1;
 
     private final RouteFW routeRO = new RouteFW();
     private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
@@ -77,6 +83,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
     private final ExtensionFW extensionRO = new ExtensionFW();
     private final KafkaBeginExFW kafkaBeginExRO = new KafkaBeginExFW();
     private final KafkaDataExFW kafkaDataExRO = new KafkaDataExFW();
+    private final KafkaResetExFW kafkaResetExRO = new KafkaResetExFW();
 
     private final BeginFW.Builder beginRW = new BeginFW.Builder();
     private final DataFW.Builder dataRW = new DataFW.Builder();
@@ -98,6 +105,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
     private final LongSupplier supplyTraceId;
+    private final Function<String, KafkaCache> supplyCache;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
     private final int reconnectDelay;
@@ -112,6 +120,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTraceId,
         ToIntFunction<String> supplyTypeId,
+        Function<String, KafkaCache> supplyCache,
         LongFunction<KafkaCacheRoute> supplyCacheRoute,
         Long2ObjectHashMap<MessageConsumer> correlations,
         IntPropertyDef reconnectDelay)
@@ -125,6 +134,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
         this.supplyInitialId = supplyInitialId;
         this.supplyReplyId = supplyReplyId;
         this.supplyTraceId = supplyTraceId;
+        this.supplyCache = supplyCache;
         this.supplyCacheRoute = supplyCacheRoute;
         this.correlations = correlations;
         this.reconnectDelay = reconnectDelay.getAsInt(config);
@@ -175,7 +185,10 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             KafkaCacheMetaFanout fanout = cacheRoute.metaFanoutsByTopic.get(topicKey);
             if (fanout == null)
             {
-                final KafkaCacheMetaFanout newFanout = new KafkaCacheMetaFanout(resolvedId, authorization, topicName);
+                final String cacheName = route.localAddress().asString();
+                final KafkaCache cache = supplyCache.apply(cacheName);
+                final KafkaCacheTopic topic = cache.supplyTopic(topicName);
+                final KafkaCacheMetaFanout newFanout = new KafkaCacheMetaFanout(resolvedId, authorization, topic);
 
                 cacheRoute.metaFanoutsByTopic.put(topicKey, newFanout);
                 fanout = newFanout;
@@ -320,10 +333,9 @@ public final class KafkaCacheMetaFactory implements StreamFactory
 
     final class KafkaCacheMetaFanout
     {
-        private static final int SIGNAL_RECONNECT = 1;
         private final long routeId;
         private final long authorization;
-        private final String topic;
+        private final KafkaCacheTopic topic;
         private final List<KafkaCacheMetaStream> members;
 
         private long initialId;
@@ -336,7 +348,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
         private KafkaCacheMetaFanout(
             long routeId,
             long authorization,
-            String topic)
+            KafkaCacheTopic topic)
         {
             this.routeId = routeId;
             this.authorization = authorization;
@@ -405,6 +417,8 @@ public final class KafkaCacheMetaFactory implements StreamFactory
 
             if (!KafkaState.initialOpening(state))
             {
+                System.out.format("%s META connect\n", topic);
+
                 doMetaFanoutInitialBegin(traceId);
             }
         }
@@ -423,7 +437,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             doBegin(receiver, routeId, initialId, traceId, authorization, 0L,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
-                        .meta(m -> m.topic(topic))
+                        .meta(m -> m.topic(topic.name()))
                         .build()
                         .sizeof()));
             state = KafkaState.openingInitial(state);
@@ -467,6 +481,10 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             ResetFW reset)
         {
             final long traceId = reset.traceId();
+            final OctetsFW extension = reset.extension();
+
+            final KafkaResetExFW kafkaResetEx = extension.get(kafkaResetExRO::tryWrap);
+            final int error = kafkaResetEx != null ? kafkaResetEx.error() : -1;
 
             state = KafkaState.closedInitial(state);
 
@@ -474,6 +492,8 @@ public final class KafkaCacheMetaFactory implements StreamFactory
 
             if (reconnectDelay != 0)
             {
+                System.out.format("%s META reconnect in %ds, error %d\n", topic, reconnectDelay, error);
+
                 signaler.signalAt(
                         currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
                         SIGNAL_RECONNECT,
@@ -481,6 +501,8 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             }
             else
             {
+                System.out.format("%s META disconnect, error %d\n", topic, error);
+
                 members.forEach(s -> s.doMetaInitialResetIfNecessary(traceId));
             }
         }
@@ -596,6 +618,8 @@ public final class KafkaCacheMetaFactory implements StreamFactory
 
             if (reconnectDelay != 0)
             {
+                System.out.format("%s META reconnect in %ds\n", topic, reconnectDelay);
+
                 signaler.signalAt(
                         currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
                         SIGNAL_RECONNECT,
@@ -603,6 +627,8 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             }
             else
             {
+                System.out.format("%s META disconnect\n", topic);
+
                 members.forEach(s -> s.doMetaReplyAbortIfNecessary(traceId));
             }
         }
@@ -614,7 +640,6 @@ public final class KafkaCacheMetaFactory implements StreamFactory
 
             final long traceId = supplyTraceId.getAsLong();
 
-            System.out.format("META reconnect\n");
             doMetaFanoutInitialBeginIfNecessary(traceId);
         }
 
@@ -804,7 +829,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             doBegin(sender, routeId, replyId, traceId, authorization, affinity,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
-                        .meta(m -> m.topic(group.topic))
+                        .meta(m -> m.topic(group.topic.name()))
                         .build()
                         .sizeof()));
         }

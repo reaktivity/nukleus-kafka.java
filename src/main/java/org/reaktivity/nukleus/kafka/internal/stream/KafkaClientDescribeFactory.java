@@ -18,7 +18,6 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.lang.System.currentTimeMillis;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
-import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 
 import java.nio.ByteOrder;
@@ -66,6 +65,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.ExtensionFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDescribeBeginExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaResetExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.SignalFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
@@ -74,8 +74,12 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class KafkaClientDescribeFactory implements StreamFactory
 {
+    private static final int ERROR_NONE = 0;
+
     private static final int SIGNAL_NEXT_REQUEST = 1;
 
+    private static final DirectBuffer EMPTY_BUFFER = new UnsafeBuffer();
+    private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(EMPTY_BUFFER, 0, 0);
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
 
     private static final short DESCRIBE_CONFIGS_API_KEY = 32;
@@ -103,6 +107,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
     private final WindowFW.Builder windowRW = new WindowFW.Builder();
     private final KafkaBeginExFW.Builder kafkaBeginExRW = new KafkaBeginExFW.Builder();
     private final KafkaDataExFW.Builder kafkaDataExRW = new KafkaDataExFW.Builder();
+    private final KafkaResetExFW.Builder kafkaResetExRW = new KafkaResetExFW.Builder();
 
     private final RequestHeaderFW.Builder requestHeaderRW = new RequestHeaderFW.Builder();
     private final DescribeConfigsRequestFW.Builder describeConfigsRequestRW = new DescribeConfigsRequestFW.Builder();
@@ -122,7 +127,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
 
     private final MessageFunction<RouteFW> wrapRoute = (t, b, i, l) -> routeRO.wrap(b, i, i + l);
 
-    private final long describeMaxAgeMillis;
+    private final long maxAgeMillis;
     private final int kafkaTypeId;
     private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
@@ -147,7 +152,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
         LongFunction<BudgetDebitor> supplyDebitor,
         Long2ObjectHashMap<MessageConsumer> correlations)
     {
-        this.describeMaxAgeMillis = SECONDS.toMillis(config.clientDescribeMaxAge());
+        this.maxAgeMillis = Math.min(config.clientDescribeMaxAgeMillis(), config.clientMaxIdleMillis() >> 1);
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.router = router;
         this.signaler = signaler;
@@ -380,13 +385,15 @@ public final class KafkaClientDescribeFactory implements StreamFactory
         long routeId,
         long streamId,
         long traceId,
-        long authorization)
+        long authorization,
+        Flyweight extension)
     {
         final ResetFW reset = resetRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                .routeId(routeId)
                .streamId(streamId)
                .traceId(traceId)
                .authorization(authorization)
+               .extension(extension.buffer(), extension.offset(), extension.sizeof())
                .build();
 
         sender.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
@@ -459,15 +466,18 @@ public final class KafkaClientDescribeFactory implements StreamFactory
 
                     progress = resource.limit();
 
-                    final String topic = resource.name().asString();
+                    final String resourceName = resource.name().asString();
                     final int resourceError = resource.errorCode();
-                    final int configCount = resource.configCount();
-                    if (resourceError != 0 || !client.topic.equals(topic))
+
+                    client.onDecodeResource(traceId, client.authorization, resourceError, resourceName);
+                    // TODO: use different decoder for configs
+                    if (resourceError != ERROR_NONE || !client.topic.equals(resourceName))
                     {
                         client.decoder = decodeIgnoreAll;
                         break decode;
                     }
 
+                    final int configCount = resource.configCount();
                     newConfigs.clear();
                     for (int configIndex = 0; configIndex < configCount; configIndex++)
                     {
@@ -721,12 +731,13 @@ public final class KafkaClientDescribeFactory implements StreamFactory
         }
 
         private void doApplicationReset(
-            long traceId)
+            long traceId,
+            Flyweight extension)
         {
             state = KafkaState.closedInitial(state);
             //client.stream = nullIfClosed(state, client.stream);
 
-            doReset(application, routeId, initialId, traceId, client.authorization);
+            doReset(application, routeId, initialId, traceId, client.authorization, extension);
         }
 
         private void doApplicationAbortIfNecessary(
@@ -739,19 +750,21 @@ public final class KafkaClientDescribeFactory implements StreamFactory
         }
 
         private void doApplicationResetIfNecessary(
-            long traceId)
+            long traceId,
+            Flyweight extension)
         {
             if (KafkaState.initialOpening(state) && !KafkaState.initialClosed(state))
             {
-                doApplicationReset(traceId);
+                doApplicationReset(traceId, extension);
             }
         }
 
         private void cleanupApplication(
-            long traceId)
+            long traceId,
+            Flyweight extension)
         {
             doApplicationAbortIfNecessary(traceId);
-            doApplicationResetIfNecessary(traceId);
+            doApplicationResetIfNecessary(traceId, extension);
         }
 
         private final class KafkaDescribeClient
@@ -797,6 +810,28 @@ public final class KafkaClientDescribeFactory implements StreamFactory
                 this.topic = requireNonNull(topic);
                 this.configs = new LinkedHashMap<>(configs.size());
                 configs.forEach(c -> this.configs.put(c, null));
+            }
+
+            public void onDecodeResource(
+                long traceId,
+                long authorization,
+                int errorCode,
+                String resource)
+            {
+                switch (errorCode)
+                {
+                case ERROR_NONE:
+                    assert resource.equals(this.topic);
+                    break;
+                default:
+                    final KafkaResetExFW resetEx = kafkaResetExRW.wrap(extBuffer, 0, extBuffer.capacity())
+                                                                 .typeId(kafkaTypeId)
+                                                                 .error(errorCode)
+                                                                 .build();
+                    cleanupApplication(traceId, resetEx);
+                    doNetworkEnd(traceId, authorization);
+                    break;
+                }
             }
 
             private void onNetwork(
@@ -1029,7 +1064,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
             {
                 if (!KafkaState.replyClosed(state))
                 {
-                    doReset(network, routeId, replyId, traceId, authorization);
+                    doReset(network, routeId, replyId, traceId, authorization, EMPTY_OCTETS);
                     state = KafkaState.closedReply(state);
                 }
 
@@ -1253,7 +1288,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
                 }
 
                 nextResponseId++;
-                signaler.signalAt(currentTimeMillis() + describeMaxAgeMillis, routeId, initialId, SIGNAL_NEXT_REQUEST);
+                signaler.signalAt(currentTimeMillis() + maxAgeMillis, routeId, initialId, SIGNAL_NEXT_REQUEST);
             }
 
             private void cleanupNetwork(
@@ -1262,7 +1297,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
                 doNetworkResetIfNecessary(traceId);
                 doNetworkAbortIfNecessary(traceId);
 
-                cleanupApplication(traceId);
+                cleanupApplication(traceId, EMPTY_OCTETS);
             }
 
             private void cleanupDecodeSlotIfNecessary()

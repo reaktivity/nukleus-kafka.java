@@ -56,8 +56,8 @@ public final class KafkaCache
     }
 
     private KafkaCacheTopic newTopic(
-        String name)
+        String topic)
     {
-        return new KafkaCacheTopic(location, config, name);
+        return new KafkaCacheTopic(location, config, name, topic);
     }
 }

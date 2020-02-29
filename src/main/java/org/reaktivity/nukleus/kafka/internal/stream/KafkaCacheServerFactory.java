@@ -72,7 +72,7 @@ public final class KafkaCacheServerFactory implements StreamFactory
 
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_META, new KafkaCacheMetaFactory(
                 config, router, writeBuffer, bufferPool, signaler, supplyInitialId, supplyReplyId,
-                supplyTraceId, supplyTypeId, supplyCacheRoute, correlations, KAFKA_CACHE_SERVER_RECONNECT_DELAY));
+                supplyTraceId, supplyTypeId, supplyCache, supplyCacheRoute, correlations, KAFKA_CACHE_SERVER_RECONNECT_DELAY));
 
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_DESCRIBE, new KafkaCacheServerDescribeFactory(
                 config, router, writeBuffer, bufferPool, signaler, supplyInitialId, supplyReplyId,

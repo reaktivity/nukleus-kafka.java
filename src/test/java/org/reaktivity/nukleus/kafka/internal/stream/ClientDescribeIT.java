@@ -17,7 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CLIENT_DESCRIBE_MAX_AGE;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CLIENT_DESCRIBE_MAX_AGE_MILLIS;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Rule;
@@ -45,7 +45,7 @@ public class ClientDescribeIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(8192)
-        .configure(KAFKA_CLIENT_DESCRIBE_MAX_AGE, 0)
+        .configure(KAFKA_CLIENT_DESCRIBE_MAX_AGE_MILLIS, 0)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 

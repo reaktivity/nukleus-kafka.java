@@ -60,6 +60,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDescribeBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDescribeDataExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaResetExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.route.RouteManager;
@@ -68,6 +69,8 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 public final class KafkaCacheServerDescribeFactory implements StreamFactory
 {
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
+
+    private static final int SIGNAL_RECONNECT = 1;
 
     private final RouteFW routeRO = new RouteFW();
     private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
@@ -81,6 +84,7 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
     private final ExtensionFW extensionRO = new ExtensionFW();
     private final KafkaBeginExFW kafkaBeginExRO = new KafkaBeginExFW();
     private final KafkaDataExFW kafkaDataExRO = new KafkaDataExFW();
+    private final KafkaResetExFW kafkaResetExRO = new KafkaResetExFW();
 
     private final BeginFW.Builder beginRW = new BeginFW.Builder();
     private final DataFW.Builder dataRW = new DataFW.Builder();
@@ -332,7 +336,6 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
 
     final class KafkaCacheServerDescribeFanout
     {
-        private static final int SIGNAL_RECONNECT = 1;
         private final long routeId;
         private final long authorization;
         private final KafkaCacheTopic topic;
@@ -419,6 +422,8 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
 
             if (!KafkaState.initialOpening(state))
             {
+                System.out.format("%s DESCRIBE connect\n", topic);
+
                 doDescribeFanoutInitialBegin(traceId);
             }
         }
@@ -465,6 +470,10 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
             ResetFW reset)
         {
             final long traceId = reset.traceId();
+            final OctetsFW extension = reset.extension();
+
+            final KafkaResetExFW kafkaResetEx = extension.get(kafkaResetExRO::tryWrap);
+            final int error = kafkaResetEx != null ? kafkaResetEx.error() : -1;
 
             state = KafkaState.closedInitial(state);
 
@@ -472,6 +481,8 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
 
             if (reconnectDelay != 0)
             {
+                System.out.format("%s DESCRIBE reconnect in %ds, error %d\n", topic, reconnectDelay, error);
+
                 signaler.signalAt(
                     currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
                     SIGNAL_RECONNECT,
@@ -479,6 +490,8 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
             }
             else
             {
+                System.out.format("%s DESCRIBE disconnect, error %d\n", topic, error);
+
                 members.forEach(s -> s.doDescribeInitialResetIfNecessary(traceId));
             }
         }
@@ -490,7 +503,6 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
 
             final long traceId = supplyTraceId.getAsLong();
 
-            System.out.format("DESCRIBE reconnect\n");
             doDescribeFanoutInitialBeginIfNecessary(traceId);
         }
 
@@ -609,9 +621,23 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
         {
             final long traceId = abort.traceId();
 
-            members.forEach(s -> s.doDescribeReplyAbortIfNecessary(traceId));
-
             state = KafkaState.closedReply(state);
+
+            if (reconnectDelay != 0)
+            {
+                System.out.format("%s DESCRIBE reconnect in %ds\n", topic, reconnectDelay);
+
+                signaler.signalAt(
+                    currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
+                    SIGNAL_RECONNECT,
+                    this::onDescribeFanoutSignal);
+            }
+            else
+            {
+                System.out.format("%s DESCRIBE disconnect\n", topic);
+
+                members.forEach(s -> s.doDescribeReplyAbortIfNecessary(traceId));
+            }
         }
 
         private void doDescribeFanoutReplyResetIfNecessary(

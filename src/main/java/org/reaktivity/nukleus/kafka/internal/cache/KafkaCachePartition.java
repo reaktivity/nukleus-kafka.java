@@ -79,7 +79,8 @@ public final class KafkaCachePartition
 
     private final Path location;
     private final KafkaCacheTopicConfig config;
-    private final String name;
+    private final String cache;
+    private final String topic;
     private final int id;
     private final MutableDirectBuffer appendBuf;
     private final long[] sortSpace;
@@ -90,16 +91,17 @@ public final class KafkaCachePartition
 
     private KafkaCacheEntryFW ancestorEntry;
 
-
     public KafkaCachePartition(
         Path location,
         KafkaCacheTopicConfig config,
-        String name,
+        String cache,
+        String topic,
         int id)
     {
-        this.location = createDirectories(location.resolve(String.format(FORMAT_PARTITION_DIRECTORY, name, id)));
+        this.location = createDirectories(location.resolve(String.format(FORMAT_PARTITION_DIRECTORY, topic, id)));
         this.config = config;
-        this.name = name;
+        this.cache = cache;
+        this.topic = topic;
         this.id = id;
         this.appendBuf = new UnsafeBuffer(allocateDirect(64 * 1024)); // TODO: configure
         this.sortSpace = new long[config.segmentIndexBytes >> 3];
@@ -108,9 +110,14 @@ public final class KafkaCachePartition
         this.progress = OFFSET_EARLIEST;
     }
 
-    public String name()
+    public String cache()
     {
-        return name;
+        return cache;
+    }
+
+    public String topic()
+    {
+        return topic;
     }
 
     public int id()
@@ -141,7 +148,7 @@ public final class KafkaCachePartition
 
         final Node head = sentinel.previous;
 
-        KafkaCacheSegment segment = new KafkaCacheSegment(location, config, name, id, offset, appendBuf, sortSpace);
+        KafkaCacheSegment segment = new KafkaCacheSegment(location, config, topic, id, offset, appendBuf, sortSpace);
         Node node = new Node(segment);
         node.previous = head;
         node.next = sentinel;
@@ -456,7 +463,7 @@ public final class KafkaCachePartition
     @Override
     public String toString()
     {
-        return String.format("[%s] %s[%d]", getClass().getSimpleName(), name, id);
+        return String.format("[%s] %s[%d]", cache, topic, id);
     }
 
     private long computeHash(

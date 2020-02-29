@@ -72,7 +72,7 @@ public final class KafkaCacheClientFactory implements StreamFactory
 
         final KafkaCacheMetaFactory cacheMetaFactory = new KafkaCacheMetaFactory(
                 config, router, writeBuffer, bufferPool, signaler, supplyInitialId, supplyReplyId, supplyTraceId,
-                supplyTypeId, supplyCacheRoute, correlations, KAFKA_CACHE_CLIENT_RECONNECT_DELAY);
+                supplyTypeId, supplyCache, supplyCacheRoute, correlations, KAFKA_CACHE_CLIENT_RECONNECT_DELAY);
 
         final KafkaCacheClientDescribeFactory cacheDescribeFactory = new KafkaCacheClientDescribeFactory(
                 config, router, writeBuffer, bufferPool, supplyInitialId, supplyReplyId, supplyTraceId,

@@ -26,8 +26,9 @@ public class KafkaConfiguration extends Configuration
 {
     public static final boolean DEBUG = Boolean.getBoolean("nukleus.kafka.debug");
 
-    public static final IntPropertyDef KAFKA_CLIENT_META_MAX_AGE;
-    public static final IntPropertyDef KAFKA_CLIENT_DESCRIBE_MAX_AGE;
+    public static final IntPropertyDef KAFKA_CLIENT_MAX_IDLE_MILLIS;
+    public static final IntPropertyDef KAFKA_CLIENT_META_MAX_AGE_MILLIS;
+    public static final IntPropertyDef KAFKA_CLIENT_DESCRIBE_MAX_AGE_MILLIS;
     public static final IntPropertyDef KAFKA_CLIENT_FETCH_MAX_WAIT_MILLIS;
     public static final IntPropertyDef KAFKA_CLIENT_FETCH_MAX_BYTES;
     public static final IntPropertyDef KAFKA_CLIENT_FETCH_PARTITION_MAX_BYTES;
@@ -52,8 +53,9 @@ public class KafkaConfiguration extends Configuration
     static
     {
         final ConfigurationDef config = new ConfigurationDef("nukleus.kafka");
-        KAFKA_CLIENT_META_MAX_AGE = config.property("client.meta.max.age", 5 * 60);
-        KAFKA_CLIENT_DESCRIBE_MAX_AGE = config.property("client.describe.max.age", 5 * 60);
+        KAFKA_CLIENT_MAX_IDLE_MILLIS = config.property("client.max.idle.ms", 1 * 60 * 1000);
+        KAFKA_CLIENT_META_MAX_AGE_MILLIS = config.property("client.meta.max.age.ms", 5 * 60 * 1000);
+        KAFKA_CLIENT_DESCRIBE_MAX_AGE_MILLIS = config.property("client.describe.max.age.ms", 5 * 60 * 1000);
         KAFKA_CLIENT_FETCH_MAX_WAIT_MILLIS = config.property("client.fetch.max.wait.millis", 500);
         KAFKA_CLIENT_FETCH_MAX_BYTES = config.property("client.fetch.max.bytes", 50 * 1024 * 1024);
         KAFKA_CLIENT_FETCH_PARTITION_MAX_BYTES = config.property("client.fetch.partition.max.bytes", 50 * 1024 * 1024);
@@ -87,14 +89,19 @@ public class KafkaConfiguration extends Configuration
         super(KAFKA_CONFIG, config);
     }
 
-    public int clientMetaMaxAge()
+    public long clientMaxIdleMillis()
     {
-        return KAFKA_CLIENT_META_MAX_AGE.getAsInt(this);
+        return KAFKA_CLIENT_MAX_IDLE_MILLIS.getAsInt(this);
     }
 
-    public long clientDescribeMaxAge()
+    public long clientMetaMaxAgeMillis()
     {
-        return KAFKA_CLIENT_DESCRIBE_MAX_AGE.getAsInt(this);
+        return KAFKA_CLIENT_META_MAX_AGE_MILLIS.getAsInt(this);
+    }
+
+    public long clientDescribeMaxAgeMillis()
+    {
+        return KAFKA_CLIENT_DESCRIBE_MAX_AGE_MILLIS.getAsInt(this);
     }
 
     public int clientFetchMaxWaitMillis()
