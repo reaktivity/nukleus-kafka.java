@@ -32,7 +32,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.Node;
-import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
+import org.reaktivity.nukleus.kafka.internal.types.Array32FW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
@@ -202,7 +202,7 @@ public class KafkaCachePartitionTest
                 .value(k -> k.set("test".getBytes(UTF_8)))
                 .build();
 
-            ArrayFW<KafkaHeaderFW> headers = new ArrayFW.Builder<>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+            Array32FW<KafkaHeaderFW> headers = new Array32FW.Builder<>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
                     .wrap(writeBuffer, key.limit(), writeBuffer.capacity())
                     .item(h -> h.nameLen(6).name(n -> n.set("header".getBytes(UTF_8)))
                                 .valueLen(5).value(v -> v.set("value".getBytes(UTF_8))))
@@ -256,7 +256,7 @@ public class KafkaCachePartitionTest
                 .value(k -> k.set("test".getBytes(UTF_8)))
                 .build();
 
-            ArrayFW<KafkaHeaderFW> headers = new ArrayFW.Builder<>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+            Array32FW<KafkaHeaderFW> headers = new Array32FW.Builder<>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
                     .wrap(writeBuffer, key.limit(), writeBuffer.capacity())
                     .build();
 
