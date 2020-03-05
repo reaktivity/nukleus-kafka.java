@@ -47,6 +47,7 @@ import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaPartitionFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
@@ -194,9 +195,9 @@ public final class KafkaMergedFactory implements StreamFactory
             final ArrayFW<KafkaFilterFW> filters = kafkaMergedBeginEx.filters();
 
             final KafkaOffsetFW partition = partitions.matchFirst(p -> p.partitionId() == -1L);
-            final long defaultOffset = partition != null ? partition.partitionOffset() : -2; // EARLIEST ?
+            final long defaultOffset = partition != null ? partition.partitionOffset() : KafkaOffsetType.EARLIEST.value();
 
-            final Long2LongHashMap initialOffsetsById = new Long2LongHashMap(-1L);
+            final Long2LongHashMap initialOffsetsById = new Long2LongHashMap(-3L);
             partitions.forEach(p ->
             {
                 final long partitionId = p.partitionId();
