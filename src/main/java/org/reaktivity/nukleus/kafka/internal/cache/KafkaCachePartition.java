@@ -51,6 +51,7 @@ import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheDeltaFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
@@ -61,9 +62,9 @@ public final class KafkaCachePartition
 
     private static final int CACHE_ENTRY_FLAGS_DIRTY = 0x01;
 
-    public static final int OFFSET_EARLIEST = -2;
+    public static final int OFFSET_EARLIEST = KafkaOffsetType.EARLIEST.value();
 
-    public static final int OFFSET_LATEST = -1;
+    public static final int OFFSET_LATEST = KafkaOffsetType.LATEST.value();
 
     private final KafkaCacheEntryFW headEntryRO = new KafkaCacheEntryFW();
     private final KafkaCacheEntryFW logEntryRO = new KafkaCacheEntryFW();
@@ -135,10 +136,11 @@ public final class KafkaCachePartition
         return sentinel.previous;
     }
 
-    public long nextOffset()
+    public long nextOffset(
+        KafkaOffsetType defaultOffset)
     {
         final Node head = sentinel.previous;
-        return head == sentinel ? OFFSET_EARLIEST : head.segment().nextOffset();
+        return head == sentinel ? defaultOffset.value() : head.segment().nextOffset();
     }
 
     public Node append(
@@ -223,19 +225,23 @@ public final class KafkaCachePartition
             int logRemaining = headSegment.logFile().available();
             int indexRemaining = headSegment.indexFile().available();
             int hashRemaining = headSegment.hashFile().available();
+            int nullsRemaining = headSegment.nullsFile().available();
             if (logRemaining < logRequired ||
                 indexRemaining < SIZEOF_INDEX_RECORD ||
-                hashRemaining < hashRequiredMax)
+                hashRemaining < hashRequiredMax ||
+                nullsRemaining < SIZEOF_INDEX_RECORD)
             {
                 head = append(offset);
                 headSegment = head.segment;
                 logRemaining = headSegment.logFile().available();
                 indexRemaining = headSegment.indexFile().available();
                 hashRemaining = headSegment.hashFile().available();
+                nullsRemaining = headSegment.nullsFile().available();
             }
             assert logRemaining >= logRequired;
             assert indexRemaining >= SIZEOF_INDEX_RECORD;
             assert hashRemaining >= hashRequiredMax;
+            assert nullsRemaining >= SIZEOF_INDEX_RECORD;
         }
 
         return head;
@@ -278,6 +284,7 @@ public final class KafkaCachePartition
         final KafkaCacheFile deltaFile = segment.deltaFile();
         final KafkaCacheFile hashFile = segment.hashFile();
         final KafkaCacheFile keysFile = segment.keysFile();
+        final KafkaCacheFile nullsFile = segment.nullsFile();
 
         logFile.mark();
 
@@ -303,6 +310,13 @@ public final class KafkaCachePartition
 
         final long hashEntry = keyHash << 32 | logFile.markValue();
         hashFile.appendLong(hashEntry);
+
+        if (valueLength == -1)
+        {
+            final int timestampDelta = (int)((timestamp - segment.timestamp()) & 0xFFFF_FFFFL);
+            final long nullsEntry = timestampDelta << 32 | logFile.markValue();
+            nullsFile.appendLong(nullsEntry);
+        }
 
         final int deltaBaseOffset = 0;
         final long keyEntry = keyHash << 32 | deltaBaseOffset;
@@ -413,9 +427,10 @@ public final class KafkaCachePartition
     }
 
     public long deleteAt(
-        KafkaCacheSegment segment)
+        KafkaCacheSegment segment,
+        long retentionMillisMax)
     {
-        return segment.timestamp() + config.retentionMillis;
+        return segment.timestamp() + Math.min(config.retentionMillis, retentionMillisMax);
     }
 
     public long compactAt(
@@ -538,6 +553,7 @@ public final class KafkaCachePartition
         public void remove()
         {
             assert segment != null;
+            segment.delete();
             segment.close();
             segment = null;
 

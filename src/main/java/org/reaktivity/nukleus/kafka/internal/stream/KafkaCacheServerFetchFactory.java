@@ -21,6 +21,7 @@ import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.LATEST;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -54,6 +55,7 @@ import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
@@ -216,12 +218,13 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             {
                 final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
                 final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : KafkaDeltaType.NONE;
+                final KafkaOffsetType defaultOffset = routeEx != null ? routeEx.defaultOffset().get() : KafkaOffsetType.EARLIEST;
                 final String cacheName = route.localAddress().asString();
                 final KafkaCache cache = supplyCache.apply(cacheName);
                 final KafkaCacheTopic topic = cache.supplyTopic(topicName);
                 final KafkaCachePartition partition = topic.supplyPartition(partitionId);
-                final KafkaCacheServerFetchFanout newFanout =
-                        new KafkaCacheServerFetchFanout(resolvedId, authorization, affinity, partition, routeDeltaType);
+                final KafkaCacheServerFetchFanout newFanout = new KafkaCacheServerFetchFanout(resolvedId, authorization,
+                        affinity, partition, routeDeltaType, defaultOffset);
 
                 cacheRoute.serverFetchFanoutsByTopicPartition.put(partitionKey, newFanout);
                 fanout = newFanout;
@@ -374,6 +377,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         private final long authorization;
         private final KafkaCachePartition partition;
         private final KafkaDeltaType deltaType;
+        private final KafkaOffsetType defaultOffset;
+        private final long retentionMillisMax;
         private final List<KafkaCacheServerFetchStream> members;
 
         private long affinity;
@@ -394,12 +399,15 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             long authorization,
             long affinity,
             KafkaCachePartition partition,
-            KafkaDeltaType deltaType)
+            KafkaDeltaType deltaType,
+            KafkaOffsetType defaultOffset)
         {
             this.routeId = routeId;
             this.authorization = authorization;
             this.partition = partition;
             this.deltaType = deltaType;
+            this.defaultOffset = defaultOffset;
+            this.retentionMillisMax = defaultOffset == LATEST ? SECONDS.toMillis(30) : Long.MAX_VALUE;
             this.members = new ArrayList<>();
             this.affinity = affinity;
         }
@@ -450,7 +458,10 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
             if (!KafkaState.initialOpening(state))
             {
-                System.out.format("%s FETCH connect, affinity %d\n", partition, affinity);
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s FETCH connect, affinity %d\n", partition, affinity);
+                }
 
                 doServerFanoutInitialBegin(traceId);
             }
@@ -465,7 +476,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             this.replyId = supplyReplyId.applyAsLong(initialId);
             this.receiver = router.supplyReceiver(initialId);
 
-            this.partitionOffset = partition.nextOffset();
+            this.partitionOffset = partition.nextOffset(defaultOffset);
 
             correlations.put(replyId, this::onServerFanoutMessage);
             router.setThrottle(initialId, this::onServerFanoutMessage);
@@ -606,7 +617,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 final KafkaCachePartition.Node nextHead =
                         partition.newHeadIfNecessary(partitionOffset, key, valueLength, headersSizeMax);
 
-                final long nextOffset = partition.nextOffset();
+                final long nextOffset = partition.nextOffset(defaultOffset);
                 assert partitionOffset >= 0 && partitionOffset >= nextOffset
                         : String.format("%d >= 0 && %d >= %d", partitionOffset, partitionOffset, nextOffset);
 
@@ -621,12 +632,14 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                     assert retainId == NO_CANCEL_ID;
 
                     final long retainAt = partition.retainAt(nextHead.segment());
-                    this.retainId = doServerFanoutSignalAt(retainAt, SIGNAL_SEGMENT_RETAIN);
+                    this.retainId = doServerFanoutInitialSignalAt(retainAt, SIGNAL_SEGMENT_RETAIN);
 
-                    if (deleteId == NO_CANCEL_ID && partition.cleanupPolicy().delete())
+                    if (deleteId == NO_CANCEL_ID &&
+                        partition.cleanupPolicy().delete() &&
+                        !nextHead.previous().sentinel())
                     {
-                        final long deleteAt = partition.deleteAt(nextHead.previous().segment());
-                        this.deleteId = doServerFanoutSignalAt(deleteAt, SIGNAL_SEGMENT_DELETE);
+                        final long deleteAt = partition.deleteAt(nextHead.previous().segment(), retentionMillisMax);
+                        this.deleteId = doServerFanoutInitialSignalAt(deleteAt, SIGNAL_SEGMENT_DELETE);
                     }
                 }
 
@@ -689,7 +702,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                             if (compactId == NO_CANCEL_ID)
                             {
                                 this.compactAt = newCompactAt;
-                                this.compactId = doServerFanoutSignalAt(newCompactAt, SIGNAL_SEGMENT_COMPACT);
+                                this.compactId = doServerFanoutInitialSignalAt(newCompactAt, SIGNAL_SEGMENT_COMPACT);
                             }
                         }
                     }
@@ -731,7 +744,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                                         if (compactId == NO_CANCEL_ID)
                                         {
                                             this.compactAt = newCompactAt;
-                                            this.compactId = doServerFanoutSignalAt(newCompactAt, SIGNAL_SEGMENT_COMPACT);
+                                            this.compactId = doServerFanoutInitialSignalAt(newCompactAt, SIGNAL_SEGMENT_COMPACT);
                                         }
                                     }
                                 }
@@ -792,7 +805,10 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 error != ERROR_NOT_LEADER_FOR_PARTITION &&
                 error != ERROR_UNKNOWN_TOPIC_OR_PARTITION)
             {
-                System.out.format("%s FETCH reconnect in %ds, error %d\n", partition, reconnectDelay, error);
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s FETCH reconnect in %ds, error %d\n", partition, reconnectDelay, error);
+                }
 
                 signaler.signalAt(
                     currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
@@ -801,7 +817,11 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             }
             else
             {
-                System.out.format("%s FETCH disconnect, error %d\n", partition, error);
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s FETCH disconnect, error %d\n", partition, error);
+                }
+
                 members.forEach(s -> s.doServerInitialResetIfNecessary(traceId));
             }
         }
@@ -860,7 +880,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             final long now = currentTimeMillis();
 
             Node segmentNode = partition.sentinel().next();
-            while (!segmentNode.sentinel() && partition.deleteAt(segmentNode.segment()) <= now)
+            while (segmentNode != partition.head() &&
+                    partition.deleteAt(segmentNode.segment(), retentionMillisMax) <= now)
             {
                 segmentNode.remove();
                 segmentNode = segmentNode.next();
@@ -869,8 +890,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
             if (segmentNode != partition.head())
             {
-                final long expiresAt = partition.deleteAt(segmentNode.segment());
-                this.deleteId = doServerFanoutSignalAt(expiresAt, SIGNAL_SEGMENT_DELETE);
+                final long deleteAt = partition.deleteAt(segmentNode.segment(), retentionMillisMax);
+                this.deleteId = doServerFanoutInitialSignalAt(deleteAt, SIGNAL_SEGMENT_DELETE);
             }
             else
             {
@@ -922,7 +943,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             doWindow(receiver, routeId, replyId, traceId, authorization, 0L, credit, 0);
         }
 
-        private long doServerFanoutSignalAt(
+        private long doServerFanoutInitialSignalAt(
             long timeMillis,
             int signalId)
         {

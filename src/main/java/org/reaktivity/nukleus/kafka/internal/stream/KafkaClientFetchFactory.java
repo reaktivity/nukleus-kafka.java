@@ -45,6 +45,7 @@ import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 import org.reaktivity.nukleus.kafka.internal.types.Varint32FW;
@@ -97,8 +98,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
     private static final int FLAG_FIN = 0x01;
     private static final int FLAG_INIT = 0x02;
 
-    private static final long OFFSET_LATEST = -1L;
-    private static final long OFFSET_EARLIEST = -2L;
+    private static final long OFFSET_LATEST = KafkaOffsetType.LATEST.value();
+    private static final long OFFSET_EARLIEST = KafkaOffsetType.EARLIEST.value();
 
     private static final int SIGNAL_NEXT_REQUEST = 1;
 
@@ -178,6 +179,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
     private final KafkaFetchClientDecoder decodeFetchRecordInit = this::decodeFetchRecordInit;
     private final KafkaFetchClientDecoder decodeFetchRecordValue = this::decodeFetchRecordValue;
     private final KafkaFetchClientDecoder decodeIgnoreRecord = this::decodeIgnoreRecord;
+    private final KafkaFetchClientDecoder decodeIgnoreRecordBatch = this::decodeIgnoreRecordBatch;
     private final KafkaFetchClientDecoder decodeIgnoreRecordSet = this::decodeIgnoreRecordSet;
     private final KafkaFetchClientDecoder decodeIgnoreAll = this::decodeIgnoreAll;
 
@@ -844,6 +846,12 @@ public final class KafkaClientFetchFactory implements StreamFactory
             final RecordSetFW recordSet = recordSetRO.tryWrap(buffer, progress, limit);
             if (recordSet != null)
             {
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("[client] %s[%d] FETCH RecordSet %d\n",
+                            client.topic, client.partitionId, recordSet.length());
+                }
+
                 final int responseProgress = recordSet.sizeof();
 
                 progress += responseProgress;
@@ -895,8 +903,21 @@ public final class KafkaClientFetchFactory implements StreamFactory
             final int maxLimit = Math.min(progress + client.decodableRecordSetBytes, limit);
             final RecordBatchFW recordBatch = recordBatchRO.tryWrap(buffer, progress, maxLimit);
 
+            if (recordBatch == null && length >= client.decodableRecordSetBytes)
+            {
+                client.decoder = decodeIgnoreRecordSet;
+                break decode;
+            }
+
             if (recordBatch != null)
             {
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("[client] %s[%d] FETCH RecordBatch %d\n",
+                            client.topic, client.partitionId, recordBatch.length());
+                }
+
+                final int attributes = recordBatch.attributes();
                 final int recordSetProgress = recordBatch.sizeof();
                 final int recordBatchProgress = recordSetProgress - FIELD_LIMIT_RECORD_BATCH_LENGTH;
 
@@ -915,6 +936,12 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
                 client.decodableRecordBatchBytes -= recordBatchProgress;
                 assert client.decodableRecordBatchBytes >= 0;
+
+                if (isCompressedBatch(attributes) || isControlBatch(attributes))
+                {
+                    client.decoder = decodeIgnoreRecordBatch;
+                    break decode;
+                }
 
                 client.decoder = decodeFetchRecordLength;
             }
@@ -947,14 +974,20 @@ public final class KafkaClientFetchFactory implements StreamFactory
             final Varint32FW recordLength = recordLengthRO.tryWrap(buffer, progress, limit);
 
             // TODO: verify incremental decode vs truncated record set mid record length
-            if (recordLength == null && length >= client.decodableRecordSetBytes)
+            if (recordLength == null && length >= client.decodableRecordBatchBytes)
             {
-                client.decoder = decodeIgnoreRecordSet;
+                client.decoder = decodeIgnoreRecordBatch;
                 break decode;
             }
 
             if (recordLength != null)
             {
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("[client] %s[%d] FETCH Record length %d\n",
+                            client.topic, client.partitionId, recordLength.value());
+                }
+
                 final int sizeofRecord = recordLength.sizeof() + recordLength.value();
 
                 // TODO: verify incremental decode vs truncated record set post record length
@@ -999,6 +1032,11 @@ public final class KafkaClientFetchFactory implements StreamFactory
             final RecordHeaderFW recordHeader = recordHeaderRO.tryWrap(buffer, progress, limit);
             if (recordHeader != null)
             {
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("[client] %s[%d] FETCH Record %d\n", client.topic, client.partitionId, client.nextOffset);
+                }
+
                 final Varint32FW recordLength = recordLengthRO.tryWrap(buffer, progress, limit);
                 assert recordHeader.length() == recordLength.value();
 
@@ -1009,7 +1047,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 final long timestampAbs = client.decodeRecordBatchTimestamp + recordHeader.timestampDelta();
                 final OctetsFW key = recordHeader.key();
 
-                if (offsetAbs < client.partitionOffset)
+                if (offsetAbs < client.nextOffset)
                 {
                     client.decodableRecordBytes = sizeofRecord;
                     client.decoder = decodeIgnoreRecord;
@@ -1064,17 +1102,17 @@ public final class KafkaClientFetchFactory implements StreamFactory
                         client.onDecodeFetchRecord(traceId, valueReserved, offsetAbs, timestampAbs,
                                 key, value, headerCount, headers);
 
-                        client.decodableRecords--;
-                        assert client.decodableRecords >= 0;
-
                         client.decodableResponseBytes -= sizeofRecord;
                         assert client.decodableResponseBytes >= 0;
+
+                        client.decodableRecordSetBytes -= sizeofRecord;
+                        assert client.decodableRecordSetBytes >= 0;
 
                         client.decodableRecordBatchBytes -= sizeofRecord;
                         assert client.decodableRecordBatchBytes >= 0;
 
-                        client.decodableRecordSetBytes -= sizeofRecord;
-                        assert client.decodableRecordSetBytes >= 0;
+                        client.decodableRecords--;
+                        assert client.decodableRecords >= 0;
 
                         client.decoder = decodeFetchRecordLength;
                     }
@@ -1109,6 +1147,12 @@ public final class KafkaClientFetchFactory implements StreamFactory
             final RecordHeaderFW recordHeader = recordHeaderRO.tryWrap(buffer, progress, limit);
             if (recordHeader != null)
             {
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("[client] %s[%d] FETCH Record (init) %d\n",
+                            client.topic, client.partitionId, client.nextOffset);
+                }
+
                 final Varint32FW recordLength = recordLengthRO.tryWrap(buffer, progress, limit);
                 assert recordHeader.length() == recordLength.value();
 
@@ -1117,7 +1161,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 final long timestampAbs = client.decodeRecordBatchTimestamp + recordHeader.timestampDelta();
                 final OctetsFW key = recordHeader.key();
 
-                if (offsetAbs < client.partitionOffset)
+                if (offsetAbs < client.nextOffset)
                 {
                     client.decodableRecordBytes = sizeofRecord;
                     client.decoder = decodeIgnoreRecord;
@@ -1168,11 +1212,11 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 client.decodableResponseBytes -= recordProgress;
                 assert client.decodableResponseBytes >= 0;
 
-                client.decodableRecordBatchBytes -= recordProgress;
-                assert client.decodableRecordBatchBytes >= 0;
-
                 client.decodableRecordSetBytes -= recordProgress;
                 assert client.decodableRecordSetBytes >= 0;
+
+                client.decodableRecordBatchBytes -= recordProgress;
+                assert client.decodableRecordBatchBytes >= 0;
 
                 client.decodableRecordBytes -= recordProgress;
                 assert client.decodableRecordBytes >= 0;
@@ -1222,6 +1266,12 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
             if (length >= client.decodableRecordBytes && valueLengthMax >= client.decodableRecordValueBytes)
             {
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("[client] %s[%d] FETCH Record (fin) %d\n",
+                            client.topic, client.partitionId, client.nextOffset);
+                }
+
                 final int valueOffset = progress;
                 final int valueProgress = valueLengthMax;
                 final int valueSize = Math.max(valueProgress, 0);
@@ -1242,17 +1292,14 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 client.onDecodeFetchRecordValueFin(traceId, valueReservedMax, client.decodeRecordOffset, valueFin,
                         headerCount, headers);
 
-                client.decodableRecords--;
-                assert client.decodableRecords >= 0;
-
                 client.decodableResponseBytes -= recordProgress;
                 assert client.decodableResponseBytes >= 0;
 
-                client.decodableRecordBatchBytes -= recordProgress;
-                assert client.decodableRecordBatchBytes >= 0;
-
                 client.decodableRecordSetBytes -= recordProgress;
                 assert client.decodableRecordSetBytes >= 0;
+
+                client.decodableRecordBatchBytes -= recordProgress;
+                assert client.decodableRecordBatchBytes >= 0;
 
                 client.decodableRecordBytes -= recordProgress;
                 assert client.decodableRecordBytes == 0;
@@ -1260,12 +1307,21 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 client.decodableRecordValueBytes -= valueProgress;
                 assert client.decodableRecordValueBytes == 0;
 
+                client.decodableRecords--;
+                assert client.decodableRecords >= 0;
+
                 client.decoder = decodeFetchRecordLength;
             }
             else
             {
                 assert length >= decodeMaxBytes;
                 assert client.decodableRecordValueBytes != -1 : "record headers overflow decode buffer";
+
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("[client] %s[%d] FETCH Record (cont) %d\n",
+                            client.topic, client.partitionId, client.nextOffset);
+                }
 
                 final int valueOffset = progress;
                 final int valueProgress = Math.min(valueLengthMax, decodeMaxBytes);
@@ -1306,11 +1362,11 @@ public final class KafkaClientFetchFactory implements StreamFactory
         client.decodableResponseBytes -= length;
         assert client.decodableResponseBytes >= 0;
 
-        client.decodableRecordBatchBytes -= length;
-        assert client.decodableRecordBatchBytes >= 0;
-
         client.decodableRecordSetBytes -= length;
         assert client.decodableRecordSetBytes >= 0;
+
+        client.decodableRecordBatchBytes -= length;
+        assert client.decodableRecordBatchBytes >= 0;
 
         client.decodableRecordBytes -= length;
         assert client.decodableRecordBytes >= 0;
@@ -1320,6 +1376,39 @@ public final class KafkaClientFetchFactory implements StreamFactory
             client.decodableRecords--;
             assert client.decodableRecords >= 0;
             client.decoder = decodeFetchRecordLength;
+        }
+
+        return progress;
+    }
+
+    private int decodeIgnoreRecordBatch(
+        KafkaFetchStream.KafkaFetchClient client,
+        long traceId,
+        long authorization,
+        long budgetId,
+        int reserved,
+        DirectBuffer buffer,
+        int offset,
+        int progress,
+        int limit)
+    {
+        final int maxLength = limit - progress;
+        final int length = Math.min(maxLength, client.decodableRecordBatchBytes);
+
+        progress += length;
+
+        client.decodableResponseBytes -= length;
+        assert client.decodableResponseBytes >= 0;
+
+        client.decodableRecordSetBytes -= length;
+        assert client.decodableRecordSetBytes >= 0;
+
+        client.decodableRecordBatchBytes -= length;
+        assert client.decodableRecordBatchBytes >= 0;
+
+        if (client.decodableRecordBatchBytes == 0)
+        {
+            client.decoder = decodeFetchRecordBatch;
         }
 
         return progress;
@@ -1340,7 +1429,12 @@ public final class KafkaClientFetchFactory implements StreamFactory
         final int length = Math.min(maxLength, client.decodableRecordSetBytes);
 
         progress += length;
+
+        client.decodableResponseBytes -= length;
+        assert client.decodableResponseBytes >= 0;
+
         client.decodableRecordSetBytes -= length;
+        assert client.decodableRecordSetBytes >= 0;
 
         if (client.decodableRecordSetBytes == 0)
         {
@@ -1653,7 +1747,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
             private final String topic;
             private final int partitionId;
 
-            private long partitionOffset;
+            private long nextOffset;
 
             private int state;
             private long authorization;
@@ -1705,7 +1799,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 this.network = router.supplyReceiver(initialId);
                 this.topic = requireNonNull(topic);
                 this.partitionId = partitionId;
-                this.partitionOffset = initialOffset;
+                this.nextOffset = initialOffset;
                 this.encoder = encodeFetchRequest;
                 this.decoder = decodeFetchResponse;
             }
@@ -1762,11 +1856,15 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 doNetworkWindow(traceId, 0L, decodePool.slotCapacity(), 0);
             }
 
+            private long networkBytesReceived;
+
             private void onNetworkData(
                 DataFW data)
             {
                 final long traceId = data.traceId();
                 final long budgetId = data.budgetId();
+
+                networkBytesReceived += Math.max(data.length(), 0);
 
                 authorization = data.authorization();
                 replyBudget -= data.reserved();
@@ -1825,6 +1923,11 @@ public final class KafkaClientFetchFactory implements StreamFactory
             {
                 final long traceId = abort.traceId();
 
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("[client] %s[%s] FETCH aborted (%d bytes)\n", topic, partitionId, networkBytesReceived);
+                }
+
                 state = KafkaState.closedReply(state);
 
                 cleanupNetwork(traceId);
@@ -1834,6 +1937,11 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 ResetFW reset)
             {
                 final long traceId = reset.traceId();
+
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("[client] %s[%d] FETCH reset (%d bytes)\n", topic, partitionId, networkBytesReceived);
+                }
 
                 state = KafkaState.closedInitial(state);
 
@@ -1887,7 +1995,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 state = KafkaState.openingInitial(state);
                 correlations.put(replyId, this::onNetwork);
 
-                if (partitionOffset == OFFSET_LATEST || partitionOffset == OFFSET_EARLIEST)
+                if (nextOffset == OFFSET_LATEST || nextOffset == OFFSET_EARLIEST)
                 {
                     client.encoder = client.encodeOffsetsRequest;
                     client.decoder = decodeOffsetsResponse;
@@ -2038,7 +2146,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
                 encodeProgress = topicRequest.limit();
 
-                final long timestamp = partitionOffset;
+                final long timestamp = nextOffset;
 
                 assert timestamp < 0;
 
@@ -2060,6 +2168,11 @@ public final class KafkaClientFetchFactory implements StreamFactory
                         .correlationId(requestId)
                         .clientId(requestHeader.clientId().asString())
                         .build();
+
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s[%d] OFFSETS %d\n", topic, partitionId, timestamp);
+                }
 
                 doNetworkData(traceId, budgetId, encodeBuffer, encodeOffset, encodeProgress);
             }
@@ -2104,7 +2217,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 final PartitionRequestFW partitionRequest = fetchPartitionRequestRW
                         .wrap(encodeBuffer, encodeProgress, encodeLimit)
                         .partitionId((int) partitionId)
-                        .fetchOffset(partitionOffset)
+                        .fetchOffset(nextOffset)
                         .maxBytes(partitionMaxBytes)
                         .build();
 
@@ -2120,6 +2233,11 @@ public final class KafkaClientFetchFactory implements StreamFactory
                         .correlationId(requestId)
                         .clientId(requestHeader.clientId().asString())
                         .build();
+
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s[%d] FETCH %d\n", topic, partitionId, nextOffset);
+                }
 
                 doNetworkData(traceId, budgetId, encodeBuffer, encodeOffset, encodeProgress);
             }
@@ -2260,7 +2378,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 {
                 case ERROR_NONE:
                     assert partitionId == this.partitionId;
-                    this.partitionOffset = partitionOffset;
+                    this.nextOffset = partitionOffset;
                     break;
                 default:
                     final KafkaResetExFW resetEx = kafkaResetExRW.wrap(extBuffer, 0, extBuffer.capacity())
@@ -2284,12 +2402,12 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 case ERROR_NONE:
                     assert partitionId == this.partitionId;
                     doApplicationWindow(traceId, 0L, 0, 0);
-                    doApplicationBeginIfNecessary(traceId, authorization, topic, partitionId, partitionOffset);
+                    doApplicationBeginIfNecessary(traceId, authorization, topic, partitionId, nextOffset);
                     break;
                 case ERROR_OFFSET_OUT_OF_RANGE:
                     assert partitionId == this.partitionId;
                     // TODO: recover at EARLIEST or LATEST ?
-                    partitionOffset = OFFSET_EARLIEST;
+                    nextOffset = OFFSET_EARLIEST;
                     client.encoder = client.encodeOffsetsRequest;
                     client.decoder = decodeOffsetsResponse;
                     doEncodeRequestIfNecessary(traceId, initialBudgetId);
@@ -2315,7 +2433,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 int headerCount,
                 DirectBuffer headers)
             {
-                this.partitionOffset = offset + 1;
+                this.nextOffset = offset + 1;
 
                 final KafkaDataExFW kafkaDataEx = kafkaDataExRW.wrap(extBuffer, 0, extBuffer.capacity())
                         .typeId(kafkaTypeId)
@@ -2379,7 +2497,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 int headerCount,
                 DirectBuffer headers)
             {
-                this.partitionOffset = offset + 1;
+                this.nextOffset = offset + 1;
 
                 final KafkaDataExFW kafkaDataEx = kafkaDataExRW.wrap(extBuffer, 0, extBuffer.capacity())
                         .typeId(kafkaTypeId)
@@ -2498,5 +2616,19 @@ public final class KafkaClientFetchFactory implements StreamFactory
         }
 
         return header;
+    }
+
+    private static boolean isCompressedBatch(
+        int attributes)
+    {
+        // 0 = NONE, 1 = GZIP, 2 = SNAPPY, 3 = LZ4
+        return (attributes & 0x07) != 0;
+    }
+
+    private static boolean isControlBatch(
+        int attributes)
+    {
+        // sixth lowest bit indicates whether the RecordBatch includes a control message
+        return (attributes & 0x20) != 0;
     }
 }

@@ -28,19 +28,20 @@ public final class KafkaCacheSegment extends KafkaCacheObject<KafkaCacheSegment>
     private final String name;
     private final int id;
     private final long baseOffset;
-    private final long timestamp;
+    private long timestamp;
 
     private final KafkaCacheFile logFile;
     private final KafkaCacheFile deltaFile;
     private final KafkaCacheIndexFile indexFile;
     private final KafkaCacheIndexFile hashFile;
     private final KafkaCacheIndexFile keysFile;
+    private final KafkaCacheIndexFile nullsFile;
 
     private long lastOffset;
 
     private int dirtyBytes;
-    private long dirtySince;
-    private long cleanableAt;
+    private long dirtySince = -1L;
+    private long cleanableAt = Long.MAX_VALUE;
 
     public KafkaCacheSegment(
         KafkaCacheSegment segment,
@@ -77,6 +78,7 @@ public final class KafkaCacheSegment extends KafkaCacheObject<KafkaCacheSegment>
         this.indexFile = new KafkaCacheFile.Index(location, baseOffset, config.segmentIndexBytes, appendBuf);
         this.hashFile = new KafkaCacheFile.HashScan(location, baseOffset, config.segmentIndexBytes, appendBuf, sortSpace);
         this.keysFile = new KafkaCacheFile.KeysScan(location, baseOffset, config.segmentIndexBytes, appendBuf, sortSpace);
+        this.nullsFile = new KafkaCacheFile.NullsScan(location, baseOffset, config.segmentIndexBytes, appendBuf, sortSpace);
     }
 
     public KafkaCacheSegment(
@@ -97,6 +99,7 @@ public final class KafkaCacheSegment extends KafkaCacheObject<KafkaCacheSegment>
         this.indexFile = new KafkaCacheFile.Index(location, baseOffset);
         this.hashFile = new KafkaCacheFile.HashIndex(location, baseOffset);
         this.keysFile = new KafkaCacheFile.KeysIndex(location, baseOffset);
+        this.nullsFile = new KafkaCacheFile.NullsIndex(location, baseOffset);
     }
 
     public Path location()
@@ -161,6 +164,11 @@ public final class KafkaCacheSegment extends KafkaCacheObject<KafkaCacheSegment>
         return hashFile;
     }
 
+    public KafkaCacheIndexFile nullsFile()
+    {
+        return nullsFile;
+    }
+
     public KafkaCacheIndexFile keysFile()
     {
         return keysFile;
@@ -172,6 +180,7 @@ public final class KafkaCacheSegment extends KafkaCacheObject<KafkaCacheSegment>
         deltaFile.freeze();
         indexFile.freeze();
         hashFile.freeze();
+        nullsFile.freeze();
         keysFile.freeze();
 
         final KafkaCacheSegment frozen = new KafkaCacheSegment(location, name, id, baseOffset, lastOffset);
@@ -188,6 +197,7 @@ public final class KafkaCacheSegment extends KafkaCacheObject<KafkaCacheSegment>
         logFile.delete();
         indexFile.delete();
         hashFile.delete();
+        nullsFile.delete();
         deltaFile.delete();
         keysFile.delete();
     }
@@ -243,6 +253,7 @@ public final class KafkaCacheSegment extends KafkaCacheObject<KafkaCacheSegment>
         logFile.close();
         indexFile.close();
         hashFile.close();
+        nullsFile.close();
         deltaFile.close();
         keysFile.close();
     }

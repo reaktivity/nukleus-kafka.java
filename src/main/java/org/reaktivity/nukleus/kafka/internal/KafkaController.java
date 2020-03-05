@@ -29,6 +29,7 @@ import org.reaktivity.nukleus.Controller;
 import org.reaktivity.nukleus.ControllerSpi;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.FreezeFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
@@ -143,6 +144,7 @@ public final class KafkaController implements Controller
                 final JsonObject object = (JsonObject) element;
                 final String topic = gson.fromJson(object.get("topic"), String.class);
                 final String deltaType = gson.fromJson(object.get("deltaType"), String.class);
+                final String defaultOffset = gson.fromJson(object.get("defaultOffset"), String.class);
 
                 if (topic != null)
                 {
@@ -151,6 +153,9 @@ public final class KafkaController implements Controller
                                        .deltaType(t -> t.set(object.has("deltaType")
                                                ? KafkaDeltaType.valueOf(deltaType)
                                                : KafkaDeltaType.NONE))
+                                       .defaultOffset(t -> t.set(object.has("defaultOffset")
+                                               ? KafkaOffsetType.valueOf(defaultOffset)
+                                               : KafkaOffsetType.EARLIEST))
                                        .build();
                 }
             }

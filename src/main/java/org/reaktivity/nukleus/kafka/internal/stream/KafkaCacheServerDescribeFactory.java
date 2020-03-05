@@ -422,7 +422,10 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
 
             if (!KafkaState.initialOpening(state))
             {
-                System.out.format("%s DESCRIBE connect\n", topic);
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s DESCRIBE connect\n", topic);
+                }
 
                 doDescribeFanoutInitialBegin(traceId);
             }
@@ -481,7 +484,10 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
 
             if (reconnectDelay != 0)
             {
-                System.out.format("%s DESCRIBE reconnect in %ds, error %d\n", topic, reconnectDelay, error);
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s DESCRIBE reconnect in %ds, error %d\n", topic, reconnectDelay, error);
+                }
 
                 signaler.signalAt(
                     currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
@@ -490,7 +496,10 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
             }
             else
             {
-                System.out.format("%s DESCRIBE disconnect, error %d\n", topic, error);
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s DESCRIBE disconnect, error %d\n", topic, error);
+                }
 
                 members.forEach(s -> s.doDescribeInitialResetIfNecessary(traceId));
             }
@@ -625,7 +634,10 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
 
             if (reconnectDelay != 0)
             {
-                System.out.format("%s DESCRIBE reconnect in %ds\n", topic, reconnectDelay);
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s DESCRIBE reconnect in %ds\n", topic, reconnectDelay);
+                }
 
                 signaler.signalAt(
                     currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
@@ -634,7 +646,10 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
             }
             else
             {
-                System.out.format("%s DESCRIBE disconnect\n", topic);
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s DESCRIBE disconnect\n", topic);
+                }
 
                 members.forEach(s -> s.doDescribeReplyAbortIfNecessary(traceId));
             }

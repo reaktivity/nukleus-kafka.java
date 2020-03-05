@@ -1090,6 +1090,11 @@ public final class KafkaClientMetaFactory implements StreamFactory
                 long traceId,
                 long budgetId)
             {
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("[client] %s META\n", topic);
+                }
+
                 final MutableDirectBuffer encodeBuffer = writeBuffer;
                 final int encodeOffset = DataFW.FIELD_OFFSET_PAYLOAD;
                 final int encodeLimit = encodeBuffer.capacity();

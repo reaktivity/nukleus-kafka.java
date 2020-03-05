@@ -169,8 +169,8 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         if (route != null)
         {
             final long resolvedId = route.correlationId();
-            final Long2LongHashMap initialOffsetsById = new Long2LongHashMap(-1L);
-            final long defaultOffset = OFFSET_EARLIEST;
+            final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
+            final long defaultOffset = routeEx != null ? routeEx.defaultOffset().get().value() : OFFSET_EARLIEST;
 
             newStream = new KafkaBootstrapStream(
                     sender,
@@ -180,7 +180,6 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
                     authorization,
                     topic,
                     resolvedId,
-                    initialOffsetsById,
                     defaultOffset)::onBootstrapInitial;
         }
 
@@ -315,7 +314,6 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             long authorization,
             String topic,
             long resolvedId,
-            Long2LongHashMap initialOffsetsById,
             long defaultOffset)
         {
             this.sender = sender;
@@ -329,7 +327,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             this.describeStream = new KafkaBootstrapDescribeStream(this);
             this.metaStream = new KafkaBootstrapMetaStream(this);
             this.fetchStreams = new ArrayList<>();
-            this.nextOffsetsById = initialOffsetsById;
+            this.nextOffsetsById = new Long2LongHashMap(-1L);
             this.defaultOffset = defaultOffset;
         }
 

@@ -417,7 +417,10 @@ public final class KafkaCacheMetaFactory implements StreamFactory
 
             if (!KafkaState.initialOpening(state))
             {
-                System.out.format("%s META connect\n", topic);
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s META connect\n", topic);
+                }
 
                 doMetaFanoutInitialBegin(traceId);
             }
@@ -492,7 +495,10 @@ public final class KafkaCacheMetaFactory implements StreamFactory
 
             if (reconnectDelay != 0)
             {
-                System.out.format("%s META reconnect in %ds, error %d\n", topic, reconnectDelay, error);
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s META reconnect in %ds, error %d\n", topic, reconnectDelay, error);
+                }
 
                 signaler.signalAt(
                         currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
@@ -501,7 +507,10 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             }
             else
             {
-                System.out.format("%s META disconnect, error %d\n", topic, error);
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s META disconnect, error %d\n", topic, error);
+                }
 
                 members.forEach(s -> s.doMetaInitialResetIfNecessary(traceId));
             }
@@ -618,7 +627,10 @@ public final class KafkaCacheMetaFactory implements StreamFactory
 
             if (reconnectDelay != 0)
             {
-                System.out.format("%s META reconnect in %ds\n", topic, reconnectDelay);
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s META reconnect in %ds\n", topic, reconnectDelay);
+                }
 
                 signaler.signalAt(
                         currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
@@ -627,7 +639,10 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             }
             else
             {
-                System.out.format("%s META disconnect\n", topic);
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s META disconnect\n", topic);
+                }
 
                 members.forEach(s -> s.doMetaReplyAbortIfNecessary(traceId));
             }

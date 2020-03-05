@@ -1098,6 +1098,11 @@ public final class KafkaClientDescribeFactory implements StreamFactory
                 long traceId,
                 long budgetId)
             {
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("[client] %s DESCRIBE\n", topic);
+                }
+
                 final MutableDirectBuffer encodeBuffer = writeBuffer;
                 final int encodeOffset = DataFW.FIELD_OFFSET_PAYLOAD;
                 final int encodeLimit = encodeBuffer.capacity();

@@ -44,6 +44,9 @@ public class KafkaCacheFile implements AutoCloseable
     private static final String EXT_HSCAN = ".hscan";
     private static final String EXT_HSCAN_WORK = ".hscan.work";
     private static final String EXT_HINDEX = ".hindex";
+    private static final String EXT_NSCAN = ".nscan";
+    private static final String EXT_NSCAN_WORK = ".nscan.work";
+    private static final String EXT_NINDEX = ".nindex";
     private static final String EXT_KSCAN = ".kscan";
     private static final String EXT_KSCAN_WORK = ".kscan.work";
     private static final String EXT_KINDEX = ".kindex";
@@ -54,6 +57,8 @@ public class KafkaCacheFile implements AutoCloseable
     private static final String FORMAT_INDEX_FILE = String.format(FORMAT_FILE, EXT_INDEX);
     private static final String FORMAT_HSCAN_FILE = String.format(FORMAT_FILE, EXT_HSCAN);
     private static final String FORMAT_HINDEX_FILE = String.format(FORMAT_FILE, EXT_HINDEX);
+    private static final String FORMAT_NSCAN_FILE = String.format(FORMAT_FILE, EXT_NSCAN);
+    private static final String FORMAT_NINDEX_FILE = String.format(FORMAT_FILE, EXT_NINDEX);
     private static final String FORMAT_KSCAN_FILE = String.format(FORMAT_FILE, EXT_KSCAN);
     private static final String FORMAT_KINDEX_FILE = String.format(FORMAT_FILE, EXT_KINDEX);
 
@@ -473,6 +478,42 @@ public class KafkaCacheFile implements AutoCloseable
             long baseOffset)
         {
             super(location.resolve(String.format(FORMAT_KINDEX_FILE, baseOffset)));
+        }
+    }
+
+    public static final class NullsScan extends KafkaCacheIndexFile.SortedByValue
+    {
+        public NullsScan(
+            Path location,
+            long baseOffset,
+            int capacity,
+            MutableDirectBuffer appendBuf,
+            long[] sortSpace)
+        {
+            super(location.resolve(String.format(FORMAT_NSCAN_FILE, baseOffset)), capacity, appendBuf, sortSpace);
+        }
+
+        @Override
+        public void freeze()
+        {
+            super.freeze();
+
+            final Path nscan = location();
+            final String filename = nscan.getFileName().toString();
+            final Path nscanWork = nscan.resolveSibling(filename.replace(EXT_NSCAN, EXT_NSCAN_WORK));
+            final Path nindex = nscan.resolveSibling(filename.replace(EXT_NSCAN, EXT_NINDEX));
+
+            sortByKeyUnique(nscanWork, nindex);
+        }
+    }
+
+    public static final class NullsIndex extends KafkaCacheIndexFile.SortedByKey
+    {
+        public NullsIndex(
+            Path location,
+            long baseOffset)
+        {
+            super(location.resolve(String.format(FORMAT_NINDEX_FILE, baseOffset)));
         }
     }
 
