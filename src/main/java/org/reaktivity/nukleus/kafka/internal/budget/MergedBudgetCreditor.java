@@ -13,23 +13,13 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.kafka.internal;
+package org.reaktivity.nukleus.kafka.internal.budget;
 
-import org.reaktivity.nukleus.Configuration;
-import org.reaktivity.nukleus.NukleusFactorySpi;
+import org.reaktivity.nukleus.budget.BudgetCreditor;
 
-public final class KafkaNukleusFactorySpi implements NukleusFactorySpi
+public interface MergedBudgetCreditor extends BudgetCreditor
 {
-    @Override
-    public String name()
-    {
-        return KafkaNukleus.NAME;
-    }
-
-    @Override
-    public KafkaNukleus create(
-        Configuration config)
-    {
-        return new KafkaNukleus(new KafkaConfiguration(config));
-    }
+    long acquire(
+        long watcherId,
+        long budgetId);
 }

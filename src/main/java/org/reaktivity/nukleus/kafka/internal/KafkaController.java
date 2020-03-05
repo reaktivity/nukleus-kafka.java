@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2019 The Reaktivity Project
+ * Copyright 2016-2020 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -17,7 +17,6 @@ package org.reaktivity.nukleus.kafka.internal;
 
 import static java.nio.ByteBuffer.allocateDirect;
 import static java.nio.ByteOrder.nativeOrder;
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.reaktivity.nukleus.route.RouteKind.CLIENT;
 
 import java.util.Map;
@@ -29,6 +28,8 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.Controller;
 import org.reaktivity.nukleus.ControllerSpi;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.FreezeFW;
 import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
@@ -142,24 +143,19 @@ public final class KafkaController implements Controller
             {
                 final JsonObject object = (JsonObject) element;
                 final String topic = gson.fromJson(object.get("topic"), String.class);
-                final JsonObject headers = object.getAsJsonObject("headers");
+                final String deltaType = gson.fromJson(object.get("deltaType"), String.class);
+                final String defaultOffset = gson.fromJson(object.get("defaultOffset"), String.class);
 
-                if (topic != null || headers != null)
+                if (topic != null)
                 {
                     routeEx = routeExRW.wrap(extensionBuffer, 0, extensionBuffer.capacity())
-                                       .topicName(topic)
-                                       .headers(lhb ->
-                                       {
-                                           if (headers != null && headers.size() > 0)
-                                           {
-                                               headers.entrySet().forEach(e ->
-                                               {
-                                                   final String key = e.getKey();
-                                                   final String value = gson.fromJson(e.getValue(), String.class);
-                                                   lhb.item(hb -> hb.key(key).value(ob -> ob.put(value.getBytes(UTF_8))));
-                                               });
-                                           }
-                                       })
+                                       .topic(topic)
+                                       .deltaType(t -> t.set(object.has("deltaType")
+                                               ? KafkaDeltaType.valueOf(deltaType)
+                                               : KafkaDeltaType.NONE))
+                                       .defaultOffset(t -> t.set(object.has("defaultOffset")
+                                               ? KafkaOffsetType.valueOf(defaultOffset)
+                                               : KafkaOffsetType.EARLIEST))
                                        .build();
                 }
             }

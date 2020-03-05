@@ -13,23 +13,35 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.kafka.internal;
+package org.reaktivity.nukleus.kafka.internal.cache;
 
-import org.reaktivity.nukleus.Configuration;
-import org.reaktivity.nukleus.NukleusFactorySpi;
+import static java.lang.Integer.toUnsignedLong;
 
-public final class KafkaNukleusFactorySpi implements NukleusFactorySpi
+public final class KafkaCacheIndexRecord
 {
-    @Override
-    public String name()
+    public static final int SIZEOF_INDEX_RECORD = Long.BYTES;
+
+    public static int indexKey(
+        long indexEntry)
     {
-        return KafkaNukleus.NAME;
+        return (int)(indexEntry >>> 32);
     }
 
-    @Override
-    public KafkaNukleus create(
-        Configuration config)
+    public static int indexValue(
+        long indexEntry)
     {
-        return new KafkaNukleus(new KafkaConfiguration(config));
+        return (int)(indexEntry & 0xFFFF_FFFFL);
+    }
+
+    public static long indexEntry(
+        int indexKey,
+        int indexValue)
+    {
+        return ((long) indexKey << 32) | toUnsignedLong(indexValue);
+    }
+
+    private KafkaCacheIndexRecord()
+    {
+        // no instances
     }
 }

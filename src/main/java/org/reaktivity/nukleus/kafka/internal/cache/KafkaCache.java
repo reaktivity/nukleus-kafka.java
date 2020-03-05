@@ -13,55 +13,51 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.kafka.internal;
+package org.reaktivity.nukleus.kafka.internal.cache;
 
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.reaktivity.nukleus.Nukleus;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
+import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 
-public final class KafkaNukleus implements Nukleus
+public final class KafkaCache
 {
-    public static final String NAME = "kafka";
-
     private final KafkaConfiguration config;
-    private final Map<String, KafkaCache> cachesByName;
+    private final String name;
+    private final Path location;
+    private final Map<String, KafkaCacheTopic> topicsByName;
 
-    KafkaNukleus(
-        KafkaConfiguration config)
+    public KafkaCache(
+        KafkaConfiguration config,
+        String name)
     {
         this.config = config;
-        this.cachesByName = new ConcurrentHashMap<>();
+        this.name = name;
+        this.location = config.cacheDirectory().resolve(name);
+        this.topicsByName = new ConcurrentHashMap<>();
     }
 
-    @Override
     public String name()
     {
-        return KafkaNukleus.NAME;
+        return name;
+    }
+
+    public KafkaCacheTopic supplyTopic(
+        String name)
+    {
+        return topicsByName.computeIfAbsent(name, this::newTopic);
     }
 
     @Override
-    public KafkaConfiguration config()
+    public String toString()
     {
-        return config;
+        return String.format("[%s] %s", getClass().getSimpleName(), name);
     }
 
-    @Override
-    public KafkaElektron supplyElektron()
+    private KafkaCacheTopic newTopic(
+        String topic)
     {
-        return new KafkaElektron(config, this::supplyCache);
-    }
-
-    public KafkaCache supplyCache(
-        String name)
-    {
-        return cachesByName.computeIfAbsent(name, this::newCache);
-    }
-
-    private KafkaCache newCache(
-        String name)
-    {
-        return new KafkaCache(config, name);
+        return new KafkaCacheTopic(location, config, name, topic);
     }
 }

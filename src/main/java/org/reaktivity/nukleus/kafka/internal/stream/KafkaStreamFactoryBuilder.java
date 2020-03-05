@@ -13,23 +13,15 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.kafka.internal;
+package org.reaktivity.nukleus.kafka.internal.stream;
 
-import org.reaktivity.nukleus.Configuration;
-import org.reaktivity.nukleus.NukleusFactorySpi;
+import org.reaktivity.nukleus.route.AddressFactoryBuilder;
+import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 
-public final class KafkaNukleusFactorySpi implements NukleusFactorySpi
+public interface KafkaStreamFactoryBuilder extends StreamFactoryBuilder
 {
-    @Override
-    public String name()
+    default AddressFactoryBuilder addressFactoryBuilder()
     {
-        return KafkaNukleus.NAME;
-    }
-
-    @Override
-    public KafkaNukleus create(
-        Configuration config)
-    {
-        return new KafkaNukleus(new KafkaConfiguration(config));
+        return null;
     }
 }
