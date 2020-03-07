@@ -97,14 +97,15 @@ public final class KafkaCachePartition
         KafkaCacheTopicConfig config,
         String cache,
         String topic,
-        int id)
+        int id,
+        int appendCapacity)
     {
         this.location = createDirectories(location.resolve(String.format(FORMAT_PARTITION_DIRECTORY, topic, id)));
         this.config = config;
         this.cache = cache;
         this.topic = topic;
         this.id = id;
-        this.appendBuf = new UnsafeBuffer(allocateDirect(64 * 1024)); // TODO: configure
+        this.appendBuf = new UnsafeBuffer(allocateDirect(appendCapacity));
         this.sortSpace = new long[config.segmentIndexBytes >> 3];
         this.sentinel = new Node();
         this.checksum = new CRC32C();
