@@ -76,13 +76,18 @@ final class KafkaMergedBudget
             claimed = 0;
             assert watchers.containsLong(fragmenterId);
         }
+        else if (claimed < minimum)
+        {
+            claimed = 0;
+        }
 
         if (claimed >= minimum && debitorIndex != NO_DEBITOR_INDEX)
         {
             claimed = debitor.claim(debitorIndex, mergedWatcherId, minimum, maximum);
         }
 
-        assert claimed == 0 || (claimed >= minimum && claimed <= maximum);
+        assert claimed == 0 || (minimum <= claimed && claimed <= maximum) :
+            String.format("%d == 0 || (%d <= %d && %d <= %d)", claimed, minimum, claimed, claimed, maximum);
 
         if (claimed >= minimum)
         {
