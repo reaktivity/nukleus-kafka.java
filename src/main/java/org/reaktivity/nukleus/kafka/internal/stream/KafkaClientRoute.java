@@ -22,6 +22,8 @@ public final class KafkaClientRoute
     public final long routeId;
     public final Long2ObjectHashMap<KafkaBrokerInfo> brokers;
 
+    public volatile long metaInitialId;
+
     public KafkaClientRoute(
         long routeId)
     {

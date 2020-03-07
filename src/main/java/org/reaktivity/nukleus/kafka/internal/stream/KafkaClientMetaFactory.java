@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.lang.System.currentTimeMillis;
 import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
+import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
 
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -57,6 +58,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.DataFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ExtensionFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.FlushFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaResetExFW;
@@ -86,6 +88,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
     private final DataFW dataRO = new DataFW();
     private final EndFW endRO = new EndFW();
     private final AbortFW abortRO = new AbortFW();
+    private final FlushFW flushRO = new FlushFW();
     private final ResetFW resetRO = new ResetFW();
     private final WindowFW windowRO = new WindowFW();
     private final SignalFW signalRO = new SignalFW();
@@ -748,6 +751,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
         private final long replyId;
         private final long affinity;
         private final KafkaMetaClient client;
+        private final KafkaClientRoute clientRoute;
 
         private int state;
 
@@ -769,6 +773,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
             this.replyId = supplyReplyId.applyAsLong(initialId);
             this.affinity = affinity;
             this.client = new KafkaMetaClient(resolvedId, topic);
+            this.clientRoute = supplyClientRoute.apply(resolvedId);
         }
 
         private void onApplication(
@@ -795,6 +800,10 @@ public final class KafkaClientMetaFactory implements StreamFactory
                 final AbortFW abort = abortRO.wrap(buffer, index, index + length);
                 onApplicationAbort(abort);
                 break;
+            case FlushFW.TYPE_ID:
+                final FlushFW flush = flushRO.wrap(buffer, index, index + length);
+                onApplicationFlush(flush);
+                break;
             case WindowFW.TYPE_ID:
                 final WindowFW window = windowRO.wrap(buffer, index, index + length);
                 onApplicationWindow(window);
@@ -815,6 +824,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
             final long authorization = begin.authorization();
 
             state = KafkaState.openingInitial(state);
+            clientRoute.metaInitialId = initialId;
 
             client.doNetworkBegin(traceId, authorization, affinity);
         }
@@ -834,6 +844,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
             final long authorization = end.authorization();
 
             state = KafkaState.closedInitial(state);
+            clientRoute.metaInitialId = 0L;
 
             client.doNetworkEnd(traceId, authorization);
         }
@@ -844,8 +855,17 @@ public final class KafkaClientMetaFactory implements StreamFactory
             final long traceId = abort.traceId();
 
             state = KafkaState.closedInitial(state);
+            clientRoute.metaInitialId = 0L;
 
             client.doNetworkAbortIfNecessary(traceId);
+        }
+
+        private void onApplicationFlush(
+            FlushFW flush)
+        {
+            final long traceId = flush.traceId();
+
+            client.doEncodeRequestIfNecessary(traceId);
         }
 
         private void onApplicationWindow(
@@ -888,7 +908,6 @@ public final class KafkaClientMetaFactory implements StreamFactory
         {
             state = KafkaState.openingReply(state);
 
-            router.setThrottle(replyId, this::onApplication);
             doBegin(application, routeId, replyId, traceId, authorization, affinity,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                                                         .typeId(kafkaTypeId)
@@ -947,6 +966,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
             Flyweight extension)
         {
             state = KafkaState.closedInitial(state);
+            clientRoute.metaInitialId = 0L;
             //client.stream = nullIfClosed(state, client.stream);
 
             doReset(application, routeId, initialId, traceId, client.authorization, extension);
@@ -981,7 +1001,6 @@ public final class KafkaClientMetaFactory implements StreamFactory
 
         private final class KafkaMetaClient
         {
-            public int decodeableResponseBytes;
             private final long routeId;
             private final long initialId;
             private final long replyId;
@@ -1008,8 +1027,10 @@ public final class KafkaClientMetaFactory implements StreamFactory
 
             private int nextRequestId;
             private int nextResponseId;
+            private long nextRequestAt = NO_CANCEL_ID;
 
             private KafkaMetaClientDecoder decoder;
+            private int decodeableResponseBytes;
             private int decodeableBrokers;
             private int decodeableTopics;
             private int decodeablePartitions;
@@ -1179,7 +1200,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
                     encodeNetwork(encodeSlotTraceId, authorization, budgetId, buffer, 0, limit);
                 }
 
-                doEncodeRequestIfNecessary(traceId, budgetId);
+                doEncodeRequestIfNecessary(traceId);
             }
 
             private void onNetworkSignal(
@@ -1190,7 +1211,9 @@ public final class KafkaClientMetaFactory implements StreamFactory
 
                 if (signalId == SIGNAL_NEXT_REQUEST)
                 {
-                    doEncodeRequestIfNecessary(traceId, initialBudgetId);
+                    nextRequestAt = NO_CANCEL_ID;
+
+                    doEncodeRequestIfNecessary(traceId);
                 }
             }
 
@@ -1275,12 +1298,11 @@ public final class KafkaClientMetaFactory implements StreamFactory
             }
 
             private void doEncodeRequestIfNecessary(
-                long traceId,
-                long budgetId)
+                long traceId)
             {
                 if (nextRequestId == nextResponseId)
                 {
-                    doEncodeRequest(traceId, budgetId);
+                    doEncodeRequest(traceId, initialBudgetId);
                 }
             }
 
@@ -1291,6 +1313,12 @@ public final class KafkaClientMetaFactory implements StreamFactory
                 if (KafkaConfiguration.DEBUG)
                 {
                     System.out.format("[client] %s META\n", topic);
+                }
+
+                if (nextRequestAt != NO_CANCEL_ID)
+                {
+                    signaler.cancel(nextRequestAt);
+                    nextRequestAt = NO_CANCEL_ID;
                 }
 
                 final MutableDirectBuffer encodeBuffer = writeBuffer;
@@ -1441,7 +1469,6 @@ public final class KafkaClientMetaFactory implements StreamFactory
                 int port)
             {
                 // TODO: share broker info across meta factory instances
-                final KafkaClientRoute clientRoute = supplyClientRoute.apply(routeId);
                 clientRoute.brokers.put(brokerId, new KafkaBrokerInfo(brokerId, host, port));
             }
 
@@ -1496,7 +1523,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
                 }
 
                 nextResponseId++;
-                signaler.signalAt(currentTimeMillis() + maxAgeMillis, routeId, initialId, SIGNAL_NEXT_REQUEST);
+                nextRequestAt = signaler.signalAt(currentTimeMillis() + maxAgeMillis, routeId, initialId, SIGNAL_NEXT_REQUEST);
             }
 
             private void cleanupNetwork(

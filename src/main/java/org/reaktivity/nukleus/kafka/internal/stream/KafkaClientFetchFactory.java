@@ -76,6 +76,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.DataFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ExtensionFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.FlushFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchBeginExFW;
@@ -93,6 +94,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
     private static final int ERROR_NONE = 0;
     private static final int ERROR_OFFSET_OUT_OF_RANGE = 1;
+    private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
     private static final int FLAG_CONT = 0x00;
     private static final int FLAG_FIN = 0x01;
@@ -131,6 +133,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
     private final DataFW.Builder dataRW = new DataFW.Builder();
     private final EndFW.Builder endRW = new EndFW.Builder();
     private final AbortFW.Builder abortRW = new AbortFW.Builder();
+    private final FlushFW.Builder flushRW = new FlushFW.Builder();
     private final ResetFW.Builder resetRW = new ResetFW.Builder();
     private final WindowFW.Builder windowRW = new WindowFW.Builder();
     private final KafkaBeginExFW.Builder kafkaBeginExRW = new KafkaBeginExFW.Builder();
@@ -441,6 +444,26 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 .build();
 
         receiver.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());
+    }
+
+    private void doFlush(
+        MessageConsumer receiver,
+        long routeId,
+        long streamId,
+        long traceId,
+        long authorization,
+        Consumer<OctetsFW.Builder> extension)
+    {
+        final FlushFW flush = flushRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                .routeId(routeId)
+                .streamId(streamId)
+                .traceId(traceId)
+                .authorization(authorization)
+                .budgetId(0L)
+                .extension(extension)
+                .build();
+
+        receiver.accept(flush.typeId(), flush.buffer(), flush.offset(), flush.sizeof());
     }
 
     private void doWindow(
@@ -1788,6 +1811,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
             private final MessageConsumer network;
             private final String topic;
             private final int partitionId;
+            private final KafkaClientRoute clientRoute;
 
             private long nextOffset;
 
@@ -1844,6 +1868,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 this.nextOffset = initialOffset;
                 this.encoder = encodeFetchRequest;
                 this.decoder = decodeFetchResponse;
+                this.clientRoute = supplyClientRoute.apply(routeId);
             }
 
             private void onNetwork(
@@ -2455,6 +2480,16 @@ public final class KafkaClientFetchFactory implements StreamFactory
                     doEncodeRequestIfNecessary(traceId, initialBudgetId);
                     break;
                 default:
+                    if (errorCode == ERROR_NOT_LEADER_FOR_PARTITION)
+                    {
+                        final long metaInitialId = clientRoute.metaInitialId;
+                        if (metaInitialId != 0L)
+                        {
+                            final MessageConsumer metaInitial = router.supplyReceiver(metaInitialId);
+                            doFlush(metaInitial, routeId, metaInitialId, traceId, authorization, EMPTY_EXTENSION);
+                        }
+                    }
+
                     final KafkaResetExFW resetEx = kafkaResetExRW.wrap(extBuffer, 0, extBuffer.capacity())
                                                                  .typeId(kafkaTypeId)
                                                                  .error(errorCode)
