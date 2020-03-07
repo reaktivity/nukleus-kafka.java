@@ -136,7 +136,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
-    private final Long2ObjectHashMap<Long2ObjectHashMap<KafkaBrokerInfo>> brokersByRouteId;
+    private final LongFunction<KafkaClientRoute> supplyClientRoute;
 
     public KafkaClientMetaFactory(
         KafkaConfiguration config,
@@ -150,7 +150,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
         ToIntFunction<String> supplyTypeId,
         LongFunction<BudgetDebitor> supplyDebitor,
         Long2ObjectHashMap<MessageConsumer> correlations,
-        Long2ObjectHashMap<Long2ObjectHashMap<KafkaBrokerInfo>> brokersByRouteId)
+        LongFunction<KafkaClientRoute> supplyClientRoute)
     {
         this.maxAgeMillis = Math.min(config.clientMetaMaxAgeMillis(), config.clientMaxIdleMillis() >> 1);
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
@@ -163,7 +163,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
         this.supplyInitialId = supplyInitialId;
         this.supplyReplyId = supplyReplyId;
         this.correlations = correlations;
-        this.brokersByRouteId = brokersByRouteId;
+        this.supplyClientRoute = supplyClientRoute;
     }
 
     @Override
@@ -1441,9 +1441,8 @@ public final class KafkaClientMetaFactory implements StreamFactory
                 int port)
             {
                 // TODO: share broker info across meta factory instances
-                final Long2ObjectHashMap<KafkaBrokerInfo> brokers =
-                        brokersByRouteId.computeIfAbsent(routeId, r -> new Long2ObjectHashMap<>());
-                brokers.put(brokerId, new KafkaBrokerInfo(brokerId, host, port));
+                final KafkaClientRoute clientRoute = supplyClientRoute.apply(routeId);
+                clientRoute.brokers.put(brokerId, new KafkaBrokerInfo(brokerId, host, port));
             }
 
             private void onDecodeTopic(

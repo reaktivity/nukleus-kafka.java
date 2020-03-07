@@ -59,16 +59,16 @@ public final class KafkaClientFactory implements StreamFactory
         LongSupplier supplyTraceId,
         ToIntFunction<String> supplyTypeId,
         LongSupplier supplyBudgetId,
-        LongFunction<BudgetDebitor> supplyDebitor)
+        LongFunction<BudgetDebitor> supplyDebitor,
+        LongFunction<KafkaClientRoute> supplyClientRoute)
     {
         final Long2ObjectHashMap<MessageConsumer> correlations = new Long2ObjectHashMap<>();
-        final Long2ObjectHashMap<Long2ObjectHashMap<KafkaBrokerInfo>> brokersByRouteId = new Long2ObjectHashMap<>();
         final KafkaMergedBudgetAccountant accountant = new KafkaMergedBudgetAccountant(supplyBudgetId, supplyDebitor);
 
         final KafkaClientMetaFactory clientMetaFactory = new KafkaClientMetaFactory(
                 config, router, signaler, writeBuffer, bufferPool,
                 supplyInitialId, supplyReplyId, supplyTraceId,
-                supplyTypeId, accountant::supplyDebitor, correlations, brokersByRouteId);
+                supplyTypeId, accountant::supplyDebitor, correlations, supplyClientRoute);
 
         final KafkaClientDescribeFactory clientDescribeFactory = new KafkaClientDescribeFactory(
                 config, router, signaler, writeBuffer, bufferPool,
@@ -78,7 +78,7 @@ public final class KafkaClientFactory implements StreamFactory
         final KafkaClientFetchFactory clientFetchFactory = new KafkaClientFetchFactory(
                 config, router, signaler, writeBuffer, bufferPool,
                 supplyInitialId, supplyReplyId, supplyTraceId,
-                supplyTypeId, accountant::supplyDebitor, correlations, brokersByRouteId);
+                supplyTypeId, accountant::supplyDebitor, correlations, supplyClientRoute);
 
         final KafkaMergedFactory clientMergedFactory = new KafkaMergedFactory(
                 config, router, writeBuffer, supplyInitialId, supplyReplyId, supplyTraceId,

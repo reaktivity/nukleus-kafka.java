@@ -202,7 +202,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
     private final LongUnaryOperator supplyReplyId;
     private final LongFunction<BudgetDebitor> supplyDebitor;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
-    private final Long2ObjectHashMap<Long2ObjectHashMap<KafkaBrokerInfo>> brokersByRouteId;
+    private final LongFunction<KafkaClientRoute> supplyClientRoute;
     private final int decodeMaxBytes;
 
     public KafkaClientFetchFactory(
@@ -217,7 +217,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
         ToIntFunction<String> supplyTypeId,
         LongFunction<BudgetDebitor> supplyDebitor,
         Long2ObjectHashMap<MessageConsumer> correlations,
-        Long2ObjectHashMap<Long2ObjectHashMap<KafkaBrokerInfo>> brokersByRouteId)
+        LongFunction<KafkaClientRoute> supplyClientRoute)
     {
         this.fetchMaxBytes = config.clientFetchMaxBytes();
         this.fetchMaxWaitMillis = config.clientFetchMaxWaitMillis();
@@ -234,7 +234,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
         this.supplyReplyId = supplyReplyId;
         this.supplyDebitor = supplyDebitor;
         this.correlations = correlations;
-        this.brokersByRouteId = brokersByRouteId;
+        this.supplyClientRoute = supplyClientRoute;
         this.decodeMaxBytes = decodePool.slotCapacity();
     }
 
@@ -2045,8 +2045,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
                 Consumer<OctetsFW.Builder> extension = EMPTY_EXTENSION;
 
-                final Long2ObjectHashMap<KafkaBrokerInfo> brokers = brokersByRouteId.get(routeId);
-                final KafkaBrokerInfo broker = brokers != null ? brokers.get(affinity) : null;
+                final KafkaClientRoute clientRoute = supplyClientRoute.apply(routeId);
+                final KafkaBrokerInfo broker = clientRoute.brokers.get(affinity);
                 if (broker != null)
                 {
                     extension = e -> e.set((b, o, l) -> tcpBeginExRW.wrap(b, o, l)
