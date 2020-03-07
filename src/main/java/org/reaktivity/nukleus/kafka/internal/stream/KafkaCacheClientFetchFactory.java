@@ -907,12 +907,13 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     reserved = replyDebitor.claim(replyDebitorIndex, replyId, reservedMin, reservedMax);
                 }
 
-                if (reserved == 0 && value != null)
+                if (reserved < replyPadding || (reserved == replyPadding && value != null))
                 {
                     break flush;
                 }
 
                 final int length = reserved - replyPadding;
+                assert length >= 0 : String.format("%d >= 0", length);
 
                 int flags = 0x00;
                 if (messageOffset == 0)
