@@ -76,6 +76,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.DataFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ExtensionFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.FlushFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchBeginExFW;
@@ -93,6 +94,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
     private static final int ERROR_NONE = 0;
     private static final int ERROR_OFFSET_OUT_OF_RANGE = 1;
+    private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
     private static final int FLAG_CONT = 0x00;
     private static final int FLAG_FIN = 0x01;
@@ -131,6 +133,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
     private final DataFW.Builder dataRW = new DataFW.Builder();
     private final EndFW.Builder endRW = new EndFW.Builder();
     private final AbortFW.Builder abortRW = new AbortFW.Builder();
+    private final FlushFW.Builder flushRW = new FlushFW.Builder();
     private final ResetFW.Builder resetRW = new ResetFW.Builder();
     private final WindowFW.Builder windowRW = new WindowFW.Builder();
     private final KafkaBeginExFW.Builder kafkaBeginExRW = new KafkaBeginExFW.Builder();
@@ -165,7 +168,9 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
     private final KafkaFetchClientDecoder decodeOffsetsResponse = this::decodeOffsetsResponse;
     private final KafkaFetchClientDecoder decodeOffsets = this::decodeOffsets;
+    private final KafkaFetchClientDecoder decodeOffsetsTopics = this::decodeOffsetsTopics;
     private final KafkaFetchClientDecoder decodeOffsetsTopic = this::decodeOffsetsTopic;
+    private final KafkaFetchClientDecoder decodeOffsetsPartitions = this::decodeOffsetsPartitions;
     private final KafkaFetchClientDecoder decodeOffsetsPartition = this::decodeOffsetsPartition;
     private final KafkaFetchClientDecoder decodeFetchResponse = this::decodeFetchResponse;
     private final KafkaFetchClientDecoder decodeFetch = this::decodeFetch;
@@ -200,7 +205,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
     private final LongUnaryOperator supplyReplyId;
     private final LongFunction<BudgetDebitor> supplyDebitor;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
-    private final Long2ObjectHashMap<Long2ObjectHashMap<KafkaBrokerInfo>> brokersByRouteId;
+    private final LongFunction<KafkaClientRoute> supplyClientRoute;
     private final int decodeMaxBytes;
 
     public KafkaClientFetchFactory(
@@ -215,7 +220,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
         ToIntFunction<String> supplyTypeId,
         LongFunction<BudgetDebitor> supplyDebitor,
         Long2ObjectHashMap<MessageConsumer> correlations,
-        Long2ObjectHashMap<Long2ObjectHashMap<KafkaBrokerInfo>> brokersByRouteId)
+        LongFunction<KafkaClientRoute> supplyClientRoute)
     {
         this.fetchMaxBytes = config.clientFetchMaxBytes();
         this.fetchMaxWaitMillis = config.clientFetchMaxWaitMillis();
@@ -232,7 +237,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
         this.supplyReplyId = supplyReplyId;
         this.supplyDebitor = supplyDebitor;
         this.correlations = correlations;
-        this.brokersByRouteId = brokersByRouteId;
+        this.supplyClientRoute = supplyClientRoute;
         this.decodeMaxBytes = decodePool.slotCapacity();
     }
 
@@ -441,6 +446,26 @@ public final class KafkaClientFetchFactory implements StreamFactory
         receiver.accept(abort.typeId(), abort.buffer(), abort.offset(), abort.sizeof());
     }
 
+    private void doFlush(
+        MessageConsumer receiver,
+        long routeId,
+        long streamId,
+        long traceId,
+        long authorization,
+        Consumer<OctetsFW.Builder> extension)
+    {
+        final FlushFW flush = flushRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                .routeId(routeId)
+                .streamId(streamId)
+                .traceId(traceId)
+                .authorization(authorization)
+                .budgetId(0L)
+                .extension(extension)
+                .build();
+
+        receiver.accept(flush.typeId(), flush.buffer(), flush.offset(), flush.sizeof());
+    }
+
     private void doWindow(
         MessageConsumer sender,
         long routeId,
@@ -550,8 +575,33 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 assert client.decodableResponseBytes >= 0;
 
                 client.decodableTopics = offsetsResponse.topicCount();
-                client.decoder = decodeOffsetsTopic;
+                client.decoder = decodeOffsetsTopics;
             }
+        }
+
+        return progress;
+    }
+
+    private int decodeOffsetsTopics(
+        KafkaFetchStream.KafkaFetchClient client,
+        long traceId,
+        long authorization,
+        long budgetId,
+        int reserved,
+        DirectBuffer buffer,
+        int offset,
+        int progress,
+        int limit)
+    {
+        if (client.decodableTopics == 0)
+        {
+            client.onDecodeResponse(traceId);
+            client.encoder = client.encodeFetchRequest;
+            client.decoder = decodeFetchResponse;
+        }
+        else
+        {
+            client.decoder = decodeOffsetsTopic;
         }
 
         return progress;
@@ -571,29 +621,50 @@ public final class KafkaClientFetchFactory implements StreamFactory
         final int length = limit - progress;
 
         decode:
-        if (client.decodableTopics == 0)
-        {
-            client.onDecodeResponse(traceId);
-            client.encoder = client.encodeFetchRequest;
-            client.decoder = decodeFetchResponse;
-            break decode;
-        }
-        else if (length != 0)
+        if (length != 0)
         {
             final OffsetsTopicResponseFW topic = offsetsTopicResponseRO.tryWrap(buffer, progress, limit);
-            if (topic != null)
+            if (topic == null)
             {
-                final String topicName = topic.name().asString();
-                assert client.topic.equals(topicName);
-
-                progress = topic.limit();
-
-                client.decodableResponseBytes -= topic.sizeof();
-                assert client.decodableResponseBytes >= 0;
-
-                client.decodablePartitions = topic.partitionCount();
-                client.decoder = decodeOffsetsPartition;
+                break decode;
             }
+
+            final String topicName = topic.name().asString();
+            assert client.topic.equals(topicName);
+
+            progress = topic.limit();
+
+            client.decodableResponseBytes -= topic.sizeof();
+            assert client.decodableResponseBytes >= 0;
+
+            client.decodablePartitions = topic.partitionCount();
+            client.decoder = decodeOffsetsPartitions;
+        }
+
+        return progress;
+    }
+
+    private int decodeOffsetsPartitions(
+        KafkaFetchStream.KafkaFetchClient client,
+        long traceId,
+        long authorization,
+        long budgetId,
+        int reserved,
+        DirectBuffer buffer,
+        int offset,
+        int progress,
+        int limit)
+    {
+        if (client.decodablePartitions == 0)
+        {
+            client.decodableTopics--;
+            assert client.decodableTopics >= 0;
+
+            client.decoder = decodeOffsetsTopics;
+        }
+        else
+        {
+            client.decoder = decodeOffsetsPartition;
         }
 
         return progress;
@@ -616,32 +687,26 @@ public final class KafkaClientFetchFactory implements StreamFactory
         if (length != 0)
         {
             final OffsetsPartitionResponseFW partition = offsetsPartitionResponseRO.tryWrap(buffer, progress, limit);
-            if (partition != null)
+            if (partition == null)
             {
-                final int partitionId = partition.partitionId();
-                final int errorCode = partition.errorCode();
-                final long partitionOffset = partition.offset$();
-
-                progress = partition.limit();
-
-                client.decodableResponseBytes -= partition.sizeof();
-                assert client.decodableResponseBytes >= 0;
-
-                client.decodablePartitions--;
-                assert client.decodablePartitions >= 0;
-
-                client.onDecodeOffsetsPartition(traceId, authorization, errorCode, partitionId, partitionOffset);
-
-                if (client.decodablePartitions == 0)
-                {
-                    client.decodableTopics--;
-                    assert client.decodableTopics >= 0;
-                    client.decoder = decodeOffsetsTopic;
-                    break decode;
-                }
-
-                client.decoder = decodeOffsetsPartition;
+                break decode;
             }
+
+            final int partitionId = partition.partitionId();
+            final int errorCode = partition.errorCode();
+            final long partitionOffset = partition.offset$();
+
+            progress = partition.limit();
+
+            client.decodableResponseBytes -= partition.sizeof();
+            assert client.decodableResponseBytes >= 0;
+
+            client.decodablePartitions--;
+            assert client.decodablePartitions >= 0;
+
+            client.onDecodeOffsetsPartition(traceId, authorization, errorCode, partitionId, partitionOffset);
+
+            client.decoder = decodeOffsetsPartitions;
         }
 
         return progress;
@@ -1746,6 +1811,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
             private final MessageConsumer network;
             private final String topic;
             private final int partitionId;
+            private final KafkaClientRoute clientRoute;
 
             private long nextOffset;
 
@@ -1802,6 +1868,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 this.nextOffset = initialOffset;
                 this.encoder = encodeFetchRequest;
                 this.decoder = decodeFetchResponse;
+                this.clientRoute = supplyClientRoute.apply(routeId);
             }
 
             private void onNetwork(
@@ -2003,8 +2070,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
                 Consumer<OctetsFW.Builder> extension = EMPTY_EXTENSION;
 
-                final Long2ObjectHashMap<KafkaBrokerInfo> brokers = brokersByRouteId.get(routeId);
-                final KafkaBrokerInfo broker = brokers != null ? brokers.get(affinity) : null;
+                final KafkaClientRoute clientRoute = supplyClientRoute.apply(routeId);
+                final KafkaBrokerInfo broker = clientRoute.brokers.get(affinity);
                 if (broker != null)
                 {
                     extension = e -> e.set((b, o, l) -> tcpBeginExRW.wrap(b, o, l)
@@ -2413,6 +2480,16 @@ public final class KafkaClientFetchFactory implements StreamFactory
                     doEncodeRequestIfNecessary(traceId, initialBudgetId);
                     break;
                 default:
+                    if (errorCode == ERROR_NOT_LEADER_FOR_PARTITION)
+                    {
+                        final long metaInitialId = clientRoute.metaInitialId;
+                        if (metaInitialId != 0L)
+                        {
+                            final MessageConsumer metaInitial = router.supplyReceiver(metaInitialId);
+                            doFlush(metaInitial, routeId, metaInitialId, traceId, authorization, EMPTY_EXTENSION);
+                        }
+                    }
+
                     final KafkaResetExFW resetEx = kafkaResetExRW.wrap(extBuffer, 0, extBuffer.capacity())
                                                                  .typeId(kafkaTypeId)
                                                                  .error(errorCode)

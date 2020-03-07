@@ -30,6 +30,7 @@ import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheClientFactoryBuild
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheRoute;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheServerFactoryBuilder;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaClientFactoryBuilder;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaClientRoute;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaStreamFactoryBuilder;
 import org.reaktivity.nukleus.route.AddressFactoryBuilder;
 import org.reaktivity.nukleus.route.RouteKind;
@@ -37,6 +38,7 @@ import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 
 final class KafkaElektron implements Elektron
 {
+    private final Long2ObjectHashMap<KafkaClientRoute> clientRoutesById;
     private final Long2ObjectHashMap<KafkaCacheRoute> cacheRoutesById;
     private final Map<RouteKind, KafkaStreamFactoryBuilder> streamFactoryBuilders;
     private final Map<RouteKind, AddressFactoryBuilder> addressFactoryBuilders;
@@ -45,10 +47,11 @@ final class KafkaElektron implements Elektron
         KafkaConfiguration config,
         Function<String, KafkaCache> supplyCache)
     {
+        this.clientRoutesById = new Long2ObjectHashMap<>();
         this.cacheRoutesById = new Long2ObjectHashMap<>();
 
         Map<RouteKind, KafkaStreamFactoryBuilder> streamFactoryBuilders = new EnumMap<>(RouteKind.class);
-        streamFactoryBuilders.put(CLIENT, new KafkaClientFactoryBuilder(config));
+        streamFactoryBuilders.put(CLIENT, new KafkaClientFactoryBuilder(config, this::supplyClientRoute));
         streamFactoryBuilders.put(CACHE_SERVER, new KafkaCacheServerFactoryBuilder(config, supplyCache, this::supplyCacheRoute));
         streamFactoryBuilders.put(CACHE_CLIENT, new KafkaCacheClientFactoryBuilder(config, supplyCache, this::supplyCacheRoute));
         this.streamFactoryBuilders = streamFactoryBuilders;
@@ -91,5 +94,11 @@ final class KafkaElektron implements Elektron
         long routeId)
     {
         return cacheRoutesById.computeIfAbsent(routeId, KafkaCacheRoute::new);
+    }
+
+    private KafkaClientRoute supplyClientRoute(
+        long routeId)
+    {
+        return clientRoutesById.computeIfAbsent(routeId, KafkaClientRoute::new);
     }
 }

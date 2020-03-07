@@ -33,6 +33,7 @@ import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
 public final class KafkaClientFactoryBuilder implements KafkaStreamFactoryBuilder
 {
     private final KafkaConfiguration config;
+    private final LongFunction<KafkaClientRoute> supplyClientRoute;
 
     private RouteManager router;
     private Signaler signaler;
@@ -46,9 +47,11 @@ public final class KafkaClientFactoryBuilder implements KafkaStreamFactoryBuilde
     private LongSupplier supplyBudgetId;
 
     public KafkaClientFactoryBuilder(
-        KafkaConfiguration config)
+        KafkaConfiguration config,
+        LongFunction<KafkaClientRoute> supplyClientRoute)
     {
         this.config = config;
+        this.supplyClientRoute = supplyClientRoute;
     }
 
     @Override
@@ -147,6 +150,7 @@ public final class KafkaClientFactoryBuilder implements KafkaStreamFactoryBuilde
                 supplyTraceId,
                 supplyTypeId,
                 supplyBudgetId,
-                supplyDebitor);
+                supplyDebitor,
+                supplyClientRoute);
     }
 }
