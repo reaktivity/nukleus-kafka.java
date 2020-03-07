@@ -165,7 +165,9 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
     private final KafkaFetchClientDecoder decodeOffsetsResponse = this::decodeOffsetsResponse;
     private final KafkaFetchClientDecoder decodeOffsets = this::decodeOffsets;
+    private final KafkaFetchClientDecoder decodeOffsetsTopics = this::decodeOffsetsTopics;
     private final KafkaFetchClientDecoder decodeOffsetsTopic = this::decodeOffsetsTopic;
+    private final KafkaFetchClientDecoder decodeOffsetsPartitions = this::decodeOffsetsPartitions;
     private final KafkaFetchClientDecoder decodeOffsetsPartition = this::decodeOffsetsPartition;
     private final KafkaFetchClientDecoder decodeFetchResponse = this::decodeFetchResponse;
     private final KafkaFetchClientDecoder decodeFetch = this::decodeFetch;
@@ -550,8 +552,33 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 assert client.decodableResponseBytes >= 0;
 
                 client.decodableTopics = offsetsResponse.topicCount();
-                client.decoder = decodeOffsetsTopic;
+                client.decoder = decodeOffsetsTopics;
             }
+        }
+
+        return progress;
+    }
+
+    private int decodeOffsetsTopics(
+        KafkaFetchStream.KafkaFetchClient client,
+        long traceId,
+        long authorization,
+        long budgetId,
+        int reserved,
+        DirectBuffer buffer,
+        int offset,
+        int progress,
+        int limit)
+    {
+        if (client.decodableTopics == 0)
+        {
+            client.onDecodeResponse(traceId);
+            client.encoder = client.encodeFetchRequest;
+            client.decoder = decodeFetchResponse;
+        }
+        else
+        {
+            client.decoder = decodeOffsetsTopic;
         }
 
         return progress;
@@ -571,29 +598,50 @@ public final class KafkaClientFetchFactory implements StreamFactory
         final int length = limit - progress;
 
         decode:
-        if (client.decodableTopics == 0)
-        {
-            client.onDecodeResponse(traceId);
-            client.encoder = client.encodeFetchRequest;
-            client.decoder = decodeFetchResponse;
-            break decode;
-        }
-        else if (length != 0)
+        if (length != 0)
         {
             final OffsetsTopicResponseFW topic = offsetsTopicResponseRO.tryWrap(buffer, progress, limit);
-            if (topic != null)
+            if (topic == null)
             {
-                final String topicName = topic.name().asString();
-                assert client.topic.equals(topicName);
-
-                progress = topic.limit();
-
-                client.decodableResponseBytes -= topic.sizeof();
-                assert client.decodableResponseBytes >= 0;
-
-                client.decodablePartitions = topic.partitionCount();
-                client.decoder = decodeOffsetsPartition;
+                break decode;
             }
+
+            final String topicName = topic.name().asString();
+            assert client.topic.equals(topicName);
+
+            progress = topic.limit();
+
+            client.decodableResponseBytes -= topic.sizeof();
+            assert client.decodableResponseBytes >= 0;
+
+            client.decodablePartitions = topic.partitionCount();
+            client.decoder = decodeOffsetsPartitions;
+        }
+
+        return progress;
+    }
+
+    private int decodeOffsetsPartitions(
+        KafkaFetchStream.KafkaFetchClient client,
+        long traceId,
+        long authorization,
+        long budgetId,
+        int reserved,
+        DirectBuffer buffer,
+        int offset,
+        int progress,
+        int limit)
+    {
+        if (client.decodablePartitions == 0)
+        {
+            client.decodableTopics--;
+            assert client.decodableTopics >= 0;
+
+            client.decoder = decodeOffsetsTopics;
+        }
+        else
+        {
+            client.decoder = decodeOffsetsPartition;
         }
 
         return progress;
@@ -616,32 +664,26 @@ public final class KafkaClientFetchFactory implements StreamFactory
         if (length != 0)
         {
             final OffsetsPartitionResponseFW partition = offsetsPartitionResponseRO.tryWrap(buffer, progress, limit);
-            if (partition != null)
+            if (partition == null)
             {
-                final int partitionId = partition.partitionId();
-                final int errorCode = partition.errorCode();
-                final long partitionOffset = partition.offset$();
-
-                progress = partition.limit();
-
-                client.decodableResponseBytes -= partition.sizeof();
-                assert client.decodableResponseBytes >= 0;
-
-                client.decodablePartitions--;
-                assert client.decodablePartitions >= 0;
-
-                client.onDecodeOffsetsPartition(traceId, authorization, errorCode, partitionId, partitionOffset);
-
-                if (client.decodablePartitions == 0)
-                {
-                    client.decodableTopics--;
-                    assert client.decodableTopics >= 0;
-                    client.decoder = decodeOffsetsTopic;
-                    break decode;
-                }
-
-                client.decoder = decodeOffsetsPartition;
+                break decode;
             }
+
+            final int partitionId = partition.partitionId();
+            final int errorCode = partition.errorCode();
+            final long partitionOffset = partition.offset$();
+
+            progress = partition.limit();
+
+            client.decodableResponseBytes -= partition.sizeof();
+            assert client.decodableResponseBytes >= 0;
+
+            client.decodablePartitions--;
+            assert client.decodablePartitions >= 0;
+
+            client.onDecodeOffsetsPartition(traceId, authorization, errorCode, partitionId, partitionOffset);
+
+            client.decoder = decodeOffsetsPartitions;
         }
 
         return progress;
