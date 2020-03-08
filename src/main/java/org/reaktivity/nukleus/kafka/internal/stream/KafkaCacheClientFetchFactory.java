@@ -46,6 +46,7 @@ import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.Node;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopic;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
+import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
@@ -75,6 +76,7 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class KafkaCacheClientFetchFactory implements StreamFactory
 {
+    private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(new UnsafeBuffer(), 0, 0);
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
 
     private static final long OFFSET_LATEST = KafkaOffsetType.LATEST.value();
@@ -352,13 +354,15 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         long routeId,
         long streamId,
         long traceId,
-        long authorization)
+        long authorization,
+        Flyweight extension)
     {
         final ResetFW reset = resetRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                .routeId(routeId)
                .streamId(streamId)
                .traceId(traceId)
                .authorization(authorization)
+               .extension(extension.buffer(), extension.offset(), extension.sizeof())
                .build();
 
         sender.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
@@ -613,8 +617,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             ResetFW reset)
         {
             final long traceId = reset.traceId();
+            final OctetsFW extension = reset.extension();
 
-            members.forEach(s -> s.doInitialResetIfNecessary(traceId));
+            members.forEach(s -> s.doInitialResetIfNecessary(traceId, extension));
 
             state = KafkaState.closedInitial(state);
 
@@ -648,7 +653,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             state = KafkaState.closedReply(state);
 
-            doReset(receiver, routeId, replyId, traceId, authorization);
+            doReset(receiver, routeId, replyId, traceId, authorization, EMPTY_OCTETS);
         }
 
         private void doClientFanoutReplyWindow(
@@ -800,20 +805,22 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         }
 
         private void doInitialResetIfNecessary(
-                long traceId)
+            long traceId,
+            Flyweight extension)
         {
             if (KafkaState.initialOpening(state) && !KafkaState.initialClosed(state))
             {
-                doClientInitialReset(traceId);
+                doClientInitialReset(traceId, extension);
             }
         }
 
         private void doClientInitialReset(
-            long traceId)
+            long traceId,
+            Flyweight extension)
         {
             state = KafkaState.closedInitial(state);
 
-            doReset(sender, routeId, initialId, traceId, authorization);
+            doReset(sender, routeId, initialId, traceId, authorization, extension);
         }
 
         private void doClientReplyBeginIfNecessary(
@@ -1150,7 +1157,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
             group.onClientFanoutMemberClosed(traceId, this);
 
-            doInitialResetIfNecessary(traceId);
+            doInitialResetIfNecessary(traceId, EMPTY_OCTETS);
         }
 
         private void doCleanupClient()

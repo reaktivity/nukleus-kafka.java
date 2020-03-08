@@ -469,6 +469,23 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
             state = KafkaState.closedInitial(state);
         }
 
+        private void doDescribeFanoutInitialAbortIfNecessary(
+            long traceId)
+        {
+            if (!KafkaState.initialClosed(state))
+            {
+                doDescribeFanoutInitialAbort(traceId);
+            }
+        }
+
+        private void doDescribeFanoutInitialAbort(
+            long traceId)
+        {
+            doAbort(receiver, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
+
+            state = KafkaState.closedInitial(state);
+        }
+
         private void onDescribeFanoutInitialReset(
             ResetFW reset)
         {
@@ -620,9 +637,31 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
         {
             final long traceId = end.traceId();
 
-            members.forEach(s -> s.doDescribeReplyEndIfNecessary(traceId));
-
             state = KafkaState.closedReply(state);
+
+            doDescribeFanoutInitialEndIfNecessary(traceId);
+
+            if (reconnectDelay != 0)
+            {
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s DESCRIBE reconnect in %ds\n", topic, reconnectDelay);
+                }
+
+                signaler.signalAt(
+                    currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
+                    SIGNAL_RECONNECT,
+                    this::onDescribeFanoutSignal);
+            }
+            else
+            {
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s DESCRIBE disconnect\n", topic);
+                }
+
+                members.forEach(s -> s.doDescribeReplyEndIfNecessary(traceId));
+            }
         }
 
         private void onDescribeFanoutReplyAbort(
@@ -631,6 +670,8 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
             final long traceId = abort.traceId();
 
             state = KafkaState.closedReply(state);
+
+            doDescribeFanoutInitialAbortIfNecessary(traceId);
 
             if (reconnectDelay != 0)
             {

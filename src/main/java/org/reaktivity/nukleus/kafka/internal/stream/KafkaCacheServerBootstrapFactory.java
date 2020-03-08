@@ -37,6 +37,7 @@ import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaConfigFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaPartitionFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
@@ -55,6 +56,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDescribeDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchFlushExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFlushExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaMetaDataExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaResetExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.route.RouteManager;
@@ -74,7 +76,9 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
     private static final String16FW CONFIG_NAME_MAX_COMPACTION_LAG_MILLIS = new String16FW("max.compaction.lag.ms");
     private static final String16FW CONFIG_NAME_MIN_CLEANABLE_DIRTY_RATIO = new String16FW("min.cleanable.dirty.ratio");
 
-    private static final long OFFSET_EARLIEST = -2L;
+    private static final long OFFSET_EARLIEST = KafkaOffsetType.EARLIEST.value();
+
+    private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
 
@@ -92,6 +96,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
     private final KafkaBeginExFW kafkaBeginExRO = new KafkaBeginExFW();
     private final KafkaDataExFW kafkaDataExRO = new KafkaDataExFW();
     private final KafkaFlushExFW kafkaFlushExRO = new KafkaFlushExFW();
+    private final KafkaResetExFW kafkaResetExRO = new KafkaResetExFW();
 
     private final BeginFW.Builder beginRW = new BeginFW.Builder();
     private final EndFW.Builder endRW = new EndFW.Builder();
@@ -1184,12 +1189,19 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             ResetFW reset)
         {
             final long traceId = reset.traceId();
+            final OctetsFW extension = reset.extension();
 
             state = KafkaState.closedInitial(state);
 
+            final KafkaResetExFW kafkaResetEx = extension.get(kafkaResetExRO::tryWrap);
+            final int error = kafkaResetEx != null ? kafkaResetEx.error() : -1;
+
             doBootstrapFetchReplyResetIfNecessary(traceId);
 
-            bootstrap.doBootstrapCleanup(traceId);
+            if (error != ERROR_NOT_LEADER_FOR_PARTITION)
+            {
+                bootstrap.doBootstrapCleanup(traceId);
+            }
         }
 
         private void onBootstrapFetchInitialWindow(

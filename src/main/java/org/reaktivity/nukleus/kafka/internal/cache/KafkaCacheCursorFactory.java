@@ -156,10 +156,13 @@ public final class KafkaCacheCursorFactory
                 nextEntry = logFile.readBytes(position, cacheEntry::wrap);
                 assert nextEntry != null;
 
-                if (!condition.test(nextEntry))
+                // TODO: remove nextEntry.offset() < offset from if condition
+                if (nextEntry.offset$() < offset || !condition.test(nextEntry))
                 {
                     nextEntry = null;
                 }
+
+                assert nextEntry == null || nextEntry.offset$() >= offset;
 
                 if (nextEntry != null && deltaType != KafkaDeltaType.NONE)
                 {

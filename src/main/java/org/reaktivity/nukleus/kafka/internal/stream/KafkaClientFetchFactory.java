@@ -1785,8 +1785,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
             long traceId,
             Flyweight extension)
         {
-            doApplicationAbortIfNecessary(traceId);
             doApplicationResetIfNecessary(traceId, extension);
+            doApplicationAbortIfNecessary(traceId);
         }
 
         private void cleanupApplicationDebitorIfNecessary()
