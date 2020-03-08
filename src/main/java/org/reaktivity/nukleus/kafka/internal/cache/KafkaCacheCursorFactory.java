@@ -100,7 +100,7 @@ public final class KafkaCacheCursorFactory
             assert this.segmentNode == null;
             assert this.segment == null;
 
-
+            assert !segmentNode.sentinel();
             this.segmentNode = segmentNode;
             this.offset = offset;
 
