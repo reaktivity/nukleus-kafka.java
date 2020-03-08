@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
+
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,6 +29,7 @@ public final class KafkaCacheTopic
     private final String cache;
     private final String name;
     private final KafkaCacheTopicConfig config;
+    private final int appendCapacity;
     private final Map<Integer, KafkaCachePartition> partitionsById;
 
     public KafkaCacheTopic(
@@ -37,6 +40,7 @@ public final class KafkaCacheTopic
     {
         this.location = location;
         this.config = new KafkaCacheTopicConfig(config);
+        this.appendCapacity = REAKTOR_BUFFER_SLOT_CAPACITY.get(config);
         this.cache = cache;
         this.name = name;
         this.partitionsById = new ConcurrentHashMap<>();
@@ -72,6 +76,6 @@ public final class KafkaCacheTopic
     private KafkaCachePartition newPartition(
         int id)
     {
-        return new KafkaCachePartition(location, config, cache, name, id);
+        return new KafkaCachePartition(location, config, cache, name, id, appendCapacity);
     }
 }

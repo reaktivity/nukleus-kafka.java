@@ -51,6 +51,7 @@ import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
@@ -76,8 +77,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 {
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
 
-    private static final long OFFSET_LATEST = -1L;
-    private static final long OFFSET_EARLIEST = -2L;
+    private static final long OFFSET_LATEST = KafkaOffsetType.LATEST.value();
+    private static final long OFFSET_EARLIEST = KafkaOffsetType.EARLIEST.value();
     private static final long OFFSET_MAXIMUM = Long.MAX_VALUE;
 
     private static final int FLAG_FIN = 0x01;
@@ -842,6 +843,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             assert partitionOffset >= 0;
 
             final Node segmentNode = group.partition.seekNotAfter(partitionOffset);
+            assert !segmentNode.sentinel() : String.format("%s @ %d", group.partition, partitionOffset);
             cursor.init(segmentNode, partitionOffset);
 
             router.setThrottle(replyId, this::onClientMessage);
@@ -872,7 +874,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
                 doClientReplyData(traceId, nextEntry);
 
-                if (replyBudget == replyBudgetSnapshot || replyBudget <= replyPadding)
+                if (replyBudget == replyBudgetSnapshot || replyBudget < replyPadding)
                 {
                     break;
                 }
