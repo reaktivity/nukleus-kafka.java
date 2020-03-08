@@ -670,13 +670,7 @@ public final class KafkaCachePartition
                         break ancestor;
                     }
 
-                    final long lowerHashCursor = hashFile.lower((int) hash, hashCursor);
-                    if (lowerHashCursor == NEXT_SEGMENT || lowerHashCursor == RETRY_SEGMENT)
-                    {
-                        break;
-                    }
-
-                    hashCursor = lowerHashCursor;
+                    hashCursor = hashFile.lower((int) hash, hashCursor);
                 }
                 assert hashCursor == NEXT_SEGMENT || hashCursor == RETRY_SEGMENT;
             }
