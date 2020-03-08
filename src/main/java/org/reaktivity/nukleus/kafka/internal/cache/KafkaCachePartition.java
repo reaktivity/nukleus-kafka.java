@@ -556,7 +556,6 @@ public final class KafkaCachePartition
             assert segment != null;
             segment.delete();
             segment.close();
-            segment = null;
 
             next.previous = previous;
             previous.next = next;
