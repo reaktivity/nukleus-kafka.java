@@ -36,6 +36,7 @@ import java.util.function.ToIntFunction;
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
+import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
@@ -50,6 +51,7 @@ import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.Node;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheSegment;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopic;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
+import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
@@ -81,9 +83,10 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class KafkaCacheServerFetchFactory implements StreamFactory
 {
-    private static final int ERROR_UNKNOWN_TOPIC_OR_PARTITION = 3;
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
+    private static final DirectBuffer EMPTY_BUFFER = new UnsafeBuffer();
+    private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(EMPTY_BUFFER, 0, 0);
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
 
     private static final int SIZE_OF_FLUSH_WITH_EXTENSION = 64;
@@ -359,13 +362,15 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         long routeId,
         long streamId,
         long traceId,
-        long authorization)
+        long authorization,
+        Flyweight extension)
     {
         final ResetFW reset = resetRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                .routeId(routeId)
                .streamId(streamId)
                .traceId(traceId)
                .authorization(authorization)
+               .extension(extension.buffer(), extension.offset(), extension.sizeof())
                .build();
 
         sender.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
@@ -490,6 +495,23 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                         .build()
                         .sizeof()));
             state = KafkaState.openingInitial(state);
+        }
+
+        private void doServerFanoutInitialEndIfNecessary(
+            long traceId)
+        {
+            if (!KafkaState.initialClosed(state))
+            {
+                doServerFanoutInitialEnd(traceId);
+            }
+        }
+
+        private void doServerFanoutInitialEnd(
+            long traceId)
+        {
+            doEnd(receiver, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
+
+            state = KafkaState.closedInitial(state);
         }
 
         private void doServerFanoutInitialAbortIfNecessary(
@@ -772,9 +794,31 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         {
             final long traceId = end.traceId();
 
-            members.forEach(s -> s.doServerReplyEndIfNecessary(traceId));
-
             state = KafkaState.closedReply(state);
+
+            doServerFanoutInitialEndIfNecessary(traceId);
+
+            if (reconnectDelay != 0)
+            {
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s FETCH reconnect in %ds\n", partition, reconnectDelay);
+                }
+
+                signaler.signalAt(
+                    currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
+                    SIGNAL_RECONNECT,
+                    this::onServerFanoutSignal);
+            }
+            else
+            {
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s FETCH disconnect\n", partition);
+                }
+
+                members.forEach(s -> s.doServerReplyEndIfNecessary(traceId));
+            }
         }
 
         private void onServerFanoutReplyAbort(
@@ -782,9 +826,31 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         {
             final long traceId = abort.traceId();
 
-            members.forEach(s -> s.doServerReplyAbortIfNecessary(traceId));
-
             state = KafkaState.closedReply(state);
+
+            doServerFanoutInitialAbortIfNecessary(traceId);
+
+            if (reconnectDelay != 0)
+            {
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s FETCH reconnect in %ds\n", partition, reconnectDelay);
+                }
+
+                signaler.signalAt(
+                    currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
+                    SIGNAL_RECONNECT,
+                    this::onServerFanoutSignal);
+            }
+            else
+            {
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s FETCH disconnect\n", partition);
+                }
+
+                members.forEach(s -> s.doServerReplyAbortIfNecessary(traceId));
+            }
         }
 
         private void onServerFanoutInitialReset(
@@ -802,8 +868,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             final int error = kafkaResetEx != null ? kafkaResetEx.error() : -1;
 
             if (reconnectDelay != 0 &&
-                error != ERROR_NOT_LEADER_FOR_PARTITION &&
-                error != ERROR_UNKNOWN_TOPIC_OR_PARTITION)
+                error != ERROR_NOT_LEADER_FOR_PARTITION)
             {
                 if (KafkaConfiguration.DEBUG)
                 {
@@ -822,7 +887,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                     System.out.format("%s FETCH disconnect, error %d\n", partition, error);
                 }
 
-                members.forEach(s -> s.doServerInitialResetIfNecessary(traceId));
+                members.forEach(s -> s.doServerInitialResetIfNecessary(traceId, extension));
             }
         }
 
@@ -931,7 +996,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
-            doReset(receiver, routeId, replyId, traceId, authorization);
+            doReset(receiver, routeId, replyId, traceId, authorization, EMPTY_OCTETS);
         }
 
         private void doServerFanoutReplyWindow(
@@ -1037,7 +1102,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         {
             final long traceId = data.traceId();
 
-            doServerInitialResetIfNecessary(traceId);
+            doServerInitialResetIfNecessary(traceId, EMPTY_OCTETS);
             doServerReplyAbortIfNecessary(traceId);
 
             group.onServerFanoutMemberClosed(traceId, this);
@@ -1068,20 +1133,22 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         }
 
         private void doServerInitialResetIfNecessary(
-            long traceId)
+            long traceId,
+            Flyweight extension)
         {
             if (KafkaState.initialOpening(state) && !KafkaState.initialClosed(state))
             {
-                doServerInitialReset(traceId);
+                doServerInitialReset(traceId, extension);
             }
         }
 
         private void doServerInitialReset(
-            long traceId)
+            long traceId,
+            Flyweight extension)
         {
             state = KafkaState.closedInitial(state);
 
-            doReset(sender, routeId, initialId, traceId, authorization);
+            doReset(sender, routeId, initialId, traceId, authorization, extension);
         }
 
         private void doServerInitialWindowIfNecessary(
@@ -1226,7 +1293,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
             group.onServerFanoutMemberClosed(traceId, this);
 
-            doServerInitialResetIfNecessary(traceId);
+            doServerInitialResetIfNecessary(traceId, EMPTY_OCTETS);
         }
     }
 }

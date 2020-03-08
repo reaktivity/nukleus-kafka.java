@@ -763,8 +763,8 @@ public final class KafkaClientDescribeFactory implements StreamFactory
             long traceId,
             Flyweight extension)
         {
-            doApplicationAbortIfNecessary(traceId);
             doApplicationResetIfNecessary(traceId, extension);
+            doApplicationAbortIfNecessary(traceId);
         }
 
         private final class KafkaDescribeClient

@@ -86,8 +86,9 @@ public final class KafkaMergedFactory implements StreamFactory
 
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
+    private static final DirectBuffer EMPTY_BUFFER = new UnsafeBuffer();
+    private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(EMPTY_BUFFER, 0, 0);
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
-    private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(new UnsafeBuffer(0, 0),  0, 0);
 
     private static final List<KafkaCacheMergedFilter> EMPTY_MERGED_FILTERS = Collections.emptyList();
 
@@ -1630,7 +1631,7 @@ public final class KafkaMergedFactory implements StreamFactory
             state = KafkaState.closedInitial(state);
 
             final KafkaResetExFW kafkaResetEx = extension.get(kafkaResetExRO::tryWrap);
-            final int error = kafkaResetEx != null ? kafkaResetEx.error() : 0;
+            final int error = kafkaResetEx != null ? kafkaResetEx.error() : -1;
 
             doFetchReplyResetIfNecessary(traceId);
 

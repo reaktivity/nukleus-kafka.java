@@ -611,9 +611,31 @@ public final class KafkaCacheMetaFactory implements StreamFactory
         {
             final long traceId = end.traceId();
 
-            members.forEach(s -> s.doMetaReplyEndIfNecessary(traceId));
-
             state = KafkaState.closedReply(state);
+
+            doMetaFanoutInitialEndIfNecessary(traceId);
+
+            if (reconnectDelay != 0)
+            {
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s META reconnect in %ds\n", topic, reconnectDelay);
+                }
+
+                signaler.signalAt(
+                        currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
+                        SIGNAL_RECONNECT,
+                        this::onMetaFanoutSignal);
+            }
+            else
+            {
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s META disconnect\n", topic);
+                }
+
+                members.forEach(s -> s.doMetaReplyEndIfNecessary(traceId));
+            }
         }
 
         private void onMetaFanoutReplyAbort(

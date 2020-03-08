@@ -469,6 +469,8 @@ public final class KafkaClientMetaFactory implements StreamFactory
 
             progress = metadataResponse.limit();
 
+            client.onDecodeMetadata();
+
             client.decodeableResponseBytes -= metadataResponse.sizeof();
             assert client.decodeableResponseBytes >= 0;
 
@@ -492,6 +494,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
     {
         if (client.decodeableBrokers == 0)
         {
+            client.onDecodeBrokers();
             client.decoder = decodeCluster;
         }
         else
@@ -633,12 +636,6 @@ public final class KafkaClientMetaFactory implements StreamFactory
 
             client.onDecodeTopic(traceId, authorization, topicError, topic);
 
-            if (topicError != ERROR_NONE || !client.topic.equals(topic))
-            {
-                client.decoder = decodeIgnoreAll;
-                break decode;
-            }
-
             progress = topicMetadata.limit();
 
             client.decodeableResponseBytes -= topicMetadata.sizeof();
@@ -703,13 +700,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
             final int partitionId = partition.partitionId();
             final int leaderId = partition.leader();
 
-            if (partitionError != ERROR_NONE)
-            {
-                client.decoder = decodeIgnoreAll;
-                break decode;
-            }
-
-            client.onDecodePartition(traceId, partitionId, leaderId);
+            client.onDecodePartition(traceId, partitionId, leaderId, partitionError);
 
             progress = partition.limit();
 
@@ -991,8 +982,8 @@ public final class KafkaClientMetaFactory implements StreamFactory
             long traceId,
             Flyweight extension)
         {
-            doApplicationAbortIfNecessary(traceId);
             doApplicationResetIfNecessary(traceId, extension);
+            doApplicationAbortIfNecessary(traceId);
         }
 
         private final class KafkaMetaClient
@@ -1003,6 +994,8 @@ public final class KafkaClientMetaFactory implements StreamFactory
             private final MessageConsumer network;
             private final String topic;
             private final Int2IntHashMap partitions;
+
+            private final Long2ObjectHashMap<KafkaBrokerInfo> newBrokers;
             private final Int2IntHashMap newPartitions;
 
             private int state;
@@ -1042,6 +1035,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
                 this.decoder = decodeResponse;
                 this.topic = requireNonNull(topic);
                 this.partitions = new Int2IntHashMap(-1);
+                this.newBrokers = new Long2ObjectHashMap<>();
                 this.newPartitions = new Int2IntHashMap(-1);
             }
 
@@ -1459,13 +1453,24 @@ public final class KafkaClientMetaFactory implements StreamFactory
                 }
             }
 
+            private void onDecodeMetadata()
+            {
+                newBrokers.clear();
+            }
+
             private void onDecodeBroker(
                 int brokerId,
                 String host,
                 int port)
             {
-                // TODO: share broker info across meta factory instances
-                clientRoute.brokers.put(brokerId, new KafkaBrokerInfo(brokerId, host, port));
+                newBrokers.put(brokerId, new KafkaBrokerInfo(brokerId, host, port));
+            }
+
+            private void onDecodeBrokers()
+            {
+                // TODO: share brokers across elektrons
+                clientRoute.brokers.clear();
+                clientRoute.brokers.putAll(newBrokers);
             }
 
             private void onDecodeTopic(
@@ -1494,9 +1499,13 @@ public final class KafkaClientMetaFactory implements StreamFactory
             private void onDecodePartition(
                 long traceId,
                 int partitionId,
-                int leaderId)
+                int leaderId,
+                int partitionError)
             {
-                newPartitions.put(partitionId, leaderId);
+                if (partitionError == ERROR_NONE)
+                {
+                    newPartitions.put(partitionId, leaderId);
+                }
             }
 
             private void onDecodeResponse(
