@@ -842,8 +842,11 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
             assert partitionOffset >= 0;
 
-            final Node segmentNode = group.partition.seekNotAfter(partitionOffset);
-            assert !segmentNode.sentinel() : String.format("%s @ %d", group.partition, partitionOffset);
+            Node segmentNode = group.partition.seekNotAfter(partitionOffset);
+            if (segmentNode.sentinel())
+            {
+                segmentNode = segmentNode.next();
+            }
             cursor.init(segmentNode, partitionOffset);
 
             router.setThrottle(replyId, this::onClientMessage);
