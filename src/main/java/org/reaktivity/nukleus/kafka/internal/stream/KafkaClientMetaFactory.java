@@ -433,7 +433,6 @@ public final class KafkaClientMetaFactory implements StreamFactory
             final ResponseHeaderFW responseHeader = responseHeaderRO.tryWrap(buffer, progress, limit);
             if (responseHeader == null)
             {
-                client.decoder = decodeIgnoreAll;
                 break decode;
             }
 
@@ -465,7 +464,6 @@ public final class KafkaClientMetaFactory implements StreamFactory
             final MetadataResponseFW metadataResponse = metadataResponseRO.tryWrap(buffer, progress, limit);
             if (metadataResponse == null)
             {
-                client.decoder = decodeIgnoreAll;
                 break decode;
             }
 
@@ -562,9 +560,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
         decode:
         if (length != 0)
         {
-            final MetadataResponsePart2FW cluster =
-                    metadataResponsePart2RO.tryWrap(buffer, progress, limit);
-
+            final MetadataResponsePart2FW cluster = metadataResponsePart2RO.tryWrap(buffer, progress, limit);
             if (cluster == null)
             {
                 break decode;
