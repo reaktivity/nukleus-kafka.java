@@ -235,7 +235,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
             if (fanout != null)
             {
-                assert fanout.affinity == affinity || fanout.state == 0;
+                assert fanout.affinity == affinity || fanout.state == 0 :
+                        String.format("%d == %d || %d == 0", fanout.affinity, affinity, fanout.state);
                 fanout.affinity = affinity;
 
                 newStream = new KafkaCacheServerFetchStream(
