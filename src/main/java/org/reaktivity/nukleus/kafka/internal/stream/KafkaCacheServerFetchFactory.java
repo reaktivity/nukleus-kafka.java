@@ -235,8 +235,10 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
             if (fanout != null)
             {
-                assert fanout.affinity == affinity || fanout.state == 0 :
-                        String.format("%d == %d || %d == 0", fanout.affinity, affinity, fanout.state);
+                assert fanout.affinity == affinity || fanout.state == 0 || KafkaState.closed(fanout.state) :
+                        String.format("%d == %d || %d == 0 || KafkaState.closed(0x%08x)",
+                                fanout.affinity, affinity, fanout.state, fanout.state);
+
                 fanout.affinity = affinity;
 
                 newStream = new KafkaCacheServerFetchStream(
@@ -456,8 +458,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         private void doServerFanoutInitialBeginIfNecessary(
             long traceId)
         {
-            if (KafkaState.initialClosed(state) &&
-                KafkaState.replyClosed(state))
+            if (KafkaState.closed(state))
             {
                 state = 0;
             }

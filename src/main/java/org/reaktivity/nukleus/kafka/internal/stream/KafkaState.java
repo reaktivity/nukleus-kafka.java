@@ -122,6 +122,12 @@ public final class KafkaState
         return (state & REPLY_CLOSED) != 0;
     }
 
+    static boolean closed(
+        int state)
+    {
+        return initialClosed(state) && replyClosed(state);
+    }
+
     private KafkaState()
     {
         // utility

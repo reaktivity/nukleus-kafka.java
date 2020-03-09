@@ -31,6 +31,10 @@ public abstract class KafkaCacheObject<T extends KafkaCacheObject<T>> implements
 
     public final T acquire()
     {
+        if (closed)
+        {
+            return null;
+        }
         references.incrementAndGet();
         return self();
     }

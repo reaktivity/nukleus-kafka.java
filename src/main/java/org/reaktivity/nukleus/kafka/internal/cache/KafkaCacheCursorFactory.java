@@ -100,12 +100,21 @@ public final class KafkaCacheCursorFactory
             assert this.segmentNode == null;
             assert this.segment == null;
 
-            assert !segmentNode.sentinel();
-            this.segmentNode = segmentNode;
             this.offset = offset;
 
-            assert segmentNode.segment() != null;
-            this.segment = segmentNode.segment().acquire();
+            assert !segmentNode.sentinel();
+            KafkaCacheSegment newSegment = null;
+            while (newSegment == null)
+            {
+                newSegment = segmentNode.segment().acquire();
+                if (newSegment == null)
+                {
+                    segmentNode = segmentNode.next();
+                }
+            }
+            this.segmentNode = segmentNode;
+            this.segment = newSegment;
+
             final long cursor = condition.reset(segment, offset, POSITION_UNSET);
             this.cursor = cursor == RETRY_SEGMENT || cursor == NEXT_SEGMENT ? 0L : cursor;
         }
@@ -119,7 +128,6 @@ public final class KafkaCacheCursorFactory
             while (nextEntry == null)
             {
                 final long cursorNext = condition.next(cursor);
-
                 if (cursorNext == RETRY_SEGMENT)
                 {
                     break next;
@@ -127,15 +135,26 @@ public final class KafkaCacheCursorFactory
 
                 if (cursorNext == NEXT_SEGMENT)
                 {
-                    final Node segmentNext = segmentNode.next();
+                    Node segmentNext = segmentNode.next();
                     if (segmentNext.sentinel())
                     {
                         break next;
                     }
 
                     segment.release();
+
+                    KafkaCacheSegment newSegment;
+                    do
+                    {
+                        newSegment = segmentNext.segment().acquire();
+                        if (newSegment == null)
+                        {
+                            segmentNext = segmentNext.next();
+                        }
+                    } while (newSegment == null);
+
                     segmentNode = segmentNext;
-                    segment = segmentNext.segment().acquire();
+                    segment = newSegment;
 
                     final long cursor = condition.reset(segment, offset, POSITION_UNSET);
                     this.cursor = cursor == RETRY_SEGMENT || cursor == NEXT_SEGMENT ? 0L : cursor;
@@ -144,25 +163,23 @@ public final class KafkaCacheCursorFactory
 
                 final int index = cursorIndex(cursorNext);
                 assert index >= 0;
-
                 final int position = cursorValue(cursorNext);
                 assert position >= 0;
 
                 assert segment != null;
-
                 final KafkaCacheFile logFile = segment.logFile();
                 assert logFile != null;
 
                 nextEntry = logFile.readBytes(position, cacheEntry::wrap);
                 assert nextEntry != null;
 
-                // TODO: remove nextEntry.offset() < offset from if condition
-                if (nextEntry.offset$() < offset || !condition.test(nextEntry))
+                final long nextOffset = nextEntry.offset$();
+
+                // TODO: remove nextOffset < offset from if condition
+                if (nextOffset < offset || !condition.test(nextEntry))
                 {
                     nextEntry = null;
                 }
-
-                assert nextEntry == null || nextEntry.offset$() >= offset;
 
                 if (nextEntry != null && deltaType != KafkaDeltaType.NONE)
                 {
@@ -183,7 +200,6 @@ public final class KafkaCacheCursorFactory
                             {
                                 final KafkaCacheFile deltaFile = segment.deltaFile();
                                 final KafkaCacheDeltaFW delta = deltaFile.readBytes(deltaPosition, deltaRO::wrap);
-
                                 final DirectBuffer entryBuffer = nextEntry.buffer();
                                 final KafkaKeyFW key = nextEntry.key();
                                 final int entryOffset = nextEntry.offset();
@@ -204,7 +220,6 @@ public final class KafkaCacheCursorFactory
                                 //       still need to handle implicit snapshot case
                                 writeBuffer.putBytes(0, nextEntry.buffer(), nextEntry.offset(), nextEntry.sizeof());
                                 writeBuffer.putLong(KafkaCacheEntryFW.FIELD_OFFSET_ANCESTOR, -1L);
-
                                 nextEntry = cacheEntry.wrap(writeBuffer, 0, writeBuffer.capacity());
                             }
                         }
@@ -213,7 +228,15 @@ public final class KafkaCacheCursorFactory
                     }
                 }
 
-                this.cursor = cursorNext;
+                if (nextEntry == null)
+                {
+                    this.offset = Math.max(offset, nextOffset);
+                    this.cursor = nextIndex(nextValue(cursorNext));
+                }
+                else
+                {
+                    this.cursor = cursorNext;
+                }
             }
 
             return nextEntry;
