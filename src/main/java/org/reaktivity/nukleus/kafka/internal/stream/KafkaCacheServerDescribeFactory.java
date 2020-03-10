@@ -22,7 +22,6 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.TreeMap;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -170,7 +169,7 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
             final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
             final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
             return !route.localAddress().equals(route.remoteAddress()) &&
-                    routeTopic != null && Objects.equals(routeTopic, beginTopic);
+                    (beginTopic != null && (routeTopic == null || routeTopic.equals(beginTopic)));
         };
 
         MessageConsumer newStream = null;

@@ -20,7 +20,6 @@ import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
 
-import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
@@ -215,7 +214,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
             final RouteFW route = wrapRoute.apply(t, b, i, l);
             final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
             final String16FW routeTopic = routeEx.topic();
-            return Objects.equals(routeTopic, beginTopic);
+            return beginTopic != null && (routeTopic == null || routeTopic.equals(beginTopic));
         };
 
         final RouteFW route = router.resolve(routeId, authorization, filter, wrapRoute);

@@ -20,7 +20,6 @@ import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.kafka.internal.types.codec.offsets.IsolationLevel.READ_UNCOMMITTED;
 
-import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
@@ -295,7 +294,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 final String16FW routeTopic = routeEx.topic();
                 final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : KafkaDeltaType.NONE;
                 return !route.localAddress().equals(route.remoteAddress()) &&
-                        Objects.equals(routeTopic, beginTopic) &&
+                        (beginTopic != null && (routeTopic == null || routeTopic.equals(beginTopic))) &&
                         routeDeltaType == KafkaDeltaType.NONE;
             };
 
