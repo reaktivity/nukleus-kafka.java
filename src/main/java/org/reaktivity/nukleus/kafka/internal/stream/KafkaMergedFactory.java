@@ -182,7 +182,7 @@ public final class KafkaMergedFactory implements StreamFactory
             final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
             final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : KafkaDeltaType.NONE;
             return route.localAddress().equals(route.remoteAddress()) &&
-                    routeTopic != null && Objects.equals(routeTopic, beginTopic) &&
+                    ((routeTopic == null && beginTopic != null) || Objects.equals(routeTopic, beginTopic)) &&
                     (routeDeltaType == deltaType || deltaType == KafkaDeltaType.NONE);
         };
 

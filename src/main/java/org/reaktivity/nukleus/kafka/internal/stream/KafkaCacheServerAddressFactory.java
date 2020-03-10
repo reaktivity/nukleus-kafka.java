@@ -125,15 +125,17 @@ public class KafkaCacheServerAddressFactory implements AddressFactory
             kafkaRouteEx != null)
         {
             final String topic = kafkaRouteEx.topic().asString();
-            assert topic != null;
 
-            final long routeId = route.correlationId();
-            assert !streamsByRouteId.containsKey(routeId);
+            if (topic != null)
+            {
+                final long routeId = route.correlationId();
+                assert !streamsByRouteId.containsKey(routeId);
 
-            final KafkaAddressStream stream = new KafkaAddressStream(routeId, authorization, topic);
-            streamsByRouteId.put(routeId, stream);
+                final KafkaAddressStream stream = new KafkaAddressStream(routeId, authorization, topic);
+                streamsByRouteId.put(routeId, stream);
 
-            stream.doKafkaInitialBegin();
+                stream.doKafkaInitialBegin();
+            }
         }
     }
 
