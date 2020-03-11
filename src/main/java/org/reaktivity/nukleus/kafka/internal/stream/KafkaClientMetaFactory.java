@@ -213,7 +213,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
         {
             final RouteFW route = wrapRoute.apply(t, b, i, l);
             final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
-            final String16FW routeTopic = routeEx.topic();
+            final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
             return beginTopic != null && (routeTopic == null || routeTopic.equals(beginTopic));
         };
 

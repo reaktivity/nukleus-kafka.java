@@ -384,14 +384,14 @@ public final class KafkaCacheClientDescribeFactory implements StreamFactory
             {
                 correlations.remove(replyId);
                 doDescribeFanoutInitialEndIfNecessary(traceId);
+                doDescribeFanoutReplyResetIfNecessary(traceId);
             }
         }
 
         private void doDescribeFanoutInitialBeginIfNecessary(
             long traceId)
         {
-            if (KafkaState.initialClosed(state) &&
-                KafkaState.replyClosed(state))
+            if (KafkaState.closed(state))
             {
                 state = 0;
             }
@@ -695,6 +695,8 @@ public final class KafkaCacheClientDescribeFactory implements StreamFactory
             {
                 doDescribeInitialReset(traceId);
             }
+
+            state = KafkaState.closedInitial(state);
         }
 
         private void doDescribeInitialReset(
@@ -783,6 +785,8 @@ public final class KafkaCacheClientDescribeFactory implements StreamFactory
             {
                 doDescribeReplyEnd(traceId);
             }
+
+            state = KafkaState.closedReply(state);
         }
 
         private void doDescribeReplyEnd(
@@ -799,6 +803,8 @@ public final class KafkaCacheClientDescribeFactory implements StreamFactory
             {
                 doDescribeReplyAbort(traceId);
             }
+
+            state = KafkaState.closedReply(state);
         }
 
         private void doDescribeReplyAbort(
