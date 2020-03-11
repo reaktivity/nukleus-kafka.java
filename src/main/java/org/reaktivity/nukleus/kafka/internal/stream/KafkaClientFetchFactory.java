@@ -291,7 +291,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
             {
                 final RouteFW route = wrapRoute.apply(t, b, i, l);
                 final KafkaRouteExFW routeEx = route.extension().get(kafkaRouteExRO::tryWrap);
-                final String16FW routeTopic = routeEx.topic();
+                final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
                 final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : KafkaDeltaType.NONE;
                 return !route.localAddress().equals(route.remoteAddress()) &&
                         (beginTopic != null && (routeTopic == null || routeTopic.equals(beginTopic))) &&

@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.lang.System.currentTimeMillis;
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -344,6 +345,8 @@ public final class KafkaCacheMetaFactory implements StreamFactory
 
         private int state;
 
+        private long reconnectAt = NO_CANCEL_ID;
+
         private KafkaCacheMetaFanout(
             long routeId,
             long authorization,
@@ -400,16 +403,22 @@ public final class KafkaCacheMetaFactory implements StreamFactory
 
             if (members.isEmpty())
             {
+                if (reconnectAt != NO_CANCEL_ID)
+                {
+                    signaler.cancel(reconnectAt);
+                    this.reconnectAt = NO_CANCEL_ID;
+                }
+
                 correlations.remove(replyId);
                 doMetaFanoutInitialEndIfNecessary(traceId);
+                doMetaFanoutReplyResetIfNecessary(traceId);
             }
         }
 
         private void doMetaFanoutInitialBeginIfNecessary(
             long traceId)
         {
-            if (KafkaState.initialClosed(state) &&
-                KafkaState.replyClosed(state))
+            if (KafkaState.closed(state))
             {
                 state = 0;
             }
@@ -499,7 +508,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
                     System.out.format("%s META reconnect in %ds, error %d\n", topic, reconnectDelay, error);
                 }
 
-                signaler.signalAt(
+                this.reconnectAt = signaler.signalAt(
                         currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
                         SIGNAL_RECONNECT,
                         this::onMetaFanoutSignal);
@@ -621,7 +630,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
                     System.out.format("%s META reconnect in %ds\n", topic, reconnectDelay);
                 }
 
-                signaler.signalAt(
+                this.reconnectAt = signaler.signalAt(
                         currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
                         SIGNAL_RECONNECT,
                         this::onMetaFanoutSignal);
@@ -653,7 +662,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
                     System.out.format("%s META reconnect in %ds\n", topic, reconnectDelay);
                 }
 
-                signaler.signalAt(
+                this.reconnectAt = signaler.signalAt(
                         currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
                         SIGNAL_RECONNECT,
                         this::onMetaFanoutSignal);
@@ -813,6 +822,8 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             {
                 doMetaInitialReset(traceId);
             }
+
+            state = KafkaState.closedInitial(state);
         }
 
         private void doMetaInitialReset(
@@ -900,6 +911,8 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             {
                 doMetaReplyEnd(traceId);
             }
+
+            state = KafkaState.closedReply(state);
         }
 
         private void doMetaReplyEnd(
@@ -916,6 +929,8 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             {
                 doMetaReplyAbort(traceId);
             }
+
+            state = KafkaState.closedReply(state);
         }
 
         private void doMetaReplyAbort(

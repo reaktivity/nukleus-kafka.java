@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.lang.System.currentTimeMillis;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -348,6 +349,8 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
 
         private int state;
 
+        private long reconnectAt = NO_CANCEL_ID;
+
         private KafkaCacheServerDescribeFanout(
             long routeId,
             long authorization,
@@ -405,16 +408,22 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
 
             if (members.isEmpty())
             {
+                if (reconnectAt != NO_CANCEL_ID)
+                {
+                    signaler.cancel(reconnectAt);
+                    this.reconnectAt = NO_CANCEL_ID;
+                }
+
                 correlations.remove(replyId);
                 doDescribeFanoutInitialEndIfNecessary(traceId);
+                doDescribeFanoutReplyResetIfNecessary(traceId);
             }
         }
 
         private void doDescribeFanoutInitialBeginIfNecessary(
             long traceId)
         {
-            if (KafkaState.initialClosed(state) &&
-                KafkaState.replyClosed(state))
+            if (KafkaState.closed(state))
             {
                 state = 0;
             }
@@ -505,7 +514,7 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
                     System.out.format("%s DESCRIBE reconnect in %ds, error %d\n", topic, reconnectDelay, error);
                 }
 
-                signaler.signalAt(
+                this.reconnectAt = signaler.signalAt(
                     currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
                     SIGNAL_RECONNECT,
                     this::onDescribeFanoutSignal);
@@ -647,7 +656,7 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
                     System.out.format("%s DESCRIBE reconnect in %ds\n", topic, reconnectDelay);
                 }
 
-                signaler.signalAt(
+                this.reconnectAt = signaler.signalAt(
                     currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
                     SIGNAL_RECONNECT,
                     this::onDescribeFanoutSignal);
@@ -679,7 +688,7 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
                     System.out.format("%s DESCRIBE reconnect in %ds\n", topic, reconnectDelay);
                 }
 
-                signaler.signalAt(
+                this.reconnectAt = signaler.signalAt(
                     currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
                     SIGNAL_RECONNECT,
                     this::onDescribeFanoutSignal);
@@ -829,6 +838,8 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
             {
                 doDescribeInitialReset(traceId);
             }
+
+            state = KafkaState.closedInitial(state);
         }
 
         private void doDescribeInitialReset(
@@ -917,6 +928,8 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
             {
                 doDescribeReplyEnd(traceId);
             }
+
+            state = KafkaState.closedReply(state);
         }
 
         private void doDescribeReplyEnd(
@@ -933,6 +946,8 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
             {
                 doDescribeReplyAbort(traceId);
             }
+
+            state = KafkaState.closedReply(state);
         }
 
         private void doDescribeReplyAbort(

@@ -400,6 +400,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         private long deleteId = NO_CANCEL_ID;
         private long compactId = NO_CANCEL_ID;
         private long compactAt = Long.MAX_VALUE;
+        private long reconnectAt = NO_CANCEL_ID;
 
         private KafkaCacheServerFetchFanout(
             long routeId,
@@ -448,6 +449,12 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
             if (members.isEmpty())
             {
+                if (reconnectAt != NO_CANCEL_ID)
+                {
+                    signaler.cancel(reconnectAt);
+                    this.reconnectAt = NO_CANCEL_ID;
+                }
+
                 correlations.remove(replyId);
                 doServerFanoutInitialAbortIfNecessary(traceId);
                 doServerFanoutReplyResetIfNecessary(traceId);
@@ -806,7 +813,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                     System.out.format("%s FETCH reconnect in %ds\n", partition, reconnectDelay);
                 }
 
-                signaler.signalAt(
+                this.reconnectAt = signaler.signalAt(
                     currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
                     SIGNAL_RECONNECT,
                     this::onServerFanoutSignal);
@@ -838,7 +845,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                     System.out.format("%s FETCH reconnect in %ds\n", partition, reconnectDelay);
                 }
 
-                signaler.signalAt(
+                this.reconnectAt = signaler.signalAt(
                     currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
                     SIGNAL_RECONNECT,
                     this::onServerFanoutSignal);
@@ -876,7 +883,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                     System.out.format("%s FETCH reconnect in %ds, error %d\n", partition, reconnectDelay, error);
                 }
 
-                signaler.signalAt(
+                this.reconnectAt = signaler.signalAt(
                     currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
                     SIGNAL_RECONNECT,
                     this::onServerFanoutSignal);
@@ -1141,6 +1148,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             {
                 doServerInitialReset(traceId, extension);
             }
+
+            state = KafkaState.closedInitial(state);
         }
 
         private void doServerInitialReset(
@@ -1242,6 +1251,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             {
                 doServerReplyEnd(traceId);
             }
+
+            state = KafkaState.closedReply(state);
         }
 
         private void doServerReplyEnd(
@@ -1258,6 +1269,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             {
                 doServerReplyAbort(traceId);
             }
+
+            state = KafkaState.closedReply(state);
         }
 
         private void doServerReplyAbort(
