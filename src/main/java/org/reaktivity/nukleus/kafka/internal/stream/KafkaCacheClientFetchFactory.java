@@ -873,6 +873,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void doClientReplyDataIfNecessary(
             long traceId)
         {
+            assert !KafkaState.replyClosing(state);
+
             while (KafkaState.replyOpened(state) &&
                 partitionOffset <= group.partitionOffset)
             {
@@ -1111,6 +1113,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
 
             state = KafkaState.closedReply(state);
+            doCleanupClient();
         }
 
         private void doClientReplyAbortIfNecessary(
@@ -1122,6 +1125,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
 
             state = KafkaState.closedReply(state);
+            doCleanupClient();
         }
 
         private void onClientReplyWindow(
