@@ -71,8 +71,11 @@ final class KafkaMergedBudgetDebitor implements BudgetDebitor
         long watcherId)
     {
         final KafkaMergedBudget mergedBudget = budgetsByMergedId.get(mergedBudgetId);
-        assert mergedBudget != null;
 
-        mergedBudget.detach(watcherId);
+        // debitor may cleanup after creditor
+        if (mergedBudget != null)
+        {
+            mergedBudget.detach(watcherId);
+        }
     }
 }
