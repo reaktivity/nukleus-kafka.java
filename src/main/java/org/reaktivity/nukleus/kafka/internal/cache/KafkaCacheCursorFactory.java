@@ -266,8 +266,11 @@ public final class KafkaCacheCursorFactory
         @Override
         public void close()
         {
-            segment.release();
-            segmentNode = null;
+            if (segmentNode != null)
+            {
+                segment.release();
+                segmentNode = null;
+            }
         }
 
         @Override

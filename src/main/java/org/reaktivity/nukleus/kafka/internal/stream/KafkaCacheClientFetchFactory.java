@@ -218,7 +218,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
             if (fanout != null)
             {
-                assert fanout.affinity == affinity || fanout.state == 0;
+                assert fanout.affinity == affinity || fanout.state == 0 || KafkaState.closed(fanout.state) :
+                        String.format("%d == %d || %d == 0 || KafkaState.closed(0x%08x)",
+                                fanout.affinity, affinity, fanout.state, fanout.state);
                 fanout.affinity = affinity;
 
                 final KafkaFilterCondition condition = cursorFactory.asCondition(filters);
