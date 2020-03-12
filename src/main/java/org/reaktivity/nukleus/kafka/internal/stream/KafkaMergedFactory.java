@@ -30,6 +30,7 @@ import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
+import org.agrona.collections.MutableInteger;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessageFunction;
@@ -116,6 +117,8 @@ public final class KafkaMergedFactory implements StreamFactory
     private final KafkaDataExFW.Builder kafkaDataExRW = new KafkaDataExFW.Builder();
 
     private final MessageFunction<RouteFW> wrapRoute = (t, b, i, l) -> routeRO.wrap(b, i, i + l);
+
+    private final MutableInteger partitionCount = new MutableInteger();
 
     private final int kafkaTypeId;
     private final RouteManager router;
@@ -891,6 +894,10 @@ public final class KafkaMergedFactory implements StreamFactory
             ArrayFW<KafkaPartitionFW> partitions)
         {
             partitions.forEach(partition -> onPartitionMetaDataChangedIfNecessary(traceId, partition));
+
+            partitionCount.value = 0;
+            partitions.forEach(partition -> partitionCount.value++);
+            assert fetchStreams.size() == partitionCount.value;
         }
 
         private void onPartitionMetaDataChangedIfNecessary(
@@ -900,25 +907,26 @@ public final class KafkaMergedFactory implements StreamFactory
             final int partitionId = partition.partitionId();
             final int leaderId = partition.leaderId();
 
-            KafkaUnmergedFetchStream oldLeader = null;
+            KafkaUnmergedFetchStream leader = null;
             for (int index = 0; index < fetchStreams.size(); index++)
             {
                 final KafkaUnmergedFetchStream fetchStream = fetchStreams.get(index);
-                if (fetchStream.partitionId == partitionId && fetchStream.leaderId == leaderId)
+                if (fetchStream.partitionId == partitionId)
                 {
-                    oldLeader = fetchStream;
+                    leader = fetchStream;
                     break;
                 }
             }
-            assert oldLeader == null || oldLeader.partitionId == partitionId;
 
-            if (oldLeader != null && oldLeader.leaderId != leaderId)
+            if (leader != null && leader.leaderId != leaderId)
             {
-                oldLeader.doFetchInitialEndIfNecessary(traceId);
+                leader.doFetchInitialEndIfNecessary(traceId);
                 //oldLeader.doFetchReplyResetIfNecessary(traceId);
+                fetchStreams.remove(leader);
+                leader = null;
             }
 
-            if (oldLeader == null || oldLeader.leaderId != leaderId)
+            if (leader == null)
             {
                 long partitionOffset = nextOffsetsById.get(partitionId);
                 if (partitionOffset == nextOffsetsById.missingValue())
@@ -926,11 +934,14 @@ public final class KafkaMergedFactory implements StreamFactory
                     partitionOffset = defaultOffset;
                 }
 
-                final KafkaUnmergedFetchStream newLeader = new KafkaUnmergedFetchStream(partitionId, leaderId, this);
-                newLeader.doFetchInitialBegin(traceId, partitionOffset);
-
-                fetchStreams.add(newLeader);
+                leader = new KafkaUnmergedFetchStream(partitionId, leaderId, this);
+                leader.doFetchInitialBegin(traceId, partitionOffset);
+                fetchStreams.add(leader);
             }
+
+            assert leader != null;
+            assert leader.leaderId == leaderId;
+            assert leader.partitionId == partitionId;
         }
 
         private void onPartitionReady(

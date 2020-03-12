@@ -26,6 +26,7 @@ import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
+import org.agrona.collections.MutableInteger;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessageFunction;
@@ -105,6 +106,8 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
     private final KafkaBeginExFW.Builder kafkaBeginExRW = new KafkaBeginExFW.Builder();
 
     private final MessageFunction<RouteFW> wrapRoute = (t, b, i, l) -> routeRO.wrap(b, i, i + l);
+
+    private final MutableInteger partitionCount = new MutableInteger();
 
     private final int kafkaTypeId;
     private final RouteManager router;
@@ -553,6 +556,10 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             ArrayFW<KafkaPartitionFW> partitions)
         {
             partitions.forEach(partition -> onBootstrapPartitionMetaDataChangedIfNecessary(traceId, partition));
+
+            partitionCount.value = 0;
+            partitions.forEach(partition -> partitionCount.value++);
+            assert fetchStreams.size() == partitionCount.value;
         }
 
         private void onBootstrapPartitionMetaDataChangedIfNecessary(
@@ -562,39 +569,41 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             final int partitionId = partition.partitionId();
             final int leaderId = partition.leaderId();
 
-            KafkaBootstrapFetchStream oldLeader = null;
+            KafkaBootstrapFetchStream leader = null;
             for (int index = 0; index < fetchStreams.size(); index++)
             {
                 final KafkaBootstrapFetchStream fetchStream = fetchStreams.get(index);
-                if (fetchStream.partitionId == partitionId && fetchStream.leaderId == leaderId)
+                if (fetchStream.partitionId == partitionId)
                 {
-                    oldLeader = fetchStream;
+                    leader = fetchStream;
                     break;
                 }
             }
-            assert oldLeader == null || oldLeader.partitionId == partitionId;
 
-            if (oldLeader != null && oldLeader.leaderId != leaderId)
+            if (leader != null && leader.leaderId != leaderId)
             {
-                oldLeader.doBootstrapFetchInitialEndIfNecessary(traceId);
+                leader.doBootstrapFetchInitialEndIfNecessary(traceId);
                 //oldLeader.doBootstrapFetchReplyResetIfNecessary(traceId);
+                fetchStreams.remove(leader);
+                leader = null;
             }
 
-            if (oldLeader == null || oldLeader.leaderId != leaderId)
+            if (leader == null)
             {
-                // TODO: require successful claim leaderId for this elektron index
-
                 long partitionOffset = nextOffsetsById.get(partitionId);
                 if (partitionOffset == nextOffsetsById.missingValue())
                 {
                     partitionOffset = defaultOffset;
                 }
 
-                final KafkaBootstrapFetchStream newLeader = new KafkaBootstrapFetchStream(partitionId, leaderId, this);
-                newLeader.doBootstrapInitialBegin(traceId, partitionOffset);
-
-                fetchStreams.add(newLeader);
+                leader = new KafkaBootstrapFetchStream(partitionId, leaderId, this);
+                leader.doBootstrapInitialBegin(traceId, partitionOffset);
+                fetchStreams.add(leader);
             }
+
+            assert leader != null;
+            assert leader.leaderId == leaderId;
+            assert leader.partitionId == partitionId;
         }
 
         private void onBootstrapPartitionReady(
