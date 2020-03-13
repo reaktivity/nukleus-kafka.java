@@ -160,4 +160,20 @@ public class CacheMergedIT
         k3po.notifyBarrier("CHANGED_PARTITION_COUNT");
         k3po.finish();
     }
+
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
+        "${client}/merged.partition.leader.changed/client",
+        "${server}/unmerged.partition.leader.changed/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldRequestMergedPartitionLeaderChanged() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("CHANGING_PARTITION_LEADER");
+        Thread.sleep(200);
+        k3po.notifyBarrier("CHANGED_PARTITION_LEADER");
+        k3po.finish();
+    }
+
 }
