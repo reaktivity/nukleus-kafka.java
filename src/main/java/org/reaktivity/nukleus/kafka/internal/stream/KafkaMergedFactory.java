@@ -1668,7 +1668,9 @@ public final class KafkaMergedFactory implements StreamFactory
         private void doFetchReplyWindowIfNecessary(
             long traceId)
         {
-            if (KafkaState.replyOpening(state) && !KafkaState.replyClosing(state))
+            if (KafkaState.replyOpened(mergedFetch.state) &&
+                KafkaState.replyOpening(state) &&
+                !KafkaState.replyClosing(state))
             {
                 state = KafkaState.openedReply(state);
 
