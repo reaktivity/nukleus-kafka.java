@@ -115,6 +115,9 @@ public final class KafkaCacheCursorFactory
             this.segmentNode = segmentNode;
             this.segment = newSegment;
 
+            assert this.segmentNode != null;
+            assert this.segment != null;
+
             final long cursor = condition.reset(segment, offset, POSITION_UNSET);
             this.cursor = cursor == RETRY_SEGMENT || cursor == NEXT_SEGMENT ? 0L : cursor;
         }
@@ -153,8 +156,12 @@ public final class KafkaCacheCursorFactory
                         }
                     } while (newSegment == null);
 
-                    segmentNode = segmentNext;
-                    segment = newSegment;
+                    this.segmentNode = segmentNext;
+                    this.segment = newSegment;
+
+                    assert segmentNode != null;
+                    assert !segmentNode.sentinel();
+                    assert segment != null;
 
                     final long cursor = condition.reset(segment, offset, POSITION_UNSET);
                     this.cursor = cursor == RETRY_SEGMENT || cursor == NEXT_SEGMENT ? 0L : cursor;
@@ -183,49 +190,7 @@ public final class KafkaCacheCursorFactory
 
                 if (nextEntry != null && deltaType != KafkaDeltaType.NONE)
                 {
-                    final long ancestorOffset = nextEntry.ancestor();
-
-                    if (nextEntry.valueLen() == -1)
-                    {
-                        deltaKeyOffsets.remove(ancestorOffset);
-                    }
-                    else
-                    {
-                        final long partitionOffset = nextEntry.offset$();
-                        final int deltaPosition = nextEntry.deltaPosition();
-
-                        if (ancestorOffset != -1)
-                        {
-                            if (deltaPosition != -1 && deltaKeyOffsets.remove(ancestorOffset))
-                            {
-                                final KafkaCacheFile deltaFile = segment.deltaFile();
-                                final KafkaCacheDeltaFW delta = deltaFile.readBytes(deltaPosition, deltaRO::wrap);
-                                final DirectBuffer entryBuffer = nextEntry.buffer();
-                                final KafkaKeyFW key = nextEntry.key();
-                                final int entryOffset = nextEntry.offset();
-                                final ArrayFW<KafkaHeaderFW> headers = nextEntry.headers();
-
-                                final int sizeofEntryHeader = key.limit() - nextEntry.offset();
-                                writeBuffer.putBytes(0, entryBuffer, entryOffset, sizeofEntryHeader);
-                                writeBuffer.putBytes(sizeofEntryHeader, delta.buffer(), delta.offset(), delta.sizeof());
-                                writeBuffer.putBytes(sizeofEntryHeader + delta.sizeof(),
-                                        headers.buffer(), headers.offset(), headers.sizeof());
-
-                                final int sizeofEntry = sizeofEntryHeader + delta.sizeof() + headers.sizeof();
-                                nextEntry = cacheEntry.wrap(writeBuffer, 0, sizeofEntry);
-                            }
-                            else
-                            {
-                                // TODO: consider moving message to next segmentNode if delta exceeds size limit instead
-                                //       still need to handle implicit snapshot case
-                                writeBuffer.putBytes(0, nextEntry.buffer(), nextEntry.offset(), nextEntry.sizeof());
-                                writeBuffer.putLong(KafkaCacheEntryFW.FIELD_OFFSET_ANCESTOR, -1L);
-                                nextEntry = cacheEntry.wrap(writeBuffer, 0, writeBuffer.capacity());
-                            }
-                        }
-
-                        deltaKeyOffsets.add(partitionOffset);
-                    }
+                    nextEntry = markAncestorIfNecessary(cacheEntry, nextEntry);
                 }
 
                 if (nextEntry == null)
@@ -242,6 +207,56 @@ public final class KafkaCacheCursorFactory
             return nextEntry;
         }
 
+        private KafkaCacheEntryFW markAncestorIfNecessary(
+            KafkaCacheEntryFW cacheEntry,
+            KafkaCacheEntryFW nextEntry)
+        {
+            final long ancestorOffset = nextEntry.ancestor();
+
+            if (nextEntry.valueLen() == -1)
+            {
+                deltaKeyOffsets.remove(ancestorOffset);
+            }
+            else
+            {
+                final long partitionOffset = nextEntry.offset$();
+                final int deltaPosition = nextEntry.deltaPosition();
+
+                if (ancestorOffset != -1)
+                {
+                    if (deltaPosition != -1 && deltaKeyOffsets.remove(ancestorOffset))
+                    {
+                        final KafkaCacheFile deltaFile = segment.deltaFile();
+                        final KafkaCacheDeltaFW delta = deltaFile.readBytes(deltaPosition, deltaRO::wrap);
+                        final DirectBuffer entryBuffer = nextEntry.buffer();
+                        final KafkaKeyFW key = nextEntry.key();
+                        final int entryOffset = nextEntry.offset();
+                        final ArrayFW<KafkaHeaderFW> headers = nextEntry.headers();
+
+                        final int sizeofEntryHeader = key.limit() - nextEntry.offset();
+                        writeBuffer.putBytes(0, entryBuffer, entryOffset, sizeofEntryHeader);
+                        writeBuffer.putBytes(sizeofEntryHeader, delta.buffer(), delta.offset(), delta.sizeof());
+                        writeBuffer.putBytes(sizeofEntryHeader + delta.sizeof(),
+                                headers.buffer(), headers.offset(), headers.sizeof());
+
+                        final int sizeofEntry = sizeofEntryHeader + delta.sizeof() + headers.sizeof();
+                        nextEntry = cacheEntry.wrap(writeBuffer, 0, sizeofEntry);
+                    }
+                    else
+                    {
+                        // TODO: consider moving message to next segmentNode if delta exceeds size limit instead
+                        //       still need to handle implicit snapshot case
+                        writeBuffer.putBytes(0, nextEntry.buffer(), nextEntry.offset(), nextEntry.sizeof());
+                        writeBuffer.putLong(KafkaCacheEntryFW.FIELD_OFFSET_ANCESTOR, -1L);
+                        nextEntry = cacheEntry.wrap(writeBuffer, 0, writeBuffer.capacity());
+                    }
+                }
+
+                deltaKeyOffsets.add(partitionOffset);
+            }
+            return nextEntry;
+        }
+
         public void advance(
             long offset)
         {
@@ -252,11 +267,27 @@ public final class KafkaCacheCursorFactory
             assert segmentNode != null;
             assert segment != null;
 
-            final KafkaCacheSegment newSegment = segmentNode.segment();
+            KafkaCacheSegment newSegment = segmentNode.segment();
             if (segment != newSegment)
             {
                 segment.release();
-                segment = newSegment.acquire();
+
+                Node newSegmentNode = segmentNode;
+                newSegment = newSegment.acquire();
+                while (newSegment == null)
+                {
+                    newSegment = newSegmentNode.segment().acquire();
+                    if (newSegment == null)
+                    {
+                        newSegmentNode = newSegmentNode.next();
+                    }
+                }
+                this.segmentNode = newSegmentNode;
+                this.segment = newSegment;
+
+                assert segmentNode != null;
+                assert !segmentNode.sentinel();
+                assert segment != null;
 
                 final long cursor = condition.reset(segment, offset, POSITION_UNSET);
                 this.cursor = cursor == RETRY_SEGMENT || cursor == NEXT_SEGMENT ? 0L : cursor;
@@ -270,6 +301,7 @@ public final class KafkaCacheCursorFactory
             {
                 segment.release();
                 segmentNode = null;
+                segment = null;
             }
         }
 
