@@ -933,6 +933,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 final int length = reserved - replyPadding;
                 assert length >= 0 : String.format("%d >= 0", length);
 
+                final int deferred = remaining - length;
+                assert deferred >= 0 : String.format("%d >= 0", deferred);
+
                 int flags = 0x00;
                 if (messageOffset == 0)
                 {
@@ -955,19 +958,19 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 switch (flags)
                 {
                 case FLAG_INIT | FLAG_FIN:
-                    doClientReplyDataFull(traceId, timestamp, key, headers, deltaType, ancestor, fragment, reserved, flags,
-                                          partitionId, partitionOffset);
+                    doClientReplyDataFull(traceId, timestamp, key, headers, deltaType, ancestor, fragment,
+                                          reserved, flags, partitionId, partitionOffset);
                     break;
                 case FLAG_INIT:
-                    doClientReplyDataInit(traceId, timestamp, key, deltaType, ancestor, fragment, reserved, length, flags,
-                                          partitionId, partitionOffset);
+                    doClientReplyDataInit(traceId, deferred, timestamp, key, deltaType, ancestor, fragment,
+                                          reserved, length, flags, partitionId, partitionOffset);
                     break;
                 case FLAG_NONE:
                     doClientReplyDataNone(traceId, fragment, reserved, length, flags);
                     break;
                 case FLAG_FIN:
-                    doClientReplyDataFin(traceId, headers, deltaType, ancestor, fragment, reserved, length, flags,
-                                         partitionId, partitionOffset);
+                    doClientReplyDataFin(traceId, headers, deltaType, ancestor, fragment,
+                                         reserved, length, flags, partitionId, partitionOffset);
                     break;
                 }
 
@@ -1023,6 +1026,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
         private void doClientReplyDataInit(
             long traceId,
+            int deferred,
             long timestamp,
             KafkaKeyFW key,
             KafkaDeltaType deltaType,
@@ -1040,7 +1044,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved, fragment,
                 ex -> ex.set((b, o, l) -> kafkaDataExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
-                        .fetch(f -> f.timestamp(timestamp)
+                        .fetch(f -> f.deferred(deferred)
+                                     .timestamp(timestamp)
                                      .partition(p -> p.partitionId(partitionId)
                                      .partitionOffset(partitionOffset))
                                      .key(k -> k.length(key.length())
