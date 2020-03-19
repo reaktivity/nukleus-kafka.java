@@ -34,6 +34,7 @@ import java.nio.channels.FileChannel.MapMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.function.IntFunction;
 
 import org.agrona.IoUtil;
 import org.agrona.LangUtil;
@@ -342,24 +343,24 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
 
     public static class SortedByValue extends KafkaCacheIndexFile
     {
-        private final long[] sortSpace;
+        private final IntFunction<long[]> sortSpaceRef;
 
         protected SortedByValue(
             Path location,
             int capacity,
             MutableDirectBuffer appendBuf,
-            long[] sortSpace)
+            IntFunction<long[]> sortSpaceRef)
         {
             super(location, capacity, appendBuf);
-            this.sortSpace = sortSpace;
+            this.sortSpaceRef = sortSpaceRef;
         }
 
         protected SortedByValue(
             Path location,
-            long[] sortSpace)
+            IntFunction<long[]> sortSpaceRef)
         {
             super(location);
-            this.sortSpace = sortSpace;
+            this.sortSpaceRef = sortSpaceRef;
         }
 
         @Override
@@ -590,7 +591,8 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
             final int capacity = buffer.capacity();
             final int length = capacity >> 3;
 
-                assert sortSpace != null && length <= sortSpace.length;
+            final long[] sortSpace = sortSpaceRef.apply(length);
+            assert sortSpace != null && length <= sortSpace.length;
 
             for (int index = 0, offset = 0; index < length; index++, offset += Long.BYTES)
             {

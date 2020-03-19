@@ -186,7 +186,7 @@ public class KafkaCacheIndexFileTest
             }
 
             key = random.nextInt(entries >> 1);
-            indexFile = new KafkaCacheIndexFile.SortedByValue(tempFile.toPath(), new long[entries]);
+            indexFile = new KafkaCacheIndexFile.SortedByValue(tempFile.toPath(), long[]::new);
         }
 
         @Test
@@ -329,7 +329,7 @@ public class KafkaCacheIndexFileTest
                 }
             }
 
-            indexFile = new KafkaCacheIndexFile.SortedByValue(tempFile.toPath(), new long[entries]);
+            indexFile = new KafkaCacheIndexFile.SortedByValue(tempFile.toPath(), long[]::new);
         }
 
         @Test

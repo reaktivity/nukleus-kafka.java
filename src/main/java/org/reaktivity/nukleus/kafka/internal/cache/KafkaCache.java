@@ -19,14 +19,18 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.agrona.BitUtil;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 
 public final class KafkaCache
 {
+    private static final long[] EMPTY_SORT_SPACE = new long[0];
+
     private final KafkaConfiguration config;
     private final String name;
     private final Path location;
     private final Map<String, KafkaCacheTopic> topicsByName;
+    private final ThreadLocal<long[]> sortSpaceRef;
 
     public KafkaCache(
         KafkaConfiguration config,
@@ -36,6 +40,7 @@ public final class KafkaCache
         this.name = name;
         this.location = config.cacheDirectory().resolve(name);
         this.topicsByName = new ConcurrentHashMap<>();
+        this.sortSpaceRef = ThreadLocal.withInitial(() -> EMPTY_SORT_SPACE);
     }
 
     public String name()
@@ -58,6 +63,20 @@ public final class KafkaCache
     private KafkaCacheTopic newTopic(
         String topic)
     {
-        return new KafkaCacheTopic(location, config, name, topic);
+        return new KafkaCacheTopic(location, config, name, topic, this::supplySortSpace);
+    }
+
+    private long[] supplySortSpace(
+        int lengthMin)
+    {
+        long[] sortSpace = sortSpaceRef.get();
+
+        if (sortSpace.length < lengthMin)
+        {
+            sortSpace = new long[BitUtil.findNextPositivePowerOfTwo(lengthMin)];
+            sortSpaceRef.set(sortSpace);
+        }
+
+        return sortSpace;
     }
 }
