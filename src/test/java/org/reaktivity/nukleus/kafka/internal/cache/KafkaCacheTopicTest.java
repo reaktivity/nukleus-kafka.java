@@ -29,7 +29,7 @@ public class KafkaCacheTopicTest
     {
         KafkaConfiguration config = new KafkaConfiguration();
         Path location = config.cacheDirectory().resolve("cache");
-        KafkaCacheTopic topic = new KafkaCacheTopic(location, config, "cache", "test");
+        KafkaCacheTopic topic = new KafkaCacheTopic(location, config, "cache", "test", long[]::new);
 
         KafkaCachePartition partitionA = topic.supplyPartition(0);
         KafkaCachePartition partitionB = topic.supplyPartition(0);
@@ -43,7 +43,7 @@ public class KafkaCacheTopicTest
         KafkaConfiguration config = new KafkaConfiguration();
         Path location = config.cacheDirectory().resolve("cache");
 
-        KafkaCacheTopic topic = new KafkaCacheTopic(location, config, "cache", "test");
+        KafkaCacheTopic topic = new KafkaCacheTopic(location, config, "cache", "test", long[]::new);
 
         assertEquals("cache", topic.cache());
         assertEquals("test", topic.name());

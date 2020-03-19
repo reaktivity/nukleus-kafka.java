@@ -19,6 +19,7 @@ import static java.lang.System.currentTimeMillis;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.OFFSET_LATEST;
 
 import java.nio.file.Path;
+import java.util.function.IntFunction;
 
 import org.agrona.MutableDirectBuffer;
 
@@ -47,7 +48,7 @@ public final class KafkaCacheSegment extends KafkaCacheObject<KafkaCacheSegment>
         KafkaCacheSegment segment,
         KafkaCacheTopicConfig config,
         MutableDirectBuffer appendBuf,
-        long[] sortSpace)
+        IntFunction<long[]> sortSpaceRef)
     {
         this(segment.location,
                 config,
@@ -55,7 +56,7 @@ public final class KafkaCacheSegment extends KafkaCacheObject<KafkaCacheSegment>
                 segment.id,
                 segment.baseOffset,
                 appendBuf,
-                sortSpace);
+                sortSpaceRef);
     }
 
     public KafkaCacheSegment(
@@ -65,7 +66,7 @@ public final class KafkaCacheSegment extends KafkaCacheObject<KafkaCacheSegment>
         int id,
         long baseOffset,
         MutableDirectBuffer appendBuf,
-        long[] sortSpace)
+        IntFunction<long[]> sortSpaceRef)
     {
         this.location = location;
         this.name = name;
@@ -76,9 +77,9 @@ public final class KafkaCacheSegment extends KafkaCacheObject<KafkaCacheSegment>
         this.logFile = new KafkaCacheFile.Log(location, baseOffset, config.segmentBytes, appendBuf);
         this.deltaFile = new KafkaCacheFile.Delta(location, baseOffset, config.segmentBytes, appendBuf);
         this.indexFile = new KafkaCacheFile.Index(location, baseOffset, config.segmentIndexBytes, appendBuf);
-        this.hashFile = new KafkaCacheFile.HashScan(location, baseOffset, config.segmentIndexBytes, appendBuf, sortSpace);
-        this.keysFile = new KafkaCacheFile.KeysScan(location, baseOffset, config.segmentIndexBytes, appendBuf, sortSpace);
-        this.nullsFile = new KafkaCacheFile.NullsScan(location, baseOffset, config.segmentIndexBytes, appendBuf, sortSpace);
+        this.hashFile = new KafkaCacheFile.HashScan(location, baseOffset, config.segmentIndexBytes, appendBuf, sortSpaceRef);
+        this.keysFile = new KafkaCacheFile.KeysScan(location, baseOffset, config.segmentIndexBytes, appendBuf, sortSpaceRef);
+        this.nullsFile = new KafkaCacheFile.NullsScan(location, baseOffset, config.segmentIndexBytes, appendBuf, sortSpaceRef);
     }
 
     public KafkaCacheSegment(
