@@ -563,6 +563,12 @@ public final class KafkaCacheCursorFactory
 
                         nextCursorMin = minByValue(nextCursor, nextCursorMin);
                         nextCursorMax = maxByValue(nextCursor, nextCursorMax);
+
+                        if (nextCursorMin == NEXT_SEGMENT)
+                        {
+                            nextCursorMax = nextCursorMin;
+                            break;
+                        }
                     }
 
                     if (nextCursorMax == RETRY_SEGMENT ||
