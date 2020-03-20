@@ -531,6 +531,12 @@ public final class KafkaCacheCursorFactory
 
                         nextCursorMin = minByValue(nextCursor, nextCursorMin);
                         nextCursorMax = maxByValue(nextCursor, nextCursorMax);
+
+                        if (nextCursorMin == NEXT_SEGMENT)
+                        {
+                            nextCursorMax = nextCursorMin;
+                            break;
+                        }
                     }
 
                     if (nextCursorMax == RETRY_SEGMENT ||
@@ -556,10 +562,12 @@ public final class KafkaCacheCursorFactory
                     nextCursorMax = nextIndex(nextCursorMin);
                     nextCursorMin = Long.MAX_VALUE;
 
+                    final long nextCursorAnd = nextCursorMax;
+
                     for (int i = 0; i < conditions.size(); i++)
                     {
                         final KafkaFilterCondition condition = conditions.get(i);
-                        nextCursor = condition.next(nextCursorMax);
+                        nextCursor = condition.next(nextCursorAnd);
 
                         nextCursorMin = minByValue(nextCursor, nextCursorMin);
                         nextCursorMax = maxByValue(nextCursor, nextCursorMax);
