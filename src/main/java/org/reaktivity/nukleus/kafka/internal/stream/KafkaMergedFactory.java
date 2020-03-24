@@ -761,6 +761,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
                 final KafkaFetchDataExFW kafkaFetchDataEx = kafkaDataEx.fetch();
                 final KafkaOffsetFW partition = kafkaFetchDataEx.partition();
+                final int deferred = kafkaFetchDataEx.deferred();
                 final long timestamp = kafkaFetchDataEx.timestamp();
                 final KafkaKeyFW key = kafkaFetchDataEx.key();
                 final ArrayFW<KafkaHeaderFW> headers = kafkaFetchDataEx.headers();
@@ -770,7 +771,8 @@ public final class KafkaMergedFactory implements StreamFactory
 
                 newKafkaDataEx = kafkaDataExRW.wrap(extBuffer, 0, extBuffer.capacity())
                      .typeId(kafkaTypeId)
-                     .merged(f -> f.timestamp(timestamp)
+                     .merged(f -> f.deferred(deferred)
+                                   .timestamp(timestamp)
                                    .partition(p -> p.partitionId(partition.partitionId())
                                                     .partitionOffset(partition.partitionOffset()))
                                    .progress(ps -> nextOffsetsById.longForEach((p, o) -> ps.item(i -> i.partitionId((int) p)
@@ -1668,7 +1670,9 @@ public final class KafkaMergedFactory implements StreamFactory
         private void doFetchReplyWindowIfNecessary(
             long traceId)
         {
-            if (KafkaState.replyOpening(state) && !KafkaState.replyClosing(state))
+            if (KafkaState.replyOpened(mergedFetch.state) &&
+                KafkaState.replyOpening(state) &&
+                !KafkaState.replyClosing(state))
             {
                 state = KafkaState.openedReply(state);
 

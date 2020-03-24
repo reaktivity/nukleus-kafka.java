@@ -49,7 +49,7 @@ public class KafkaCachePartitionTest
     {
         Path location = tempFolder.newFolder().toPath();
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
-        KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536);
+        KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536, long[]::new);
 
         partition.append(10);
         partition.append(20);
@@ -63,7 +63,7 @@ public class KafkaCachePartitionTest
     {
         Path location = tempFolder.newFolder().toPath();
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
-        KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536);
+        KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536, long[]::new);
 
         partition.append(10);
         partition.append(20);
@@ -77,7 +77,7 @@ public class KafkaCachePartitionTest
     {
         Path location = tempFolder.newFolder().toPath();
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
-        KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536);
+        KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536, long[]::new);
 
         partition.append(10);
         partition.append(20);
@@ -91,7 +91,7 @@ public class KafkaCachePartitionTest
     {
         Path location = tempFolder.newFolder().toPath();
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
-        KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536);
+        KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536, long[]::new);
 
         partition.append(10);
         partition.append(20);
@@ -105,7 +105,7 @@ public class KafkaCachePartitionTest
     {
         Path location = tempFolder.newFolder().toPath();
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
-        KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536);
+        KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536, long[]::new);
 
         partition.append(10);
         partition.append(20);
@@ -119,7 +119,7 @@ public class KafkaCachePartitionTest
     {
         Path location = tempFolder.newFolder().toPath();
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
-        KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536);
+        KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536, long[]::new);
 
         partition.append(10);
         partition.append(20);
@@ -133,7 +133,7 @@ public class KafkaCachePartitionTest
     {
         Path location = tempFolder.newFolder().toPath();
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
-        KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536);
+        KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536, long[]::new);
 
         Node node10 = partition.append(10);
         KafkaCacheSegment node10s = node10.segment();
@@ -154,7 +154,7 @@ public class KafkaCachePartitionTest
     {
         Path location = tempFolder.newFolder().toPath();
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
-        KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536);
+        KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536, long[]::new);
 
         partition.append(10);
         partition.append(20);
@@ -176,7 +176,7 @@ public class KafkaCachePartitionTest
     {
         Path location = tempFolder.newFolder().toPath();
         KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
-        KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536);
+        KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536, long[]::new);
 
         assertEquals("cache", partition.cache());
         assertEquals("test", partition.topic());
@@ -214,7 +214,7 @@ public class KafkaCachePartitionTest
 
             KafkaCacheEntryFW ancestorRO = new KafkaCacheEntryFW();
 
-            KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536);
+            KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536, long[]::new);
             Node head10 = partition.append(10L);
             KafkaCacheSegment head10s = head10.segment();
 
@@ -266,7 +266,7 @@ public class KafkaCachePartitionTest
 
             KafkaCacheEntryFW ancestorRO = new KafkaCacheEntryFW();
 
-            KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536);
+            KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536, long[]::new);
             Node head10 = partition.append(10L);
 
             partition.writeEntry(11L, 0L, key, headers, value, null, KafkaDeltaType.NONE);
@@ -290,7 +290,7 @@ public class KafkaCachePartitionTest
             Path location = tempFolder.newFolder().toPath();
             KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
 
-            KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536);
+            KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536, long[]::new);
             Node node10 = partition.append(10L);
 
             assertEquals("[Node] 10", node10.toString());
@@ -302,7 +302,7 @@ public class KafkaCachePartitionTest
             Path location = tempFolder.newFolder().toPath();
             KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
 
-            KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536);
+            KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536, long[]::new);
             Node sentinel = partition.sentinel();
 
             assertEquals("[Node] sentinel", sentinel.toString());

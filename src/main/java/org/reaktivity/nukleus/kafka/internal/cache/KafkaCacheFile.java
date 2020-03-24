@@ -28,6 +28,7 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.function.IntFunction;
 
 import org.agrona.DirectBuffer;
 import org.agrona.IoUtil;
@@ -416,9 +417,9 @@ public class KafkaCacheFile implements AutoCloseable
             long baseOffset,
             int capacity,
             MutableDirectBuffer appendBuf,
-            long[] sortSpace)
+            IntFunction<long[]> sortSpaceRef)
         {
-            super(location.resolve(String.format(FORMAT_HSCAN_FILE, baseOffset)), capacity, appendBuf, sortSpace);
+            super(location.resolve(String.format(FORMAT_HSCAN_FILE, baseOffset)), capacity, appendBuf, sortSpaceRef);
         }
 
         @Override
@@ -452,9 +453,9 @@ public class KafkaCacheFile implements AutoCloseable
             long baseOffset,
             int capacity,
             MutableDirectBuffer appendBuf,
-            long[] sortSpace)
+            IntFunction<long[]> sortSpaceRef)
         {
-            super(location.resolve(String.format(FORMAT_KSCAN_FILE, baseOffset)), capacity, appendBuf, sortSpace);
+            super(location.resolve(String.format(FORMAT_KSCAN_FILE, baseOffset)), capacity, appendBuf, sortSpaceRef);
         }
 
         @Override
@@ -488,9 +489,9 @@ public class KafkaCacheFile implements AutoCloseable
             long baseOffset,
             int capacity,
             MutableDirectBuffer appendBuf,
-            long[] sortSpace)
+            IntFunction<long[]> sortSpaceRef)
         {
-            super(location.resolve(String.format(FORMAT_NSCAN_FILE, baseOffset)), capacity, appendBuf, sortSpace);
+            super(location.resolve(String.format(FORMAT_NSCAN_FILE, baseOffset)), capacity, appendBuf, sortSpaceRef);
         }
 
         @Override

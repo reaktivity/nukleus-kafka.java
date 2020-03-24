@@ -30,6 +30,7 @@ import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.function.Function;
+import java.util.function.IntFunction;
 import java.util.zip.CRC32C;
 
 import javax.json.JsonArray;
@@ -84,7 +85,7 @@ public final class KafkaCachePartition
     private final String topic;
     private final int id;
     private final MutableDirectBuffer appendBuf;
-    private final long[] sortSpace;
+    private final IntFunction<long[]> sortSpaceRef;
     private final Node sentinel;
     private final CRC32C checksum;
 
@@ -98,7 +99,8 @@ public final class KafkaCachePartition
         String cache,
         String topic,
         int id,
-        int appendCapacity)
+        int appendCapacity,
+        IntFunction<long[]> sortSpaceRef)
     {
         this.location = createDirectories(location.resolve(String.format(FORMAT_PARTITION_DIRECTORY, topic, id)));
         this.config = config;
@@ -106,7 +108,7 @@ public final class KafkaCachePartition
         this.topic = topic;
         this.id = id;
         this.appendBuf = new UnsafeBuffer(allocateDirect(appendCapacity));
-        this.sortSpace = new long[config.segmentIndexBytes >> 3];
+        this.sortSpaceRef = sortSpaceRef;
         this.sentinel = new Node();
         this.checksum = new CRC32C();
         this.progress = OFFSET_EARLIEST;
@@ -151,7 +153,7 @@ public final class KafkaCachePartition
 
         final Node head = sentinel.previous;
 
-        KafkaCacheSegment segment = new KafkaCacheSegment(location, config, topic, id, offset, appendBuf, sortSpace);
+        KafkaCacheSegment segment = new KafkaCacheSegment(location, config, topic, id, offset, appendBuf, sortSpaceRef);
         Node node = new Node(segment);
         node.previous = head;
         node.next = sentinel;
@@ -579,7 +581,7 @@ public final class KafkaCachePartition
                 // TODO: use temporary files plus move to avoid corrupted log on restart
                 segment.delete();
 
-                final KafkaCacheSegment appender = new KafkaCacheSegment(segment, config, appendBuf, sortSpace);
+                final KafkaCacheSegment appender = new KafkaCacheSegment(segment, config, appendBuf, sortSpaceRef);
                 final KafkaCacheFile logFile = segment.logFile();
                 final KafkaCacheFile deltaFile = segment.deltaFile();
 

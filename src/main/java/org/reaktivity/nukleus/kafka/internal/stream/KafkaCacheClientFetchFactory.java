@@ -873,7 +873,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void doClientReplyDataIfNecessary(
             long traceId)
         {
-            assert !KafkaState.replyClosing(state);
+            assert !KafkaState.replyClosing(state) :
+                String.format("!replyClosing(%08x) [%016x] [%016x] [%016x] %s",
+                        state, replyBudgetId, replyId, replyDebitorIndex, replyDebitor);
 
             while (KafkaState.replyOpened(state) &&
                 partitionOffset <= group.partitionOffset)
@@ -909,8 +911,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final OctetsFW value = nextEntry.value();
             final int remaining = value != null ? value.sizeof() - messageOffset : 0;
             final int lengthMin = Math.min(remaining, 1024);
-            final int reservedMax = remaining + replyPadding;
-            final int reservedMin = lengthMin + replyPadding;
+            final int reservedMax = Math.min(remaining + replyPadding, replyBudget);
+            final int reservedMin = Math.min(lengthMin + replyPadding, reservedMax);
 
             assert partitionOffset >= this.partitionOffset : String.format("%d >= %d", partitionOffset, this.partitionOffset);
 
@@ -930,6 +932,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
                 final int length = reserved - replyPadding;
                 assert length >= 0 : String.format("%d >= 0", length);
+
+                final int deferred = remaining - length;
+                assert deferred >= 0 : String.format("%d >= 0", deferred);
 
                 int flags = 0x00;
                 if (messageOffset == 0)
@@ -953,19 +958,19 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 switch (flags)
                 {
                 case FLAG_INIT | FLAG_FIN:
-                    doClientReplyDataFull(traceId, timestamp, key, headers, deltaType, ancestor, fragment, reserved, flags,
-                                          partitionId, partitionOffset);
+                    doClientReplyDataFull(traceId, timestamp, key, headers, deltaType, ancestor, fragment,
+                                          reserved, flags, partitionId, partitionOffset);
                     break;
                 case FLAG_INIT:
-                    doClientReplyDataInit(traceId, timestamp, key, deltaType, ancestor, fragment, reserved, length, flags,
-                                          partitionId, partitionOffset);
+                    doClientReplyDataInit(traceId, deferred, timestamp, key, deltaType, ancestor, fragment,
+                                          reserved, length, flags, partitionId, partitionOffset);
                     break;
                 case FLAG_NONE:
                     doClientReplyDataNone(traceId, fragment, reserved, length, flags);
                     break;
                 case FLAG_FIN:
-                    doClientReplyDataFin(traceId, headers, deltaType, ancestor, fragment, reserved, length, flags,
-                                         partitionId, partitionOffset);
+                    doClientReplyDataFin(traceId, headers, deltaType, ancestor, fragment,
+                                         reserved, length, flags, partitionId, partitionOffset);
                     break;
                 }
 
@@ -999,6 +1004,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long partitionOffset)
         {
             replyBudget -= reserved;
+            assert replyBudget >= 0 : String.format("[%016x] %d >= 0", replyId, replyBudget);
 
             doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved, value,
                 ex -> ex.set((b, o, l) -> kafkaDataExRW.wrap(b, o, l)
@@ -1020,6 +1026,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
         private void doClientReplyDataInit(
             long traceId,
+            int deferred,
             long timestamp,
             KafkaKeyFW key,
             KafkaDeltaType deltaType,
@@ -1032,11 +1039,13 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long partitionOffset)
         {
             replyBudget -= reserved;
+            assert replyBudget >= 0 : String.format("[%016x] %d >= 0", replyId, replyBudget);
 
             doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved, fragment,
                 ex -> ex.set((b, o, l) -> kafkaDataExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
-                        .fetch(f -> f.timestamp(timestamp)
+                        .fetch(f -> f.deferred(deferred)
+                                     .timestamp(timestamp)
                                      .partition(p -> p.partitionId(partitionId)
                                      .partitionOffset(partitionOffset))
                                      .key(k -> k.length(key.length())
@@ -1055,6 +1064,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             int flags)
         {
             replyBudget -= reserved;
+            assert replyBudget >= 0 : String.format("[%016x] %d >= 0", replyId, replyBudget);
 
             doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved, fragment, EMPTY_EXTENSION);
         }
@@ -1072,6 +1082,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long partitionOffset)
         {
             replyBudget -= reserved;
+            assert replyBudget >= 0 : String.format("[%016x] %d >= 0", replyId, replyBudget);
 
             doData(sender, routeId, replyId, traceId, authorization, flags, replyBudgetId, reserved, fragment,
                 ex -> ex.set((b, o, l) -> kafkaDataExRW.wrap(b, o, l)
@@ -1136,6 +1147,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final int credit = window.credit();
             final int padding = window.padding();
 
+            assert replyBudgetId == 0L || replyBudgetId == budgetId :
+                String.format("%d == 0 || %d == %d)", replyBudgetId, replyBudgetId, budgetId);
+
             replyBudgetId = budgetId;
             replyBudget += credit;
             replyPadding = padding;
@@ -1148,6 +1162,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 {
                     replyDebitor = supplyDebitor.apply(replyBudgetId);
                     replyDebitorIndex = replyDebitor.acquire(replyBudgetId, replyId, this::doClientReplyDataIfNecessary);
+                    assert replyDebitorIndex != NO_DEBITOR_INDEX;
                 }
             }
 
