@@ -1,4 +1,4 @@
-/**
+    /*
  * Copyright 2016-2020 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
@@ -13,23 +13,27 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.kafka.internal;
-
-import org.reaktivity.nukleus.Configuration;
-import org.reaktivity.nukleus.NukleusFactorySpi;
-
-public final class KafkaNukleusFactorySpi implements NukleusFactorySpi
+scope internal
 {
-    @Override
-    public String name()
+    scope cache
     {
-        return KafkaNukleus.NAME;
-    }
+        struct KafkaCacheEntry
+        {
+          int64 offset;
+          int64 timestamp;
+          int64 ancestor;
+          int32 flags = 0;  // 0x01 = DIRTY
+          int32 deltaPosition = -1;
+          kafka::KafkaKey key;
+          int32 valueLen;
+          octets[valueLen] value = null;
+          kafka::KafkaHeader[] headers;
+        }
 
-    @Override
-    public KafkaNukleus create(
-        Configuration config)
-    {
-        return new KafkaNukleus(new KafkaConfiguration(config));
+        struct KafkaCacheDelta
+        {
+            int32 length;
+            octets[length] value = null;
+        }
     }
 }

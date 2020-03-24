@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2019 The Reaktivity Project
+ * Copyright 2016-2020 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -17,10 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.control;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
-
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
+import static org.reaktivity.nukleus.route.RouteKind.CLIENT;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -64,7 +61,7 @@ public class ControllerIT
         k3po.start();
 
         reaktor.controller(KafkaController.class)
-               .routeClient("kafka#0", "target#0", null)
+               .route(CLIENT, "kafka#0", "target#0")
                .get();
 
         k3po.finish();
@@ -76,126 +73,11 @@ public class ControllerIT
     })
     public void shouldRouteClientWithExtension() throws Exception
     {
-        String topicName = "test";
-
         k3po.start();
 
         reaktor.controller(KafkaController.class)
-               .routeClient("kafka#0", "target#0", topicName)
+               .route(CLIENT, "kafka#0", "target#0", "{ topic:\"test\" }")
                .get();
-
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.header/client/nukleus"
-    })
-    public void shouldRouteClientWithTopicAndHeaderCondition() throws Exception
-    {
-        String topicName = "test";
-        Map<String, String> headers = new LinkedHashMap<>();
-        headers.put("header1", "match1");
-
-        k3po.start();
-
-        reaktor.controller(KafkaController.class)
-               .routeClient("kafka#0", "target#0", topicName, headers)
-               .get();
-
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.headers/client/nukleus"
-    })
-    public void shouldRouteClientWithTopicAndHeaderConditions() throws Exception
-    {
-        String topicName = "test";
-        Map<String, String> headers = new LinkedHashMap<>();
-        headers.put("header1", "match1");
-        headers.put("header2", "match2");
-
-        k3po.start();
-
-        reaktor.controller(KafkaController.class)
-               .routeClient("kafka#0", "target#0", topicName, headers)
-               .get();
-
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.multiple.headers/client/nukleus"
-    }) // TODO: token recognition error
-    public void shouldRouteClientWithMultipleRoutesDifferingOnlyInHeaders() throws Exception
-    {
-        String topicName = "test";
-
-        Map<String, String> headers1 = new LinkedHashMap<>();
-        Map<String, String> headers2 = new LinkedHashMap<>();
-        headers1.put("header1", "match1");
-        headers2.put("header1", "match2");
-
-        k3po.start();
-
-        reaktor.controller(KafkaController.class)
-               .routeClient("kafka#0", "target#0", topicName, headers1)
-               .get();
-
-        reaktor.controller(KafkaController.class)
-                .routeClient("kafka#0", "target#0", topicName, headers2)
-                .get();
-
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.multiple.networks/client/nukleus"
-    })
-    public void shouldRouteClientWithMultipleRoutesDifferentNetworks() throws Exception
-    {
-        String topicName = "test";
-
-        k3po.start();
-
-        reaktor.controller(KafkaController.class)
-               .routeClient("kafka#0", "target#0", topicName)
-               .get();
-
-        reaktor.controller(KafkaController.class)
-               .routeClient("kafka#0", "target#1", topicName)
-               .get();
-
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.multiple.topics/client/nukleus"
-    })
-    public void shouldRouteClientWithMultipleRoutesDifferentTopics() throws Exception
-    {
-        k3po.start();
-
-        CompletableFuture<Long> future1 =
-                reaktor.controller(KafkaController.class)
-                       .routeClient("kafka#0", "target#0", "test1");
-
-        CompletableFuture<Long> future2 =
-                reaktor.controller(KafkaController.class)
-                       .routeClient("kafka#0", "target#0", "test2");
-
-        CompletableFuture<Long> future3 =
-                reaktor.controller(KafkaController.class)
-                       .routeClient("kafka#0", "target#0", "test3");
-
-        future1.get();
-        future2.get();
-        future3.get();
 
         k3po.finish();
     }
@@ -210,7 +92,7 @@ public class ControllerIT
         k3po.start();
 
         long routeId = reaktor.controller(KafkaController.class)
-              .routeClient("kafka#0", "target#0", null)
+              .route(CLIENT, "kafka#0", "target#0")
               .get();
 
         k3po.notifyBarrier("ROUTED_CLIENT");

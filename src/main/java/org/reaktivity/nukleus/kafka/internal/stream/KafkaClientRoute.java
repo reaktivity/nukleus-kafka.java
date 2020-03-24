@@ -13,23 +13,21 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.kafka.internal;
+package org.reaktivity.nukleus.kafka.internal.stream;
 
-import org.reaktivity.nukleus.Configuration;
-import org.reaktivity.nukleus.NukleusFactorySpi;
+import org.agrona.collections.Long2ObjectHashMap;
 
-public final class KafkaNukleusFactorySpi implements NukleusFactorySpi
+public final class KafkaClientRoute
 {
-    @Override
-    public String name()
-    {
-        return KafkaNukleus.NAME;
-    }
+    public final long routeId;
+    public final Long2ObjectHashMap<KafkaBrokerInfo> brokers;
 
-    @Override
-    public KafkaNukleus create(
-        Configuration config)
+    public volatile long metaInitialId;
+
+    public KafkaClientRoute(
+        long routeId)
     {
-        return new KafkaNukleus(new KafkaConfiguration(config));
+        this.routeId = routeId;
+        this.brokers = new Long2ObjectHashMap<>();
     }
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2019 The Reaktivity Project
+ * Copyright 2016-2020 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -15,33 +15,24 @@
  */
 package org.reaktivity.nukleus.kafka.internal;
 
-import static org.reaktivity.nukleus.route.RouteKind.CLIENT;
-
-import java.util.Collections;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.reaktivity.nukleus.Nukleus;
-import org.reaktivity.nukleus.function.MessagePredicate;
-import org.reaktivity.nukleus.route.RouteKind;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
 
 public final class KafkaNukleus implements Nukleus
 {
     public static final String NAME = "kafka";
 
     private final KafkaConfiguration config;
-    private final KafkaAgent agent;
-    private final Map<RouteKind, MessagePredicate> routeHandlers;
-
-    private final AtomicInteger elektrons;
+    private final Map<String, KafkaCache> cachesByName;
 
     KafkaNukleus(
         KafkaConfiguration config)
     {
         this.config = config;
-        this.agent = new KafkaAgent(config);
-        this.routeHandlers = Collections.singletonMap(CLIENT, agent::handleRoute);
-        this.elektrons = new AtomicInteger();
+        this.cachesByName = new ConcurrentHashMap<>();
     }
 
     @Override
@@ -57,20 +48,20 @@ public final class KafkaNukleus implements Nukleus
     }
 
     @Override
-    public MessagePredicate routeHandler(
-        RouteKind kind)
-    {
-        return routeHandlers.get(kind);
-    }
-
-    @Override
     public KafkaElektron supplyElektron()
     {
-        if (elektrons.incrementAndGet() > 1)
-        {
-            throw new IllegalStateException("multiple KafkaElektrons not yet supported");
-        }
+        return new KafkaElektron(config, this::supplyCache);
+    }
 
-        return new KafkaElektron(config, agent);
+    public KafkaCache supplyCache(
+        String name)
+    {
+        return cachesByName.computeIfAbsent(name, this::newCache);
+    }
+
+    private KafkaCache newCache(
+        String name)
+    {
+        return new KafkaCache(config, name);
     }
 }

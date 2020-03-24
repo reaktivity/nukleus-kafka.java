@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2019 The Reaktivity Project
+ * Copyright 2016-2020 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -17,7 +17,8 @@ package org.reaktivity.nukleus.kafka.internal.control;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_TOPIC_BOOTSTRAP_ENABLED;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_BOOTSTRAP;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_RECONNECT_DELAY;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -27,6 +28,7 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
+import org.reaktivity.reaktor.ReaktorConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
 public class ControlIT
@@ -47,7 +49,9 @@ public class ControlIT
             .commandBufferCapacity(1024)
             .responseBufferCapacity(1024)
             .counterValuesBufferCapacity(4096)
-            .configure(KAFKA_TOPIC_BOOTSTRAP_ENABLED, false);
+            .configure(KAFKA_CACHE_SERVER_BOOTSTRAP, false)
+            .configure(KAFKA_CACHE_SERVER_RECONNECT_DELAY, 0)
+            .configure(ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE, false);
 
     @Rule
     public final TestRule chain = outerRule(k3po).around(timeout).around(reaktor);
@@ -72,55 +76,38 @@ public class ControlIT
 
     @Test
     @Specification({
-        "${control}/route.ext.header/client/controller"
-    })
-    public void shouldRouteClientWithHeaderCondition() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.headers/client/controller"
-    })
-    public void shouldRouteClientWithHeaderConditions() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.multiple.headers/client/controller"
-    })
-    public void shouldRouteClientWithMultipleRoutesDifferingOnlyInHeaderValue() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.multiple.networks/client/controller"
-    })
-    public void shouldRouteClientWithMultipleRoutesDifferentNetworks() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${control}/route.ext.multiple.topics/client/controller"
-    })
-    public void shouldRouteClientWithMultipleRoutesDifferentTopics() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
         "${route}/client/controller",
         "${unroute}/client/controller"
     })
     public void shouldUnrouteClient() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache/controller"
+    })
+    public void shouldRouteCache() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${routeEx}/cache/controller"
+    })
+    public void shouldRouteCacheWithExtension() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache/controller",
+        "${unroute}/cache/controller"
+    })
+    public void shouldUnrouteCache() throws Exception
     {
         k3po.finish();
     }

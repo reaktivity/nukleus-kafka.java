@@ -13,23 +13,21 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.kafka.internal;
+package org.reaktivity.nukleus.kafka.internal.stream;
 
-import org.reaktivity.nukleus.Configuration;
-import org.reaktivity.nukleus.NukleusFactorySpi;
-
-public final class KafkaNukleusFactorySpi implements NukleusFactorySpi
+final class KafkaBrokerInfo
 {
-    @Override
-    public String name()
-    {
-        return KafkaNukleus.NAME;
-    }
+    final int brokerId;
+    final String host;
+    final int port;
 
-    @Override
-    public KafkaNukleus create(
-        Configuration config)
+    KafkaBrokerInfo(
+        int brokerId,
+        String host,
+        int port)
     {
-        return new KafkaNukleus(new KafkaConfiguration(config));
+        this.brokerId = brokerId;
+        this.host = host;
+        this.port = port;
     }
 }

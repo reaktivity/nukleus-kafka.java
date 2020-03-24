@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 The Reaktivity Project
+ * Copyright 2016-2020 The Reaktivity Project
  *
  * The Reaktivity Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -21,39 +21,39 @@ scope protocol
     {
         struct RequestHeader
         {
-          int32 size;
-          int16 apiKey;
-          int16 apiVersion;
-          int32 correlationId;
-          string16 clientId /* = null */;
+            int32 length;
+            int16 apiKey;
+            int16 apiVersion;
+            int32 correlationId;
+            string16 clientId /* = null */;
         }
 
         struct ResponseHeader
         {
-          int32 size;
+            int32 length;
         }
-        
+
         scope config
         {
             struct DescribeConfigsRequest
             {
               int32 resourceCount;
             }
-            
+
             struct ResourceRequest
             {
                 int8 type;
                 string16 name;
                 int32 configNamesCount;
             }
-            
+
             struct DescribeConfigsResponse
             {
                 int32 correlationId;
                 int32 throttleTimeMillis;
                 int32 resourceCount;
             }
-            
+
             struct ResourceResponse
             {
                 int16 errorCode;
@@ -62,14 +62,14 @@ scope protocol
                 string16 name;
                 int32 configCount;
             }
-            
+
             struct ConfigResponse
             {
                 string16 name;
                 string16 value;
-                int8 readOnly; // boolean
-                int8 isDefault; // boolean
-                int8 isSensitive; // boolean
+                int8 isReadOnly;
+                int8 isDefault;
+                int8 isSensitive;
             }
         }
 
@@ -77,195 +77,203 @@ scope protocol
         {
             struct FetchRequest
             {
-              int32 replicaId = -1;
-              int32 maxWaitTimeMillis;
-              int32 minBytes;
-              int32 maxBytes;
-              int8 isolationLevel;
-              int32 topicCount;
+                int32 replicaId = -1;
+                int32 maxWaitTimeMillis;
+                int32 minBytes;
+                int32 maxBytes;
+                int8 isolationLevel;
+                int32 topicCount;
             }
 
             struct TopicRequest
             {
-              string16 name;
-              int32 partitionCount;
+                string16 name;
+                int32 partitionCount;
             }
 
             struct PartitionRequest
             {
-              int32 partitionId;
-              int64 fetchOffset;
-              int64 logStartOffset = -1;
-              int32 maxBytes;
+                int32 partitionId;
+                int64 fetchOffset;
+                int64 logStartOffset = -1;
+                int32 maxBytes;
             }
 
             struct FetchResponse
-            {
-              int32 correlationId;
-              int32 throttleTimeMillis;
-              int32 topicCount;
-            }
-
-            struct TopicResponse
-            {
-              string16 name;
-              int32 partitionCount;
-            }
-
-            struct PartitionResponse
-            {
-              int32 partitionId;
-              int16 errorCode;
-              int64 highWatermark;
-              int64 lastStableOffset;
-              int64 logStartOffset;
-              int32 abortedTransactionCount;
-            }
-
-            struct TransactionResponse
-            {
-              int64 producerId;
-              int64 firstOffset;
-            }
-
-            struct RecordSet
-            {
-              int32 recordSetSize;
-            }
-
-            struct RecordBatch
-            {
-              int64 firstOffset;
-              int32 length;
-              int32 leaderEpoch;
-              int8  magic;
-              int32 crc;
-              int16 attributes;
-              int32 lastOffsetDelta;
-              int64 firstTimestamp;
-              int64 maxTimestamp;
-              int64 producerId;
-              int16 producerEpoch;
-              int32 firstSequence;
-              int32 recordCount;
-            }
-
-            struct Record
-            {
-              varint32 length;
-              int8   attributes;
-              varint32 timestampDelta;
-              varint32 offsetDelta;
-              varint32 keyLen;
-              octets[keyLen] key = null;
-              varint32 valueLen;
-              octets[valueLen] value = null;
-              varint32 headerCount;
-            }
-
-            struct Header
-            {
-              varint32 keyLen;
-              octets[keyLen] key; // interpreted as UTF-8 string
-              varint32 valueLen;
-              octets[valueLen] value;
-            }
-        }
-        
-        scope offset
-        {
-	        enum IsolationLevel
-	        {
-				READ_UNCOMMITTED,
-				READ_COMMITTED
-	        }
-	        
-            struct ListOffsetsRequest // version 2
-            {
-				int32 replicaId = -1;
-				IsolationLevel isolationLevel;
-				int32 topicCount;
-            }
-            
-            struct ListOffsetsTopic
-            {
-                string16 name;
-                int32 partitionCount;
-            }
-            
-            struct ListOffsetsPartitionRequest
-            {
-                int32 partitionId;
-                int64 timestamp = -2;
-            }
-            
-            struct ListOffsetsResponse
             {
                 int32 correlationId;
                 int32 throttleTimeMillis;
                 int32 topicCount;
             }
-            
-            struct ListOffsetsPartitionResponse
+
+            struct TopicResponse
+            {
+                string16 name;
+                int32 partitionCount;
+            }
+
+            struct PartitionResponse
+            {
+                int32 partitionId;
+                int16 errorCode;
+                int64 highWatermark;
+                int64 lastStableOffset;
+                int64 logStartOffset;
+                int32 abortedTransactionCount;
+            }
+
+            struct TransactionResponse
+            {
+                int64 producerId;
+                int64 firstOffset;
+            }
+
+            struct RecordSet
+            {
+                int32 length;
+            }
+
+            struct RecordBatch
+            {
+                int64 firstOffset;
+                int32 length;
+                int32 leaderEpoch;
+                int8  magic;
+                int32 crc;
+                int16 attributes;
+                int32 lastOffsetDelta;
+                int64 firstTimestamp;
+                int64 maxTimestamp;
+                int64 producerId;
+                int16 producerEpoch;
+                int32 firstSequence;
+                int32 recordCount;
+            }
+
+            struct RecordHeader
+            {
+                varint32 length;
+                int8   attributes;
+                varint32 timestampDelta;
+                varint32 offsetDelta;
+                varint32 keyLength;
+                octets[keyLength] key = null;
+                varint32 valueLength;
+            }
+
+            struct RecordTrailer
+            {
+                varint32 headerCount;
+            }
+
+            struct MessageHeader
+            {
+                varint32 keyLength;
+                octets[keyLength] key; // UTF-8 bytes
+                varint32 valueLength;
+                octets[valueLength] value;
+            }
+        }
+
+        scope offsets
+        {
+            enum IsolationLevel
+            {
+                READ_UNCOMMITTED,
+                READ_COMMITTED
+            }
+
+            struct OffsetsRequest // version 2
+            {
+                int32 replicaId = -1;
+                IsolationLevel isolationLevel;
+                int32 topicCount;
+            }
+
+            struct OffsetsTopicRequest
+            {
+                string16 name;
+                int32 partitionCount;
+            }
+
+            struct OffsetsPartitionRequest
+            {
+                int32 partitionId;
+                int64 timestamp = -2;
+            }
+
+            struct OffsetsResponse
+            {
+                int32 correlationId;
+                int32 throttleTimeMillis;
+                int32 topicCount;
+            }
+
+            struct OffsetsTopicResponse
+            {
+                string16 name;
+                int32 partitionCount;
+            }
+
+            struct OffsetsPartitionResponse
             {
                 int32 partitionId;
                 int16 errorCode;
                 int64 timestamp;
-                int64 firstOffset;
+                int64 offset;
             }
         }
-        
 
         scope metadata
         {
             struct MetadataRequest
             {
-              int32 topicCount = 1; // only allow 1 till we have string array
-              string16 topicName;   // later: should be an array
-              int8 allow_auto_topic_creation = 0; // boolean
+                int32 topicCount = 1;
+                string16 topicName;   // TODO: string array
+                int8 allow_auto_topic_creation = 0;
             }
 
             struct MetadataResponse
             {
-              int32 correlationId;
-              int32 throttleTimeMillis;
-              int32 brokerCount;
+                int32 correlationId;
+                int32 throttleTimeMillis;
+                int32 brokerCount;
             }
 
             struct BrokerMetadata
             {
-              int32 nodeId;
-              string16 host;
-              int32 port;
-              string16 rack; // = null
+                int32 nodeId;
+                string16 host;
+                int32 port;
+                string16 rack; // = null
             }
 
             struct MetadataResponsePart2
             {
-              string16 clusterId;
-              int32 controllerId;
-              int32 topicCount;
+                string16 clusterId;
+                int32 controllerId;
+                int32 topicCount;
             }
 
             struct TopicMetadata
             {
-              int16 errorCode;
-              string16 topic;
-              int8 isInternal; // boolean
-              int32 partitionCount;
+                int16 errorCode;
+                string16 topic;
+                int8 isInternal;
+                int32 partitionCount;
             }
 
             struct PartitionMetadata
             {
-              int16 errorCode;
-              int32 partitionId;
-              int32 leader;
-              int32 replicaCount;
-              int32[replicaCount] replicas = null;
-              int32 inSyncReplicasCount;
-              int32[inSyncReplicasCount] inSyncReplicas = null;
-              int32 offlineReplicasCount;
-              int32[offlineReplicasCount] offlineReplicas = null;
+                int16 errorCode;
+                int32 partitionId;
+                int32 leader;
+                int32 replicaCount;
+                int32[replicaCount] replicas = null;
+                int32 inSyncReplicasCount;
+                int32[inSyncReplicasCount] inSyncReplicas = null;
+                int32 offlineReplicasCount;
+                int32[offlineReplicasCount] offlineReplicas = null;
             }
         }
     }
