@@ -596,14 +596,15 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
 
             for (int index = 0, offset = 0; index < length; index++, offset += Long.BYTES)
             {
-                sortSpace[index] = buffer.getLong(offset);
+                sortSpace[index] = buffer.getLong(offset) ^ Long.MIN_VALUE;
             }
 
+            // sort as unsigned longs
             Arrays.sort(sortSpace, 0, length);
 
             for (int index = 0, offset = 0; index < length; index++, offset += Long.BYTES)
             {
-                buffer.putLong(offset, sortSpace[index]);
+                buffer.putLong(offset, sortSpace[index] ^ Long.MIN_VALUE);
             }
         }
 

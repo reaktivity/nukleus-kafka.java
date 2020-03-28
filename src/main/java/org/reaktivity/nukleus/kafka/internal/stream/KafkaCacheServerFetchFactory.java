@@ -675,7 +675,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 }
 
                 final long keyHash = partition.computeKeyHash(key);
-                final KafkaCacheEntryFW ancestor = findAndMarkAncestor(key, nextHead, (int) keyHash);
+                final KafkaCacheEntryFW ancestor = findAndMarkAncestor(key, nextHead, (int) keyHash, partitionOffset);
                 partition.writeEntryStart(partitionOffset, timestamp, key, keyHash, valueLength, ancestor, deltaType);
             }
 
@@ -710,13 +710,14 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         private KafkaCacheEntryFW findAndMarkAncestor(
             KafkaKeyFW key,
             KafkaCachePartition.Node head,
-            int keyHash)
+            int keyHash,
+            long descendantOffset)
         {
             KafkaCacheEntryFW ancestorEntry = null;
             ancestor:
             if (key.length() != -1)
             {
-                ancestorEntry = head.findAndMarkAncestor(key, keyHash, ancestorEntryRO);
+                ancestorEntry = head.findAndMarkAncestor(key, keyHash, descendantOffset, ancestorEntryRO);
                 if (ancestorEntry != null)
                 {
                     if (partition.cleanupPolicy().compact())
@@ -758,7 +759,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                             final KafkaCacheSegment segment = ancestorNode.segment();
                             final long ancestorBase = segment.baseOffset();
                             assert ancestorBase == keyBaseOffset : String.format("%d == %d", ancestorBase, keyBaseOffset);
-                            ancestorEntry = ancestorNode.findAndMarkAncestor(key, keyHash, ancestorEntryRO);
+                            ancestorEntry = ancestorNode.findAndMarkAncestor(key, keyHash, descendantOffset, ancestorEntryRO);
                             if (ancestorEntry != null)
                             {
                                 if (partition.cleanupPolicy().compact())

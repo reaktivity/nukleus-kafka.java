@@ -23,6 +23,7 @@ import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheIndexRecord.SIZEOF_INDEX_RECORD;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType.JSON_PATCH;
 import static org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW.FIELD_OFFSET_DELTA_POSITION;
+import static org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW.FIELD_OFFSET_DESCENDANT;
 import static org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW.FIELD_OFFSET_FLAGS;
 
 import java.io.IOException;
@@ -59,6 +60,11 @@ import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 
 public final class KafkaCachePartition
 {
+    private static final long NO_DIRTY_SINCE = -1L;
+    private static final long NO_ANCESTOR_OFFSET = -1L;
+    private static final long NO_DESCENDANT_OFFSET = -1L;
+    private static final int NO_DELTA_POSITION = -1;
+
     private static final String FORMAT_PARTITION_DIRECTORY = "%s-%d";
 
     private static final int CACHE_ENTRY_FLAGS_DIRTY = 0x01;
@@ -71,7 +77,7 @@ public final class KafkaCachePartition
     private final KafkaCacheEntryFW logEntryRO = new KafkaCacheEntryFW();
     private final KafkaCacheDeltaFW deltaEntryRO = new KafkaCacheDeltaFW();
 
-    private final MutableDirectBuffer entryInfo = new UnsafeBuffer(new byte[3 * Long.BYTES + 2 * Integer.BYTES]);
+    private final MutableDirectBuffer entryInfo = new UnsafeBuffer(new byte[4 * Long.BYTES + 2 * Integer.BYTES]);
     private final MutableDirectBuffer valueInfo = new UnsafeBuffer(new byte[Integer.BYTES]);
 
     private final DirectBufferInputStream ancestorIn = new DirectBufferInputStream();
@@ -291,21 +297,22 @@ public final class KafkaCachePartition
 
         logFile.mark();
 
-        final long ancestorOffset = ancestor != null ? ancestor.offset$() : -1L;
+        final long ancestorOffset = ancestor != null ? ancestor.offset$() : NO_ANCESTOR_OFFSET;
         final int deltaPosition = deltaType == JSON_PATCH &&
                                   ancestor != null && ancestor.valueLen() != -1 &&
                                   valueLength != -1
                     ? deltaFile.capacity()
-                    : -1;
+                    : NO_DELTA_POSITION;
 
-        assert deltaPosition == -1 || ancestor != null;
+        assert deltaPosition == NO_DELTA_POSITION || ancestor != null;
         this.ancestorEntry = ancestor;
 
         entryInfo.putLong(0, progress);
         entryInfo.putLong(Long.BYTES, timestamp);
-        entryInfo.putLong(Long.BYTES + Long.BYTES, ancestorOffset);
-        entryInfo.putInt(Long.BYTES + Long.BYTES + Long.BYTES, 0x00);
-        entryInfo.putInt(Long.BYTES + Long.BYTES + Long.BYTES + Integer.BYTES, deltaPosition);
+        entryInfo.putLong(2 * Long.BYTES, ancestorOffset);
+        entryInfo.putLong(3 * Long.BYTES, NO_DESCENDANT_OFFSET);
+        entryInfo.putInt(4 * Long.BYTES, 0x00);
+        entryInfo.putInt(4 * Long.BYTES + Integer.BYTES, deltaPosition);
 
         logFile.appendBytes(entryInfo);
         logFile.appendBytes(key);
@@ -442,7 +449,7 @@ public final class KafkaCachePartition
         final long dirtySince = segment.dirtySince();
 
         long cleanableAt = segment.cleanableAt();
-        if (cleanableAt == Long.MAX_VALUE && dirtySince != -1L)
+        if (cleanableAt == Long.MAX_VALUE && dirtySince != NO_DIRTY_SINCE)
         {
             final double cleanableDirtyRatio = segment.cleanableDirtyRatio();
             if (cleanableDirtyRatio >= config.minCleanableDirtyRatio)
@@ -649,6 +656,7 @@ public final class KafkaCachePartition
         public KafkaCacheEntryFW findAndMarkAncestor(
             KafkaKeyFW key,
             long hash,
+            long descendantOffset,
             KafkaCacheEntryFW ancestorEntry)
         {
             KafkaCacheEntryFW ancestor = null;
@@ -667,7 +675,7 @@ public final class KafkaCachePartition
                     if (key.equals(cacheEntry.key()))
                     {
                         ancestor = cacheEntry;
-                        markDirty(ancestor);
+                        markDescendantAndDirty(ancestor, descendantOffset);
                         break ancestor;
                     }
 
@@ -679,10 +687,12 @@ public final class KafkaCachePartition
             return ancestor;
         }
 
-        private void markDirty(
-            KafkaCacheEntryFW ancestor)
+        private void markDescendantAndDirty(
+            KafkaCacheEntryFW ancestor,
+            long descendantOffset)
         {
             final KafkaCacheFile logFile = segment.logFile();
+            logFile.writeLong(ancestor.offset() + FIELD_OFFSET_DESCENDANT, descendantOffset);
             logFile.writeInt(ancestor.offset() + FIELD_OFFSET_FLAGS, CACHE_ENTRY_FLAGS_DIRTY);
             segment.markDirtyBytes(ancestor.sizeof());
         }
