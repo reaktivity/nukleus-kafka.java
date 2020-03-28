@@ -1654,6 +1654,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 replyDebitorIndex = replyDebitor.acquire(replyDebitorId, replyId, client::decodeNetworkIfNecessary);
             }
 
+            state = KafkaState.openedReply(state);
+
             client.decodeNetworkIfNecessary(traceId);
         }
 
@@ -1976,7 +1978,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
             {
                 final long traceId = end.traceId();
 
-                state = KafkaState.closedReply(state);
+                state = KafkaState.closingReply(state);
 
                 if (decodeSlot == NO_SLOT)
                 {
