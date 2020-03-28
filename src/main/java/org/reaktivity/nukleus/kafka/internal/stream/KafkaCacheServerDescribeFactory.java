@@ -350,6 +350,7 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
         private int state;
 
         private long reconnectAt = NO_CANCEL_ID;
+        private int reconnectAttempt;
 
         private KafkaCacheServerDescribeFanout(
             long routeId,
@@ -507,15 +508,20 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
 
             doDescribeFanoutReplyResetIfNecessary(traceId);
 
-            if (reconnectDelay != 0)
+            if (reconnectDelay != 0 && !members.isEmpty())
             {
                 if (KafkaConfiguration.DEBUG)
                 {
                     System.out.format("%s DESCRIBE reconnect in %ds, error %d\n", topic, reconnectDelay, error);
                 }
 
+                if (reconnectAt != NO_CANCEL_ID)
+                {
+                    signaler.cancel(reconnectAt);
+                }
+
                 this.reconnectAt = signaler.signalAt(
-                    currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
+                    currentTimeMillis() + Math.min(50 << reconnectAttempt++, SECONDS.toMillis(reconnectDelay)),
                     SIGNAL_RECONNECT,
                     this::onDescribeFanoutSignal);
             }
@@ -535,6 +541,8 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
         {
             assert signalId == SIGNAL_RECONNECT;
 
+            this.reconnectAt = NO_CANCEL_ID;
+
             final long traceId = supplyTraceId.getAsLong();
 
             doDescribeFanoutInitialBeginIfNecessary(traceId);
@@ -545,6 +553,8 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
         {
             if (!KafkaState.initialOpened(state))
             {
+                this.reconnectAttempt = 0;
+
                 final long traceId = window.traceId();
 
                 state = KafkaState.openedInitial(state);
@@ -649,15 +659,20 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
 
             doDescribeFanoutInitialEndIfNecessary(traceId);
 
-            if (reconnectDelay != 0)
+            if (reconnectDelay != 0 && !members.isEmpty())
             {
                 if (KafkaConfiguration.DEBUG)
                 {
                     System.out.format("%s DESCRIBE reconnect in %ds\n", topic, reconnectDelay);
                 }
 
+                if (reconnectAt != NO_CANCEL_ID)
+                {
+                    signaler.cancel(reconnectAt);
+                }
+
                 this.reconnectAt = signaler.signalAt(
-                    currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
+                    currentTimeMillis() + Math.min(50 << reconnectAttempt++, SECONDS.toMillis(reconnectDelay)),
                     SIGNAL_RECONNECT,
                     this::onDescribeFanoutSignal);
             }
@@ -681,15 +696,20 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
 
             doDescribeFanoutInitialAbortIfNecessary(traceId);
 
-            if (reconnectDelay != 0)
+            if (reconnectDelay != 0 && !members.isEmpty())
             {
                 if (KafkaConfiguration.DEBUG)
                 {
                     System.out.format("%s DESCRIBE reconnect in %ds\n", topic, reconnectDelay);
                 }
 
+                if (reconnectAt != NO_CANCEL_ID)
+                {
+                    signaler.cancel(reconnectAt);
+                }
+
                 this.reconnectAt = signaler.signalAt(
-                    currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
+                    currentTimeMillis() + Math.min(50 << reconnectAttempt++, SECONDS.toMillis(reconnectDelay)),
                     SIGNAL_RECONNECT,
                     this::onDescribeFanoutSignal);
             }

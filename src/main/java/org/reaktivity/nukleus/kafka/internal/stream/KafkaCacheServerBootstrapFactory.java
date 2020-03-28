@@ -583,7 +583,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             if (leader != null && leader.leaderId != leaderId)
             {
                 leader.doBootstrapFetchInitialEndIfNecessary(traceId);
-                //oldLeader.doBootstrapFetchReplyResetIfNecessary(traceId);
+                //leader.doBootstrapFetchReplyResetIfNecessary(traceId);
                 fetchStreams.remove(leader);
                 leader = null;
             }
@@ -597,7 +597,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
                 }
 
                 leader = new KafkaBootstrapFetchStream(partitionId, leaderId, this);
-                leader.doBootstrapInitialBegin(traceId, partitionOffset);
+                leader.doBootstrapFetchInitialBegin(traceId, partitionOffset);
                 fetchStreams.add(leader);
             }
 
@@ -1135,7 +1135,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             this.bootstrap = bootstrap;
         }
 
-        private void doBootstrapInitialBegin(
+        private void doBootstrapFetchInitialBegin(
             long traceId,
             long partitionOffset)
         {
