@@ -221,7 +221,7 @@ public class KafkaCachePartitionTest
             partition.writeEntry(11L, 0L, key, headers, value, null, KafkaDeltaType.NONE);
 
             long keyHash = partition.computeKeyHash(key);
-            KafkaCacheEntryFW ancestor = head10.findAndMarkAncestor(key, keyHash, ancestorRO);
+            KafkaCacheEntryFW ancestor = head10.findAndMarkAncestor(key, keyHash, 11L, ancestorRO);
 
             partition.writeEntry(12L, 0L, key, headers, value, ancestor, KafkaDeltaType.NONE);
 
@@ -272,7 +272,7 @@ public class KafkaCachePartitionTest
             partition.writeEntry(11L, 0L, key, headers, value, null, KafkaDeltaType.NONE);
 
             long keyHash = partition.computeKeyHash(key);
-            KafkaCacheEntryFW ancestor = head10.findAndMarkAncestor(key, keyHash, ancestorRO);
+            KafkaCacheEntryFW ancestor = head10.findAndMarkAncestor(key, keyHash, 11L, ancestorRO);
 
             partition.writeEntry(12L, 0L, key, headers, value, ancestor, KafkaDeltaType.NONE);
 

@@ -689,6 +689,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
         private long partitionOffset;
         private int messageOffset;
+        private long initialGroupPartitionOffset;
 
         KafkaCacheClientFetchStream(
             KafkaCacheClientFetchFanout group,
@@ -839,6 +840,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             state = KafkaState.openingReply(state);
 
+            this.initialGroupPartitionOffset = group.partitionOffset;
+
             if (partitionOffset == OFFSET_LATEST)
             {
                 this.partitionOffset = group.partitionOffset;
@@ -884,6 +887,18 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 if (nextEntry == null)
                 {
                     break;
+                }
+
+                final long descendantOffset = nextEntry.descendant();
+                if (descendantOffset != -1L && descendantOffset <= initialGroupPartitionOffset)
+                {
+                    final long nextPartitionOffset = partitionOffset + 1;
+
+                    this.partitionOffset = nextPartitionOffset;
+                    this.messageOffset = 0;
+
+                    cursor.advance(nextPartitionOffset);
+                    continue;
                 }
 
                 final int replyBudgetSnapshot = replyBudget;
