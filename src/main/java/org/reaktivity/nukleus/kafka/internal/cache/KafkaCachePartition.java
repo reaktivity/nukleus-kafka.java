@@ -19,6 +19,7 @@ import static java.nio.ByteBuffer.allocateDirect;
 import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorRetryValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheIndexRecord.SIZEOF_INDEX_RECORD;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType.JSON_PATCH;
@@ -667,7 +668,7 @@ public final class KafkaCachePartition
                 final KafkaCacheIndexFile hashFile = segment.hashFile();
                 final KafkaCacheFile logFile = segment.logFile();
                 long hashCursor = hashFile.last((int) hash);
-                while (hashCursor != NEXT_SEGMENT && hashCursor != RETRY_SEGMENT)
+                while (hashCursor != NEXT_SEGMENT && cursorValue(hashCursor) != cursorValue(RETRY_SEGMENT))
                 {
                     final int position = cursorValue(hashCursor);
                     final KafkaCacheEntryFW cacheEntry = logFile.readBytes(position, ancestorEntry::wrap);
@@ -681,7 +682,7 @@ public final class KafkaCachePartition
 
                     hashCursor = hashFile.lower((int) hash, hashCursor);
                 }
-                assert hashCursor == NEXT_SEGMENT || hashCursor == RETRY_SEGMENT;
+                assert hashCursor == NEXT_SEGMENT || cursorRetryValue(hashCursor);
             }
 
             return ancestor;
