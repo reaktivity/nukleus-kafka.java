@@ -23,6 +23,12 @@ public final class KafkaCacheCursorRecord
     public static final long NEXT_SEGMENT = Long.MAX_VALUE - 1;
     public static final long RETRY_SEGMENT = Integer.MAX_VALUE - 1;
 
+    public static boolean cursorRetryValue(
+        long cursor)
+    {
+        return cursorValue(cursor) == cursorValue(RETRY_SEGMENT);
+    }
+
     public static int cursorIndex(
         long cursor)
     {
