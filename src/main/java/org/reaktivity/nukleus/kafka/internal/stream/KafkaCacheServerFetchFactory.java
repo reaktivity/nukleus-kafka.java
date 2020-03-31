@@ -82,13 +82,13 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class KafkaCacheServerFetchFactory implements StreamFactory
 {
+    static final int SIZE_OF_FLUSH_WITH_EXTENSION = 64;
+
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
     private static final DirectBuffer EMPTY_BUFFER = new UnsafeBuffer();
     private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(EMPTY_BUFFER, 0, 0);
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
-
-    private static final int SIZE_OF_FLUSH_WITH_EXTENSION = 64;
 
     private static final int FLAGS_INIT = 0x02;
     private static final int FLAGS_FIN = 0x01;
