@@ -120,7 +120,7 @@ public final class KafkaCacheCursorFactory
             assert this.segment != null;
 
             final long cursor = condition.reset(segment, offset, POSITION_UNSET);
-            this.cursor = cursor == NEXT_SEGMENT ? 0L : cursor;
+            this.cursor = cursorRetryValue(cursor) || cursor == NEXT_SEGMENT ? 0L : cursor;
         }
 
         public KafkaCacheEntryFW next(
@@ -166,7 +166,7 @@ public final class KafkaCacheCursorFactory
                     assert segment != null;
 
                     final long cursor = condition.reset(segment, offset, POSITION_UNSET);
-                    this.cursor = cursor == RETRY_SEGMENT || cursor == NEXT_SEGMENT ? 0L : cursor;
+                    this.cursor = cursorRetryValue(cursor) || cursor == NEXT_SEGMENT ? 0L : cursor;
                     continue;
                 }
 
@@ -292,7 +292,7 @@ public final class KafkaCacheCursorFactory
                 assert segment != null;
 
                 final long cursor = condition.reset(segment, offset, POSITION_UNSET);
-                this.cursor = cursor == NEXT_SEGMENT ? 0L : cursor;
+                this.cursor = cursorRetryValue(cursor) || cursor == NEXT_SEGMENT ? 0L : cursor;
             }
         }
 
