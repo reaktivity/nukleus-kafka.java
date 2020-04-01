@@ -21,6 +21,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertSame;
+import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
 
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
@@ -193,9 +194,11 @@ public class KafkaCachePartitionTest
         public void shouldCleanSegment() throws Exception
         {
             Path location = tempFolder.newFolder().toPath();
-            KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
+            KafkaConfiguration config = new KafkaConfiguration();
+            KafkaCacheTopicConfig topic = new KafkaCacheTopicConfig(config);
 
-            MutableDirectBuffer writeBuffer = new UnsafeBuffer(ByteBuffer.allocate(1024));
+            int slotCapacity = REAKTOR_BUFFER_SLOT_CAPACITY.get(config);
+            MutableDirectBuffer writeBuffer = new UnsafeBuffer(ByteBuffer.allocate(slotCapacity * 2));
 
             KafkaKeyFW key = new KafkaKeyFW.Builder().wrap(writeBuffer, 0, writeBuffer.capacity())
                 .length(4)
@@ -209,12 +212,13 @@ public class KafkaCachePartitionTest
                     .build();
 
             OctetsFW value = new OctetsFW.Builder()
-                    .wrap(writeBuffer, headers.limit(), 0)
+                    .wrap(writeBuffer, headers.limit(), writeBuffer.capacity())
+                    .set(new byte[slotCapacity + 1])
                     .build();
 
             KafkaCacheEntryFW ancestorRO = new KafkaCacheEntryFW();
 
-            KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536, long[]::new);
+            KafkaCachePartition partition = new KafkaCachePartition(location, topic, "cache", "test", 0, 65536, long[]::new);
             Node head10 = partition.append(10L);
             KafkaCacheSegment head10s = head10.segment();
 

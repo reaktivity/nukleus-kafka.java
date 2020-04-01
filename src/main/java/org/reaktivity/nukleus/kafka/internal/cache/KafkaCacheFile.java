@@ -187,18 +187,27 @@ public class KafkaCacheFile implements AutoCloseable
         {
             try
             {
-                appendByteBuf.clear();
-                appendBuf.putBytes(0, srcBuffer, srcIndex, length);
-                appendByteBuf.limit(length);
+                final int appendableBytes = appendBuf.capacity();
 
-                int written = 0;
-                while (written < length)
+                int remainingBytes = length;
+                while (remainingBytes > 0)
                 {
-                    written += appender.write(appendByteBuf);
-                }
-                assert written == length : String.format("%d == %d", written, length);
+                    final int fragmentBytes = Math.min(remainingBytes, appendableBytes);
+                    appendByteBuf.clear();
+                    appendBuf.putBytes(0, srcBuffer, srcIndex, fragmentBytes);
+                    appendByteBuf.limit(fragmentBytes);
 
-                capacity += written;
+                    int writtenBytes = 0;
+                    while (writtenBytes < fragmentBytes)
+                    {
+                        writtenBytes += appender.write(appendByteBuf);
+                    }
+                    assert writtenBytes == fragmentBytes : String.format("%d == %d", writtenBytes, fragmentBytes);
+
+                    capacity += writtenBytes;
+                    remainingBytes -= fragmentBytes;
+                    assert remainingBytes >= 0;
+                }
                 assert capacity <= maxCapacity;
             }
             catch (IOException ex)
