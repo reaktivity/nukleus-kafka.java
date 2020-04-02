@@ -884,7 +884,6 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
             doServerFanoutReplyResetIfNecessary(traceId);
 
-            // TODO: coordinate to maintain KafkaCachePartition single writer
             final KafkaResetExFW kafkaResetEx = extension.get(kafkaResetExRO::tryWrap);
             final int error = kafkaResetEx != null ? kafkaResetEx.error() : -1;
 

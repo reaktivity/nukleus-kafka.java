@@ -32,6 +32,7 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
+import org.reaktivity.reaktor.ReaktorConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
 public class CacheMergedIT
@@ -53,6 +54,7 @@ public class CacheMergedIT
         .configure(KAFKA_CACHE_SERVER_BOOTSTRAP, false)
         .configure(KAFKA_CACHE_SEGMENT_BYTES, 1 * 1024 * 1024)
         .configure(KAFKA_CACHE_SEGMENT_INDEX_BYTES, 256 * 1024)
+        .configure(ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE, false)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 

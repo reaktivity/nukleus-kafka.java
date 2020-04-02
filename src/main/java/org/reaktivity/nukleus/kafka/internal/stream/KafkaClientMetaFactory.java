@@ -123,7 +123,6 @@ public final class KafkaClientMetaFactory implements StreamFactory
     private final KafkaMetaClientDecoder decodeTopic = this::decodeTopic;
     private final KafkaMetaClientDecoder decodePartitions = this::decodePartitions;
     private final KafkaMetaClientDecoder decodePartition = this::decodePartition;
-    private final KafkaMetaClientDecoder decodeIgnoreAll = this::decodeIgnoreAll;
 
     private final MessageFunction<RouteFW> wrapRoute = (t, b, i, l) -> routeRO.wrap(b, i, i + l);
 
@@ -715,20 +714,6 @@ public final class KafkaClientMetaFactory implements StreamFactory
         return progress;
     }
 
-    private int decodeIgnoreAll(
-        KafkaMetaStream.KafkaMetaClient client,
-        long traceId,
-        long authorization,
-        long budgetId,
-        int reserved,
-        DirectBuffer buffer,
-        int offset,
-        int progress,
-        int limit)
-    {
-        return limit;
-    }
-
     private final class KafkaMetaStream
     {
         private final MessageConsumer application;
@@ -992,7 +977,6 @@ public final class KafkaClientMetaFactory implements StreamFactory
             private final long replyId;
             private final MessageConsumer network;
             private final String topic;
-            private final Int2IntHashMap partitions;
 
             private final Long2ObjectHashMap<KafkaBrokerInfo> newBrokers;
             private final Int2IntHashMap newPartitions;
@@ -1033,7 +1017,6 @@ public final class KafkaClientMetaFactory implements StreamFactory
                 this.network = router.supplyReceiver(initialId);
                 this.decoder = decodeResponse;
                 this.topic = requireNonNull(topic);
-                this.partitions = new Int2IntHashMap(-1);
                 this.newBrokers = new Long2ObjectHashMap<>();
                 this.newPartitions = new Int2IntHashMap(-1);
             }
@@ -1513,6 +1496,8 @@ public final class KafkaClientMetaFactory implements StreamFactory
                 doApplicationWindow(traceId, 0L, 0, 0);
                 doApplicationBeginIfNecessary(traceId, authorization, topic);
 
+                // TODO: share partitions across elektrons
+                final Int2IntHashMap partitions = clientRoute.partitions;
                 if (!partitions.equals(newPartitions))
                 {
                     partitions.clear();
