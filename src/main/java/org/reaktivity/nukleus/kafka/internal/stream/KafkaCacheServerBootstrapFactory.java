@@ -559,7 +559,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
             partitionCount.value = 0;
             partitions.forEach(partition -> partitionCount.value++);
-            assert fetchStreams.size() == partitionCount.value;
+            assert fetchStreams.size() >= partitionCount.value;
         }
 
         private void onPartitionMetaDataChangedIfNecessary(
@@ -572,7 +572,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
             KafkaBootstrapFetchStream leader = findPartitionLeader(partitionId);
 
-            if (leader != null)
+            if (leader != null && leader.leaderId != leaderId)
             {
                 leader.leaderId = leaderId;
                 leader.doFetchInitialBeginIfNecessary(traceId, partitionOffset);
@@ -604,6 +604,32 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
                 {
                     doBootstrapReplyEndIfNecessary(traceId);
                 }
+            }
+        }
+
+        private void onPartitionLeaderError(
+            long traceId,
+            int partitionId,
+            int error)
+        {
+            if (error == ERROR_NOT_LEADER_FOR_PARTITION)
+            {
+                final KafkaBootstrapFetchStream leader = findPartitionLeader(partitionId);
+                assert leader != null;
+
+                if (nextOffsetsById.containsKey(partitionId))
+                {
+                    final long partitionOffset = nextPartitionOffset(partitionId);
+                    leader.doFetchInitialBegin(traceId, partitionOffset);
+                }
+                else
+                {
+                    fetchStreams.remove(leader);
+                }
+            }
+            else
+            {
+                doBootstrapCleanup(traceId);
             }
         }
 
@@ -1233,15 +1259,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
             doFetchReplyResetIfNecessary(traceId);
 
-            if (error == ERROR_NOT_LEADER_FOR_PARTITION)
-            {
-                final long partitionOffset = bootstrap.nextPartitionOffset(partitionId);
-                doFetchInitialBegin(traceId, partitionOffset);
-            }
-            else
-            {
-                bootstrap.doBootstrapCleanup(traceId);
-            }
+            bootstrap.onPartitionLeaderError(traceId, partitionId, error);
         }
 
         private void onFetchInitialWindow(

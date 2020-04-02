@@ -899,7 +899,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             partitionCount.value = 0;
             partitions.forEach(partition -> partitionCount.value++);
-            assert fetchStreams.size() == partitionCount.value;
+            assert fetchStreams.size() >= partitionCount.value;
         }
 
         private void onPartitionMetaDataChangedIfNecessary(
@@ -912,7 +912,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             KafkaUnmergedFetchStream leader = findPartitionLeader(partitionId);
 
-            if (leader != null)
+            if (leader != null && leader.leaderId != leaderId)
             {
                 leader.leaderId = leaderId;
                 leader.doFetchInitialBeginIfNecessary(traceId, partitionOffset);
@@ -944,6 +944,32 @@ public final class KafkaMergedFactory implements StreamFactory
                 {
                     doMergedReplyEndIfNecessary(traceId);
                 }
+            }
+        }
+
+        private void onPartitionLeaderError(
+            long traceId,
+            int partitionId,
+            int error)
+        {
+            if (error == ERROR_NOT_LEADER_FOR_PARTITION)
+            {
+                final KafkaUnmergedFetchStream leader = findPartitionLeader(partitionId);
+                assert leader != null;
+
+                if (nextOffsetsById.containsKey(partitionId))
+                {
+                    final long partitionOffset = nextPartitionOffset(partitionId);
+                    leader.doFetchInitialBegin(traceId, partitionOffset);
+                }
+                else
+                {
+                    fetchStreams.remove(leader);
+                }
+            }
+            else
+            {
+                doMergedInitialResetIfNecessary(traceId);
             }
         }
 
@@ -1569,15 +1595,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             doFetchReplyResetIfNecessary(traceId);
 
-            if (error == ERROR_NOT_LEADER_FOR_PARTITION)
-            {
-                final long partitionOffset = mergedFetch.nextPartitionOffset(partitionId);
-                doFetchInitialBegin(traceId, partitionOffset);
-            }
-            else
-            {
-                mergedFetch.doMergedInitialResetIfNecessary(traceId);
-            }
+            mergedFetch.onPartitionLeaderError(traceId, partitionId, error);
         }
 
         private void onFetchInitialWindow(
