@@ -262,7 +262,7 @@ public final class KafkaCacheCursorFactory
         public void advance(
             long offset)
         {
-            assert offset > this.offset;
+            assert offset > this.offset : String.format("%d > %d", offset, this.offset);
             this.offset = offset;
             this.cursor = nextIndex(nextValue(cursor));
 

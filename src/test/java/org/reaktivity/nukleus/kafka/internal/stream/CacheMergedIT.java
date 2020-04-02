@@ -172,4 +172,15 @@ public class CacheMergedIT
         k3po.finish();
     }
 
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
+        "${client}/merged.partition.leader.aborted/client",
+        "${server}/unmerged.partition.leader.aborted/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldRequestMergedPartitionLeaderAborted() throws Exception
+    {
+        k3po.finish();
+    }
+
 }
