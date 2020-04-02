@@ -89,6 +89,8 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class KafkaClientFetchFactory implements StreamFactory
 {
+    private static final int NOT_LEADER_FOR_PARTITION = 6;
+
     private static final int FIELD_LIMIT_RECORD_BATCH_LENGTH = RecordBatchFW.FIELD_OFFSET_LEADER_EPOCH;
 
     private static final int ERROR_NONE = 0;
@@ -308,15 +310,29 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 final int partitionId = partition.partitionId();
                 final long initialOffset = partition.partitionOffset();
 
-                newStream = new KafkaFetchStream(
-                        application,
-                        routeId,
-                        initialId,
-                        affinity,
-                        resolvedId,
-                        topic,
-                        partitionId,
-                        initialOffset)::onApplication;
+                final KafkaClientRoute clientRoute = supplyClientRoute.apply(resolvedId);
+                if (clientRoute.partitions.get(partitionId) == affinity)
+                {
+                    newStream = new KafkaFetchStream(
+                            application,
+                            routeId,
+                            initialId,
+                            affinity,
+                            resolvedId,
+                            topic,
+                            partitionId,
+                            initialOffset)::onApplication;
+                }
+                else
+                {
+                    final long traceId = begin.traceId();
+                    final KafkaResetExFW kafkaResetEx = kafkaResetExRW.wrap(extBuffer, 0, extBuffer.capacity())
+                            .typeId(kafkaTypeId)
+                            .error(NOT_LEADER_FOR_PARTITION)
+                            .build();
+
+                    doReset(application, routeId, initialId, traceId, authorization, kafkaResetEx);
+                }
             }
         }
 
