@@ -32,6 +32,7 @@ import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.budget.BudgetDebitor;
 import org.reaktivity.nukleus.buffer.BufferPool;
+import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessageFunction;
 import org.reaktivity.nukleus.function.MessagePredicate;
@@ -69,6 +70,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchFlushExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFlushExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.SignalFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
@@ -86,6 +88,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
     private static final int FLAG_INIT = 0x02;
     private static final int FLAG_NONE = 0x00;
 
+    private static final int SIGNAL_FANOUT_REPLY_WINDOW = 1;
+
     private final RouteFW routeRO = new RouteFW();
     private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
 
@@ -95,6 +99,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
     private final AbortFW abortRO = new AbortFW();
     private final ResetFW resetRO = new ResetFW();
     private final WindowFW windowRO = new WindowFW();
+    private final SignalFW signalRO = new SignalFW();
     private final ExtensionFW extensionRO = new ExtensionFW();
     private final KafkaBeginExFW kafkaBeginExRO = new KafkaBeginExFW();
     private final KafkaFlushExFW kafkaFlushExRO = new KafkaFlushExFW();
@@ -117,6 +122,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
     private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
     private final BufferPool bufferPool;
+    private final Signaler signaler;
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
     private final LongFunction<BudgetDebitor> supplyDebitor;
@@ -130,6 +136,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         RouteManager router,
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
+        Signaler signaler,
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTraceId,
@@ -143,6 +150,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         this.router = router;
         this.writeBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
         this.bufferPool = bufferPool;
+        this.signaler = signaler;
         this.supplyInitialId = supplyInitialId;
         this.supplyReplyId = supplyReplyId;
         this.supplyDebitor = supplyDebitor;
@@ -544,9 +552,24 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 final WindowFW window = windowRO.wrap(buffer, index, index + length);
                 onClientFanoutInitialWindow(window);
                 break;
+            case SignalFW.TYPE_ID:
+                final SignalFW signal = signalRO.wrap(buffer, index, index + length);
+                onClientFanoutInitialSignal(signal);
+                break;
             default:
                 break;
             }
+        }
+
+        private void onClientFanoutInitialSignal(
+            SignalFW signal)
+        {
+            final long traceId = signal.traceId();
+            final int signalId = signal.signalId();
+
+            assert signalId == SIGNAL_FANOUT_REPLY_WINDOW;
+
+            doClientFanoutReplyWindow(traceId, KafkaCacheServerFetchFactory.SIZE_OF_FLUSH_WITH_EXTENSION);
         }
 
         private void onClientFanoutReplyBegin(
@@ -590,7 +613,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
             members.forEach(s -> s.doClientReplyDataIfNecessary(traceId));
 
-            doClientFanoutReplyWindow(traceId, reserved);
+            // defer reply window credit until next tick
+            assert reserved == KafkaCacheServerFetchFactory.SIZE_OF_FLUSH_WITH_EXTENSION;
+            signaler.signalNow(routeId, initialId, SIGNAL_FANOUT_REPLY_WINDOW);
         }
 
         private void onClientFanoutReplyEnd(
@@ -689,6 +714,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
         private long partitionOffset;
         private int messageOffset;
+        private long initialGroupPartitionOffset;
 
         KafkaCacheClientFetchStream(
             KafkaCacheClientFetchFanout group,
@@ -839,6 +865,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             state = KafkaState.openingReply(state);
 
+            this.initialGroupPartitionOffset = group.partitionOffset;
+
             if (partitionOffset == OFFSET_LATEST)
             {
                 this.partitionOffset = group.partitionOffset;
@@ -878,6 +906,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         state, replyBudgetId, replyId, replyDebitorIndex, replyDebitor);
 
             while (KafkaState.replyOpened(state) &&
+                replyBudget >= replyPadding &&
                 partitionOffset <= group.partitionOffset)
             {
                 final KafkaCacheEntryFW nextEntry = cursor.next(entryRO);
@@ -886,11 +915,23 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     break;
                 }
 
+                final long descendantOffset = nextEntry.descendant();
+                if (descendantOffset != -1L && descendantOffset <= initialGroupPartitionOffset)
+                {
+                    final long nextPartitionOffset = partitionOffset + 1;
+
+                    this.partitionOffset = nextPartitionOffset;
+                    this.messageOffset = 0;
+
+                    cursor.advance(nextPartitionOffset);
+                    continue;
+                }
+
                 final int replyBudgetSnapshot = replyBudget;
 
                 doClientReplyData(traceId, nextEntry);
 
-                if (replyBudget == replyBudgetSnapshot || replyBudget < replyPadding)
+                if (replyBudget == replyBudgetSnapshot)
                 {
                     break;
                 }

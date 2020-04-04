@@ -271,7 +271,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
     {
         final long routeId = begin.routeId();
         final long initialId = begin.streamId();
-        final long affinity = begin.affinity();
+        final long leaderId = begin.affinity();
         final long authorization = begin.authorization();
         final OctetsFW extension = begin.extension();
         final ExtensionFW beginEx = extensionRO.tryWrap(extension.buffer(), extension.offset(), extension.limit());
@@ -312,10 +312,10 @@ public final class KafkaClientFetchFactory implements StreamFactory
                         application,
                         routeId,
                         initialId,
-                        affinity,
                         resolvedId,
                         topic,
                         partitionId,
+                        leaderId,
                         initialOffset)::onApplication;
             }
         }
@@ -1530,7 +1530,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
         private final long routeId;
         private final long initialId;
         private final long replyId;
-        private final long affinity;
+        private final long leaderId;
+        private final KafkaClientRoute clientRoute;
         private final KafkaFetchClient client;
 
         private int state;
@@ -1545,17 +1546,18 @@ public final class KafkaClientFetchFactory implements StreamFactory
             MessageConsumer application,
             long routeId,
             long initialId,
-            long affinity,
             long resolvedId,
             String topic,
             int partitionId,
+            long leaderId,
             long initialOffset)
         {
             this.application = application;
             this.routeId = routeId;
             this.initialId = initialId;
             this.replyId = supplyReplyId.applyAsLong(initialId);
-            this.affinity = affinity;
+            this.leaderId = leaderId;
+            this.clientRoute = supplyClientRoute.apply(resolvedId);
             this.client = new KafkaFetchClient(resolvedId, topic, partitionId, initialOffset);
         }
 
@@ -1602,9 +1604,16 @@ public final class KafkaClientFetchFactory implements StreamFactory
             final long traceId = begin.traceId();
             final long authorization = begin.authorization();
 
-            state = KafkaState.openingInitial(state);
+            if (clientRoute.partitions.get(client.partitionId) != leaderId)
+            {
+                cleanupApplication(traceId, ERROR_NOT_LEADER_FOR_PARTITION);
+            }
+            else
+            {
+                state = KafkaState.openingInitial(state);
 
-            client.doNetworkBegin(traceId, authorization, affinity);
+                client.doNetworkBegin(traceId, authorization, leaderId);
+            }
         }
 
         private void onApplicationData(
@@ -1654,6 +1663,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 replyDebitorIndex = replyDebitor.acquire(replyDebitorId, replyId, client::decodeNetworkIfNecessary);
             }
 
+            state = KafkaState.openedReply(state);
+
             client.decodeNetworkIfNecessary(traceId);
         }
 
@@ -1690,7 +1701,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
             state = KafkaState.openingReply(state);
 
             router.setThrottle(replyId, this::onApplication);
-            doBegin(application, routeId, replyId, traceId, authorization, affinity,
+            doBegin(application, routeId, replyId, traceId, authorization, leaderId,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                                                         .typeId(kafkaTypeId)
                                                         .fetch(m -> m.topic(topic)
@@ -1782,6 +1793,18 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
         private void cleanupApplication(
             long traceId,
+            int error)
+        {
+            final KafkaResetExFW kafkaResetEx = kafkaResetExRW.wrap(extBuffer, 0, extBuffer.capacity())
+                    .typeId(kafkaTypeId)
+                    .error(error)
+                    .build();
+
+            cleanupApplication(traceId, kafkaResetEx);
+        }
+
+        private void cleanupApplication(
+            long traceId,
             Flyweight extension)
         {
             doApplicationResetIfNecessary(traceId, extension);
@@ -1810,7 +1833,6 @@ public final class KafkaClientFetchFactory implements StreamFactory
             private final MessageConsumer network;
             private final String topic;
             private final int partitionId;
-            private final KafkaClientRoute clientRoute;
 
             private long nextOffset;
 
@@ -1867,7 +1889,6 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 this.nextOffset = initialOffset;
                 this.encoder = encodeFetchRequest;
                 this.decoder = decodeFetchResponse;
-                this.clientRoute = supplyClientRoute.apply(routeId);
             }
 
             private void onNetwork(
@@ -1976,7 +1997,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
             {
                 final long traceId = end.traceId();
 
-                state = KafkaState.closedReply(state);
+                state = KafkaState.closingReply(state);
 
                 if (decodeSlot == NO_SLOT)
                 {
@@ -2447,11 +2468,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                     this.nextOffset = partitionOffset;
                     break;
                 default:
-                    final KafkaResetExFW resetEx = kafkaResetExRW.wrap(extBuffer, 0, extBuffer.capacity())
-                                                                 .typeId(kafkaTypeId)
-                                                                 .error(errorCode)
-                                                                 .build();
-                    cleanupApplication(traceId, resetEx);
+                    cleanupApplication(traceId, errorCode);
                     doNetworkEnd(traceId, authorization);
                     break;
                 }
@@ -2489,11 +2506,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                         }
                     }
 
-                    final KafkaResetExFW resetEx = kafkaResetExRW.wrap(extBuffer, 0, extBuffer.capacity())
-                                                                 .typeId(kafkaTypeId)
-                                                                 .error(errorCode)
-                                                                 .build();
-                    cleanupApplication(traceId, resetEx);
+                    cleanupApplication(traceId, errorCode);
                     doNetworkEnd(traceId, authorization);
                     break;
                 }
@@ -2599,7 +2612,16 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 long traceId)
             {
                 nextResponseId++;
-                signaler.signalNow(routeId, initialId, SIGNAL_NEXT_REQUEST);
+
+                if (clientRoute.partitions.get(partitionId) == leaderId)
+                {
+                    signaler.signalNow(routeId, initialId, SIGNAL_NEXT_REQUEST);
+                }
+                else
+                {
+                    cleanupApplication(traceId, ERROR_NOT_LEADER_FOR_PARTITION);
+                    doNetworkEnd(traceId, authorization);
+                }
             }
 
             private void cleanupNetwork(

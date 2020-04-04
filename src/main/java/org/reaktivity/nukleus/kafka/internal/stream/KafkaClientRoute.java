@@ -15,12 +15,14 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import org.agrona.collections.Int2IntHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
 
 public final class KafkaClientRoute
 {
     public final long routeId;
     public final Long2ObjectHashMap<KafkaBrokerInfo> brokers;
+    public final Int2IntHashMap partitions;
 
     public volatile long metaInitialId;
 
@@ -29,5 +31,6 @@ public final class KafkaClientRoute
     {
         this.routeId = routeId;
         this.brokers = new Long2ObjectHashMap<>();
+        this.partitions = new Int2IntHashMap(-1);
     }
 }

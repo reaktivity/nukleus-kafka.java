@@ -346,6 +346,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
         private int state;
 
         private long reconnectAt = NO_CANCEL_ID;
+        private int reconnectAttempt;
 
         private KafkaCacheMetaFanout(
             long routeId,
@@ -501,15 +502,20 @@ public final class KafkaCacheMetaFactory implements StreamFactory
 
             doMetaFanoutReplyResetIfNecessary(traceId);
 
-            if (reconnectDelay != 0)
+            if (reconnectDelay != 0 && !members.isEmpty())
             {
                 if (KafkaConfiguration.DEBUG)
                 {
                     System.out.format("%s META reconnect in %ds, error %d\n", topic, reconnectDelay, error);
                 }
 
+                if (reconnectAt != NO_CANCEL_ID)
+                {
+                    signaler.cancel(reconnectAt);
+                }
+
                 this.reconnectAt = signaler.signalAt(
-                        currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
+                        currentTimeMillis() + Math.min(50 << reconnectAttempt++, SECONDS.toMillis(reconnectDelay)),
                         SIGNAL_RECONNECT,
                         this::onMetaFanoutSignal);
             }
@@ -529,6 +535,8 @@ public final class KafkaCacheMetaFactory implements StreamFactory
         {
             if (!KafkaState.initialOpened(state))
             {
+                this.reconnectAttempt = 0;
+
                 final long traceId = window.traceId();
 
                 state = KafkaState.openedInitial(state);
@@ -623,11 +631,16 @@ public final class KafkaCacheMetaFactory implements StreamFactory
 
             doMetaFanoutInitialEndIfNecessary(traceId);
 
-            if (reconnectDelay != 0)
+            if (reconnectDelay != 0 && !members.isEmpty())
             {
-                if (KafkaConfiguration.DEBUG)
+                if (KafkaConfiguration.DEBUG && !members.isEmpty())
                 {
                     System.out.format("%s META reconnect in %ds\n", topic, reconnectDelay);
+                }
+
+                if (reconnectAt != NO_CANCEL_ID)
+                {
+                    signaler.cancel(reconnectAt);
                 }
 
                 this.reconnectAt = signaler.signalAt(
@@ -655,11 +668,16 @@ public final class KafkaCacheMetaFactory implements StreamFactory
 
             doMetaFanoutInitialAbortIfNecessary(traceId);
 
-            if (reconnectDelay != 0)
+            if (reconnectDelay != 0 && !members.isEmpty())
             {
                 if (KafkaConfiguration.DEBUG)
                 {
                     System.out.format("%s META reconnect in %ds\n", topic, reconnectDelay);
+                }
+
+                if (reconnectAt != NO_CANCEL_ID)
+                {
+                    signaler.cancel(reconnectAt);
                 }
 
                 this.reconnectAt = signaler.signalAt(
@@ -682,6 +700,8 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             int signalId)
         {
             assert signalId == SIGNAL_RECONNECT;
+
+            this.reconnectAt = NO_CANCEL_ID;
 
             final long traceId = supplyTraceId.getAsLong();
 

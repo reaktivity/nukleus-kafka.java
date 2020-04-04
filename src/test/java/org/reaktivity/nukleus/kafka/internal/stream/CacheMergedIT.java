@@ -20,7 +20,6 @@ import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SEGMENT_BYTES;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SEGMENT_INDEX_BYTES;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_BOOTSTRAP;
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_RECONNECT_DELAY;
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
@@ -52,11 +51,10 @@ public class CacheMergedIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(16384)
         .configure(REAKTOR_BUFFER_SLOT_CAPACITY, 8192)
-        .configure(ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE, false)
         .configure(KAFKA_CACHE_SERVER_BOOTSTRAP, false)
-        .configure(KAFKA_CACHE_SERVER_RECONNECT_DELAY, 0)
         .configure(KAFKA_CACHE_SEGMENT_BYTES, 1 * 1024 * 1024)
         .configure(KAFKA_CACHE_SEGMENT_INDEX_BYTES, 256 * 1024)
+        .configure(ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE, false)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 
@@ -173,6 +171,17 @@ public class CacheMergedIT
         k3po.awaitBarrier("CHANGING_PARTITION_LEADER");
         Thread.sleep(200);
         k3po.notifyBarrier("CHANGED_PARTITION_LEADER");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
+        "${client}/merged.partition.leader.aborted/client",
+        "${server}/unmerged.partition.leader.aborted/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldRequestMergedPartitionLeaderAborted() throws Exception
+    {
         k3po.finish();
     }
 

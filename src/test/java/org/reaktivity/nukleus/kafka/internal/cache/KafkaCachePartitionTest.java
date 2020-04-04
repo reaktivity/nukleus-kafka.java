@@ -21,6 +21,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertSame;
+import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
 
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
@@ -32,7 +33,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.Node;
-import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
+import org.reaktivity.nukleus.kafka.internal.types.Array32FW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
@@ -193,35 +194,38 @@ public class KafkaCachePartitionTest
         public void shouldCleanSegment() throws Exception
         {
             Path location = tempFolder.newFolder().toPath();
-            KafkaCacheTopicConfig config = new KafkaCacheTopicConfig(new KafkaConfiguration());
+            KafkaConfiguration config = new KafkaConfiguration();
+            KafkaCacheTopicConfig topic = new KafkaCacheTopicConfig(config);
 
-            MutableDirectBuffer writeBuffer = new UnsafeBuffer(ByteBuffer.allocate(1024));
+            int slotCapacity = REAKTOR_BUFFER_SLOT_CAPACITY.get(config);
+            MutableDirectBuffer writeBuffer = new UnsafeBuffer(ByteBuffer.allocate(slotCapacity * 2));
 
             KafkaKeyFW key = new KafkaKeyFW.Builder().wrap(writeBuffer, 0, writeBuffer.capacity())
                 .length(4)
                 .value(k -> k.set("test".getBytes(UTF_8)))
                 .build();
 
-            ArrayFW<KafkaHeaderFW> headers = new ArrayFW.Builder<>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+            Array32FW<KafkaHeaderFW> headers = new Array32FW.Builder<>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
                     .wrap(writeBuffer, key.limit(), writeBuffer.capacity())
                     .item(h -> h.nameLen(6).name(n -> n.set("header".getBytes(UTF_8)))
                                 .valueLen(5).value(v -> v.set("value".getBytes(UTF_8))))
                     .build();
 
             OctetsFW value = new OctetsFW.Builder()
-                    .wrap(writeBuffer, headers.limit(), 0)
+                    .wrap(writeBuffer, headers.limit(), writeBuffer.capacity())
+                    .set(new byte[slotCapacity + 1])
                     .build();
 
             KafkaCacheEntryFW ancestorRO = new KafkaCacheEntryFW();
 
-            KafkaCachePartition partition = new KafkaCachePartition(location, config, "cache", "test", 0, 65536, long[]::new);
+            KafkaCachePartition partition = new KafkaCachePartition(location, topic, "cache", "test", 0, 65536, long[]::new);
             Node head10 = partition.append(10L);
             KafkaCacheSegment head10s = head10.segment();
 
             partition.writeEntry(11L, 0L, key, headers, value, null, KafkaDeltaType.NONE);
 
             long keyHash = partition.computeKeyHash(key);
-            KafkaCacheEntryFW ancestor = head10.findAndMarkAncestor(key, keyHash, ancestorRO);
+            KafkaCacheEntryFW ancestor = head10.findAndMarkAncestor(key, keyHash, 11L, ancestorRO);
 
             partition.writeEntry(12L, 0L, key, headers, value, ancestor, KafkaDeltaType.NONE);
 
@@ -256,7 +260,7 @@ public class KafkaCachePartitionTest
                 .value(k -> k.set("test".getBytes(UTF_8)))
                 .build();
 
-            ArrayFW<KafkaHeaderFW> headers = new ArrayFW.Builder<>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
+            Array32FW<KafkaHeaderFW> headers = new Array32FW.Builder<>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
                     .wrap(writeBuffer, key.limit(), writeBuffer.capacity())
                     .build();
 
@@ -272,7 +276,7 @@ public class KafkaCachePartitionTest
             partition.writeEntry(11L, 0L, key, headers, value, null, KafkaDeltaType.NONE);
 
             long keyHash = partition.computeKeyHash(key);
-            KafkaCacheEntryFW ancestor = head10.findAndMarkAncestor(key, keyHash, ancestorRO);
+            KafkaCacheEntryFW ancestor = head10.findAndMarkAncestor(key, keyHash, 11L, ancestorRO);
 
             partition.writeEntry(12L, 0L, key, headers, value, ancestor, KafkaDeltaType.NONE);
 

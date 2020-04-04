@@ -20,6 +20,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorRetryValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.LATEST;
 
@@ -82,13 +83,13 @@ import org.reaktivity.nukleus.stream.StreamFactory;
 
 public final class KafkaCacheServerFetchFactory implements StreamFactory
 {
+    static final int SIZE_OF_FLUSH_WITH_EXTENSION = 64;
+
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
     private static final DirectBuffer EMPTY_BUFFER = new UnsafeBuffer();
     private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(EMPTY_BUFFER, 0, 0);
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
-
-    private static final int SIZE_OF_FLUSH_WITH_EXTENSION = 64;
 
     private static final int FLAGS_INIT = 0x02;
     private static final int FLAGS_FIN = 0x01;
@@ -401,6 +402,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         private long compactId = NO_CANCEL_ID;
         private long compactAt = Long.MAX_VALUE;
         private long reconnectAt = NO_CANCEL_ID;
+        private int reconnectAttempt;
 
         private KafkaCacheServerFetchFanout(
             long routeId,
@@ -674,7 +676,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 }
 
                 final long keyHash = partition.computeKeyHash(key);
-                final KafkaCacheEntryFW ancestor = findAndMarkAncestor(key, nextHead, (int) keyHash);
+                final KafkaCacheEntryFW ancestor = findAndMarkAncestor(key, nextHead, (int) keyHash, partitionOffset);
                 partition.writeEntryStart(partitionOffset, timestamp, key, keyHash, valueLength, ancestor, deltaType);
             }
 
@@ -709,13 +711,14 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         private KafkaCacheEntryFW findAndMarkAncestor(
             KafkaKeyFW key,
             KafkaCachePartition.Node head,
-            int keyHash)
+            int keyHash,
+            long descendantOffset)
         {
             KafkaCacheEntryFW ancestorEntry = null;
             ancestor:
             if (key.length() != -1)
             {
-                ancestorEntry = head.findAndMarkAncestor(key, keyHash, ancestorEntryRO);
+                ancestorEntry = head.findAndMarkAncestor(key, keyHash, descendantOffset, ancestorEntryRO);
                 if (ancestorEntry != null)
                 {
                     if (partition.cleanupPolicy().compact())
@@ -746,7 +749,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                     final KafkaCacheIndexFile previousKeys = previousSegment.keysFile();
 
                     long keyCursor = previousKeys.last(keyHash);
-                    while (keyCursor != NEXT_SEGMENT && keyCursor != RETRY_SEGMENT)
+                    while (keyCursor != NEXT_SEGMENT && cursorValue(keyCursor) != cursorValue(RETRY_SEGMENT))
                     {
                         final int keyBaseOffsetDelta = cursorValue(keyCursor);
                         assert keyBaseOffsetDelta <= 0;
@@ -757,7 +760,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                             final KafkaCacheSegment segment = ancestorNode.segment();
                             final long ancestorBase = segment.baseOffset();
                             assert ancestorBase == keyBaseOffset : String.format("%d == %d", ancestorBase, keyBaseOffset);
-                            ancestorEntry = ancestorNode.findAndMarkAncestor(key, keyHash, ancestorEntryRO);
+                            ancestorEntry = ancestorNode.findAndMarkAncestor(key, keyHash, descendantOffset, ancestorEntryRO);
                             if (ancestorEntry != null)
                             {
                                 if (partition.cleanupPolicy().compact())
@@ -783,7 +786,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                         }
 
                         final long nextKeyCursor = previousKeys.lower(keyHash, keyCursor);
-                        if (nextKeyCursor == NEXT_SEGMENT || nextKeyCursor == RETRY_SEGMENT)
+                        if (nextKeyCursor == NEXT_SEGMENT || cursorRetryValue(nextKeyCursor))
                         {
                             break;
                         }
@@ -806,15 +809,20 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
             doServerFanoutInitialEndIfNecessary(traceId);
 
-            if (reconnectDelay != 0)
+            if (reconnectDelay != 0 && !members.isEmpty())
             {
                 if (KafkaConfiguration.DEBUG)
                 {
                     System.out.format("%s FETCH reconnect in %ds\n", partition, reconnectDelay);
                 }
 
+                if (reconnectAt != NO_CANCEL_ID)
+                {
+                    signaler.cancel(reconnectAt);
+                }
+
                 this.reconnectAt = signaler.signalAt(
-                    currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
+                    currentTimeMillis() + Math.min(50 << reconnectAttempt++, SECONDS.toMillis(reconnectDelay)),
                     SIGNAL_RECONNECT,
                     this::onServerFanoutSignal);
             }
@@ -838,15 +846,20 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
             doServerFanoutInitialAbortIfNecessary(traceId);
 
-            if (reconnectDelay != 0)
+            if (reconnectDelay != 0 && !members.isEmpty())
             {
                 if (KafkaConfiguration.DEBUG)
                 {
                     System.out.format("%s FETCH reconnect in %ds\n", partition, reconnectDelay);
                 }
 
+                if (reconnectAt != NO_CANCEL_ID)
+                {
+                    signaler.cancel(reconnectAt);
+                }
+
                 this.reconnectAt = signaler.signalAt(
-                    currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
+                    currentTimeMillis() + Math.min(50 << reconnectAttempt++, SECONDS.toMillis(reconnectDelay)),
                     SIGNAL_RECONNECT,
                     this::onServerFanoutSignal);
             }
@@ -871,11 +884,10 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
             doServerFanoutReplyResetIfNecessary(traceId);
 
-            // TODO: coordinate to maintain KafkaCachePartition single writer
             final KafkaResetExFW kafkaResetEx = extension.get(kafkaResetExRO::tryWrap);
             final int error = kafkaResetEx != null ? kafkaResetEx.error() : -1;
 
-            if (reconnectDelay != 0 &&
+            if (reconnectDelay != 0 && !members.isEmpty() &&
                 error != ERROR_NOT_LEADER_FOR_PARTITION)
             {
                 if (KafkaConfiguration.DEBUG)
@@ -883,8 +895,13 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                     System.out.format("%s FETCH reconnect in %ds, error %d\n", partition, reconnectDelay, error);
                 }
 
+                if (reconnectAt != NO_CANCEL_ID)
+                {
+                    signaler.cancel(reconnectAt);
+                }
+
                 this.reconnectAt = signaler.signalAt(
-                    currentTimeMillis() + SECONDS.toMillis(reconnectDelay),
+                    currentTimeMillis() + Math.min(50 << reconnectAttempt++, SECONDS.toMillis(reconnectDelay)),
                     SIGNAL_RECONNECT,
                     this::onServerFanoutSignal);
             }
@@ -904,6 +921,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         {
             if (!KafkaState.initialOpened(state))
             {
+                this.reconnectAttempt = 0;
+
                 final long traceId = window.traceId();
 
                 state = KafkaState.openedInitial(state);
@@ -916,6 +935,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             int signalId)
         {
             assert signalId == SIGNAL_RECONNECT;
+
+            this.reconnectAt = NO_CANCEL_ID;
 
             final long traceId = supplyTraceId.getAsLong();
 
