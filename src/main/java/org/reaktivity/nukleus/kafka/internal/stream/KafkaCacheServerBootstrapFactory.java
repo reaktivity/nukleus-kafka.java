@@ -1259,6 +1259,8 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
             doFetchReplyResetIfNecessary(traceId);
 
+            assert KafkaState.closed(state);
+
             bootstrap.onPartitionLeaderError(traceId, partitionId, error);
         }
 
@@ -1391,7 +1393,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         private void doFetchReplyResetIfNecessary(
             long traceId)
         {
-            if (KafkaState.replyOpening(state) && !KafkaState.replyClosed(state))
+            if (!KafkaState.replyClosed(state))
             {
                 doFetchReplyReset(traceId);
             }
