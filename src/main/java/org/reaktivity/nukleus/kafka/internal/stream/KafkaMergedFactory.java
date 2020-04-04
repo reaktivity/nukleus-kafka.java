@@ -1595,6 +1595,8 @@ public final class KafkaMergedFactory implements StreamFactory
 
             doFetchReplyResetIfNecessary(traceId);
 
+            assert KafkaState.closed(state);
+
             mergedFetch.onPartitionLeaderError(traceId, partitionId, error);
         }
 
