@@ -33,6 +33,55 @@ scope protocol
             int32 length;
         }
 
+        scope message
+        {
+            struct RecordSet
+            {
+                int32 length;
+            }
+
+            struct RecordBatch
+            {
+                int64 baseOffset;
+                int32 length;
+                int32 leaderEpoch;
+                int8  magic;
+                int32 crc;
+                int16 attributes;
+                int32 lastOffsetDelta;
+                int64 firstTimestamp;
+                int64 maxTimestamp;
+                int64 producerId;
+                int16 producerEpoch;
+                int32 baseSequence;
+                int32 recordCount;
+            }
+
+            struct RecordHeader
+            {
+                varint32 length;
+                int8   attributes;
+                varint32 timestampDelta;
+                varint32 offsetDelta;
+                varint32 keyLength;
+                octets[keyLength] key = null;
+                varint32 valueLength;
+            }
+
+            struct RecordTrailer
+            {
+                varint32 headerCount;
+            }
+
+            struct MessageHeader
+            {
+                varint32 keyLength;
+                octets[keyLength] key; // UTF-8 bytes
+                varint32 valueLength;
+                octets[valueLength] value = null;
+            }
+        }
+
         scope config
         {
             struct DescribeConfigsRequest
@@ -126,52 +175,6 @@ scope protocol
             {
                 int64 producerId;
                 int64 firstOffset;
-            }
-
-            struct RecordSet
-            {
-                int32 length;
-            }
-
-            struct RecordBatch
-            {
-                int64 firstOffset;
-                int32 length;
-                int32 leaderEpoch;
-                int8  magic;
-                int32 crc;
-                int16 attributes;
-                int32 lastOffsetDelta;
-                int64 firstTimestamp;
-                int64 maxTimestamp;
-                int64 producerId;
-                int16 producerEpoch;
-                int32 firstSequence;
-                int32 recordCount;
-            }
-
-            struct RecordHeader
-            {
-                varint32 length;
-                int8   attributes;
-                varint32 timestampDelta;
-                varint32 offsetDelta;
-                varint32 keyLength;
-                octets[keyLength] key = null;
-                varint32 valueLength;
-            }
-
-            struct RecordTrailer
-            {
-                varint32 headerCount;
-            }
-
-            struct MessageHeader
-            {
-                varint32 keyLength;
-                octets[keyLength] key; // UTF-8 bytes
-                varint32 valueLength;
-                octets[valueLength] value;
             }
         }
 
@@ -274,6 +277,61 @@ scope protocol
                 int32[inSyncReplicasCount] inSyncReplicas = null;
                 int32 offlineReplicasCount;
                 int32[offlineReplicasCount] offlineReplicas = null;
+            }
+        }
+
+        scope produce
+        {
+            enum ProduceAck (uint16)
+            {
+                NONE(0),
+                LEADER_ONLY(1),
+                IN_SYNC_REPLICAS(2)
+            }
+
+            struct ProduceRequest // v3
+            {
+                string16 transactionalId;
+                ProduceAck acks;
+                int32 timeout;
+                int32 topicCount;
+            }
+
+            struct ProduceTopicRequest
+            {
+                string16 topic;
+                int32 partitionCount;
+            }
+
+            struct ProducePartitionRequest
+            {
+                int32 partitionId;
+                int32 recordSetLength;
+            }
+
+            struct ProduceResponse // v3
+            {
+                int32 correlationId;
+                int32 topicCount;
+            }
+
+            struct ProduceTopicResponse
+            {
+                string16 topic;
+                int32 partitionCount;
+            }
+
+            struct ProducePartitionResponse
+            {
+                int32 partitionId;
+                int16 errorCode;
+                int64 baseOffset;
+                int64 logAppendTime;
+            }
+
+            struct ProduceResponseTrailer
+            {
+                int32 thottleTimeMillis;
             }
         }
     }
