@@ -1488,7 +1488,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
             int limit)
         {
             final int maxLength = limit - offset;
-            final int maxRequestLength = Math.max(maxLength, encodeableRequestBytes);
+            final int maxRequestLength = Math.min(maxLength, encodeableRequestBytes);
             final int length = Math.max(Math.min(initialBudget - initialPadding, maxRequestLength), 0);
 
             if (length > 0)

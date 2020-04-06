@@ -73,7 +73,6 @@ public class ClientProduceIT
         k3po.finish();
     }
 
-    @Ignore("not yet implemented")
     @Test
     @Specification({
         "${route}/client/controller",
@@ -85,7 +84,6 @@ public class ClientProduceIT
         k3po.finish();
     }
 
-    @Ignore("not yet implemented")
     @Test
     @Specification({
         "${route}/client/controller",
