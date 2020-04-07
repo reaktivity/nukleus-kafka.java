@@ -1076,7 +1076,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             this.replyId = supplyReplyId.applyAsLong(initialId);
             this.affinity = affinity;
             this.authorization = authorization;
-            this.partitionOffset = Math.min(partitionOffset, group.partitionOffset);
+            this.partitionOffset = partitionOffset;
         }
 
         private void onServerMessage(
