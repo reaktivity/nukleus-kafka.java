@@ -512,6 +512,9 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             if (KafkaState.replyOpening(state) && !KafkaState.replyClosed(state))
             {
                 doBootstrapReplyEnd(traceId);
+                describeStream.doDescribeReplyResetIfNecessary(traceId);
+                metaStream.doMetaReplyResetIfNecessary(traceId);
+                fetchStreams.forEach(f -> f.doFetchReplyResetIfNecessary(traceId));
             }
         }
 
@@ -521,6 +524,9 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             if (KafkaState.replyOpening(state) && !KafkaState.replyClosed(state))
             {
                 doBootstrapReplyAbort(traceId);
+                describeStream.doDescribeReplyResetIfNecessary(traceId);
+                metaStream.doMetaReplyResetIfNecessary(traceId);
+                fetchStreams.forEach(f -> f.doFetchReplyResetIfNecessary(traceId));
             }
         }
 
@@ -530,6 +536,9 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             if (KafkaState.initialOpening(state) && !KafkaState.initialClosed(state))
             {
                 doBootstrapInitialReset(traceId);
+                describeStream.doDescribeInitialAbortIfNecessary(traceId);
+                metaStream.doMetaInitialAbortIfNecessary(traceId);
+                fetchStreams.forEach(f -> f.doFetchInitialAbortIfNecessary(traceId));
             }
         }
 
@@ -538,10 +547,6 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         {
             doBootstrapInitialResetIfNecessary(traceId);
             doBootstrapReplyAbortIfNecessary(traceId);
-
-            describeStream.doBootstrapDescribeCleanup(traceId);
-            metaStream.doMetaCleanup(traceId);
-            fetchStreams.forEach(f -> f.doBootstrapFetchCleanup(traceId));
         }
 
         private void onTopicConfigChanged(
@@ -895,13 +900,6 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
             doReset(receiver, bootstrap.resolvedId, replyId, traceId, bootstrap.authorization);
         }
-
-        private void doBootstrapDescribeCleanup(
-            long traceId)
-        {
-            doDescribeInitialAbortIfNecessary(traceId);
-            doDescribeReplyResetIfNecessary(traceId);
-        }
     }
 
     private final class KafkaBootstrapMetaStream
@@ -1135,13 +1133,6 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             state = KafkaState.closedReply(state);
 
             doReset(receiver, bootstrap.resolvedId, replyId, traceId, bootstrap.authorization);
-        }
-
-        private void doMetaCleanup(
-            long traceId)
-        {
-            doMetaInitialAbortIfNecessary(traceId);
-            doMetaReplyResetIfNecessary(traceId);
         }
     }
 
@@ -1405,13 +1396,6 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             state = KafkaState.closedReply(state);
 
             doReset(receiver, bootstrap.resolvedId, replyId, traceId, bootstrap.authorization);
-        }
-
-        private void doBootstrapFetchCleanup(
-            long traceId)
-        {
-            doFetchInitialAbortIfNecessary(traceId);
-            doFetchReplyResetIfNecessary(traceId);
         }
     }
 }
