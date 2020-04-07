@@ -589,7 +589,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             state = KafkaState.openedReply(state);
 
             assert partitionId == this.partition.id();
-            assert partitionOffset >= 0;
+            assert partitionOffset >= 0 && partitionOffset >= this.partitionOffset;
             this.partitionOffset = partitionOffset;
 
             members.forEach(s -> s.doClientReplyBeginIfNecessary(traceId));
