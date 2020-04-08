@@ -80,6 +80,11 @@ public final class KafkaClientFactory implements StreamFactory
                 supplyInitialId, supplyReplyId, supplyTraceId,
                 supplyTypeId, accountant::supplyDebitor, correlations, supplyClientRoute);
 
+        final KafkaClientProduceFactory clientProduceFactory = new KafkaClientProduceFactory(
+                config, router, signaler, writeBuffer, bufferPool,
+                supplyInitialId, supplyReplyId, supplyTraceId,
+                supplyTypeId, correlations, supplyClientRoute);
+
         final KafkaMergedFactory clientMergedFactory = new KafkaMergedFactory(
                 config, router, writeBuffer, supplyInitialId, supplyReplyId, supplyTraceId,
                 supplyTypeId, correlations, accountant.creditor());
@@ -88,6 +93,7 @@ public final class KafkaClientFactory implements StreamFactory
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_META, clientMetaFactory);
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_DESCRIBE, clientDescribeFactory);
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_FETCH, clientFetchFactory);
+        streamFactoriesByKind.put(KafkaBeginExFW.KIND_PRODUCE, clientProduceFactory);
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_MERGED, clientMergedFactory);
 
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);

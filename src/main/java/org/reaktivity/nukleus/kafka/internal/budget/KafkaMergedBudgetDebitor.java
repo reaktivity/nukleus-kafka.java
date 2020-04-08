@@ -60,9 +60,9 @@ final class KafkaMergedBudgetDebitor implements BudgetDebitor
         int maximum)
     {
         final KafkaMergedBudget mergedBudget = budgetsByMergedId.get(mergedBudgetId);
-        assert mergedBudget != null;
 
-        return mergedBudget.claim(watcherId, minimum, maximum);
+        // creditor may cleanup before debitor
+        return mergedBudget != null ? mergedBudget.claim(watcherId, minimum, maximum) : 0;
     }
 
     @Override

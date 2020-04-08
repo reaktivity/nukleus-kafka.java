@@ -52,16 +52,16 @@ import org.reaktivity.nukleus.kafka.internal.types.codec.RequestHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.ResponseHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.FetchRequestFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.FetchResponseFW;
-import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.MessageHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.PartitionRequestFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.PartitionResponseFW;
-import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordBatchFW;
-import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordHeaderFW;
-import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordSetFW;
-import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.RecordTrailerFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TopicRequestFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TopicResponseFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.fetch.TransactionResponseFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.message.MessageHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.message.RecordBatchFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.message.RecordHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.message.RecordSetFW;
+import org.reaktivity.nukleus.kafka.internal.types.codec.message.RecordTrailerFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.offsets.OffsetsPartitionRequestFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.offsets.OffsetsPartitionResponseFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.offsets.OffsetsRequestFW;
@@ -988,7 +988,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 progress += recordSetProgress;
 
                 client.decodableRecordBatchBytes = recordBatch.length();
-                client.decodeRecordBatchOffset = recordBatch.firstOffset();
+                client.decodeRecordBatchOffset = recordBatch.baseOffset();
                 client.decodeRecordBatchTimestamp = recordBatch.firstTimestamp();
                 client.decodableRecords = recordBatch.recordCount();
 
