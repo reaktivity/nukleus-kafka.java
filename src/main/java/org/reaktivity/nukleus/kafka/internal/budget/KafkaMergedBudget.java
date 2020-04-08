@@ -150,6 +150,14 @@ final class KafkaMergedBudget
         {
             assert watchers.isEmpty();
 
+            release();
+        }
+    }
+
+    void release()
+    {
+        if (debitor != null && debitorIndex != NO_DEBITOR_INDEX)
+        {
             debitor.release(debitorIndex, mergedWatcherId);
             debitor = null;
             debitorIndex = NO_DEBITOR_INDEX;
