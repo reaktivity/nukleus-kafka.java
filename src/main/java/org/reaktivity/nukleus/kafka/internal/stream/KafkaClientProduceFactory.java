@@ -20,6 +20,7 @@ import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.kafka.internal.types.codec.RequestHeaderFW.FIELD_OFFSET_API_KEY;
 import static org.reaktivity.nukleus.kafka.internal.types.codec.message.RecordBatchFW.FIELD_OFFSET_LENGTH;
 import static org.reaktivity.nukleus.kafka.internal.types.codec.message.RecordBatchFW.FIELD_OFFSET_RECORD_COUNT;
+import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 
 import java.nio.ByteBuffer;
 import java.util.function.Consumer;
@@ -257,7 +258,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
                 final RouteFW route = wrapRoute.apply(t, b, i, l);
                 final KafkaRouteExFW routeEx = route.extension().get(kafkaRouteExRO::tryWrap);
                 final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
-                final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : KafkaDeltaType.NONE;
+                final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : DEFAULT_DELTA_TYPE;
                 return !route.localAddress().equals(route.remoteAddress()) &&
                         (beginTopic != null && (routeTopic == null || routeTopic.equals(beginTopic))) &&
                         routeDeltaType == KafkaDeltaType.NONE;

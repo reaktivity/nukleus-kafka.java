@@ -19,6 +19,7 @@ import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.kafka.internal.types.codec.offsets.IsolationLevel.READ_UNCOMMITTED;
+import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 
 import java.util.function.Consumer;
 import java.util.function.LongFunction;
@@ -292,7 +293,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 final RouteFW route = wrapRoute.apply(t, b, i, l);
                 final KafkaRouteExFW routeEx = route.extension().get(kafkaRouteExRO::tryWrap);
                 final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
-                final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : KafkaDeltaType.NONE;
+                final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : DEFAULT_DELTA_TYPE;
                 return !route.localAddress().equals(route.remoteAddress()) &&
                         (beginTopic != null && (routeTopic == null || routeTopic.equals(beginTopic))) &&
                         routeDeltaType == KafkaDeltaType.NONE;
@@ -1706,8 +1707,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                                                         .typeId(kafkaTypeId)
                                                         .fetch(m -> m.topic(topic)
                                                                      .partition(p -> p.partitionId(partitionId)
-                                                                                      .partitionOffset(partitionOffset))
-                                                                     .deltaType(t -> t.set(KafkaDeltaType.NONE)))
+                                                                                      .partitionOffset(partitionOffset)))
                                                         .build()
                                                         .sizeof()));
         }
@@ -2531,7 +2531,6 @@ public final class KafkaClientFetchFactory implements StreamFactory
                             f.timestamp(timestamp);
                             f.partition(p -> p.partitionId(decodePartitionId).partitionOffset(offset));
                             f.key(k -> setKey(k, key));
-                            f.delta(d -> d.type(t -> t.set(KafkaDeltaType.NONE)));
                             final int headersLimit = headers.capacity();
                             int headerProgress = 0;
                             for (int headerIndex = 0; headerIndex < headerCount; headerIndex++)
@@ -2563,8 +2562,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                                      .headersSizeMax(headersSizeMax)
                                      .partition(p -> p.partitionId(decodePartitionId)
                                                       .partitionOffset(offset))
-                                     .key(k -> setKey(k, key))
-                                     .delta(d -> d.type(t -> t.set(KafkaDeltaType.NONE))))
+                                     .key(k -> setKey(k, key)))
                         .build();
 
                 doApplicationData(traceId, authorization, FLAG_INIT, reserved, valueInit, kafkaDataEx);
@@ -2593,7 +2591,6 @@ public final class KafkaClientFetchFactory implements StreamFactory
                         .fetch(f ->
                         {
                             f.partition(p -> p.partitionId(decodePartitionId).partitionOffset(offset));
-                            f.delta(d -> d.type(t -> t.set(KafkaDeltaType.NONE)));
                             final int headersLimit = headers.capacity();
                             int headerProgress = 0;
                             for (int headerIndex = 0; headerIndex < headerCount; headerIndex++)

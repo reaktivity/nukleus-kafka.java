@@ -35,7 +35,6 @@ import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaConfigFW;
-import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaPartitionFW;
@@ -1197,8 +1196,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(bootstrap.topic)
-                                     .partition(p -> p.partitionId(partitionId).partitionOffset(OFFSET_EARLIEST))
-                                     .deltaType(t -> t.set(KafkaDeltaType.NONE)))
+                                     .partition(p -> p.partitionId(partitionId).partitionOffset(OFFSET_EARLIEST)))
                         .build()
                         .sizeof()));
         }
