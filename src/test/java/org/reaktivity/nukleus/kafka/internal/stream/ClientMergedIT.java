@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CLIENT_META_MAX_AGE_MILLIS;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CLIENT_PRODUCE_MAX_BYTES;
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
@@ -30,7 +31,6 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
-import org.reaktivity.reaktor.ReaktorConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
 public class ClientMergedIT
@@ -49,8 +49,8 @@ public class ClientMergedIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(8192)
         .configure(REAKTOR_BUFFER_SLOT_CAPACITY, 8192)
-        .configure(ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE, false)
         .configure(KAFKA_CLIENT_META_MAX_AGE_MILLIS, 1000)
+        .configure(KAFKA_CLIENT_PRODUCE_MAX_BYTES, 16)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 
@@ -147,6 +147,17 @@ public class ClientMergedIT
         "${server}/unmerged.fetch.message.values/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldFetchMergedMessageValues() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client.merged/controller",
+        "${client}/merged.produce.message.values/client",
+        "${server}/unmerged.produce.message.values/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldProduceMergedMessageValues() throws Exception
     {
         k3po.finish();
     }
