@@ -995,6 +995,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 describeStream.doDescribeReplyResetIfNecessary(traceId);
                 metaStream.doMetaReplyResetIfNecessary(traceId);
                 fetchStreams.forEach(f -> f.doFetchReplyResetIfNecessary(traceId));
+                produceStreams.forEach(f -> f.doProduceReplyResetIfNecessary(traceId));
             }
         }
 
@@ -1007,6 +1008,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 describeStream.doDescribeReplyResetIfNecessary(traceId);
                 metaStream.doMetaReplyResetIfNecessary(traceId);
                 fetchStreams.forEach(f -> f.doFetchReplyResetIfNecessary(traceId));
+                produceStreams.forEach(f -> f.doProduceReplyResetIfNecessary(traceId));
             }
         }
 
@@ -1019,6 +1021,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 describeStream.doDescribeInitialAbortIfNecessary(traceId);
                 metaStream.doMetaInitialAbortIfNecessary(traceId);
                 fetchStreams.forEach(f -> f.doFetchInitialAbortIfNecessary(traceId));
+                produceStreams.forEach(f -> f.doProduceInitialAbortIfNecessary(traceId));
             }
         }
 
