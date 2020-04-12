@@ -1006,6 +1006,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
             private int decodeableBrokers;
             private int decodeableTopics;
             private int decodeablePartitions;
+            private Int2IntHashMap partitions;
 
             KafkaMetaClient(
                 long routeId,
@@ -1017,6 +1018,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
                 this.network = router.supplyReceiver(initialId);
                 this.decoder = decodeResponse;
                 this.topic = requireNonNull(topic);
+                this.partitions = new Int2IntHashMap(-1);
                 this.newBrokers = new Long2ObjectHashMap<>();
                 this.newPartitions = new Int2IntHashMap(-1);
             }
@@ -1497,7 +1499,13 @@ public final class KafkaClientMetaFactory implements StreamFactory
                 doApplicationBeginIfNecessary(traceId, authorization, topic);
 
                 // TODO: share partitions across elektrons
-                final Int2IntHashMap partitions = clientRoute.partitions;
+                final Int2IntHashMap sharedPartitions = clientRoute.partitions;
+                if (!sharedPartitions.equals(newPartitions))
+                {
+                    sharedPartitions.clear();
+                    newPartitions.forEach(sharedPartitions::put);
+                }
+
                 if (!partitions.equals(newPartitions))
                 {
                     partitions.clear();

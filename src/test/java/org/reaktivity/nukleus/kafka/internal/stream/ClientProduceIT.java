@@ -297,4 +297,15 @@ public class ClientProduceIT
     {
         k3po.finish();
     }
+
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/message.value.repeated/client",
+        "${server}/message.value.repeated/server"})
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    public void shouldSendMessageValueRepeated() throws Exception
+    {
+        k3po.finish();
+    }
 }

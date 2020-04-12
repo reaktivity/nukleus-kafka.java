@@ -59,7 +59,7 @@ public class CacheBootstrapIT
     @Test
     @Specification({
         "${route}/cache.bootstrap/controller",
-        "${server}/unmerged.message.values/server"})
+        "${server}/unmerged.fetch.message.values/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveMergedMessageValues() throws Exception
     {
