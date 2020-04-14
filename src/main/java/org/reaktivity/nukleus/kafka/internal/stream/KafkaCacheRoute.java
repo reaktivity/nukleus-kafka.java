@@ -19,9 +19,11 @@ import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheClientDescribeFactory.KafkaCacheClientDescribeFanout;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheClientFetchFactory.KafkaCacheClientFetchFanout;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheClientProduceFactory.KafkaCacheClientProduceFanout;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheMetaFactory.KafkaCacheMetaFanout;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheServerDescribeFactory.KafkaCacheServerDescribeFanout;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheServerFetchFactory.KafkaCacheServerFetchFanout;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheServerProduceFactory.KafkaCacheServerProduceFanout;
 
 public final class KafkaCacheRoute
 {
@@ -31,6 +33,8 @@ public final class KafkaCacheRoute
     public final Int2ObjectHashMap<KafkaCacheMetaFanout> metaFanoutsByTopic;
     public final Long2ObjectHashMap<KafkaCacheClientFetchFanout> clientFetchFanoutsByTopicPartition;
     public final Long2ObjectHashMap<KafkaCacheServerFetchFanout> serverFetchFanoutsByTopicPartition;
+    public final Long2ObjectHashMap<KafkaCacheClientProduceFanout> clientProduceFanoutsByTopicPartition;
+    public final Long2ObjectHashMap<KafkaCacheServerProduceFanout> serverProduceFanoutsByTopicPartition;
 
     public KafkaCacheRoute(
         long routeId)
@@ -41,6 +45,8 @@ public final class KafkaCacheRoute
         this.metaFanoutsByTopic = new Int2ObjectHashMap<>();
         this.clientFetchFanoutsByTopicPartition = new Long2ObjectHashMap<>();
         this.serverFetchFanoutsByTopicPartition = new Long2ObjectHashMap<>();
+        this.clientProduceFanoutsByTopicPartition = new Long2ObjectHashMap<>();
+        this.serverProduceFanoutsByTopicPartition = new Long2ObjectHashMap<>();
     }
 
     public int topicKey(

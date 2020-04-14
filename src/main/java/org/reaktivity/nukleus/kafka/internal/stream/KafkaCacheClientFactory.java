@@ -82,6 +82,10 @@ public final class KafkaCacheClientFactory implements StreamFactory
                 config, router, writeBuffer, bufferPool, signaler, supplyInitialId, supplyReplyId, supplyTraceId,
                 supplyTypeId, accountant::supplyDebitor, supplyCache, supplyCacheRoute, correlations);
 
+        final KafkaCacheClientProduceFactory cacheProduceFactory = new KafkaCacheClientProduceFactory(
+                config, router, writeBuffer, supplyInitialId, supplyReplyId, supplyTraceId,
+                supplyTypeId, supplyCache, supplyCacheRoute, correlations);
+
         final KafkaMergedFactory cacheMergedFactory = new KafkaMergedFactory(
                 config, router, writeBuffer, supplyInitialId, supplyReplyId, supplyTraceId, supplyTypeId,
                 correlations, accountant.creditor());
@@ -90,6 +94,7 @@ public final class KafkaCacheClientFactory implements StreamFactory
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_META, cacheMetaFactory);
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_DESCRIBE, cacheDescribeFactory);
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_FETCH, cacheFetchFactory);
+        streamFactoriesByKind.put(KafkaBeginExFW.KIND_PRODUCE, cacheProduceFactory);
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_MERGED, cacheMergedFactory);
 
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);

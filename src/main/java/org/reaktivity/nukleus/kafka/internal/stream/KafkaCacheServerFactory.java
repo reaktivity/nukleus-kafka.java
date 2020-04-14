@@ -82,6 +82,10 @@ public final class KafkaCacheServerFactory implements StreamFactory
                 config, router, writeBuffer, bufferPool, signaler, supplyInitialId, supplyReplyId,
                 supplyTraceId, supplyTypeId, supplyCache, supplyCacheRoute, correlations));
 
+        streamFactoriesByKind.put(KafkaBeginExFW.KIND_PRODUCE, new KafkaCacheServerProduceFactory(
+                config, router, writeBuffer, signaler, supplyInitialId, supplyReplyId,
+                supplyTraceId, supplyTypeId, supplyCache, supplyCacheRoute, correlations));
+
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.correlations = correlations;
         this.streamFactoriesByKind = streamFactoriesByKind;
