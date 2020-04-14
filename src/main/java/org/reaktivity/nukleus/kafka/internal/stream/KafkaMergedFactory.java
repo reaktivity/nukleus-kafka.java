@@ -96,11 +96,14 @@ public final class KafkaMergedFactory implements StreamFactory
     private static final String16FW CONFIG_NAME_MIN_CLEANABLE_DIRTY_RATIO = new String16FW("min.cleanable.dirty.ratio");
 
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
+    private static final int ERROR_UNKNOWN = -1;
 
     private static final int FLAGS_NONE = 0x00;
     private static final int FLAGS_FIN = 0x01;
     private static final int FLAGS_INIT = 0x02;
     private static final int FLAGS_INIT_AND_FIN = FLAGS_INIT | FLAGS_FIN;
+
+    private static final int DYNAMIC_PARTITION = -1;
 
     private static final DirectBuffer EMPTY_BUFFER = new UnsafeBuffer();
     private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(EMPTY_BUFFER, 0, 0);
@@ -341,6 +344,56 @@ public final class KafkaMergedFactory implements StreamFactory
         final MutableDirectBuffer copy = new UnsafeBuffer(new byte[length]);
         copy.putBytes(0, buffer, index, length);
         return copy;
+    }
+
+    private static int defaultKeyHash(
+        KafkaKeyFW key)
+    {
+        final DirectBuffer buffer = key.buffer();
+        final int offset = key.offset();
+        final int limit = key.limit();
+
+        final int length = limit - offset;
+        final int seed = 0x9747b28c;
+
+        final int m = 0x5bd1e995;
+        final int r = 24;
+
+        int h = seed ^ length;
+        int length4 = length >> 2;
+        for (int i = 0; i < length4; i++)
+        {
+            final int i4 = offset + i * 4;
+            int k = (buffer.getByte(i4 + 0) & 0xff) +
+                    ((buffer.getByte(i4 + 1) & 0xff) << 8) +
+                    ((buffer.getByte(i4 + 2) & 0xff) << 16) +
+                    ((buffer.getByte(i4 + 3) & 0xff) << 24);
+            k *= m;
+            k ^= k >>> r;
+            k *= m;
+            h *= m;
+            h ^= k;
+        }
+
+        final int remaining = length - 4 * length4;
+        if (remaining == 3)
+        {
+            h ^= (buffer.getByte(offset + (length & ~3) + 2) & 0xff) << 16;
+        }
+        if (remaining >= 2)
+        {
+            h ^= (buffer.getByte(offset + (length & ~3) + 1) & 0xff) << 8;
+        }
+        if (remaining >= 1)
+        {
+            h ^= buffer.getByte(offset + (length & ~3)) & 0xff;
+            h *= m;
+        }
+
+        h ^= h >>> 13;
+        h *= m;
+        h ^= h >>> 15;
+        return h;
     }
 
     private static final class KafkaMergedFilter
@@ -601,6 +654,7 @@ public final class KafkaMergedFactory implements StreamFactory
         private int replyBudget;
         private int replyPadding;
 
+        private int nextNullKeyHash;
         private int fetchStreamIndex;
         private long mergedReplyBudgetId = NO_CREDITOR_INDEX;
 
@@ -726,10 +780,12 @@ public final class KafkaMergedFactory implements StreamFactory
                     assert kafkaDataEx != null;
                     assert kafkaDataEx.kind() == KafkaDataExFW.KIND_MERGED;
                     final KafkaMergedDataExFW kafkaMergedDataEx = kafkaDataEx.merged();
+                    final KafkaKeyFW key = kafkaMergedDataEx.key();
                     final KafkaOffsetFW partition = kafkaMergedDataEx.partition();
                     final int partitionId = partition.partitionId();
+                    final int nextPartitionId = partitionId == DYNAMIC_PARTITION ? nextPartition(key) : partitionId;
 
-                    final KafkaUnmergedProduceStream newProducer = findProducePartitionLeader(partitionId);
+                    final KafkaUnmergedProduceStream newProducer = findProducePartitionLeader(nextPartitionId);
                     assert newProducer != null; // TODO
                     this.producer = newProducer;
                 }
@@ -743,6 +799,16 @@ public final class KafkaMergedFactory implements StreamFactory
                     this.producer = null;
                 }
             }
+        }
+
+        private int nextPartition(
+            KafkaKeyFW key)
+        {
+            final int partitionCount = leadersByPartitionId.size();
+            final int keyHash = key.length() != -1 ? defaultKeyHash(key) : nextNullKeyHash++;
+            final int partitionId = partitionCount >= 0 ? (0x7fff_ffff & keyHash) % partitionCount : 0;
+
+            return partitionId;
         }
 
         private void onMergedInitialEnd(
@@ -2089,7 +2155,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 final Array32FW<KafkaHeaderFW> headers = kafkaMergedDataEx.headers();
 
                 final int partitionId = partition.partitionId();
-                assert partitionId == this.partitionId;
+                assert partitionId == DYNAMIC_PARTITION || partitionId == this.partitionId;
                 final int sequence = (int) partition.partitionOffset();
 
                 switch (flags)
@@ -2177,7 +2243,7 @@ public final class KafkaMergedFactory implements StreamFactory
             state = KafkaState.closedInitial(state);
 
             final KafkaResetExFW kafkaResetEx = extension.get(kafkaResetExRO::tryWrap);
-            final int error = kafkaResetEx != null ? kafkaResetEx.error() : -1;
+            final int error = kafkaResetEx != null ? kafkaResetEx.error() : ERROR_UNKNOWN;
 
             doProduceReplyResetIfNecessary(traceId);
 

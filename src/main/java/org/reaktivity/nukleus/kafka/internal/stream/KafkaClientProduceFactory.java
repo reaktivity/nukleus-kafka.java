@@ -50,7 +50,6 @@ import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
-import org.reaktivity.nukleus.kafka.internal.types.Varint32FW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.RequestHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.ResponseHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.message.RecordBatchFW;
@@ -89,6 +88,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
     private static final byte RECORD_BATCH_MAGIC = 2;
     private static final short RECORD_BATCH_ATTRIBUTES_NONE = 0;
+    private static final short RECORD_BATCH_ATTRIBUTES_NO_TIMESTAMP = 0x08;
     private static final int RECORD_BATCH_PRODUCER_ID_NONE = -1;
     private static final short RECORD_BATCH_PRODUCER_EPOCH_NONE = -1;
     private static final short RECORD_BATCH_SEQUENCE_NONE = -1;
@@ -142,7 +142,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
     private final ProduceTopicRequestFW.Builder topicRequestRW = new ProduceTopicRequestFW.Builder();
     private final ProducePartitionRequestFW.Builder partitionRequestRW = new ProducePartitionRequestFW.Builder();
     private final RecordBatchFW.Builder recordBatchRW = new RecordBatchFW.Builder();
-    private final Varint32FW.Builder recordLengthRW = new Varint32FW.Builder().wrap(new UnsafeBuffer(new byte[5]), 0, 5);
     private final RecordHeaderFW.Builder recordHeaderRW = new RecordHeaderFW.Builder();
     private final RecordTrailerFW.Builder recordTrailerRW = new RecordTrailerFW.Builder();
 
@@ -1399,7 +1398,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
             final ProduceRequestFW produceRequest = produceRequestRW.wrap(encodeBuffer, encodeProgress, encodeLimit)
                     .transactionalId(TRANSACTION_ID_NONE)
-                    .acks(a -> a.set(ProduceAck.NONE))
+                    .acks(a -> a.set(ProduceAck.IN_SYNC_REPLICAS))
                     .timeout(produceMaxWaitMillis)
                     .topicCount(1)
                     .build();
@@ -1427,13 +1426,17 @@ public final class KafkaClientProduceFactory implements StreamFactory
             final int crcOffset = encodeProgress - encodeOffset + RecordBatchFW.FIELD_OFFSET_CRC;
             final int crcLimit = encodeProgress - encodeOffset + RecordBatchFW.FIELD_OFFSET_ATTRIBUTES;
 
+            final short attributes = encodeableRecordBatchTimestampMax == 0L
+                    ? RECORD_BATCH_ATTRIBUTES_NO_TIMESTAMP
+                    : RECORD_BATCH_ATTRIBUTES_NONE;
+
             final RecordBatchFW recordBatch = recordBatchRW.wrap(encodeBuffer, encodeProgress, encodeLimit)
                     .baseOffset(0)
                     .length(recordBatchLength)
                     .leaderEpoch(-1)
                     .magic(RECORD_BATCH_MAGIC)
                     .crc(0)
-                    .attributes(RECORD_BATCH_ATTRIBUTES_NONE)
+                    .attributes(attributes)
                     .lastOffsetDelta(encodeableRecordCount - 1)
                     .firstTimestamp(encodeableRecordBatchTimestamp)
                     .maxTimestamp(encodeableRecordBatchTimestampMax)
@@ -1479,9 +1482,9 @@ public final class KafkaClientProduceFactory implements StreamFactory
             encodeSlotBuffer.putBytes(encodeSlotOffset, encodeBuffer, encodeOffset, encodeSizeOf);
 
             final ByteBuffer encodeSlotByteBuffer = encodePool.byteBuffer(encodeSlot);
-            encodeSlotByteBuffer.clear();
-            encodeSlotByteBuffer.position(encodeSlotOffset + crcLimit);
-            encodeSlotByteBuffer.limit(encodeSlotLimit);
+            final int encodeSlotBytePosition = encodeSlotByteBuffer.position();
+            encodeSlotByteBuffer.limit(encodeSlotBytePosition + encodeSlotLimit);
+            encodeSlotByteBuffer.position(encodeSlotBytePosition + encodeSlotOffset + crcLimit);
 
             crc32c.reset();
             crc32c.update(encodeSlotByteBuffer);
