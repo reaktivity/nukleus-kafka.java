@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CLIENT_META_MAX_AGE_MILLIS;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CLIENT_PRODUCE_MAX_BYTES;
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
@@ -30,14 +31,13 @@ import org.junit.rules.Timeout;
 import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
-import org.reaktivity.reaktor.ReaktorConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
 
 public class ClientMergedIT
 {
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
-            .addScriptRoot("server", "org/reaktivity/specification/kafka/unmerged.fetch.v5.metadata.v5")
+            .addScriptRoot("server", "org/reaktivity/specification/kafka/unmerged.p3.f5.d0.m5")
             .addScriptRoot("client", "org/reaktivity/specification/nukleus/kafka/streams/merged");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(10, SECONDS));
@@ -49,8 +49,8 @@ public class ClientMergedIT
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(8192)
         .configure(REAKTOR_BUFFER_SLOT_CAPACITY, 8192)
-        .configure(ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE, false)
         .configure(KAFKA_CLIENT_META_MAX_AGE_MILLIS, 1000)
+        .configure(KAFKA_CLIENT_PRODUCE_MAX_BYTES, 16)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 
@@ -61,10 +61,10 @@ public class ClientMergedIT
     @Test
     @Specification({
         "${route}/client.merged/controller",
-        "${client}/merged.filter.header/client",
-        "${server}/unmerged.filter.none/server"})
+        "${client}/merged.fetch.filter.header/client",
+        "${server}/unmerged.fetch.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
-    public void shouldReceiveMergedMessagesWithHeaderFilter() throws Exception
+    public void shouldFetchMergedMessagesWithHeaderFilter() throws Exception
     {
         k3po.finish();
     }
@@ -73,10 +73,10 @@ public class ClientMergedIT
     @Test
     @Specification({
         "${route}/client.merged/controller",
-        "${client}/merged.filter.header.and.header/client",
-        "${server}/unmerged.filter.none/server"})
+        "${client}/merged.fetch.filter.header.and.header/client",
+        "${server}/unmerged.fetch.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
-    public void shouldReceiveMergedMessagesWithHeaderAndHeaderFilter() throws Exception
+    public void shouldFetchMergedMessagesWithHeaderAndHeaderFilter() throws Exception
     {
         k3po.finish();
     }
@@ -85,10 +85,10 @@ public class ClientMergedIT
     @Test
     @Specification({
         "${route}/client.merged/controller",
-        "${client}/merged.filter.header.or.header/client",
-        "${server}/unmerged.filter.none/server"})
+        "${client}/merged.fetch.filter.header.or.header/client",
+        "${server}/unmerged.fetch.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
-    public void shouldReceiveMergedMessagesWithHeaderOrHeaderFilter() throws Exception
+    public void shouldFetchMergedMessagesWithHeaderOrHeaderFilter() throws Exception
     {
         k3po.finish();
     }
@@ -97,10 +97,10 @@ public class ClientMergedIT
     @Test
     @Specification({
         "${route}/client.merged/controller",
-        "${client}/merged.filter.key/client",
-        "${server}/unmerged.filter.none/server"})
+        "${client}/merged.fetch.filter.key/client",
+        "${server}/unmerged.fetch.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
-    public void shouldReceiveMergedMessagesWithKeyFilter() throws Exception
+    public void shouldFetchMergedMessagesWithKeyFilter() throws Exception
     {
         k3po.finish();
     }
@@ -109,10 +109,10 @@ public class ClientMergedIT
     @Test
     @Specification({
         "${route}/client.merged/controller",
-        "${client}/merged.filter.key.and.header/client",
-        "${server}/unmerged.filter.none/server"})
+        "${client}/merged.fetch.filter.key.and.header/client",
+        "${server}/unmerged.fetch.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
-    public void shouldReceiveMergedMessagesWithKeyAndHeaderFilter() throws Exception
+    public void shouldFetchMergedMessagesWithKeyAndHeaderFilter() throws Exception
     {
         k3po.finish();
     }
@@ -121,10 +121,10 @@ public class ClientMergedIT
     @Test
     @Specification({
         "${route}/client.merged/controller",
-        "${client}/merged.filter.key.or.header/client",
-        "${server}/unmerged.filter.none/server"})
+        "${client}/merged.fetch.filter.key.or.header/client",
+        "${server}/unmerged.fetch.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
-    public void shouldReceiveMergedMessagesWithKeyOrHeaderFilter() throws Exception
+    public void shouldFetchMergedMessagesWithKeyOrHeaderFilter() throws Exception
     {
         k3po.finish();
     }
@@ -132,10 +132,10 @@ public class ClientMergedIT
     @Test
     @Specification({
         "${route}/client.merged/controller",
-        "${client}/merged.filter.none/client",
-        "${server}/unmerged.filter.none/server"})
+        "${client}/merged.fetch.filter.none/client",
+        "${server}/unmerged.fetch.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
-    public void shouldReceiveMergedMessagesWithNoFilter() throws Exception
+    public void shouldFetchMergedMessagesWithNoFilter() throws Exception
     {
         k3po.finish();
     }
@@ -143,10 +143,21 @@ public class ClientMergedIT
     @Test
     @Specification({
         "${route}/client.merged/controller",
-        "${client}/merged.message.values/client",
-        "${server}/unmerged.message.values/server"})
+        "${client}/merged.fetch.message.values/client",
+        "${server}/unmerged.fetch.message.values/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
-    public void shouldReceiveMergedMessageValues() throws Exception
+    public void shouldFetchMergedMessageValues() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/client.merged/controller",
+        "${client}/merged.produce.message.values/client",
+        "${server}/unmerged.produce.message.values/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldProduceMergedMessageValues() throws Exception
     {
         k3po.finish();
     }

@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
+import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -194,7 +195,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final RouteFW route = wrapRoute.apply(t, b, i, l);
             final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
             final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
-            final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : KafkaDeltaType.NONE;
+            final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : DEFAULT_DELTA_TYPE;
             return !route.localAddress().equals(route.remoteAddress()) &&
                     (beginTopic != null && (routeTopic == null || routeTopic.equals(beginTopic))) &&
                     (routeDeltaType == deltaType || deltaType == KafkaDeltaType.NONE);
@@ -496,8 +497,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(partition.topic())
                                      .partition(p -> p.partitionId(partition.id())
-                                                      .partitionOffset(partitionOffset))
-                                     .deltaType(t -> t.set(KafkaDeltaType.NONE)))
+                                                      .partitionOffset(partitionOffset)))
                         .build()
                         .sizeof()));
             state = KafkaState.openingInitial(state);
