@@ -24,6 +24,7 @@ import java.util.function.ToIntFunction;
 
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
+import org.reaktivity.nukleus.budget.BudgetCreditor;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
@@ -47,8 +48,10 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
     private LongUnaryOperator supplyInitialId;
     private LongUnaryOperator supplyReplyId;
     private LongSupplier supplyTraceId;
+    private LongSupplier supplyBudgetId;
     private Supplier<BufferPool> supplyBufferPool;
     private ToIntFunction<String> supplyTypeId;
+    private BudgetCreditor creditor;
     private Signaler signaler;
 
     public KafkaCacheServerFactoryBuilder(
@@ -74,6 +77,14 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
         RouteManager router)
     {
         this.router = router;
+        return this;
+    }
+
+    @Override
+    public KafkaCacheServerFactoryBuilder setBudgetCreditor(
+        BudgetCreditor creditor)
+    {
+        this.creditor = creditor;
         return this;
     }
 
@@ -118,6 +129,14 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
     }
 
     @Override
+    public KafkaCacheServerFactoryBuilder setBudgetIdSupplier(
+        LongSupplier supplyBudgetId)
+    {
+        this.supplyBudgetId = supplyBudgetId;
+        return this;
+    }
+
+    @Override
     public StreamFactoryBuilder setTypeIdSupplier(
         ToIntFunction<String> supplyTypeId)
     {
@@ -143,10 +162,12 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
                 router,
                 writeBuffer,
                 bufferPool,
+                creditor,
                 signaler,
                 supplyInitialId,
                 supplyReplyId,
                 supplyTraceId,
+                supplyBudgetId,
                 supplyTypeId,
                 supplyCache,
                 supplyCacheRoute,
