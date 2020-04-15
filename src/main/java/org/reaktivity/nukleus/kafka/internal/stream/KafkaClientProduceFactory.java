@@ -1634,7 +1634,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
                                                              .typeId(kafkaTypeId)
                                                              .error(errorCode)
                                                              .build();
-                stream.cleanupApplication(traceId, resetEx);
+                stream.doApplicationResetIfNecessary(traceId, resetEx);
                 doNetworkEnd(traceId, authorization);
                 break;
             }
