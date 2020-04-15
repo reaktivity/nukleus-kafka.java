@@ -27,6 +27,7 @@ import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
+import org.reaktivity.nukleus.budget.BudgetCreditor;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
@@ -55,10 +56,12 @@ public final class KafkaCacheServerFactory implements StreamFactory
         RouteManager router,
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
+        BudgetCreditor creditor,
         Signaler signaler,
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTraceId,
+        LongSupplier supplyBudgetId,
         ToIntFunction<String> supplyTypeId,
         Function<String, KafkaCache> supplyCache,
         LongFunction<KafkaCacheRoute> supplyCacheRoute,
@@ -83,8 +86,8 @@ public final class KafkaCacheServerFactory implements StreamFactory
                 supplyTraceId, supplyTypeId, supplyCache, supplyCacheRoute, correlations));
 
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_PRODUCE, new KafkaCacheServerProduceFactory(
-                config, router, writeBuffer, signaler, supplyInitialId, supplyReplyId,
-                supplyTraceId, supplyTypeId, supplyCache, supplyCacheRoute, correlations));
+                config, router, writeBuffer, signaler, creditor, supplyInitialId, supplyReplyId,
+                supplyTraceId, supplyBudgetId, supplyTypeId, supplyCache, supplyCacheRoute, correlations));
 
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.correlations = correlations;

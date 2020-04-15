@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.lang.System.currentTimeMillis;
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
 import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
 
 import java.util.ArrayList;
@@ -32,12 +33,14 @@ import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.reaktivity.nukleus.budget.BudgetCreditor;
 import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessageFunction;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
+import org.reaktivity.nukleus.kafka.internal.budget.KafkaCacheServerBudget;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopic;
@@ -98,9 +101,11 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
     private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
     private final Signaler signaler;
+    private final BudgetCreditor creditor;
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
     private final LongSupplier supplyTraceId;
+    private final LongSupplier supplyBudgetId;
     private final Function<String, KafkaCache> supplyCache;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
@@ -111,9 +116,11 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         RouteManager router,
         MutableDirectBuffer writeBuffer,
         Signaler signaler,
+        BudgetCreditor creditor,
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTraceId,
+        LongSupplier supplyBudgetId,
         ToIntFunction<String> supplyTypeId,
         Function<String, KafkaCache> supplyCache,
         LongFunction<KafkaCacheRoute> supplyCacheRoute,
@@ -123,9 +130,11 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         this.router = router;
         this.writeBuffer = writeBuffer;
         this.signaler = signaler;
+        this.creditor = creditor;
         this.supplyInitialId = supplyInitialId;
         this.supplyReplyId = supplyReplyId;
         this.supplyTraceId = supplyTraceId;
+        this.supplyBudgetId = supplyBudgetId;
         this.supplyCache = supplyCache;
         this.supplyCacheRoute = supplyCacheRoute;
         this.correlations = correlations;
@@ -174,19 +183,27 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             final String topicName = beginTopic.asString();
             final long resolvedId = route.correlationId();
             final KafkaCacheRoute cacheRoute = supplyCacheRoute.apply(resolvedId);
+            final long topicKey = cacheRoute.topicKey(topicName);
             final long partitionKey = cacheRoute.topicPartitionKey(topicName, partitionId);
             KafkaCacheServerProduceFanout fanout = cacheRoute.serverProduceFanoutsByTopicPartition.get(partitionKey);
             if (fanout == null)
             {
+                KafkaCacheServerBudget budget = cacheRoute.serverBudgetsByTopic.get(topicKey);
+                if (budget == null)
+                {
+                    budget = new KafkaCacheServerBudget(creditor, supplyBudgetId.getAsLong());
+                    cacheRoute.serverBudgetsByTopic.put(topicKey, budget);
+                }
+
                 final String cacheName = route.localAddress().asString();
                 final KafkaCache cache = supplyCache.apply(cacheName);
                 final KafkaCacheTopic topic = cache.supplyTopic(topicName);
                 final KafkaCachePartition partition = topic.supplyPartition(partitionId);
                 final KafkaCacheServerProduceFanout newFanout = new KafkaCacheServerProduceFanout(resolvedId, authorization,
-                        affinity, partition);
+                        affinity, budget, partition);
 
-                // TODO: cache server fan-in across cores
-                // cacheRoute.serverProduceFanoutsByTopicPartition.put(partitionKey, newFanout);
+                // TODO: fragmented cache server fan-in across cores
+                cacheRoute.serverProduceFanoutsByTopicPartition.put(partitionKey, newFanout);
                 fanout = newFanout;
             }
 
@@ -343,6 +360,8 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
     {
         private final long routeId;
         private final long authorization;
+        private final long creditorId;
+        private final KafkaCacheServerBudget budget;
         private final KafkaCachePartition partition;
         private final List<KafkaCacheServerProduceStream> members;
 
@@ -353,9 +372,10 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
         private int state;
 
-        private long initialBudgetId;
         private int initialBudget;
         private int initialPadding;
+
+        private long creditorIndex = NO_CREDITOR_INDEX;
 
         private long reconnectAt = NO_CANCEL_ID;
         private int reconnectAttempt;
@@ -364,6 +384,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             long routeId,
             long authorization,
             long affinity,
+            KafkaCacheServerBudget budget,
             KafkaCachePartition partition)
         {
             this.routeId = routeId;
@@ -371,6 +392,8 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             this.partition = partition;
             this.members = new ArrayList<>();
             this.affinity = affinity;
+            this.creditorId = supplyBudgetId.getAsLong();
+            this.budget = budget;
         }
 
         private void onServerFanoutMemberOpening(
@@ -475,6 +498,8 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             initialBudget -= reserved;
             assert initialBudget >= 0;
 
+            budget.credit(traceId, creditorIndex, -reserved);
+
             doData(receiver, routeId, initialId, traceId, authorization, flags, budgetId, reserved, payload, extension);
         }
 
@@ -484,6 +509,8 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             doEnd(receiver, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
 
             state = KafkaState.closedInitial(state);
+
+            cleanupCreditorIfNecessary();
         }
 
         private void doServerFanoutInitialAbortIfNecessary(
@@ -501,6 +528,8 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             doAbort(receiver, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
 
             state = KafkaState.closedInitial(state);
+
+            cleanupCreditorIfNecessary();
         }
 
         private void onServerFanoutMessage(
@@ -670,6 +699,8 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                 }
 
                 members.forEach(s -> s.doServerInitialResetIfNecessary(traceId, extension));
+
+                cleanupCreditorIfNecessary();
             }
         }
 
@@ -681,7 +712,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             final int credit = window.credit();
             final int padding = window.padding();
 
-            initialBudgetId = budgetId;
+            assert budgetId == 0L;
             initialBudget += credit;
             initialPadding = padding;
 
@@ -690,7 +721,14 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                 this.reconnectAttempt = 0;
 
                 state = KafkaState.openedInitial(state);
+
+                if (creditorIndex == NO_CREDITOR_INDEX)
+                {
+                    creditorIndex = budget.acquire(creditorId);
+                }
             }
+
+            budget.credit(traceId, creditorIndex, credit);
 
             members.forEach(s -> s.doServerInitialWindowIfNecessary(traceId));
         }
@@ -733,6 +771,15 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             state = KafkaState.openedReply(state);
 
             doWindow(receiver, routeId, replyId, traceId, authorization, 0L, credit, 0);
+        }
+
+        private void cleanupCreditorIfNecessary()
+        {
+            if (creditorIndex != NO_CREDITOR_INDEX)
+            {
+                budget.release(creditorIndex);
+                creditorIndex = NO_CREDITOR_INDEX;
+            }
         }
     }
 
@@ -903,7 +950,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             initialBudget += credit;
 
             doWindow(sender, routeId, initialId, traceId, authorization,
-                    group.initialBudgetId, credit, group.initialPadding);
+                    group.budget.sharedBudgetId, credit, group.initialPadding);
         }
 
         private void doServerReplyBeginIfNecessary(
