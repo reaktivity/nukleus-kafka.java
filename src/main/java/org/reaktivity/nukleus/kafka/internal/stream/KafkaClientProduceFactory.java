@@ -736,7 +736,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
             final long authorization = begin.authorization();
 
             state = KafkaState.openingInitial(state);
-            doFlushApplicationWindow(traceId, encodeMaxBytes);
+            doApplicationWindowIfNecessary(traceId, encodeMaxBytes);
 
             client.doNetworkBegin(traceId, authorization, affinity);
         }
@@ -856,12 +856,16 @@ public final class KafkaClientProduceFactory implements StreamFactory
             doAbort(application, routeId, replyId, traceId, client.authorization, EMPTY_EXTENSION);
         }
 
-        private void doFlushApplicationWindow(
+        private void doApplicationWindowIfNecessary(
             long traceId,
             int initialBudgetMax)
         {
             final int credit = initialBudgetMax - initialBudget;
-            doApplicationWindow(traceId, 0L, credit, 0);
+
+            if (!KafkaState.initialOpened(state) || credit > 0)
+            {
+                doApplicationWindow(traceId, 0L, credit, 0);
+            }
         }
 
         private void doApplicationWindow(
@@ -870,15 +874,13 @@ public final class KafkaClientProduceFactory implements StreamFactory
             int credit,
             int padding)
         {
-            if (!KafkaState.initialOpened(state) || credit > 0)
-            {
-                doWindow(application, routeId, initialId, traceId, client.authorization,
-                        budgetId, credit, padding);
-            }
-
             state = KafkaState.openedInitial(state);
 
             initialBudget += credit;
+
+            doWindow(application, routeId, initialId, traceId, client.authorization,
+                    budgetId, credit, padding);
+
         }
 
         private void doApplicationReset(
@@ -959,9 +961,9 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
         private int nextRequestId;
         private int nextResponseId;
-        private int lastRequestSignalAt;
 
         private KafkaProduceClientDecoder decoder;
+        private int signaledRequestId;
 
         KafkaProduceClient(
             KafkaProduceStream stream,
@@ -980,7 +982,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
             this.clientRoute = supplyClientRoute.apply(routeId);
             this.encodeableRecordBatchTimestamp = TIMESTAMP_NONE;
             this.encodeableRecordBatchTimestampMax = TIMESTAMP_NONE;
-            this.lastRequestSignalAt = nextRequestId - 1;
         }
 
         private void onNetwork(
@@ -1366,7 +1367,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
         private void doSignalNextRequestIfNecessary(
             long traceId)
         {
-            if (lastRequestSignalAt < nextRequestId &&
+            if (signaledRequestId <= nextRequestId &&
                 nextRequestId == nextResponseId &&
                 encodeSlot != NO_SLOT)
             {
@@ -1378,7 +1379,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
                 {
                     signaler.signalAt(currentTimeMillis() + produceRequestMaxDelay, routeId, initialId, SIGNAL_NEXT_REQUEST);
                 }
-                lastRequestSignalAt = nextRequestId;
+                signaledRequestId = nextRequestId + 1;
             }
         }
 
@@ -1645,7 +1646,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
         {
             nextResponseId++;
 
-            stream.doFlushApplicationWindow(traceId, encodeMaxBytes - encodeSlotLimit);
+            stream.doApplicationWindowIfNecessary(traceId, encodeMaxBytes - encodeSlotLimit);
 
             if (encodeSlot != NO_SLOT)
             {

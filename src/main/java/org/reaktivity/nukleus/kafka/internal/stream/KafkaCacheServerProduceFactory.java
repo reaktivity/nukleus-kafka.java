@@ -61,6 +61,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
+import org.reaktivity.reaktor.ReaktorConfiguration;
 
 public final class KafkaCacheServerProduceFactory implements StreamFactory
 {
@@ -711,6 +712,12 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             final long budgetId = window.budgetId();
             final int credit = window.credit();
             final int padding = window.padding();
+
+            if (ReaktorConfiguration.DEBUG_BUDGETS)
+            {
+                System.out.format("[%d] [0x%016x] [0x%016x] cache server credit %d @ %d => %d\n",
+                        System.nanoTime(), traceId, budgetId, credit, initialBudget, initialBudget + credit);
+            }
 
             assert budgetId == 0L;
             initialBudget += credit;

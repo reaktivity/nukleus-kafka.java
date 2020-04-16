@@ -647,7 +647,6 @@ public final class KafkaMergedFactory implements StreamFactory
         private int state;
         private KafkaCapabilities capabilities;
 
-        private long initialBudgetId;
         private int initialBudget;
 
         private long replyBudgetId;
@@ -753,8 +752,6 @@ public final class KafkaMergedFactory implements StreamFactory
             final long budgetId = data.budgetId();
             final int reserved = data.reserved();
 
-            assert budgetId == initialBudgetId;
-
             initialBudget -= reserved;
 
             if (initialBudget < 0)
@@ -792,7 +789,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
                 assert producer != null;
 
-                producer.doProduceInitialData(traceId, reserved, flags, payload, extension);
+                producer.doProduceInitialData(traceId, reserved, flags, budgetId, payload, extension);
 
                 if ((flags & FLAGS_FIN) != FLAGS_NONE)
                 {
@@ -1006,7 +1003,8 @@ public final class KafkaMergedFactory implements StreamFactory
         }
 
         private void doMergedInitialWindowIfNecessary(
-            long traceId)
+            long traceId,
+            long budgetId)
         {
             int initialBudgetMin = 0;
             int initialPaddingMax = 0;
@@ -1026,12 +1024,13 @@ public final class KafkaMergedFactory implements StreamFactory
 
             if (!KafkaState.initialOpened(state) || credit > 0)
             {
-                doMergedInitialWindow(traceId, credit, initialPaddingMax);
+                doMergedInitialWindow(traceId, budgetId, credit, initialPaddingMax);
             }
         }
 
         private void doMergedInitialWindow(
             long traceId,
+            long budgetId,
             int credit,
             int padding)
         {
@@ -1040,7 +1039,7 @@ public final class KafkaMergedFactory implements StreamFactory
             initialBudget += credit;
 
             doWindow(sender, routeId, initialId, traceId, authorization,
-                    initialBudgetId, credit, padding);
+                    budgetId, credit, padding);
         }
 
         private void doMergedInitialReset(
@@ -1268,7 +1267,7 @@ public final class KafkaMergedFactory implements StreamFactory
             {
                 if (!KafkaState.initialOpened(state))
                 {
-                    doMergedInitialWindowIfNecessary(traceId);
+                    doMergedInitialWindowIfNecessary(traceId, 0L);
                 }
 
                 doMergedReplyBeginIfNecessary(traceId);
@@ -1523,7 +1522,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
                 state = KafkaState.openedInitial(state);
 
-                mergedFetch.doMergedInitialWindowIfNecessary(traceId);
+                mergedFetch.doMergedInitialWindowIfNecessary(traceId, 0L);
             }
         }
 
@@ -1756,7 +1755,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
                 state = KafkaState.openedInitial(state);
 
-                mergedFetch.doMergedInitialWindowIfNecessary(traceId);
+                mergedFetch.doMergedInitialWindowIfNecessary(traceId, 0L);
             }
         }
 
@@ -1916,7 +1915,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
                 state = KafkaState.openedInitial(state);
 
-                mergedFetch.doMergedInitialWindowIfNecessary(traceId);
+                mergedFetch.doMergedInitialWindowIfNecessary(traceId, 0L);
             }
         }
 
@@ -2067,7 +2066,7 @@ public final class KafkaMergedFactory implements StreamFactory
     private final class KafkaUnmergedProduceStream
     {
         private final int partitionId;
-        private final KafkaMergedStream mergedFetch;
+        private final KafkaMergedStream merged;
 
         private int leaderId;
 
@@ -2086,11 +2085,11 @@ public final class KafkaMergedFactory implements StreamFactory
         private KafkaUnmergedProduceStream(
             int partitionId,
             int leaderId,
-            KafkaMergedStream mergedFetch)
+            KafkaMergedStream merged)
         {
             this.partitionId = partitionId;
             this.leaderId = leaderId;
-            this.mergedFetch = mergedFetch;
+            this.merged = merged;
         }
 
         private void doProduceInitialBeginIfNecessary(
@@ -2114,17 +2113,17 @@ public final class KafkaMergedFactory implements StreamFactory
 
             state = KafkaState.openingInitial(state);
 
-            this.initialId = supplyInitialId.applyAsLong(mergedFetch.resolvedId);
+            this.initialId = supplyInitialId.applyAsLong(merged.resolvedId);
             this.replyId = supplyReplyId.applyAsLong(initialId);
             this.receiver = router.supplyReceiver(initialId);
 
             correlations.put(replyId, this::onProduceReply);
             router.setThrottle(initialId, this::onProduceReply);
-            doBegin(receiver, mergedFetch.resolvedId, initialId, traceId, mergedFetch.authorization, leaderId,
+            doBegin(receiver, merged.resolvedId, initialId, traceId, merged.authorization, leaderId,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .produce(p -> p.transaction((String) null) // TODO: default in kafka.idl
-                                       .topic(mergedFetch.topic)
+                                       .topic(merged.topic)
                                        .partitionId(partitionId))
                         .build()
                         .sizeof()));
@@ -2134,6 +2133,7 @@ public final class KafkaMergedFactory implements StreamFactory
             long traceId,
             int reserved,
             int flags,
+            long budgetId,
             OctetsFW payload,
             OctetsFW extension)
         {
@@ -2196,8 +2196,8 @@ public final class KafkaMergedFactory implements StreamFactory
                 }
             }
 
-            doData(receiver, mergedFetch.resolvedId, initialId, traceId, mergedFetch.authorization,
-                    initialBudgetId, reserved, flags, payload, newKafkaDataEx);
+            doData(receiver, merged.resolvedId, initialId, traceId, merged.authorization,
+                    budgetId, reserved, flags, payload, newKafkaDataEx);
         }
 
         private void doProduceInitialEndIfNecessary(
@@ -2214,7 +2214,7 @@ public final class KafkaMergedFactory implements StreamFactory
         {
             state = KafkaState.closedInitial(state);
 
-            doEnd(receiver, mergedFetch.resolvedId, initialId, traceId, mergedFetch.authorization, EMPTY_EXTENSION);
+            doEnd(receiver, merged.resolvedId, initialId, traceId, merged.authorization, EMPTY_EXTENSION);
         }
 
         private void doProduceInitialAbortIfNecessary(
@@ -2231,7 +2231,7 @@ public final class KafkaMergedFactory implements StreamFactory
         {
             state = KafkaState.closedInitial(state);
 
-            doAbort(receiver, mergedFetch.resolvedId, initialId, traceId, mergedFetch.authorization, EMPTY_EXTENSION);
+            doAbort(receiver, merged.resolvedId, initialId, traceId, merged.authorization, EMPTY_EXTENSION);
         }
 
         private void onProduceInitialReset(
@@ -2249,7 +2249,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             assert KafkaState.closed(state);
 
-            mergedFetch.onProducePartitionLeaderError(traceId, partitionId, error);
+            merged.onProducePartitionLeaderError(traceId, partitionId, error);
         }
 
         private void onProduceInitialWindow(
@@ -2266,7 +2266,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             state = KafkaState.openedInitial(state);
 
-            mergedFetch.doMergedInitialWindowIfNecessary(traceId);
+            merged.doMergedInitialWindowIfNecessary(traceId, initialBudgetId);
         }
 
         private void onProduceReply(
@@ -2313,7 +2313,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             final long traceId = begin.traceId();
 
-            mergedFetch.onProducePartitionLeaderReady(traceId, partitionId);
+            merged.onProducePartitionLeaderReady(traceId, partitionId);
 
             doProduceReplyWindowIfNecessary(traceId);
         }
@@ -2325,13 +2325,13 @@ public final class KafkaMergedFactory implements StreamFactory
             final long budgetId = data.budgetId();
             final int reserved = data.reserved();
 
-            assert budgetId == mergedFetch.mergedReplyBudgetId;
+            assert budgetId == merged.mergedReplyBudgetId;
 
             replyBudget -= reserved;
 
             if (replyBudget < 0)
             {
-                mergedFetch.doMergedCleanup(traceId);
+                merged.doMergedCleanup(traceId);
             }
             else
             {
@@ -2340,7 +2340,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 final OctetsFW extension = data.extension();
                 final KafkaDataExFW kafkaDataEx = extension.get(kafkaDataExRO::tryWrap);
 
-                mergedFetch.doMergedReplyData(traceId, flags, reserved, payload, kafkaDataEx);
+                merged.doMergedReplyData(traceId, flags, reserved, payload, kafkaDataEx);
             }
         }
 
@@ -2351,7 +2351,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
-            mergedFetch.doMergedReplyEndIfNecessary(traceId);
+            merged.doMergedReplyEndIfNecessary(traceId);
 
             doProduceInitialEndIfNecessary(traceId);
         }
@@ -2363,7 +2363,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
-            mergedFetch.doMergedReplyAbortIfNecessary(traceId);
+            merged.doMergedReplyAbortIfNecessary(traceId);
 
             doProduceInitialAbortIfNecessary(traceId);
         }
@@ -2371,19 +2371,19 @@ public final class KafkaMergedFactory implements StreamFactory
         private void doProduceReplyWindowIfNecessary(
             long traceId)
         {
-            if (KafkaState.replyOpened(mergedFetch.state) &&
+            if (KafkaState.replyOpened(merged.state) &&
                 KafkaState.replyOpening(state) &&
                 !KafkaState.replyClosing(state))
             {
                 state = KafkaState.openedReply(state);
 
-                final int credit = mergedFetch.replyBudget - replyBudget;
+                final int credit = merged.replyBudget - replyBudget;
                 if (credit > 0)
                 {
                     replyBudget += credit;
 
-                    doWindow(receiver, mergedFetch.resolvedId, replyId, traceId, mergedFetch.authorization,
-                        mergedFetch.mergedReplyBudgetId, credit, mergedFetch.replyPadding);
+                    doWindow(receiver, merged.resolvedId, replyId, traceId, merged.authorization,
+                        merged.mergedReplyBudgetId, credit, merged.replyPadding);
                 }
             }
         }
@@ -2402,7 +2402,7 @@ public final class KafkaMergedFactory implements StreamFactory
         {
             state = KafkaState.closedReply(state);
 
-            doReset(receiver, mergedFetch.resolvedId, replyId, traceId, mergedFetch.authorization);
+            doReset(receiver, merged.resolvedId, replyId, traceId, merged.authorization);
         }
     }
 }
