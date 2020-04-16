@@ -19,6 +19,7 @@ import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
 
 import org.agrona.collections.Long2LongHashMap;
 import org.reaktivity.nukleus.budget.BudgetCreditor;
+import org.reaktivity.reaktor.ReaktorConfiguration;
 
 public final class KafkaCacheServerBudget
 {
@@ -77,11 +78,18 @@ public final class KafkaCacheServerBudget
         long budgetId,
         long credit)
     {
-        long budget = unsharedBudgetsById.get(budgetId);
-        assert budget != NO_BUDGET_ID;
-        budget += credit;
-        assert budget >= 0L;
-        unsharedBudgetsById.put(budgetId, budget);
+        long previous = unsharedBudgetsById.get(budgetId);
+        assert previous != unsharedBudgetsById.missingValue();
+        long updated = previous + credit;
+        assert updated >= 0L;
+
+        if (ReaktorConfiguration.DEBUG_BUDGETS)
+        {
+            System.out.format("[%d] [0x%016x] [0x%016x] unshared credit %d @ %d => %d\n",
+                    System.nanoTime(), traceId, budgetId, credit, previous, updated);
+        }
+
+        unsharedBudgetsById.put(budgetId, updated);
 
         flushSharedCreditIfNecessary(traceId);
     }
@@ -89,12 +97,27 @@ public final class KafkaCacheServerBudget
     private void flushSharedCreditIfNecessary(
         long traceId)
     {
-        final long sharedCredit = unsharedBudgetsById.minValue() - sharedBudget;
-        sharedBudget += sharedCredit;
+        if (ReaktorConfiguration.DEBUG_BUDGETS)
+        {
+            System.out.format("[%d] [0x%016x] [0x%016x] unshared budgets %s\n",
+                    System.nanoTime(), traceId, sharedBudgetId, unsharedBudgetsById);
+        }
+
+        final long newSharedBudget = unsharedBudgetsById.minValue();
+        final long sharedCredit = newSharedBudget - sharedBudget;
 
         if (sharedCredit > 0)
         {
-            creditor.credit(traceId, sharedBudgetIndex, sharedCredit);
+            final long sharedPrevious = creditor.credit(traceId, sharedBudgetIndex, sharedCredit);
+            assert sharedPrevious + sharedCredit <= newSharedBudget;
         }
+
+        if (ReaktorConfiguration.DEBUG_BUDGETS)
+        {
+            System.out.format("[%d] [0x%016x] [0x%016x] shared credit %d @ %d => %d\n",
+                    System.nanoTime(), traceId, sharedBudgetId, sharedCredit, sharedBudget, newSharedBudget);
+        }
+
+        sharedBudget = newSharedBudget;
     }
 }
