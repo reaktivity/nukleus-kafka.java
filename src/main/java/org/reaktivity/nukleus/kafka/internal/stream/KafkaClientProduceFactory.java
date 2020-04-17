@@ -87,6 +87,8 @@ public final class KafkaClientProduceFactory implements StreamFactory
 {
     private static final int PRODUCE_REQUEST_RECORDS_OFFSET_MAX = 512;
 
+    private static final int KAFKA_RECORD_FRAMING = 100;
+
     private static final byte RECORD_BATCH_MAGIC = 2;
     private static final short RECORD_BATCH_ATTRIBUTES_NONE = 0;
     private static final short RECORD_BATCH_ATTRIBUTES_NO_TIMESTAMP = 0x08;
@@ -767,6 +769,13 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
                 assert data.flags() == 0x03; // TODO: fragmented
 
+                // TODO: flow control includes headers (extension)
+                if (client.encodeSlot != NO_SLOT &&
+                    client.encodeSlotLimit + data.sizeof() + KAFKA_RECORD_FRAMING > encodePool.slotCapacity())
+                {
+                    client.doEncodeRequestIfNecessary(traceId);
+                }
+
                 client.doEncodeRecord(traceId, timestamp, key, value, headers);
                 client.doSignalNextRequestIfNecessary(traceId);
             }
@@ -864,22 +873,21 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
             if (!KafkaState.initialOpened(state) || credit > 0)
             {
-                doApplicationWindow(traceId, 0L, credit, 0);
+                doApplicationWindow(traceId, 0L, credit);
             }
         }
 
         private void doApplicationWindow(
             long traceId,
             long budgetId,
-            int credit,
-            int padding)
+            int credit)
         {
             state = KafkaState.openedInitial(state);
 
             initialBudget += credit;
 
             doWindow(application, routeId, initialId, traceId, client.authorization,
-                    budgetId, credit, padding);
+                    budgetId, credit, KAFKA_RECORD_FRAMING);
 
         }
 
@@ -1159,7 +1167,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
             if (signalId == SIGNAL_NEXT_REQUEST)
             {
-                doEncodeRequestIfNecessary(traceId, initialBudgetId);
+                doEncodeRequestIfNecessary(traceId);
             }
         }
 
@@ -1192,7 +1200,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
         private void doNetworkData(
             long traceId,
-            long budgetId,
             DirectBuffer buffer,
             int offset,
             int limit)
@@ -1209,7 +1216,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
                 limit = encodeSlotLimit;
             }
 
-            encodeNetwork(traceId, authorization, budgetId, buffer, offset, limit);
+            encodeNetwork(traceId, authorization, initialBudgetId, buffer, offset, limit);
         }
 
         private void doNetworkEndAfterFlush(
@@ -1384,18 +1391,16 @@ public final class KafkaClientProduceFactory implements StreamFactory
         }
 
         private void doEncodeRequestIfNecessary(
-            long traceId,
-            long budgetId)
+            long traceId)
         {
             if (nextRequestId == nextResponseId && encodeSlot != NO_SLOT)
             {
-                doEncodeProduceRequest(traceId, budgetId);
+                doEncodeProduceRequest(traceId);
             }
         }
 
         private void doEncodeProduceRequest(
-            long traceId,
-            long budgetId)
+            long traceId)
         {
             final MutableDirectBuffer encodeBuffer = writeBuffer;
             final int encodeOffset = 0;
@@ -1508,7 +1513,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
             crc.update(encodeSlotByteBuffer);
             encodeSlotBuffer.putInt(encodeSlotOffset + crcOffset, (int) crc.getValue(), BIG_ENDIAN);
 
-            doNetworkData(traceId, budgetId, EMPTY_BUFFER, 0, 0);
+            doNetworkData(traceId, EMPTY_BUFFER, 0, 0);
         }
 
         private void encodeNetwork(

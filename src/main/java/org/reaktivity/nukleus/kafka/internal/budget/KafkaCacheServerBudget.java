@@ -31,7 +31,6 @@ public final class KafkaCacheServerBudget
     private final Long2LongHashMap unsharedBudgetsById;
 
     private long sharedBudgetIndex = NO_CREDITOR_INDEX;
-    private long sharedBudget;
 
     public KafkaCacheServerBudget(
         BudgetCreditor creditor,
@@ -104,6 +103,7 @@ public final class KafkaCacheServerBudget
         }
 
         final long newSharedBudget = unsharedBudgetsById.minValue();
+        final long sharedBudget = creditor.credit(traceId, sharedBudgetIndex, 0);
         final long sharedCredit = newSharedBudget - sharedBudget;
 
         if (sharedCredit > 0)
@@ -117,7 +117,5 @@ public final class KafkaCacheServerBudget
             System.out.format("[%d] [0x%016x] [0x%016x] shared credit %d @ %d => %d\n",
                     System.nanoTime(), traceId, sharedBudgetId, sharedCredit, sharedBudget, newSharedBudget);
         }
-
-        sharedBudget = newSharedBudget;
     }
 }
