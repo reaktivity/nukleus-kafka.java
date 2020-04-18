@@ -90,6 +90,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
     private final Function<String, KafkaCache> supplyCache;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
+    private final boolean cacheServerEnforcesInitialBudget;
 
     public KafkaCacheClientProduceFactory(
         KafkaConfiguration config,
@@ -111,6 +112,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         this.supplyCache = supplyCache;
         this.supplyCacheRoute = supplyCacheRoute;
         this.correlations = correlations;
+        this.cacheServerEnforcesInitialBudget = config.cacheServerEnforcesInitialBudget();
     }
 
     @Override
@@ -435,7 +437,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             OctetsFW extension)
         {
             initialBudget -= reserved;
-            assert initialBudget >= 0;
+            assert cacheServerEnforcesInitialBudget || initialBudget >= 0;
 
             doData(receiver, routeId, initialId, traceId, authorization, flags, budgetId, reserved, payload, extension);
         }
