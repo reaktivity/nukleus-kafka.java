@@ -50,7 +50,7 @@ public class ClientMergedIT
         .counterValuesBufferCapacity(8192)
         .configure(REAKTOR_BUFFER_SLOT_CAPACITY, 8192)
         .configure(KAFKA_CLIENT_META_MAX_AGE_MILLIS, 1000)
-        .configure(KAFKA_CLIENT_PRODUCE_MAX_BYTES, 116)
+        .configure(KAFKA_CLIENT_PRODUCE_MAX_BYTES, 16)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 

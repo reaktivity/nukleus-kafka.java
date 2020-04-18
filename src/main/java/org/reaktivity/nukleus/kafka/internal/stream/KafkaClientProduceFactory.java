@@ -87,7 +87,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
 {
     private static final int PRODUCE_REQUEST_RECORDS_OFFSET_MAX = 512;
 
-    private static final int KAFKA_RECORD_FRAMING = 100;
+    private static final int KAFKA_RECORD_FRAMING = 0; // TODO
 
     private static final byte RECORD_BATCH_MAGIC = 2;
     private static final short RECORD_BATCH_ATTRIBUTES_NONE = 0;

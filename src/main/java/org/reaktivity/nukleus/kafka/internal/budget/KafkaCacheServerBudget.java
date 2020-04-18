@@ -32,6 +32,8 @@ public final class KafkaCacheServerBudget
 
     private long sharedBudgetIndex = NO_CREDITOR_INDEX;
 
+    private long sharedBudgetMin;
+
     public KafkaCacheServerBudget(
         BudgetCreditor creditor,
         long creditorId)
@@ -48,6 +50,7 @@ public final class KafkaCacheServerBudget
         {
             assert sharedBudgetIndex == NO_CREDITOR_INDEX;
             this.sharedBudgetIndex = creditor.acquire(sharedBudgetId);
+            assert sharedBudgetMin == 0L;
         }
 
         unsharedBudgetsById.put(unsharedBudgetId, 0L);
@@ -65,6 +68,7 @@ public final class KafkaCacheServerBudget
         {
             creditor.release(sharedBudgetIndex);
             this.sharedBudgetIndex = NO_CREDITOR_INDEX;
+            this.sharedBudgetMin = 0L;
         }
         else
         {
@@ -72,15 +76,16 @@ public final class KafkaCacheServerBudget
         }
     }
 
-    public void credit(
+    public long credit(
         long traceId,
         long budgetId,
         long credit)
     {
         long previous = unsharedBudgetsById.get(budgetId);
-        assert previous != unsharedBudgetsById.missingValue();
+        assert previous >= 0L;
+
+        assert credit >= 0L;
         long updated = previous + credit;
-        assert updated >= 0L;
 
         if (ReaktorConfiguration.DEBUG_BUDGETS)
         {
@@ -91,6 +96,29 @@ public final class KafkaCacheServerBudget
         unsharedBudgetsById.put(budgetId, updated);
 
         flushSharedCreditIfNecessary(traceId);
+
+        return updated;
+    }
+
+    public void reserve(
+        long traceId,
+        long budgetId,
+        long reserved)
+    {
+        long previous = unsharedBudgetsById.get(budgetId);
+        assert previous != unsharedBudgetsById.missingValue();
+        long updated = previous - reserved;
+        assert updated >= 0L;
+
+        if (ReaktorConfiguration.DEBUG_BUDGETS)
+        {
+            System.out.format("[%d] [0x%016x] [0x%016x] unshared reserve %d @ %d => %d\n",
+                    System.nanoTime(), traceId, budgetId, reserved, previous, updated);
+        }
+
+        unsharedBudgetsById.put(budgetId, updated);
+
+        sharedBudgetMin = Math.min(sharedBudgetMin, updated);
     }
 
     private void flushSharedCreditIfNecessary(
@@ -103,8 +131,7 @@ public final class KafkaCacheServerBudget
         }
 
         final long newSharedBudget = unsharedBudgetsById.minValue();
-        final long sharedBudget = creditor.credit(traceId, sharedBudgetIndex, 0);
-        final long sharedCredit = newSharedBudget - sharedBudget;
+        final long sharedCredit = newSharedBudget - sharedBudgetMin;
 
         if (sharedCredit > 0)
         {
@@ -115,7 +142,9 @@ public final class KafkaCacheServerBudget
         if (ReaktorConfiguration.DEBUG_BUDGETS)
         {
             System.out.format("[%d] [0x%016x] [0x%016x] shared credit %d @ %d => %d\n",
-                    System.nanoTime(), traceId, sharedBudgetId, sharedCredit, sharedBudget, newSharedBudget);
+                    System.nanoTime(), traceId, sharedBudgetId, sharedCredit, sharedBudgetMin, newSharedBudget);
         }
+
+        sharedBudgetMin = newSharedBudget;
     }
 }
