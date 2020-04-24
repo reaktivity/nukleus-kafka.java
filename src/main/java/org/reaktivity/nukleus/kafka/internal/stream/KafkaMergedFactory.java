@@ -248,7 +248,7 @@ public final class KafkaMergedFactory implements StreamFactory
                     initialOffsetsById,
                     defaultOffset,
                     mergedFilters,
-                    deltaType)::onMergedInitial;
+                    deltaType)::onMergedMessage;
         }
 
         return newStream;
@@ -693,7 +693,7 @@ public final class KafkaMergedFactory implements StreamFactory
             this.deltaType = deltaType;
         }
 
-        private void onMergedInitial(
+        private void onMergedMessage(
             int msgTypeId,
             DirectBuffer buffer,
             int index,
@@ -741,6 +741,8 @@ public final class KafkaMergedFactory implements StreamFactory
 
             assert state == 0;
             state = KafkaState.openingInitial(state);
+
+            router.setThrottle(replyId, this::onMergedMessage);
 
             describeStream.doDescribeInitialBegin(traceId);
         }
@@ -871,7 +873,10 @@ public final class KafkaMergedFactory implements StreamFactory
             replyBudget += credit;
             replyPadding = padding;
 
-            state = KafkaState.openedReply(state);
+            if (KafkaState.replyOpening(state))
+            {
+                state = KafkaState.openedReply(state);
+            }
 
             if (mergedReplyBudgetId == NO_CREDITOR_INDEX)
             {
@@ -879,25 +884,34 @@ public final class KafkaMergedFactory implements StreamFactory
             }
             creditor.credit(traceId, mergedReplyBudgetId, credit);
 
-            final int fetchStreamCount = fetchStreams.size();
-            if (fetchStreamIndex >= fetchStreamCount)
-            {
-                fetchStreamIndex = 0;
-            }
+            doUnmergedFetchReplyWindowsIfNecessary(traceId);
+        }
 
-            for (int index = fetchStreamIndex; index < fetchStreamCount; index++)
+        private void doUnmergedFetchReplyWindowsIfNecessary(
+            long traceId)
+        {
+            if (KafkaState.replyOpened(state))
             {
-                final KafkaUnmergedFetchStream fetchStream = fetchStreams.get(index);
-                fetchStream.doFetchReplyWindowIfNecessary(traceId);
-            }
+                final int fetchStreamCount = fetchStreams.size();
+                if (fetchStreamIndex >= fetchStreamCount)
+                {
+                    fetchStreamIndex = 0;
+                }
 
-            for (int index = 0; index < fetchStreamIndex; index++)
-            {
-                final KafkaUnmergedFetchStream fetchStream = fetchStreams.get(index);
-                fetchStream.doFetchReplyWindowIfNecessary(traceId);
-            }
+                for (int index = fetchStreamIndex; index < fetchStreamCount; index++)
+                {
+                    final KafkaUnmergedFetchStream fetchStream = fetchStreams.get(index);
+                    fetchStream.doFetchReplyWindowIfNecessary(traceId);
+                }
 
-            fetchStreamIndex++;
+                for (int index = 0; index < fetchStreamIndex; index++)
+                {
+                    final KafkaUnmergedFetchStream fetchStream = fetchStreams.get(index);
+                    fetchStream.doFetchReplyWindowIfNecessary(traceId);
+                }
+
+                fetchStreamIndex++;
+            }
         }
 
         private void onMergedReplyReset(
@@ -931,8 +945,13 @@ public final class KafkaMergedFactory implements StreamFactory
             assert !KafkaState.replyOpening(state);
             state = KafkaState.openingReply(state);
 
-            router.setThrottle(replyId, this::onMergedInitial);
+            if (replyBudget > 0)
+            {
+                state = KafkaState.openedReply(state);
+            }
+
             doBegin(sender, routeId, replyId, traceId, authorization, affinity, EMPTY_EXTENSION);
+            doUnmergedFetchReplyWindowsIfNecessary(traceId);
         }
 
         private void doMergedReplyData(
@@ -1067,13 +1086,20 @@ public final class KafkaMergedFactory implements StreamFactory
         private void doMergedReplyAbortIfNecessary(
             long traceId)
         {
-            if (KafkaState.replyOpening(state) && !KafkaState.replyClosed(state))
+            if (!KafkaState.replyClosed(state))
             {
-                doMergedReplyAbort(traceId);
-                describeStream.doDescribeReplyResetIfNecessary(traceId);
-                metaStream.doMetaReplyResetIfNecessary(traceId);
-                fetchStreams.forEach(f -> f.doFetchReplyResetIfNecessary(traceId));
-                produceStreams.forEach(f -> f.doProduceReplyResetIfNecessary(traceId));
+                if (KafkaState.replyOpening(state))
+                {
+                    doMergedReplyAbort(traceId);
+                    describeStream.doDescribeReplyResetIfNecessary(traceId);
+                    metaStream.doMetaReplyResetIfNecessary(traceId);
+                    fetchStreams.forEach(f -> f.doFetchReplyResetIfNecessary(traceId));
+                    produceStreams.forEach(f -> f.doProduceReplyResetIfNecessary(traceId));
+                }
+                else
+                {
+                    router.clearThrottle(replyId);
+                }
             }
         }
 
