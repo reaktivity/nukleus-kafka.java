@@ -398,6 +398,9 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             if (KafkaState.closed(state))
             {
                 state = 0;
+                initialBudgetId = 0L;
+                initialBudget = 0;
+                initialPadding = 0;
             }
 
             if (!KafkaState.initialOpening(state))
