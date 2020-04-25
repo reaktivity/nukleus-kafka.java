@@ -434,9 +434,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                     this.reconnectAt = NO_CANCEL_ID;
                 }
 
-                correlations.remove(replyId);
-                doServerFanoutInitialAbortIfNecessary(traceId);
-                doServerFanoutReplyResetIfNecessary(traceId);
+                doServerFanoutInitialEndIfNecessary(traceId);
             }
         }
 
@@ -446,6 +444,8 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             if (KafkaState.closed(state))
             {
                 state = 0;
+                initialBudget = 0;
+                initialPadding = 0;
             }
 
             if (!KafkaState.initialOpening(state))
@@ -463,7 +463,9 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             long traceId)
         {
             assert state == 0;
+            assert creditorIndex == NO_CREDITOR_INDEX;
 
+            this.creditorIndex = budget.acquire(creditorId);
             this.initialId = supplyInitialId.applyAsLong(routeId);
             this.replyId = supplyReplyId.applyAsLong(initialId);
             this.receiver = router.supplyReceiver(initialId);
@@ -730,11 +732,6 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                 this.reconnectAttempt = 0;
 
                 state = KafkaState.openedInitial(state);
-
-                if (creditorIndex == NO_CREDITOR_INDEX)
-                {
-                    creditorIndex = budget.acquire(creditorId);
-                }
             }
 
             budget.credit(traceId, creditorIndex, credit);
