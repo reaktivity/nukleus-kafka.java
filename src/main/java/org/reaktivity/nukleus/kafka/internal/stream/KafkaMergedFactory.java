@@ -805,7 +805,7 @@ public final class KafkaMergedFactory implements StreamFactory
         {
             final int partitionCount = leadersByPartitionId.size();
             final int keyHash = key.length() != -1 ? defaultKeyHash(key) : nextNullKeyHash++;
-            final int partitionId = partitionCount >= 0 ? (0x7fff_ffff & keyHash) % partitionCount : 0;
+            final int partitionId = partitionCount > 0 ? (0x7fff_ffff & keyHash) % partitionCount : 0;
 
             return partitionId;
         }
@@ -821,6 +821,7 @@ public final class KafkaMergedFactory implements StreamFactory
             describeStream.doDescribeInitialEndIfNecessary(traceId);
             metaStream.doMetaInitialEndIfNecessary(traceId);
             fetchStreams.forEach(f -> f.doFetchInitialEndIfNecessary(traceId));
+            produceStreams.forEach(f -> f.doProduceInitialEndIfNecessary(traceId));
 
             doMergedReplyEndIfNecessary(traceId);
         }
@@ -836,6 +837,7 @@ public final class KafkaMergedFactory implements StreamFactory
             describeStream.doDescribeInitialAbortIfNecessary(traceId);
             metaStream.doMetaInitialAbortIfNecessary(traceId);
             fetchStreams.forEach(f -> f.doFetchInitialAbortIfNecessary(traceId));
+            produceStreams.forEach(f -> f.doProduceInitialEndIfNecessary(traceId));
 
             doMergedReplyAbortIfNecessary(traceId);
         }
@@ -926,6 +928,7 @@ public final class KafkaMergedFactory implements StreamFactory
             describeStream.doDescribeReplyReset(traceId);
             metaStream.doMetaReplyReset(traceId);
             fetchStreams.forEach(f -> f.doFetchReplyReset(traceId));
+            produceStreams.forEach(f -> f.doProduceReplyReset(traceId));
 
             doMergedInitialResetIfNecessary(traceId);
         }
@@ -1039,9 +1042,9 @@ public final class KafkaMergedFactory implements StreamFactory
                 initialPaddingMax = initialPaddingMaxRW.value;
             }
 
-            final int credit = initialBudgetMin - initialBudget;
+            final int credit = Math.max(initialBudgetMin - initialBudget, 0);
 
-            if (!KafkaState.initialOpened(state) || credit > 0)
+            if (!KafkaState.initialOpened(state) && !hasProduceCapability(capabilities) || credit > 0)
             {
                 doMergedInitialWindow(traceId, budgetId, credit, initialPaddingMax);
             }
