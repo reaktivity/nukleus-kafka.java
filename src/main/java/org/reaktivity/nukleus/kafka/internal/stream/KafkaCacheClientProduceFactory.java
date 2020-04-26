@@ -425,9 +425,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             if (KafkaState.closed(state))
             {
                 state = 0;
-                initialBudgetId = 0L;
-                initialBudget = 0;
-                initialPadding = 0;
             }
 
             if (!KafkaState.initialOpening(state))
@@ -500,7 +497,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         {
             doAbort(receiver, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
 
-            onClientFanClosedInitial();
+            onClientFanInitialClosed();
         }
 
         private void onClientFanInitialReset(
@@ -511,7 +508,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             members.forEach(s -> s.doClientInitialResetIfNecessary(traceId, extension));
 
-            onClientFanClosedInitial();
+            onClientFanInitialClosed();
 
             doClientFanReplyResetIfNecessary(traceId);
         }
@@ -530,20 +527,48 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             if (!KafkaState.initialOpened(state))
             {
-                state = KafkaState.openedInitial(state);
-
-                if (initialBudgetId != 0L && initialDebitorIndex == NO_DEBITOR_INDEX)
-                {
-                    initialDebitor = supplyDebitor.apply(initialBudgetId);
-                    initialDebitorIndex =
-                            initialDebitor.acquire(initialBudgetId, initialId, this::doClientFanInitialDataIfNecessary);
-                    assert initialDebitorIndex != NO_DEBITOR_INDEX;
-                }
+                onClientFanInitialOpened();
             }
 
             budget.credit(traceId, partitionIndex, credit);
 
             members.forEach(s -> s.doClientInitialWindowIfNecessary(traceId));
+        }
+
+        private void onClientFanInitialOpened()
+        {
+            assert !KafkaState.initialOpened(state);
+            state = KafkaState.openedInitial(state);
+
+            if (initialBudgetId != 0L && initialDebitorIndex == NO_DEBITOR_INDEX)
+            {
+                initialDebitor = supplyDebitor.apply(initialBudgetId);
+                initialDebitorIndex =
+                        initialDebitor.acquire(initialBudgetId, initialId, this::doClientFanInitialDataIfNecessary);
+                assert initialDebitorIndex != NO_DEBITOR_INDEX;
+            }
+        }
+
+        private void onClientFanInitialClosed()
+        {
+            assert !KafkaState.initialClosed(state);
+            state = KafkaState.closedInitial(state);
+
+            if (partitionIndex != NO_CREDITOR_INDEX)
+            {
+                budget.release(partitionIndex, initialBudget);
+                partitionIndex = NO_CREDITOR_INDEX;
+            }
+
+            if (initialDebitor != null && initialDebitorIndex != NO_DEBITOR_INDEX)
+            {
+                initialDebitor.release(initialDebitorIndex, initialId);
+                initialDebitorIndex = NO_DEBITOR_INDEX;
+            }
+
+            initialBudgetId = 0L;
+            initialBudget = 0;
+            initialPadding = 0;
         }
 
         private void onClientFanMessage(
@@ -646,24 +671,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             state = KafkaState.openedReply(state);
 
             doWindow(receiver, routeId, replyId, traceId, authorization, 0L, credit, 0);
-        }
-
-        private void onClientFanClosedInitial()
-        {
-            assert !KafkaState.initialClosed(state);
-            state = KafkaState.closedInitial(state);
-
-            if (partitionIndex != NO_CREDITOR_INDEX)
-            {
-                budget.release(partitionIndex, initialBudget);
-                partitionIndex = NO_CREDITOR_INDEX;
-            }
-
-            if (initialDebitor != null && initialDebitorIndex != NO_DEBITOR_INDEX)
-            {
-                initialDebitor.release(initialDebitorIndex, initialId);
-                initialDebitorIndex = NO_DEBITOR_INDEX;
-            }
         }
     }
 
