@@ -23,6 +23,7 @@ import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
 
 import org.agrona.MutableDirectBuffer;
+import org.reaktivity.nukleus.budget.BudgetCreditor;
 import org.reaktivity.nukleus.budget.BudgetDebitor;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.concurrent.Signaler;
@@ -41,6 +42,7 @@ public final class KafkaCacheClientFactoryBuilder implements KafkaStreamFactoryB
     private RouteManager router;
     private Signaler signaler;
     private MutableDirectBuffer writeBuffer;
+    private BudgetCreditor creditor;
     private LongUnaryOperator supplyInitialId;
     private LongUnaryOperator supplyReplyId;
     private LongSupplier supplyTraceId;
@@ -124,6 +126,14 @@ public final class KafkaCacheClientFactoryBuilder implements KafkaStreamFactoryB
     }
 
     @Override
+    public KafkaCacheClientFactoryBuilder setBudgetCreditor(
+        BudgetCreditor creditor)
+    {
+        this.creditor = creditor;
+        return this;
+    }
+
+    @Override
     public KafkaCacheClientFactoryBuilder setBudgetDebitorSupplier(
         LongFunction<BudgetDebitor> supplyDebitor)
     {
@@ -150,6 +160,7 @@ public final class KafkaCacheClientFactoryBuilder implements KafkaStreamFactoryB
                 signaler,
                 writeBuffer,
                 bufferPool,
+                creditor,
                 supplyInitialId,
                 supplyReplyId,
                 supplyTraceId,
