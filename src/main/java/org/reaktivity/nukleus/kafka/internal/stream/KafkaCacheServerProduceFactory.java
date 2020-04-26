@@ -424,6 +424,9 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                 }
 
                 doServerFanInitialEndIfNecessary(traceId);
+
+                correlations.remove(replyId);
+                state = KafkaState.closedReply(state);
             }
         }
 
@@ -433,8 +436,6 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             if (KafkaState.closed(state))
             {
                 state = 0;
-                initialBudget = 0;
-                initialPadding = 0;
             }
 
             if (!KafkaState.initialOpening(state))
@@ -452,9 +453,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             long traceId)
         {
             assert state == 0;
-            assert creditorIndex == NO_CREDITOR_INDEX;
 
-            this.creditorIndex = creditor.acquire(creditorId);
             this.initialId = supplyInitialId.applyAsLong(routeId);
             this.replyId = supplyReplyId.applyAsLong(initialId);
             this.receiver = router.supplyReceiver(initialId);
@@ -518,6 +517,105 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             doAbort(receiver, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
 
             onServerFanInitialClosed();
+        }
+
+        private void onServerFanInitialReset(
+            ResetFW reset)
+        {
+            final long traceId = reset.traceId();
+            final OctetsFW extension = reset.extension();
+
+            onServerFanInitialClosed();
+
+            doServerFanReplyResetIfNecessary(traceId);
+
+            final KafkaResetExFW kafkaResetEx = extension.get(kafkaResetExRO::tryWrap);
+            final int error = kafkaResetEx != null ? kafkaResetEx.error() : -1;
+
+            if (reconnectDelay != 0 && !members.isEmpty() &&
+                error != ERROR_NOT_LEADER_FOR_PARTITION)
+            {
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s PRODUCE reconnect in %ds, error %d\n", partition, reconnectDelay, error);
+                }
+
+                if (reconnectAt != NO_CANCEL_ID)
+                {
+                    signaler.cancel(reconnectAt);
+                }
+
+                this.reconnectAt = signaler.signalAt(
+                    currentTimeMillis() + Math.min(50 << reconnectAttempt++, SECONDS.toMillis(reconnectDelay)),
+                    SIGNAL_RECONNECT,
+                    this::onServerFanSignal);
+            }
+            else
+            {
+                if (KafkaConfiguration.DEBUG)
+                {
+                    System.out.format("%s PRODUCE disconnect, error %d\n", partition, error);
+                }
+
+                members.forEach(s -> s.doServerInitialResetIfNecessary(traceId, extension));
+            }
+        }
+
+        private void onServerFanInitialWindow(
+            WindowFW window)
+        {
+            final long traceId = window.traceId();
+            final long budgetId = window.budgetId();
+            final int credit = window.credit();
+            final int padding = window.padding();
+
+            if (ReaktorConfiguration.DEBUG_BUDGETS)
+            {
+                System.out.format("[%d] [0x%016x] [0x%016x] cache server credit %d @ %d => %d\n",
+                        System.nanoTime(), traceId, budgetId, credit, initialBudget, initialBudget + credit);
+            }
+
+            assert budgetId == 0L;
+
+            initialBudgetId = budgetId;
+            initialBudget += credit;
+            initialPadding = padding;
+
+            if (!KafkaState.initialOpened(state))
+            {
+                onServerFanInitialOpened();
+            }
+
+            assert creditorIndex != NO_CREDITOR_INDEX;
+            creditor.credit(traceId, creditorIndex, credit);
+
+            members.forEach(s -> s.doServerInitialWindowIfNecessary(traceId));
+        }
+
+        private void onServerFanInitialOpened()
+        {
+            assert !KafkaState.initialOpened(state);
+            state = KafkaState.openedInitial(state);
+
+            this.reconnectAttempt = 0;
+
+            assert creditorIndex == NO_CREDITOR_INDEX;
+            this.creditorIndex = creditor.acquire(creditorId);
+        }
+
+        private void onServerFanInitialClosed()
+        {
+            assert !KafkaState.initialClosed(state);
+            state = KafkaState.closedInitial(state);
+
+            initialBudget = 0;
+            initialPadding = 0;
+
+            if (creditorIndex != NO_CREDITOR_INDEX)
+            {
+                creditor.release(creditorIndex);
+                creditorIndex = NO_CREDITOR_INDEX;
+            }
         }
 
         private void onServerFanMessage(
@@ -648,80 +746,6 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             }
         }
 
-        private void onServerFanInitialReset(
-            ResetFW reset)
-        {
-            final long traceId = reset.traceId();
-            final OctetsFW extension = reset.extension();
-
-            onServerFanInitialClosed();
-
-            doServerFanReplyResetIfNecessary(traceId);
-
-            final KafkaResetExFW kafkaResetEx = extension.get(kafkaResetExRO::tryWrap);
-            final int error = kafkaResetEx != null ? kafkaResetEx.error() : -1;
-
-            if (reconnectDelay != 0 && !members.isEmpty() &&
-                error != ERROR_NOT_LEADER_FOR_PARTITION)
-            {
-                if (KafkaConfiguration.DEBUG)
-                {
-                    System.out.format("%s PRODUCE reconnect in %ds, error %d\n", partition, reconnectDelay, error);
-                }
-
-                if (reconnectAt != NO_CANCEL_ID)
-                {
-                    signaler.cancel(reconnectAt);
-                }
-
-                this.reconnectAt = signaler.signalAt(
-                    currentTimeMillis() + Math.min(50 << reconnectAttempt++, SECONDS.toMillis(reconnectDelay)),
-                    SIGNAL_RECONNECT,
-                    this::onServerFanSignal);
-            }
-            else
-            {
-                if (KafkaConfiguration.DEBUG)
-                {
-                    System.out.format("%s PRODUCE disconnect, error %d\n", partition, error);
-                }
-
-                members.forEach(s -> s.doServerInitialResetIfNecessary(traceId, extension));
-            }
-        }
-
-        private void onServerFanInitialWindow(
-            WindowFW window)
-        {
-            final long traceId = window.traceId();
-            final long budgetId = window.budgetId();
-            final int credit = window.credit();
-            final int padding = window.padding();
-
-            if (ReaktorConfiguration.DEBUG_BUDGETS)
-            {
-                System.out.format("[%d] [0x%016x] [0x%016x] cache server credit %d @ %d => %d\n",
-                        System.nanoTime(), traceId, budgetId, credit, initialBudget, initialBudget + credit);
-            }
-
-            assert budgetId == 0L;
-
-            initialBudgetId = budgetId;
-            initialBudget += credit;
-            initialPadding = padding;
-
-            if (!KafkaState.initialOpened(state))
-            {
-                this.reconnectAttempt = 0;
-
-                state = KafkaState.openedInitial(state);
-            }
-
-            creditor.credit(traceId, creditorIndex, credit);
-
-            members.forEach(s -> s.doServerInitialWindowIfNecessary(traceId));
-        }
-
         private void onServerFanSignal(
             int signalId)
         {
@@ -760,18 +784,6 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             state = KafkaState.openedReply(state);
 
             doWindow(receiver, routeId, replyId, traceId, authorization, 0L, credit, 0);
-        }
-
-        private void onServerFanInitialClosed()
-        {
-            assert !KafkaState.initialClosed(state);
-            state = KafkaState.closedInitial(state);
-
-            if (creditorIndex != NO_CREDITOR_INDEX)
-            {
-                creditor.release(creditorIndex);
-                creditorIndex = NO_CREDITOR_INDEX;
-            }
         }
     }
 
