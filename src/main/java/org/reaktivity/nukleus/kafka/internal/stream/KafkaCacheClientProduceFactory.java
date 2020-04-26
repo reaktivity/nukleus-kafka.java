@@ -15,6 +15,9 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
+import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
@@ -28,11 +31,14 @@ import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.reaktivity.nukleus.budget.BudgetCreditor;
+import org.reaktivity.nukleus.budget.BudgetDebitor;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessageFunction;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
+import org.reaktivity.nukleus.kafka.internal.budget.KafkaCacheClientBudget;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopic;
@@ -84,9 +90,12 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
     private final int kafkaTypeId;
     private final RouteManager router;
+    private final BudgetCreditor creditor;
     private final MutableDirectBuffer writeBuffer;
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
+    private final LongSupplier supplyBudgetId;
+    private final LongFunction<BudgetDebitor> supplyDebitor;
     private final Function<String, KafkaCache> supplyCache;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
@@ -96,10 +105,13 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         KafkaConfiguration config,
         RouteManager router,
         MutableDirectBuffer writeBuffer,
+        BudgetCreditor creditor,
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTraceId,
+        LongSupplier supplyBudgetId,
         ToIntFunction<String> supplyTypeId,
+        LongFunction<BudgetDebitor> supplyDebitor,
         Function<String, KafkaCache> supplyCache,
         LongFunction<KafkaCacheRoute> supplyCacheRoute,
         Long2ObjectHashMap<MessageConsumer> correlations)
@@ -107,8 +119,11 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.router = router;
         this.writeBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
+        this.creditor = creditor;
         this.supplyInitialId = supplyInitialId;
         this.supplyReplyId = supplyReplyId;
+        this.supplyBudgetId = supplyBudgetId;
+        this.supplyDebitor = supplyDebitor;
         this.supplyCache = supplyCache;
         this.supplyCacheRoute = supplyCacheRoute;
         this.correlations = correlations;
@@ -157,31 +172,39 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             final long resolvedId = route.correlationId();
             final String topicName = beginTopic.asString();
             final KafkaCacheRoute cacheRoute = supplyCacheRoute.apply(resolvedId);
+            final long topicKey = cacheRoute.topicKey(topicName);
             final long partitionKey = cacheRoute.topicPartitionKey(topicName, partitionId);
 
-            KafkaCacheClientProduceFanout fanout = cacheRoute.clientProduceFanoutsByTopicPartition.get(partitionKey);
-            if (fanout == null)
+            KafkaCacheClientProduceFan fan = cacheRoute.clientProduceFansByTopicPartition.get(partitionKey);
+            if (fan == null)
             {
+                KafkaCacheClientBudget budget = cacheRoute.clientBudgetsByTopic.get(topicKey);
+                if (budget == null)
+                {
+                    budget = new KafkaCacheClientBudget(creditor, supplyBudgetId.getAsLong());
+                    cacheRoute.clientBudgetsByTopic.put(topicKey, budget);
+                }
+
                 final String cacheName = route.remoteAddress().asString();
                 final KafkaCache cache = supplyCache.apply(cacheName);
                 final KafkaCacheTopic topic = cache.supplyTopic(topicName);
                 final KafkaCachePartition partition = topic.supplyPartition(partitionId);
-                final KafkaCacheClientProduceFanout newFanout =
-                        new KafkaCacheClientProduceFanout(resolvedId, authorization, affinity, partition);
+                final KafkaCacheClientProduceFan newFan =
+                        new KafkaCacheClientProduceFan(resolvedId, authorization, affinity, budget, partition);
 
-                cacheRoute.clientProduceFanoutsByTopicPartition.put(partitionKey, newFanout);
-                fanout = newFanout;
+                cacheRoute.clientProduceFansByTopicPartition.put(partitionKey, newFan);
+                fan = newFan;
             }
 
-            if (fanout != null)
+            if (fan != null)
             {
-                assert fanout.affinity == affinity || fanout.state == 0 || KafkaState.closed(fanout.state) :
+                assert fan.affinity == affinity || fan.state == 0 || KafkaState.closed(fan.state) :
                         String.format("%d == %d || %d == 0 || KafkaState.closed(0x%08x)",
-                                fanout.affinity, affinity, fanout.state, fanout.state);
-                fanout.affinity = affinity;
+                                fan.affinity, affinity, fan.state, fan.state);
+                fan.affinity = affinity;
 
                 newStream = new KafkaCacheClientProduceStream(
-                        fanout,
+                        fan,
                         sender,
                         routeId,
                         initialId,
@@ -321,11 +344,13 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         sender.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
     }
 
-    final class KafkaCacheClientProduceFanout
+    final class KafkaCacheClientProduceFan
     {
         private final long routeId;
         private final long authorization;
+        private final KafkaCacheClientBudget budget;
         private final KafkaCachePartition partition;
+        private final int partitionId;
         private final List<KafkaCacheClientProduceStream> members;
 
         private long affinity;
@@ -335,24 +360,32 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
         private int state;
 
+        private long initialDebitorIndex = NO_DEBITOR_INDEX;
+        private BudgetDebitor initialDebitor;
+
         private long initialBudgetId;
         private int initialBudget;
         private int initialPadding;
 
-        private KafkaCacheClientProduceFanout(
+        private long partitionIndex = NO_CREDITOR_INDEX;
+
+        private KafkaCacheClientProduceFan(
             long routeId,
             long authorization,
             long affinity,
+            KafkaCacheClientBudget budget,
             KafkaCachePartition partition)
         {
             this.routeId = routeId;
             this.authorization = authorization;
+            this.budget = budget;
             this.partition = partition;
+            this.partitionId = partition.id();
             this.members = new ArrayList<>();
             this.affinity = affinity;
         }
 
-        private void onClientFanoutMemberOpening(
+        private void onClientFanMemberOpening(
             long traceId,
             KafkaCacheClientProduceStream member)
         {
@@ -360,25 +393,20 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             assert !members.isEmpty();
 
-            doClientFanoutInitialBeginIfNecessary(traceId);
+            doClientFanInitialBeginIfNecessary(traceId);
 
             if (KafkaState.initialOpened(state))
             {
                 member.doClientInitialWindowIfNecessary(traceId);
             }
 
-            if (isFanoutReplyOpened())
+            if (KafkaState.replyOpened(state))
             {
                 member.doClientReplyBeginIfNecessary(traceId);
             }
         }
 
-        private boolean isFanoutReplyOpened()
-        {
-            return KafkaState.replyOpened(state);
-        }
-
-        private void onClientFanoutMemberClosed(
+        private void onClientFanMemberClosed(
             long traceId,
             KafkaCacheClientProduceStream member)
         {
@@ -386,13 +414,12 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             if (members.isEmpty())
             {
-                correlations.remove(replyId);
-                doClientFanoutInitialAbortIfNecessary(traceId);
-                doClientFanoutReplyResetIfNecessary(traceId);
+                doClientFanInitialAbortIfNecessary(traceId);
+                doClientFanReplyResetIfNecessary(traceId);
             }
         }
 
-        private void doClientFanoutInitialBeginIfNecessary(
+        private void doClientFanInitialBeginIfNecessary(
             long traceId)
         {
             if (KafkaState.closed(state))
@@ -405,21 +432,23 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             if (!KafkaState.initialOpening(state))
             {
-                doClientFanoutInitialBegin(traceId);
+                doClientFanInitialBegin(traceId);
             }
         }
 
-        private void doClientFanoutInitialBegin(
+        private void doClientFanInitialBegin(
             long traceId)
         {
             assert state == 0;
+            assert partitionIndex == NO_CREDITOR_INDEX;
 
+            this.partitionIndex = budget.acquire(partitionId);
             this.initialId = supplyInitialId.applyAsLong(routeId);
             this.replyId = supplyReplyId.applyAsLong(initialId);
             this.receiver = router.supplyReceiver(initialId);
 
-            correlations.put(replyId, this::onClientFanoutMessage);
-            router.setThrottle(initialId, this::onClientFanoutMessage);
+            correlations.put(replyId, this::onClientFanMessage);
+            router.setThrottle(initialId, this::onClientFanMessage);
             doBegin(receiver, routeId, initialId, traceId, authorization, affinity,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
@@ -431,7 +460,13 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             state = KafkaState.openingInitial(state);
         }
 
-        private void doClientFanoutInitialData(
+        private void doClientFanInitialDataIfNecessary(
+            long traceId)
+        {
+            assert false : "not buffered";
+        }
+
+        private void doClientFanInitialData(
             long traceId,
             int flags,
             long budgetId,
@@ -439,30 +474,79 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             OctetsFW payload,
             OctetsFW extension)
         {
+            // TODO: reaktor test client debitor
+            // assert budgetId == budget.topicBudgetId;
+
             initialBudget -= reserved;
             assert cacheServerEnforcesInitialBudget || initialBudget >= 0;
 
-            doData(receiver, routeId, initialId, traceId, authorization, flags, budgetId, reserved, payload, extension);
+            final long claimed = initialDebitor.claim(initialDebitorIndex, initialId, reserved, reserved);
+            assert claimed == reserved; // TODO: buffer if necessary
+
+            doData(receiver, routeId, initialId, traceId, authorization, flags, initialBudgetId, reserved, payload, extension);
         }
 
-        private void doClientFanoutInitialAbortIfNecessary(
+        private void doClientFanInitialAbortIfNecessary(
             long traceId)
         {
             if (!KafkaState.initialClosed(state))
             {
-                doClientFanoutInitialAbort(traceId);
+                doClientFanInitialAbort(traceId);
             }
         }
 
-        private void doClientFanoutInitialAbort(
+        private void doClientFanInitialAbort(
             long traceId)
         {
             doAbort(receiver, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
 
-            state = KafkaState.closedInitial(state);
+            onClientFanClosedInitial();
         }
 
-        private void onClientFanoutMessage(
+        private void onClientFanInitialReset(
+            ResetFW reset)
+        {
+            final long traceId = reset.traceId();
+            final OctetsFW extension = reset.extension();
+
+            members.forEach(s -> s.doClientInitialResetIfNecessary(traceId, extension));
+
+            onClientFanClosedInitial();
+
+            doClientFanReplyResetIfNecessary(traceId);
+        }
+
+        private void onClientFanInitialWindow(
+            WindowFW window)
+        {
+            final long traceId = window.traceId();
+            final long budgetId = window.budgetId();
+            final int credit = window.credit();
+            final int padding = window.padding();
+
+            initialBudgetId = budgetId;
+            initialBudget += credit;
+            initialPadding = padding;
+
+            if (!KafkaState.initialOpened(state))
+            {
+                state = KafkaState.openedInitial(state);
+
+                if (initialBudgetId != 0L && initialDebitorIndex == NO_DEBITOR_INDEX)
+                {
+                    initialDebitor = supplyDebitor.apply(initialBudgetId);
+                    initialDebitorIndex =
+                            initialDebitor.acquire(initialBudgetId, initialId, this::doClientFanInitialDataIfNecessary);
+                    assert initialDebitorIndex != NO_DEBITOR_INDEX;
+                }
+            }
+
+            budget.credit(traceId, partitionIndex, credit);
+
+            members.forEach(s -> s.doClientInitialWindowIfNecessary(traceId));
+        }
+
+        private void onClientFanMessage(
             int msgTypeId,
             DirectBuffer buffer,
             int index,
@@ -472,30 +556,30 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             {
             case BeginFW.TYPE_ID:
                 final BeginFW begin = beginRO.wrap(buffer, index, index + length);
-                onClientFanoutReplyBegin(begin);
+                onClientFanReplyBegin(begin);
                 break;
             case EndFW.TYPE_ID:
                 final EndFW end = endRO.wrap(buffer, index, index + length);
-                onClientFanoutReplyEnd(end);
+                onClientFanReplyEnd(end);
                 break;
             case AbortFW.TYPE_ID:
                 final AbortFW abort = abortRO.wrap(buffer, index, index + length);
-                onClientFanoutReplyAbort(abort);
+                onClientFanReplyAbort(abort);
                 break;
             case ResetFW.TYPE_ID:
                 final ResetFW reset = resetRO.wrap(buffer, index, index + length);
-                onClientFanoutInitialReset(reset);
+                onClientFanInitialReset(reset);
                 break;
             case WindowFW.TYPE_ID:
                 final WindowFW window = windowRO.wrap(buffer, index, index + length);
-                onClientFanoutInitialWindow(window);
+                onClientFanInitialWindow(window);
                 break;
             default:
                 break;
             }
         }
 
-        private void onClientFanoutReplyBegin(
+        private void onClientFanReplyBegin(
             BeginFW begin)
         {
             final long traceId = begin.traceId();
@@ -513,10 +597,10 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             members.forEach(s -> s.doClientReplyBeginIfNecessary(traceId));
 
-            doClientFanoutReplyWindow(traceId, 0);
+            doClientFanReplyWindow(traceId, 0);
         }
 
-        private void onClientFanoutReplyEnd(
+        private void onClientFanReplyEnd(
             EndFW end)
         {
             final long traceId = end.traceId();
@@ -526,7 +610,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             state = KafkaState.closedReply(state);
         }
 
-        private void onClientFanoutReplyAbort(
+        private void onClientFanReplyAbort(
             AbortFW abort)
         {
             final long traceId = abort.traceId();
@@ -536,54 +620,26 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             state = KafkaState.closedReply(state);
         }
 
-        private void onClientFanoutInitialReset(
-            ResetFW reset)
-        {
-            final long traceId = reset.traceId();
-            final OctetsFW extension = reset.extension();
-
-            members.forEach(s -> s.doClientInitialResetIfNecessary(traceId, extension));
-
-            state = KafkaState.closedInitial(state);
-
-            doClientFanoutReplyResetIfNecessary(traceId);
-        }
-
-        private void onClientFanoutInitialWindow(
-            WindowFW window)
-        {
-            final long traceId = window.traceId();
-            final long budgetId = window.budgetId();
-            final int credit = window.credit();
-            final int padding = window.padding();
-
-            state = KafkaState.openedInitial(state);
-
-            initialBudgetId = budgetId;
-            initialBudget += credit;
-            initialPadding = padding;
-
-            members.forEach(s -> s.doClientInitialWindowIfNecessary(traceId));
-        }
-
-        private void doClientFanoutReplyResetIfNecessary(
+        private void doClientFanReplyResetIfNecessary(
             long traceId)
         {
             if (!KafkaState.replyClosed(state))
             {
-                doClientFanoutReplyReset(traceId);
+                doClientFanReplyReset(traceId);
             }
         }
 
-        private void doClientFanoutReplyReset(
+        private void doClientFanReplyReset(
             long traceId)
         {
+            correlations.remove(replyId);
+
             state = KafkaState.closedReply(state);
 
             doReset(receiver, routeId, replyId, traceId, authorization, EMPTY_OCTETS);
         }
 
-        private void doClientFanoutReplyWindow(
+        private void doClientFanReplyWindow(
             long traceId,
             int credit)
         {
@@ -591,11 +647,29 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             doWindow(receiver, routeId, replyId, traceId, authorization, 0L, credit, 0);
         }
+
+        private void onClientFanClosedInitial()
+        {
+            assert !KafkaState.initialClosed(state);
+            state = KafkaState.closedInitial(state);
+
+            if (partitionIndex != NO_CREDITOR_INDEX)
+            {
+                budget.release(partitionIndex, initialBudget);
+                partitionIndex = NO_CREDITOR_INDEX;
+            }
+
+            if (initialDebitor != null && initialDebitorIndex != NO_DEBITOR_INDEX)
+            {
+                initialDebitor.release(initialDebitorIndex, initialId);
+                initialDebitorIndex = NO_DEBITOR_INDEX;
+            }
+        }
     }
 
     private final class KafkaCacheClientProduceStream
     {
-        private final KafkaCacheClientProduceFanout group;
+        private final KafkaCacheClientProduceFan fan;
         private final MessageConsumer sender;
         private final long routeId;
         private final long initialId;
@@ -608,14 +682,14 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private int initialBudget;
 
         KafkaCacheClientProduceStream(
-            KafkaCacheClientProduceFanout group,
+            KafkaCacheClientProduceFan fan,
             MessageConsumer sender,
             long routeId,
             long initialId,
             long affinity,
             long authorization)
         {
-            this.group = group;
+            this.fan = fan;
             this.sender = sender;
             this.routeId = routeId;
             this.initialId = initialId;
@@ -668,7 +742,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             state = KafkaState.openingInitial(state);
 
-            group.onClientFanoutMemberOpening(traceId, this);
+            fan.onClientFanMemberOpening(traceId, this);
         }
 
         private void onClientInitialData(
@@ -687,11 +761,11 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             {
                 doClientInitialResetIfNecessary(traceId, EMPTY_OCTETS);
                 doClientReplyAbortIfNecessary(traceId);
-                group.onClientFanoutMemberClosed(traceId, this);
+                fan.onClientFanMemberClosed(traceId, this);
             }
             else
             {
-                group.doClientFanoutInitialData(traceId, flags, budgetId, reserved, payload, extension);
+                fan.doClientFanInitialData(traceId, flags, budgetId, reserved, payload, extension);
             }
         }
 
@@ -702,7 +776,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             state = KafkaState.closedInitial(state);
 
-            group.onClientFanoutMemberClosed(traceId, this);
+            fan.onClientFanMemberClosed(traceId, this);
 
             doClientReplyEndIfNecessary(traceId);
         }
@@ -714,7 +788,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             state = KafkaState.closedInitial(state);
 
-            group.onClientFanoutMemberClosed(traceId, this);
+            fan.onClientFanMemberClosed(traceId, this);
 
             doClientReplyAbortIfNecessary(traceId);
         }
@@ -722,7 +796,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private void doClientInitialWindowIfNecessary(
             long traceId)
         {
-            final int credit = Math.max(group.initialBudget - initialBudget, 0);
+            final int credit = Math.max(fan.initialBudget - initialBudget, 0);
 
             if (!KafkaState.initialOpened(state) || credit > 0)
             {
@@ -739,7 +813,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             initialBudget += credit;
 
             doWindow(sender, routeId, initialId, traceId, authorization,
-                    group.initialBudgetId, credit, group.initialPadding);
+                    fan.budget.topicBudgetId, credit, fan.initialPadding);
         }
 
         private void doClientInitialResetIfNecessary(
@@ -782,8 +856,8 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .produce(p -> p.transaction(TRANSACTION_NONE)
-                                       .topic(group.partition.topic())
-                                       .partitionId(group.partition.id()))
+                                       .topic(fan.partition.topic())
+                                       .partitionId(fan.partition.id()))
                         .build()
                         .sizeof()));
         }
@@ -837,7 +911,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
-            group.onClientFanoutMemberClosed(traceId, this);
+            fan.onClientFanMemberClosed(traceId, this);
 
             doClientInitialResetIfNecessary(traceId, EMPTY_OCTETS);
         }
