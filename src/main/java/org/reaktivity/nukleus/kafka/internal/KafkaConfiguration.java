@@ -26,13 +26,16 @@ public class KafkaConfiguration extends Configuration
 {
     public static final boolean DEBUG = Boolean.getBoolean("nukleus.kafka.debug");
 
+    public static final String KAFKA_CLIENT_PRODUCE_MAX_REQUEST_MILLIS_NAME = "nukleus.kafka.client.produce.max.request.millis";
+
     public static final IntPropertyDef KAFKA_CLIENT_MAX_IDLE_MILLIS;
     public static final IntPropertyDef KAFKA_CLIENT_META_MAX_AGE_MILLIS;
     public static final IntPropertyDef KAFKA_CLIENT_DESCRIBE_MAX_AGE_MILLIS;
     public static final IntPropertyDef KAFKA_CLIENT_FETCH_MAX_WAIT_MILLIS;
     public static final IntPropertyDef KAFKA_CLIENT_FETCH_MAX_BYTES;
     public static final IntPropertyDef KAFKA_CLIENT_FETCH_PARTITION_MAX_BYTES;
-    public static final IntPropertyDef KAFKA_CLIENT_PRODUCE_MAX_WAIT_MILLIS;
+    public static final IntPropertyDef KAFKA_CLIENT_PRODUCE_MAX_REQUEST_MILLIS;
+    public static final IntPropertyDef KAFKA_CLIENT_PRODUCE_MAX_RESPONSE_MILLIS;
     public static final IntPropertyDef KAFKA_CLIENT_PRODUCE_MAX_BYTES;
     public static final PropertyDef<Path> KAFKA_CACHE_DIRECTORY;
     public static final PropertyDef<KafkaCacheCleanupPolicy> KAFKA_CACHE_CLEANUP_POLICY;
@@ -49,6 +52,7 @@ public class KafkaConfiguration extends Configuration
     public static final BooleanPropertyDef KAFKA_CACHE_SERVER_BOOTSTRAP;
     public static final IntPropertyDef KAFKA_CACHE_CLIENT_RECONNECT_DELAY;
     public static final IntPropertyDef KAFKA_CACHE_SERVER_RECONNECT_DELAY;
+    public static final BooleanPropertyDef KAFKA_CACHE_SERVER_ENFORCES_INITIAL_BUDGET;
 
     private static final ConfigurationDef KAFKA_CONFIG;
 
@@ -61,10 +65,12 @@ public class KafkaConfiguration extends Configuration
         KAFKA_CLIENT_FETCH_MAX_WAIT_MILLIS = config.property("client.fetch.max.wait.millis", 500);
         KAFKA_CLIENT_FETCH_MAX_BYTES = config.property("client.fetch.max.bytes", 50 * 1024 * 1024);
         KAFKA_CLIENT_FETCH_PARTITION_MAX_BYTES = config.property("client.fetch.partition.max.bytes", 50 * 1024 * 1024);
-        KAFKA_CLIENT_PRODUCE_MAX_WAIT_MILLIS = config.property("client.produce.max.wait.millis", 120000);
+        KAFKA_CLIENT_PRODUCE_MAX_REQUEST_MILLIS = config.property("client.produce.max.request.millis", 0);
+        KAFKA_CLIENT_PRODUCE_MAX_RESPONSE_MILLIS = config.property("client.produce.max.response.millis", 120000);
         KAFKA_CLIENT_PRODUCE_MAX_BYTES = config.property("client.produce.max.bytes", Integer.MAX_VALUE);
         KAFKA_CACHE_DIRECTORY = config.property(Path.class, "cache.directory", (c, v) -> cacheDirectory(c, v), KafkaNukleus.NAME);
         KAFKA_CACHE_SERVER_BOOTSTRAP = config.property("cache.server.bootstrap", true);
+        KAFKA_CACHE_SERVER_ENFORCES_INITIAL_BUDGET = config.property("cache.server.enforces.initial.budget", false);
         KAFKA_CACHE_SERVER_RECONNECT_DELAY = config.property("cache.server.reconnect", 5);
         KAFKA_CACHE_CLIENT_RECONNECT_DELAY = config.property("cache.client.reconnect", 0);
         KAFKA_CACHE_CLEANUP_POLICY = config.property(KafkaCacheCleanupPolicy.class, "cache.cleanup.policy",
@@ -123,9 +129,14 @@ public class KafkaConfiguration extends Configuration
         return KAFKA_CLIENT_FETCH_PARTITION_MAX_BYTES.get(this);
     }
 
-    public int clientProduceMaxWaitMillis()
+    public int clientProduceMaxRequestMillis()
     {
-        return KAFKA_CLIENT_PRODUCE_MAX_WAIT_MILLIS.getAsInt(this);
+        return KAFKA_CLIENT_PRODUCE_MAX_REQUEST_MILLIS.getAsInt(this);
+    }
+
+    public int clientProduceMaxResponseMillis()
+    {
+        return KAFKA_CLIENT_PRODUCE_MAX_RESPONSE_MILLIS.getAsInt(this);
     }
 
     public int clientProduceMaxBytes()
@@ -206,6 +217,11 @@ public class KafkaConfiguration extends Configuration
     public int cacheServerReconnect()
     {
         return KAFKA_CACHE_SERVER_RECONNECT_DELAY.getAsInt(this);
+    }
+
+    public boolean cacheServerEnforcesInitialBudget()
+    {
+        return KAFKA_CACHE_SERVER_ENFORCES_INITIAL_BUDGET.getAsBoolean(this);
     }
 
     private static Path cacheDirectory(

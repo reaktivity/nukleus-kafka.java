@@ -27,6 +27,7 @@ import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
+import org.reaktivity.nukleus.budget.BudgetCreditor;
 import org.reaktivity.nukleus.budget.BudgetDebitor;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.concurrent.Signaler;
@@ -58,6 +59,7 @@ public final class KafkaCacheClientFactory implements StreamFactory
         Signaler signaler,
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
+        BudgetCreditor creditor,
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
         LongSupplier supplyTraceId,
@@ -82,6 +84,10 @@ public final class KafkaCacheClientFactory implements StreamFactory
                 config, router, writeBuffer, bufferPool, signaler, supplyInitialId, supplyReplyId, supplyTraceId,
                 supplyTypeId, accountant::supplyDebitor, supplyCache, supplyCacheRoute, correlations);
 
+        final KafkaCacheClientProduceFactory cacheProduceFactory = new KafkaCacheClientProduceFactory(
+                config, router, writeBuffer, creditor, supplyInitialId, supplyReplyId, supplyTraceId,
+                supplyBudgetId, supplyTypeId, supplyDebitor, supplyCache, supplyCacheRoute, correlations);
+
         final KafkaMergedFactory cacheMergedFactory = new KafkaMergedFactory(
                 config, router, writeBuffer, supplyInitialId, supplyReplyId, supplyTraceId, supplyTypeId,
                 correlations, accountant.creditor());
@@ -90,6 +96,7 @@ public final class KafkaCacheClientFactory implements StreamFactory
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_META, cacheMetaFactory);
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_DESCRIBE, cacheDescribeFactory);
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_FETCH, cacheFetchFactory);
+        streamFactoriesByKind.put(KafkaBeginExFW.KIND_PRODUCE, cacheProduceFactory);
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_MERGED, cacheMergedFactory);
 
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);

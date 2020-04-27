@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static java.lang.System.currentTimeMillis;
 import static java.nio.ByteOrder.BIG_ENDIAN;
 import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
@@ -50,7 +51,6 @@ import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
-import org.reaktivity.nukleus.kafka.internal.types.Varint32FW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.RequestHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.ResponseHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.message.RecordBatchFW;
@@ -87,8 +87,11 @@ public final class KafkaClientProduceFactory implements StreamFactory
 {
     private static final int PRODUCE_REQUEST_RECORDS_OFFSET_MAX = 512;
 
+    private static final int KAFKA_RECORD_FRAMING = 100; // TODO
+
     private static final byte RECORD_BATCH_MAGIC = 2;
     private static final short RECORD_BATCH_ATTRIBUTES_NONE = 0;
+    private static final short RECORD_BATCH_ATTRIBUTES_NO_TIMESTAMP = 0x08;
     private static final int RECORD_BATCH_PRODUCER_ID_NONE = -1;
     private static final short RECORD_BATCH_PRODUCER_EPOCH_NONE = -1;
     private static final short RECORD_BATCH_SEQUENCE_NONE = -1;
@@ -142,7 +145,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
     private final ProduceTopicRequestFW.Builder topicRequestRW = new ProduceTopicRequestFW.Builder();
     private final ProducePartitionRequestFW.Builder partitionRequestRW = new ProducePartitionRequestFW.Builder();
     private final RecordBatchFW.Builder recordBatchRW = new RecordBatchFW.Builder();
-    private final Varint32FW.Builder recordLengthRW = new Varint32FW.Builder().wrap(new UnsafeBuffer(new byte[5]), 0, 5);
     private final RecordHeaderFW.Builder recordHeaderRW = new RecordHeaderFW.Builder();
     private final RecordTrailerFW.Builder recordTrailerRW = new RecordTrailerFW.Builder();
 
@@ -152,17 +154,18 @@ public final class KafkaClientProduceFactory implements StreamFactory
     private final ProducePartitionResponseFW producePartitionResponseRO = new ProducePartitionResponseFW();
     private final ProduceResponseTrailerFW produceResponseTrailerRO = new ProduceResponseTrailerFW();
 
-    private final KafkaFetchClientDecoder decodeProduceResponse = this::decodeProduceResponse;
-    private final KafkaFetchClientDecoder decodeProduce = this::decodeProduce;
-    private final KafkaFetchClientDecoder decodeProduceTopics = this::decodeProduceTopics;
-    private final KafkaFetchClientDecoder decodeProduceTopic = this::decodeProduceTopic;
-    private final KafkaFetchClientDecoder decodeProducePartitions = this::decodeProducePartitions;
-    private final KafkaFetchClientDecoder decodeProducePartition = this::decodeProducePartition;
-    private final KafkaFetchClientDecoder decodeProduceResponseTrailer = this::decodeProduceResponseTrailer;
+    private final KafkaProduceClientDecoder decodeProduceResponse = this::decodeProduceResponse;
+    private final KafkaProduceClientDecoder decodeProduce = this::decodeProduce;
+    private final KafkaProduceClientDecoder decodeProduceTopics = this::decodeProduceTopics;
+    private final KafkaProduceClientDecoder decodeProduceTopic = this::decodeProduceTopic;
+    private final KafkaProduceClientDecoder decodeProducePartitions = this::decodeProducePartitions;
+    private final KafkaProduceClientDecoder decodeProducePartition = this::decodeProducePartition;
+    private final KafkaProduceClientDecoder decodeProduceResponseTrailer = this::decodeProduceResponseTrailer;
 
     private final MessageFunction<RouteFW> wrapRoute = (t, b, i, l) -> routeRO.wrap(b, i, i + l);
 
     private final int produceMaxWaitMillis;
+    private final long produceRequestMaxDelay;
     private final int kafkaTypeId;
     private final int tcpTypeId;
     private final RouteManager router;
@@ -192,7 +195,8 @@ public final class KafkaClientProduceFactory implements StreamFactory
         Long2ObjectHashMap<MessageConsumer> correlations,
         LongFunction<KafkaClientRoute> supplyClientRoute)
     {
-        this.produceMaxWaitMillis = config.clientProduceMaxWaitMillis();
+        this.produceMaxWaitMillis = config.clientProduceMaxResponseMillis();
+        this.produceRequestMaxDelay = config.clientProduceMaxRequestMillis();
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.tcpTypeId = supplyTypeId.applyAsInt("tcp");
         this.router = router;
@@ -427,7 +431,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
     }
 
     @FunctionalInterface
-    private interface KafkaFetchClientDecoder
+    private interface KafkaProduceClientDecoder
     {
         int decode(
             KafkaProduceClient client,
@@ -734,7 +738,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
             final long authorization = begin.authorization();
 
             state = KafkaState.openingInitial(state);
-            doFlushApplicationWindow(traceId, encodeMaxBytes);
+            doApplicationWindowIfNecessary(traceId, encodeMaxBytes);
 
             client.doNetworkBegin(traceId, authorization, affinity);
         }
@@ -764,6 +768,13 @@ public final class KafkaClientProduceFactory implements StreamFactory
                 final OctetsFW value = data.payload();
 
                 assert data.flags() == 0x03; // TODO: fragmented
+
+                // TODO: flow control includes headers (extension)
+                if (client.encodeSlot != NO_SLOT &&
+                    client.encodeSlotLimit + data.sizeof() + KAFKA_RECORD_FRAMING > encodePool.slotCapacity())
+                {
+                    client.doEncodeRequestIfNecessary(traceId);
+                }
 
                 client.doEncodeRecord(traceId, timestamp, key, value, headers);
                 client.doSignalNextRequestIfNecessary(traceId);
@@ -854,29 +865,30 @@ public final class KafkaClientProduceFactory implements StreamFactory
             doAbort(application, routeId, replyId, traceId, client.authorization, EMPTY_EXTENSION);
         }
 
-        private void doFlushApplicationWindow(
+        private void doApplicationWindowIfNecessary(
             long traceId,
             int initialBudgetMax)
         {
             final int credit = initialBudgetMax - initialBudget;
-            doApplicationWindow(traceId, 0L, credit, 0);
+
+            if (!KafkaState.initialOpened(state) || credit > 0)
+            {
+                doApplicationWindow(traceId, 0L, credit);
+            }
         }
 
         private void doApplicationWindow(
             long traceId,
             long budgetId,
-            int credit,
-            int padding)
+            int credit)
         {
-            if (!KafkaState.initialOpened(state) || credit > 0)
-            {
-                doWindow(application, routeId, initialId, traceId, client.authorization,
-                        budgetId, credit, padding);
-            }
-
             state = KafkaState.openedInitial(state);
 
             initialBudget += credit;
+
+            doWindow(application, routeId, initialId, traceId, client.authorization,
+                    budgetId, credit, KAFKA_RECORD_FRAMING);
+
         }
 
         private void doApplicationReset(
@@ -958,7 +970,8 @@ public final class KafkaClientProduceFactory implements StreamFactory
         private int nextRequestId;
         private int nextResponseId;
 
-        private KafkaFetchClientDecoder decoder;
+        private KafkaProduceClientDecoder decoder;
+        private int signaledRequestId;
 
         KafkaProduceClient(
             KafkaProduceStream stream,
@@ -1098,7 +1111,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
             if (KafkaConfiguration.DEBUG)
             {
-                System.out.format("[client] %s[%s] FETCH aborted (%d bytes)\n", topic, partitionId);
+                System.out.format("[client] %s[%s] PRODUCE aborted (%d bytes)\n", topic, partitionId);
             }
 
             state = KafkaState.closedReply(state);
@@ -1113,7 +1126,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
             if (KafkaConfiguration.DEBUG)
             {
-                System.out.format("[client] %s[%d] FETCH reset (%d bytes)\n", topic, partitionId);
+                System.out.format("[client] %s[%d] PRODUCE reset (%d bytes)\n", topic, partitionId);
             }
 
             state = KafkaState.closedInitial(state);
@@ -1139,9 +1152,10 @@ public final class KafkaClientProduceFactory implements StreamFactory
             if (encodeSlot != NO_SLOT)
             {
                 final MutableDirectBuffer buffer = encodePool.buffer(encodeSlot);
+                final int offset = encodeSlotOffset;
                 final int limit = encodeSlotLimit;
 
-                encodeNetwork(encodeSlotTraceId, authorization, budgetId, buffer, 0, limit);
+                encodeNetwork(encodeSlotTraceId, authorization, budgetId, buffer, offset, limit);
             }
         }
 
@@ -1153,7 +1167,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
             if (signalId == SIGNAL_NEXT_REQUEST)
             {
-                doEncodeRequestIfNecessary(traceId, initialBudgetId);
+                doEncodeRequestIfNecessary(traceId);
             }
         }
 
@@ -1186,7 +1200,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
         private void doNetworkData(
             long traceId,
-            long budgetId,
             DirectBuffer buffer,
             int offset,
             int limit)
@@ -1203,7 +1216,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
                 limit = encodeSlotLimit;
             }
 
-            encodeNetwork(traceId, authorization, budgetId, buffer, offset, limit);
+            encodeNetwork(traceId, authorization, initialBudgetId, buffer, offset, limit);
         }
 
         private void doNetworkEndAfterFlush(
@@ -1361,28 +1374,36 @@ public final class KafkaClientProduceFactory implements StreamFactory
         private void doSignalNextRequestIfNecessary(
             long traceId)
         {
-            if (nextRequestId == nextResponseId && encodeSlot != NO_SLOT)
+            if (signaledRequestId <= nextRequestId &&
+                nextRequestId == nextResponseId &&
+                encodeSlot != NO_SLOT)
             {
-                signaler.signalNow(routeId, initialId, SIGNAL_NEXT_REQUEST);
+                if (produceRequestMaxDelay == 0)
+                {
+                    signaler.signalNow(routeId, initialId, SIGNAL_NEXT_REQUEST);
+                }
+                else
+                {
+                    signaler.signalAt(currentTimeMillis() + produceRequestMaxDelay, routeId, initialId, SIGNAL_NEXT_REQUEST);
+                }
+                signaledRequestId = nextRequestId + 1;
             }
         }
 
         private void doEncodeRequestIfNecessary(
-            long traceId,
-            long budgetId)
+            long traceId)
         {
             if (nextRequestId == nextResponseId && encodeSlot != NO_SLOT)
             {
-                doEncodeProduceRequest(traceId, budgetId);
+                doEncodeProduceRequest(traceId);
             }
         }
 
         private void doEncodeProduceRequest(
-            long traceId,
-            long budgetId)
+            long traceId)
         {
             final MutableDirectBuffer encodeBuffer = writeBuffer;
-            final int encodeOffset = DataFW.FIELD_OFFSET_PAYLOAD;
+            final int encodeOffset = 0;
             final int encodeLimit = encodeBuffer.capacity();
 
             int encodeProgress = encodeOffset;
@@ -1399,7 +1420,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
             final ProduceRequestFW produceRequest = produceRequestRW.wrap(encodeBuffer, encodeProgress, encodeLimit)
                     .transactionalId(TRANSACTION_ID_NONE)
-                    .acks(a -> a.set(ProduceAck.NONE))
+                    .acks(a -> a.set(ProduceAck.IN_SYNC_REPLICAS))
                     .timeout(produceMaxWaitMillis)
                     .topicCount(1)
                     .build();
@@ -1427,13 +1448,17 @@ public final class KafkaClientProduceFactory implements StreamFactory
             final int crcOffset = encodeProgress - encodeOffset + RecordBatchFW.FIELD_OFFSET_CRC;
             final int crcLimit = encodeProgress - encodeOffset + RecordBatchFW.FIELD_OFFSET_ATTRIBUTES;
 
+            final short attributes = encodeableRecordBatchTimestampMax == 0L
+                    ? RECORD_BATCH_ATTRIBUTES_NO_TIMESTAMP
+                    : RECORD_BATCH_ATTRIBUTES_NONE;
+
             final RecordBatchFW recordBatch = recordBatchRW.wrap(encodeBuffer, encodeProgress, encodeLimit)
                     .baseOffset(0)
                     .length(recordBatchLength)
                     .leaderEpoch(-1)
                     .magic(RECORD_BATCH_MAGIC)
                     .crc(0)
-                    .attributes(RECORD_BATCH_ATTRIBUTES_NONE)
+                    .attributes(attributes)
                     .lastOffsetDelta(encodeableRecordCount - 1)
                     .firstTimestamp(encodeableRecordBatchTimestamp)
                     .maxTimestamp(encodeableRecordBatchTimestampMax)
@@ -1479,16 +1504,16 @@ public final class KafkaClientProduceFactory implements StreamFactory
             encodeSlotBuffer.putBytes(encodeSlotOffset, encodeBuffer, encodeOffset, encodeSizeOf);
 
             final ByteBuffer encodeSlotByteBuffer = encodePool.byteBuffer(encodeSlot);
-            encodeSlotByteBuffer.clear();
-            encodeSlotByteBuffer.position(encodeSlotOffset + crcLimit);
-            encodeSlotByteBuffer.limit(encodeSlotLimit);
+            final int encodeSlotBytePosition = encodeSlotByteBuffer.position();
+            encodeSlotByteBuffer.limit(encodeSlotBytePosition + encodeSlotLimit);
+            encodeSlotByteBuffer.position(encodeSlotBytePosition + encodeSlotOffset + crcLimit);
 
-            crc32c.reset();
-            crc32c.update(encodeSlotByteBuffer);
-            final int crcValue = (int) crc32c.getValue();
-            encodeSlotBuffer.putInt(encodeSlotOffset + crcOffset, crcValue, BIG_ENDIAN);
+            final CRC32C crc = crc32c;
+            crc.reset();
+            crc.update(encodeSlotByteBuffer);
+            encodeSlotBuffer.putInt(encodeSlotOffset + crcOffset, (int) crc.getValue(), BIG_ENDIAN);
 
-            doNetworkData(traceId, budgetId, EMPTY_BUFFER, 0, 0);
+            doNetworkData(traceId, EMPTY_BUFFER, 0, 0);
         }
 
         private void encodeNetwork(
@@ -1521,25 +1546,15 @@ public final class KafkaClientProduceFactory implements StreamFactory
             final int remaining = maxLength - length;
             if (remaining > 0)
             {
-                if (encodeSlot == NO_SLOT)
-                {
-                    encodeSlot = encodePool.acquire(initialId);
-                }
+                assert encodeSlot != NO_SLOT;
 
-                if (encodeSlot == NO_SLOT)
+                if (encodeableRequestBytes == 0)
                 {
-                    cleanupNetwork(traceId);
+                    encodeSlotOffset = PRODUCE_REQUEST_RECORDS_OFFSET_MAX;
                 }
-                else
-                {
-                    if (encodeableRequestBytes == 0)
-                    {
-                        encodeSlotOffset = PRODUCE_REQUEST_RECORDS_OFFSET_MAX;
-                    }
-                    final MutableDirectBuffer encodeBuffer = encodePool.buffer(encodeSlot);
-                    encodeBuffer.putBytes(encodeSlotOffset, buffer, offset + length, remaining);
-                    encodeSlotLimit = encodeSlotOffset + remaining;
-                }
+                final MutableDirectBuffer encodeBuffer = encodePool.buffer(encodeSlot);
+                encodeBuffer.putBytes(encodeSlotOffset, buffer, offset + length, remaining);
+                encodeSlotLimit = encodeSlotOffset + remaining;
             }
             else
             {
@@ -1561,7 +1576,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
             int offset,
             int limit)
         {
-            KafkaFetchClientDecoder previous = null;
+            KafkaProduceClientDecoder previous = null;
             int progress = offset;
             while (progress <= limit && previous != decoder)
             {
@@ -1625,7 +1640,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
                                                              .typeId(kafkaTypeId)
                                                              .error(errorCode)
                                                              .build();
-                stream.cleanupApplication(traceId, resetEx);
+                stream.doApplicationResetIfNecessary(traceId, resetEx);
                 doNetworkEnd(traceId, authorization);
                 break;
             }
@@ -1636,7 +1651,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
         {
             nextResponseId++;
 
-            stream.doFlushApplicationWindow(traceId, encodeMaxBytes - encodeSlotLimit);
+            stream.doApplicationWindowIfNecessary(traceId, encodeMaxBytes - encodeSlotLimit);
 
             if (encodeSlot != NO_SLOT)
             {

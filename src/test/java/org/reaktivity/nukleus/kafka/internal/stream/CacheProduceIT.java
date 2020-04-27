@@ -17,7 +17,8 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
-import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CLIENT_PRODUCE_MAX_REQUEST_MILLIS_NAME;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_BOOTSTRAP;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_RECONNECT_DELAY;
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
@@ -32,13 +33,12 @@ import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.reaktor.test.ReaktorRule;
-import org.reaktivity.reaktor.test.annotation.Configure;
 
-public class ClientProduceIT
+public class CacheProduceIT
 {
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
-            .addScriptRoot("server", "org/reaktivity/specification/kafka/produce.v3")
+            .addScriptRoot("server", "org/reaktivity/specification/nukleus/kafka/streams/produce")
             .addScriptRoot("client", "org/reaktivity/specification/nukleus/kafka/streams/produce");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(10, SECONDS));
@@ -49,8 +49,10 @@ public class ClientProduceIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(8192)
-        .configure(REAKTOR_DRAIN_ON_CLOSE, false)
         .configure(REAKTOR_BUFFER_SLOT_CAPACITY, 8192)
+        .configure(KAFKA_CACHE_SERVER_BOOTSTRAP, false)
+        .configure(KAFKA_CACHE_SERVER_RECONNECT_DELAY, 0)
+        .configure(REAKTOR_DRAIN_ON_CLOSE, false)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 
@@ -59,7 +61,7 @@ public class ClientProduceIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/topic.missing/client"})
     public void shouldRejectWhenTopicMissing() throws Exception
     {
@@ -68,7 +70,7 @@ public class ClientProduceIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/topic.not.routed/client"})
     public void shouldRejectWhenTopicNotRouted() throws Exception
     {
@@ -77,10 +79,10 @@ public class ClientProduceIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/partition.unknown/client",
         "${server}/partition.unknown/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldRejectWhenPartitionUnknown() throws Exception
     {
         k3po.finish();
@@ -88,10 +90,10 @@ public class ClientProduceIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/partition.not.leader/client",
         "${server}/partition.not.leader/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldRejectPartitionNotLeader() throws Exception
     {
         k3po.finish();
@@ -99,10 +101,10 @@ public class ClientProduceIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/message.key/client",
         "${server}/message.key/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldSendMessageKey() throws Exception
     {
         k3po.finish();
@@ -110,10 +112,10 @@ public class ClientProduceIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/message.key.null/client",
         "${server}/message.key.null/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldSendMessageKeyNull() throws Exception
     {
         k3po.finish();
@@ -121,10 +123,10 @@ public class ClientProduceIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/message.key.with.value.null/client",
         "${server}/message.key.with.value.null/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldSendMessageKeyWithValueNull() throws Exception
     {
         k3po.finish();
@@ -132,10 +134,10 @@ public class ClientProduceIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/message.key.with.value.distinct/client",
         "${server}/message.key.with.value.distinct/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldSendMessageKeyWithValueDistinct() throws Exception
     {
         k3po.finish();
@@ -143,10 +145,10 @@ public class ClientProduceIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/message.key.with.header/client",
         "${server}/message.key.with.header/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldSendMessageKeyWithHeader() throws Exception
     {
         k3po.finish();
@@ -154,10 +156,10 @@ public class ClientProduceIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/message.key.distinct/client",
         "${server}/message.key.distinct/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldSendMessageKeyDistinct() throws Exception
     {
         k3po.finish();
@@ -165,10 +167,10 @@ public class ClientProduceIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/message.value/client",
         "${server}/message.value/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldSendMessageValue() throws Exception
     {
         k3po.finish();
@@ -176,10 +178,10 @@ public class ClientProduceIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/message.value.null/client",
         "${server}/message.value.null/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldSendMessageValueNull() throws Exception
     {
         k3po.finish();
@@ -188,10 +190,10 @@ public class ClientProduceIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/message.value.10k/client",
         "${server}/message.value.10k/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldSendMessageValue10k() throws Exception
     {
         k3po.finish();
@@ -200,10 +202,10 @@ public class ClientProduceIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/message.value.100k/client",
         "${server}/message.value.100k/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldSendMessageValue100k() throws Exception
     {
         k3po.finish();
@@ -212,10 +214,10 @@ public class ClientProduceIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/message.value.gzip/client",
         "${server}/message.value.gzip/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldSendMessageValueGzip() throws Exception
     {
         k3po.finish();
@@ -224,10 +226,10 @@ public class ClientProduceIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/message.value.snappy/client",
         "${server}/message.value.snappy/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldSendMessageValueSnappy() throws Exception
     {
         k3po.finish();
@@ -236,10 +238,10 @@ public class ClientProduceIT
     @Ignore("TODO")
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/message.value.lz4/client",
         "${server}/message.value.lz4/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldSendMessageValueLz4() throws Exception
     {
         k3po.finish();
@@ -247,10 +249,10 @@ public class ClientProduceIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/message.value.distinct/client",
         "${server}/message.value.distinct/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldSendMessageValueDistinct() throws Exception
     {
         k3po.finish();
@@ -258,10 +260,10 @@ public class ClientProduceIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/message.header/client",
         "${server}/message.header/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldSendMessageHeader() throws Exception
     {
         k3po.finish();
@@ -269,10 +271,10 @@ public class ClientProduceIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/message.header.null/client",
         "${server}/message.header.null/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldSendMessageHeaderNull() throws Exception
     {
         k3po.finish();
@@ -280,10 +282,10 @@ public class ClientProduceIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/message.headers.distinct/client",
         "${server}/message.headers.distinct/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldSendMessageHeadersDistinct() throws Exception
     {
         k3po.finish();
@@ -291,10 +293,10 @@ public class ClientProduceIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/message.headers.repeated/client",
         "${server}/message.headers.repeated/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldSendMessageHeadersRepeated() throws Exception
     {
         k3po.finish();
@@ -302,11 +304,10 @@ public class ClientProduceIT
 
     @Test
     @Specification({
-        "${route}/client/controller",
+        "${route}/cache/controller",
         "${client}/message.value.repeated/client",
         "${server}/message.value.repeated/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    @Configure(name = KAFKA_CLIENT_PRODUCE_MAX_REQUEST_MILLIS_NAME, value = "200")
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldSendMessageValueRepeated() throws Exception
     {
         k3po.finish();

@@ -282,11 +282,11 @@ scope protocol
 
         scope produce
         {
-            enum ProduceAck (uint16)
+            enum ProduceAck (int16)
             {
                 NONE(0),
                 LEADER_ONLY(1),
-                IN_SYNC_REPLICAS(2)
+                IN_SYNC_REPLICAS(-1)
             }
 
             struct ProduceRequest // v3
