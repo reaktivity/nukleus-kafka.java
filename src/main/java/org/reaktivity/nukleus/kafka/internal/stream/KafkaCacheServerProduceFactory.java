@@ -110,7 +110,6 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
     private final int reconnectDelay;
-    private final boolean cacheServerEnforcesInitialBudget;
 
     public KafkaCacheServerProduceFactory(
         KafkaConfiguration config,
@@ -140,7 +139,6 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         this.supplyCacheRoute = supplyCacheRoute;
         this.correlations = correlations;
         this.reconnectDelay = config.cacheServerReconnect();
-        this.cacheServerEnforcesInitialBudget = config.cacheServerEnforcesInitialBudget();
     }
 
     @Override
@@ -879,7 +877,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
             assert budgetId == fan.creditorId;
 
-            if (!cacheServerEnforcesInitialBudget && initialBudget < 0)
+            if (initialBudget < 0)
             {
                 doServerInitialResetIfNecessary(traceId, EMPTY_OCTETS);
                 doServerReplyAbortIfNecessary(traceId);
