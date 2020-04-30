@@ -349,9 +349,10 @@ public final class KafkaMergedFactory implements StreamFactory
     private static int defaultKeyHash(
         KafkaKeyFW key)
     {
-        final DirectBuffer buffer = key.buffer();
-        final int offset = key.offset();
-        final int limit = key.limit();
+        final OctetsFW value = key.value();
+        final DirectBuffer buffer = value.buffer();
+        final int offset = value.offset();
+        final int limit = value.limit();
 
         final int length = limit - offset;
         final int seed = 0x9747b28c;
