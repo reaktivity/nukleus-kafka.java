@@ -52,7 +52,6 @@ public class KafkaConfiguration extends Configuration
     public static final BooleanPropertyDef KAFKA_CACHE_SERVER_BOOTSTRAP;
     public static final IntPropertyDef KAFKA_CACHE_CLIENT_RECONNECT_DELAY;
     public static final IntPropertyDef KAFKA_CACHE_SERVER_RECONNECT_DELAY;
-    public static final BooleanPropertyDef KAFKA_CACHE_SERVER_ENFORCES_INITIAL_BUDGET;
 
     private static final ConfigurationDef KAFKA_CONFIG;
 
@@ -70,7 +69,6 @@ public class KafkaConfiguration extends Configuration
         KAFKA_CLIENT_PRODUCE_MAX_BYTES = config.property("client.produce.max.bytes", Integer.MAX_VALUE);
         KAFKA_CACHE_DIRECTORY = config.property(Path.class, "cache.directory", (c, v) -> cacheDirectory(c, v), KafkaNukleus.NAME);
         KAFKA_CACHE_SERVER_BOOTSTRAP = config.property("cache.server.bootstrap", true);
-        KAFKA_CACHE_SERVER_ENFORCES_INITIAL_BUDGET = config.property("cache.server.enforces.initial.budget", false);
         KAFKA_CACHE_SERVER_RECONNECT_DELAY = config.property("cache.server.reconnect", 5);
         KAFKA_CACHE_CLIENT_RECONNECT_DELAY = config.property("cache.client.reconnect", 0);
         KAFKA_CACHE_CLEANUP_POLICY = config.property(KafkaCacheCleanupPolicy.class, "cache.cleanup.policy",
@@ -217,11 +215,6 @@ public class KafkaConfiguration extends Configuration
     public int cacheServerReconnect()
     {
         return KAFKA_CACHE_SERVER_RECONNECT_DELAY.getAsInt(this);
-    }
-
-    public boolean cacheServerEnforcesInitialBudget()
-    {
-        return KAFKA_CACHE_SERVER_ENFORCES_INITIAL_BUDGET.getAsBoolean(this);
     }
 
     private static Path cacheDirectory(

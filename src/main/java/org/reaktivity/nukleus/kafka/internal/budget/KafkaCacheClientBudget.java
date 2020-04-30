@@ -26,15 +26,20 @@ public final class KafkaCacheClientBudget
 
     private final BudgetCreditor creditor;
     private final LongHashSet partitionIds;
+    private final int topicBudgetMax;
 
     private long topicBudgetIndex = NO_CREDITOR_INDEX;
 
+    private long topicBudgetExcess;
+
     public KafkaCacheClientBudget(
         BudgetCreditor creditor,
-        long creditorId)
+        long creditorId,
+        int topicBudgetMax)
     {
         this.creditor = creditor;
         this.topicBudgetId = creditorId;
+        this.topicBudgetMax = topicBudgetMax;
         this.partitionIds = new LongHashSet();
     }
 
@@ -57,8 +62,14 @@ public final class KafkaCacheClientBudget
         long partitionId,
         int partitionBudget)
     {
-        // TODO: topicBudgetMax = buffer slot capacity
-        creditor.credit(0L, topicBudgetIndex, -partitionBudget);
+        topicBudgetExcess -= partitionBudget;
+
+        if (topicBudgetExcess < 0)
+        {
+            final long topicBudgetPrevious = creditor.credit(0L, topicBudgetIndex, topicBudgetExcess);
+            assert topicBudgetPrevious + topicBudgetExcess >= 0L;
+            topicBudgetExcess = 0;
+        }
 
         partitionIds.remove(partitionId);
 
@@ -69,12 +80,22 @@ public final class KafkaCacheClientBudget
         }
     }
 
-    public long credit(
+    public void credit(
         long traceId,
         long partitionId,
         long partitionCredit)
     {
-        // TODO: topicBudgetMax = buffer slot capacity
-        return creditor.credit(0L, topicBudgetIndex, partitionCredit);
+        final long topicBudgetLimit = creditor.credit(0L, topicBudgetIndex, 0);
+        final long newTopicBudgetMax = topicBudgetLimit + partitionCredit;
+        final long newTopicBudget = Math.min(newTopicBudgetMax, topicBudgetMax);
+        final long topicCredit = Math.max(newTopicBudget - topicBudgetLimit, 0L);
+
+        if (topicCredit != 0L)
+        {
+            creditor.credit(0L, topicBudgetIndex, topicCredit);
+        }
+
+        assert partitionCredit >= topicCredit;
+        topicBudgetExcess += partitionCredit - topicCredit;
     }
 }

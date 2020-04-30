@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
+import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +34,7 @@ import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.budget.BudgetCreditor;
 import org.reaktivity.nukleus.budget.BudgetDebitor;
+import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessageFunction;
 import org.reaktivity.nukleus.function.MessagePredicate;
@@ -87,9 +89,11 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
     private final KafkaBeginExFW.Builder kafkaBeginExRW = new KafkaBeginExFW.Builder();
 
     private final MessageFunction<RouteFW> wrapRoute = (t, b, i, l) -> routeRO.wrap(b, i, i + l);
+    private final DataFW bufferedDataRO = new DataFW();
 
     private final int kafkaTypeId;
     private final RouteManager router;
+    private final BufferPool bufferPool;
     private final BudgetCreditor creditor;
     private final MutableDirectBuffer writeBuffer;
     private final LongUnaryOperator supplyInitialId;
@@ -99,12 +103,12 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
     private final Function<String, KafkaCache> supplyCache;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
-    private final boolean cacheServerEnforcesInitialBudget;
 
     public KafkaCacheClientProduceFactory(
         KafkaConfiguration config,
         RouteManager router,
         MutableDirectBuffer writeBuffer,
+        BufferPool bufferPool,
         BudgetCreditor creditor,
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
@@ -119,6 +123,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.router = router;
         this.writeBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
+        this.bufferPool = bufferPool;
         this.creditor = creditor;
         this.supplyInitialId = supplyInitialId;
         this.supplyReplyId = supplyReplyId;
@@ -127,7 +132,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         this.supplyCache = supplyCache;
         this.supplyCacheRoute = supplyCacheRoute;
         this.correlations = correlations;
-        this.cacheServerEnforcesInitialBudget = config.cacheServerEnforcesInitialBudget();
     }
 
     @Override
@@ -181,7 +185,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                 KafkaCacheClientBudget budget = cacheRoute.clientBudgetsByTopic.get(topicKey);
                 if (budget == null)
                 {
-                    budget = new KafkaCacheClientBudget(creditor, supplyBudgetId.getAsLong());
+                    budget = new KafkaCacheClientBudget(creditor, supplyBudgetId.getAsLong(), bufferPool.slotCapacity());
                     cacheRoute.clientBudgetsByTopic.put(topicKey, budget);
                 }
 
@@ -366,6 +370,8 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private long initialBudgetId;
         private int initialBudget;
         private int initialPadding;
+        private int initialSlot = NO_SLOT;
+        private int initialSlotOffset;
 
         private long partitionIndex = NO_CREDITOR_INDEX;
 
@@ -457,30 +463,74 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             state = KafkaState.openingInitial(state);
         }
 
-        private void doClientFanInitialDataIfNecessary(
-            long traceId)
-        {
-            assert false : "not buffered";
-        }
-
         private void doClientFanInitialData(
-            long traceId,
-            int flags,
-            long budgetId,
-            int reserved,
-            OctetsFW payload,
-            OctetsFW extension)
+            DataFW data)
         {
+            final long traceId = data.traceId();
+            final int reserved = data.reserved();
+            final long budgetId = data.budgetId();
+
             // TODO: reaktor test client debitor
             // assert budgetId == budget.topicBudgetId;
 
             initialBudget -= reserved;
-            assert cacheServerEnforcesInitialBudget || initialBudget >= 0;
+            assert initialBudget >= 0;
 
-            final long claimed = initialDebitor.claim(initialDebitorIndex, initialId, reserved, reserved);
-            assert claimed == reserved; // TODO: buffer if necessary
+            if (initialSlot == NO_SLOT)
+            {
+                initialSlot = bufferPool.acquire(initialId);
+                assert initialSlotOffset == 0;
+            }
 
-            doData(receiver, routeId, initialId, traceId, authorization, flags, initialBudgetId, reserved, payload, extension);
+            assert initialSlot != NO_SLOT;
+
+            final MutableDirectBuffer initialSlotBuffer = bufferPool.buffer(initialSlot);
+            initialSlotBuffer.putBytes(initialSlotOffset, data.buffer(), data.offset(), data.sizeof());
+            initialSlotOffset += data.sizeof();
+
+            flushClientFanInitialData(traceId);
+        }
+
+        private void flushClientFanInitialData(
+            long traceId)
+        {
+            assert initialSlot != NO_SLOT;
+            final MutableDirectBuffer initialSlotBuffer = bufferPool.buffer(initialSlot);
+
+            int initialSlotProgress = 0;
+            while (initialSlotProgress < initialSlotOffset)
+            {
+                final DataFW bufferedData = bufferedDataRO.wrap(initialSlotBuffer, initialSlotProgress, initialSlotOffset);
+                final int reserved = bufferedData.reserved();
+                final int flags = bufferedData.flags();
+                final OctetsFW payload = bufferedData.payload();
+                final OctetsFW extension = bufferedData.extension();
+
+                final long claimed = initialDebitor.claim(initialDebitorIndex, initialId, reserved, reserved);
+                if (claimed != reserved)
+                {
+                    break;
+                }
+
+                doData(receiver, routeId, initialId, traceId, authorization, flags,
+                        initialBudgetId, reserved, payload, extension);
+
+                initialSlotProgress = bufferedData.limit();
+            }
+
+            final int initialSlotRemaining = initialSlotOffset - initialSlotProgress;
+            if (initialSlotRemaining > 0)
+            {
+                if (initialSlotProgress != 0)
+                {
+                    initialSlotBuffer.putBytes(0, initialSlotBuffer, initialSlotProgress, initialSlotRemaining);
+                    initialSlotOffset = initialSlotRemaining;
+                }
+            }
+            else
+            {
+                cleanupInitialSlotIfNecessary();
+            }
         }
 
         private void doClientFanInitialAbortIfNecessary(
@@ -544,7 +594,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             {
                 initialDebitor = supplyDebitor.apply(initialBudgetId);
                 initialDebitorIndex =
-                        initialDebitor.acquire(initialBudgetId, initialId, this::doClientFanInitialDataIfNecessary);
+                        initialDebitor.acquire(initialBudgetId, initialId, this::flushClientFanInitialData);
                 assert initialDebitorIndex != NO_DEBITOR_INDEX;
             }
         }
@@ -569,6 +619,18 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             initialBudgetId = 0L;
             initialBudget = 0;
             initialPadding = 0;
+
+            cleanupInitialSlotIfNecessary();
+        }
+
+        private void cleanupInitialSlotIfNecessary()
+        {
+            if (initialSlot != NO_SLOT)
+            {
+                bufferPool.release(initialSlot);
+                initialSlot = NO_SLOT;
+                initialSlotOffset = 0;
+            }
         }
 
         private void onClientFanMessage(
@@ -756,11 +818,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             DataFW data)
         {
             final long traceId = data.traceId();
-            final int flags = data.flags();
-            final long budgetId = data.budgetId();
             final int reserved = data.reserved();
-            final OctetsFW payload = data.payload();
-            final OctetsFW extension = data.extension();
 
             initialBudget -= reserved;
 
@@ -772,7 +830,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             }
             else
             {
-                fan.doClientFanInitialData(traceId, flags, budgetId, reserved, payload, extension);
+                fan.doClientFanInitialData(data);
             }
         }
 
