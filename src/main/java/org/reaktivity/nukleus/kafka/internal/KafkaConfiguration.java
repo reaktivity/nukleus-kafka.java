@@ -21,10 +21,12 @@ import java.nio.file.Path;
 
 import org.reaktivity.nukleus.Configuration;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCleanupPolicy;
+import org.reaktivity.nukleus.kafka.internal.types.codec.produce.ProduceAck;
 
 public class KafkaConfiguration extends Configuration
 {
     public static final boolean DEBUG = Boolean.getBoolean("nukleus.kafka.debug");
+    public static final boolean DEBUG_PRODUCE = DEBUG || Boolean.getBoolean("nukleus.kafka.debug.produce");
 
     public static final String KAFKA_CLIENT_PRODUCE_MAX_REQUEST_MILLIS_NAME = "nukleus.kafka.client.produce.max.request.millis";
 
@@ -37,6 +39,7 @@ public class KafkaConfiguration extends Configuration
     public static final IntPropertyDef KAFKA_CLIENT_PRODUCE_MAX_REQUEST_MILLIS;
     public static final IntPropertyDef KAFKA_CLIENT_PRODUCE_MAX_RESPONSE_MILLIS;
     public static final IntPropertyDef KAFKA_CLIENT_PRODUCE_MAX_BYTES;
+    public static final ShortPropertyDef KAFKA_CLIENT_PRODUCE_ACKS;
     public static final PropertyDef<Path> KAFKA_CACHE_DIRECTORY;
     public static final PropertyDef<KafkaCacheCleanupPolicy> KAFKA_CACHE_CLEANUP_POLICY;
     public static final IntPropertyDef KAFKA_CACHE_MAX_MESSAGE_BYTES;
@@ -67,6 +70,7 @@ public class KafkaConfiguration extends Configuration
         KAFKA_CLIENT_PRODUCE_MAX_REQUEST_MILLIS = config.property("client.produce.max.request.millis", 0);
         KAFKA_CLIENT_PRODUCE_MAX_RESPONSE_MILLIS = config.property("client.produce.max.response.millis", 120000);
         KAFKA_CLIENT_PRODUCE_MAX_BYTES = config.property("client.produce.max.bytes", Integer.MAX_VALUE);
+        KAFKA_CLIENT_PRODUCE_ACKS = config.property("client.produce.acks", ProduceAck.IN_SYNC_REPLICAS.value());
         KAFKA_CACHE_DIRECTORY = config.property(Path.class, "cache.directory", (c, v) -> cacheDirectory(c, v), KafkaNukleus.NAME);
         KAFKA_CACHE_SERVER_BOOTSTRAP = config.property("cache.server.bootstrap", true);
         KAFKA_CACHE_SERVER_RECONNECT_DELAY = config.property("cache.server.reconnect", 5);
@@ -140,6 +144,11 @@ public class KafkaConfiguration extends Configuration
     public int clientProduceMaxBytes()
     {
         return KAFKA_CLIENT_PRODUCE_MAX_BYTES.getAsInt(this);
+    }
+
+    public short clientProduceAcks()
+    {
+        return KAFKA_CLIENT_PRODUCE_ACKS.getAsShort(this);
     }
 
     public Path cacheDirectory()
