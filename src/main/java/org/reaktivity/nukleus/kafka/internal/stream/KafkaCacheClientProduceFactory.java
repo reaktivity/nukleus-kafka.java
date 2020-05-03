@@ -539,6 +539,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             }
             else
             {
+                assert initialSlotRemaining == 0;
                 cleanupInitialSlotIfNecessary();
             }
         }
@@ -598,6 +599,11 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             if (!KafkaState.initialOpened(state))
             {
                 onClientFanInitialOpened();
+            }
+
+            if (initialSlot != NO_SLOT)
+            {
+                flushClientFanInitialData(traceId);
             }
 
             budget.credit(traceId, partitionIndex, credit);

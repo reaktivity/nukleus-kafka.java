@@ -1565,11 +1565,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
                             currentTimeMillis(), currentThread().getId(),
                             initialId, topic, partitionId, encodeableRequestBytes);
                 }
-
-                if (produceAcks == ProduceAck.NONE && encodeableRequestBytes == 0)
-                {
-                    onDecodeResponse(traceId);
-                }
             }
 
             final int remaining = maxLength - length;
@@ -1593,6 +1588,11 @@ public final class KafkaClientProduceFactory implements StreamFactory
                 {
                     doNetworkEnd(traceId, authorization);
                 }
+            }
+
+            if (produceAcks == ProduceAck.NONE && length > 0 && encodeableRequestBytes == 0)
+            {
+                onDecodeResponse(traceId);
             }
         }
 
