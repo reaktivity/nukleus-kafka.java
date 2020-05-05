@@ -94,12 +94,14 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
     private final ResetFW.Builder resetRW = new ResetFW.Builder();
     private final WindowFW.Builder windowRW = new WindowFW.Builder();
     private final KafkaBeginExFW.Builder kafkaBeginExRW = new KafkaBeginExFW.Builder();
+    private final KafkaResetExFW.Builder kafkaResetExRW = new KafkaResetExFW.Builder();
 
     private final MessageFunction<RouteFW> wrapRoute = (t, b, i, l) -> routeRO.wrap(b, i, i + l);
 
     private final int kafkaTypeId;
     private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
+    private final MutableDirectBuffer extBuffer;
     private final Signaler signaler;
     private final BudgetCreditor creditor;
     private final LongUnaryOperator supplyInitialId;
@@ -129,6 +131,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.router = router;
         this.writeBuffer = writeBuffer;
+        this.extBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
         this.signaler = signaler;
         this.creditor = creditor;
         this.supplyInitialId = supplyInitialId;
@@ -199,22 +202,15 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                 fan = newFan;
             }
 
-            if (fan != null)
-            {
-                assert fan.affinity == affinity || fan.state == 0 || KafkaState.closed(fan.state) :
-                        String.format("%d == %d || %d == 0 || KafkaState.closed(0x%08x) // [%016x]",
-                                fan.affinity, affinity, fan.state, fan.state, fan.initialId);
+            final int leaderId = cacheRoute.leadersByPartitionId.get(partitionId);
 
-                fan.affinity = affinity;
-
-                newStream = new KafkaCacheServerProduceStream(
-                        fan,
-                        sender,
-                        routeId,
-                        initialId,
-                        affinity,
-                        authorization)::onServerMessage;
-            }
+            newStream = new KafkaCacheServerProduceStream(
+                    fan,
+                    sender,
+                    routeId,
+                    initialId,
+                    leaderId,
+                    authorization)::onServerMessage;
         }
 
         return newStream;
@@ -356,7 +352,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         private final KafkaCachePartition partition;
         private final List<KafkaCacheServerProduceStream> members;
 
-        private long affinity;
+        private long leaderId;
         private long initialId;
         private long replyId;
         private MessageConsumer receiver;
@@ -375,14 +371,14 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         private KafkaCacheServerProduceFan(
             long routeId,
             long authorization,
-            long affinity,
+            long leaderId,
             KafkaCachePartition partition)
         {
             this.routeId = routeId;
             this.authorization = authorization;
             this.partition = partition;
             this.members = new ArrayList<>();
-            this.affinity = affinity;
+            this.leaderId = leaderId;
             this.creditorId = supplyBudgetId.getAsLong();
         }
 
@@ -390,6 +386,17 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             long traceId,
             KafkaCacheServerProduceStream member)
         {
+            if (member.leaderId != leaderId)
+            {
+                correlations.remove(replyId);
+                doServerFanInitialAbortIfNecessary(traceId);
+                doServerFanReplyResetIfNecessary(traceId);
+                leaderId = member.leaderId;
+
+                members.forEach(m -> m.cleanupServer(traceId, ERROR_NOT_LEADER_FOR_PARTITION));
+                members.clear();
+            }
+
             members.add(member);
 
             assert !members.isEmpty();
@@ -440,7 +447,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             {
                 if (KafkaConfiguration.DEBUG)
                 {
-                    System.out.format("%s PRODUCE connect, affinity %d\n", partition, affinity);
+                    System.out.format("%s PRODUCE connect, affinity %d\n", partition, leaderId);
                 }
 
                 doServerFanInitialBegin(traceId);
@@ -458,7 +465,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
             correlations.put(replyId, this::onServerFanMessage);
             router.setThrottle(initialId, this::onServerFanMessage);
-            doBegin(receiver, routeId, initialId, traceId, authorization, affinity,
+            doBegin(receiver, routeId, initialId, traceId, authorization, leaderId,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .produce(p -> p.transaction(TRANSACTION_NONE)
@@ -792,7 +799,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         private final long routeId;
         private final long initialId;
         private final long replyId;
-        private final long affinity;
+        private final long leaderId;
         private final long authorization;
 
         private int state;
@@ -804,7 +811,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             MessageConsumer sender,
             long routeId,
             long initialId,
-            long affinity,
+            long leaderId,
             long authorization)
         {
             this.fan = fan;
@@ -812,7 +819,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             this.routeId = routeId;
             this.initialId = initialId;
             this.replyId = supplyReplyId.applyAsLong(initialId);
-            this.affinity = affinity;
+            this.leaderId = leaderId;
             this.authorization = authorization;
         }
 
@@ -857,10 +864,18 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             BeginFW begin)
         {
             final long traceId = begin.traceId();
+            final long affinity = begin.affinity();
 
-            state = KafkaState.openingInitial(state);
+            if (affinity != leaderId)
+            {
+                cleanupServer(traceId, ERROR_NOT_LEADER_FOR_PARTITION);
+            }
+            else
+            {
+                state = KafkaState.openingInitial(state);
 
-            fan.onServerFanMemberOpening(traceId, this);
+                fan.onServerFanMemberOpening(traceId, this);
+            }
         }
 
         private void onServerInitialData(
@@ -972,7 +987,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             state = KafkaState.openingReply(state);
 
             router.setThrottle(replyId, this::onServerMessage);
-            doBegin(sender, routeId, replyId, traceId, authorization, affinity,
+            doBegin(sender, routeId, replyId, traceId, authorization, leaderId,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .produce(p -> p.transaction(TRANSACTION_NONE)
@@ -1042,6 +1057,26 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             fan.onServerFanMemberClosed(traceId, this);
 
             doServerInitialResetIfNecessary(traceId, EMPTY_OCTETS);
+        }
+
+        private void cleanupServer(
+            long traceId,
+            int error)
+        {
+            final KafkaResetExFW kafkaResetEx = kafkaResetExRW.wrap(extBuffer, 0, extBuffer.capacity())
+                                                              .typeId(kafkaTypeId)
+                                                              .error(error)
+                                                              .build();
+
+            cleanupServer(traceId, kafkaResetEx);
+        }
+
+        private void cleanupServer(
+            long traceId,
+            Flyweight extension)
+        {
+            doServerInitialReset(traceId, extension);
+            doServerReplyAbortIfNecessary(traceId);
         }
     }
 }
