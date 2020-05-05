@@ -19,6 +19,7 @@ import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -70,6 +71,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchFlushExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFlushExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaResetExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.SignalFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
@@ -80,6 +82,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 {
     private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(new UnsafeBuffer(), 0, 0);
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
+
+    private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
     private static final long OFFSET_LATEST = KafkaOffsetType.LATEST.value();
     private static final long OFFSET_EARLIEST = KafkaOffsetType.EARLIEST.value();
@@ -113,6 +117,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
     private final WindowFW.Builder windowRW = new WindowFW.Builder();
     private final KafkaBeginExFW.Builder kafkaBeginExRW = new KafkaBeginExFW.Builder();
     private final KafkaDataExFW.Builder kafkaDataExRW = new KafkaDataExFW.Builder();
+    private final KafkaResetExFW.Builder kafkaResetExRW = new KafkaResetExFW.Builder();
 
     private final MessageFunction<RouteFW> wrapRoute = (t, b, i, l) -> routeRO.wrap(b, i, i + l);
 
@@ -122,6 +127,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
     private final int kafkaTypeId;
     private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
+    private final MutableDirectBuffer extBuffer;
     private final BufferPool bufferPool;
     private final Signaler signaler;
     private final LongUnaryOperator supplyInitialId;
@@ -150,6 +156,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.router = router;
         this.writeBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
+        this.extBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
         this.bufferPool = bufferPool;
         this.signaler = signaler;
         this.supplyInitialId = supplyInitialId;
@@ -225,26 +232,19 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 fanout = newFanout;
             }
 
-            if (fanout != null)
-            {
-                assert fanout.affinity == affinity || fanout.state == 0 || KafkaState.closed(fanout.state) :
-                        String.format("%d == %d || %d == 0 || KafkaState.closed(0x%08x)",
-                                fanout.affinity, affinity, fanout.state, fanout.state);
-                fanout.affinity = affinity;
+            final KafkaFilterCondition condition = cursorFactory.asCondition(filters);
+            final int leaderId = cacheRoute.leadersByPartitionId.get(partitionId);
 
-                final KafkaFilterCondition condition = cursorFactory.asCondition(filters);
-
-                newStream = new KafkaCacheClientFetchStream(
-                        fanout,
-                        sender,
-                        routeId,
-                        initialId,
-                        affinity,
-                        authorization,
-                        partitionOffset,
-                        condition,
-                        deltaType)::onClientMessage;
-            }
+            newStream = new KafkaCacheClientFetchStream(
+                    fanout,
+                    sender,
+                    routeId,
+                    initialId,
+                    leaderId,
+                    authorization,
+                    partitionOffset,
+                    condition,
+                    deltaType)::onClientMessage;
         }
 
         return newStream;
@@ -385,7 +385,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private final KafkaCachePartition partition;
         private final List<KafkaCacheClientFetchStream> members;
 
-        private long affinity;
+        private long leaderId;
         private long initialId;
         private long replyId;
         private MessageConsumer receiver;
@@ -397,7 +397,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private KafkaCacheClientFetchFanout(
             long routeId,
             long authorization,
-            long affinity,
+            long leaderId,
             KafkaCachePartition partition)
         {
             this.routeId = routeId;
@@ -405,13 +405,32 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.partition = partition;
             this.partitionOffset = OFFSET_MAXIMUM;
             this.members = new ArrayList<>();
-            this.affinity = affinity;
+            this.leaderId = leaderId;
         }
 
         private void onClientFanoutMemberOpening(
             long traceId,
             KafkaCacheClientFetchStream member)
         {
+            if (member.leaderId != leaderId)
+            {
+                doClientFanoutInitialAbortIfNecessary(traceId);
+                doClientFanoutReplyResetIfNecessary(traceId);
+                correlations.remove(replyId);
+                leaderId = member.leaderId;
+            }
+
+            Iterator membersIterator = members.iterator();
+            while (membersIterator.hasNext())
+            {
+                KafkaCacheClientFetchStream fetchMemberStream = (KafkaCacheClientFetchStream) membersIterator.next();
+                if (fetchMemberStream.leaderId != leaderId)
+                {
+                    fetchMemberStream.cleanupClient(traceId, ERROR_NOT_LEADER_FOR_PARTITION);
+                    membersIterator.remove();
+                }
+            }
+
             members.add(member);
 
             assert !members.isEmpty();
@@ -492,7 +511,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
             correlations.put(replyId, this::onClientFanoutMessage);
             router.setThrottle(initialId, this::onClientFanoutMessage);
-            doBegin(receiver, routeId, initialId, traceId, authorization, affinity,
+            doBegin(receiver, routeId, initialId, traceId, authorization, leaderId,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(partition.topic())
@@ -698,7 +717,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private final long routeId;
         private final long initialId;
         private final long replyId;
-        private final long affinity;
+        private final long leaderId;
         private final long authorization;
         private final KafkaCacheCursor cursor;
         private final KafkaDeltaType deltaType;
@@ -721,7 +740,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             MessageConsumer sender,
             long routeId,
             long initialId,
-            long affinity,
+            long leaderId,
             long authorization,
             long partitionOffset,
             KafkaFilterCondition condition,
@@ -732,7 +751,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.routeId = routeId;
             this.initialId = initialId;
             this.replyId = supplyReplyId.applyAsLong(initialId);
-            this.affinity = affinity;
+            this.leaderId = leaderId;
             this.authorization = authorization;
             this.partitionOffset = partitionOffset;
             this.cursor = cursorFactory.newCursor(condition, deltaType);
@@ -776,10 +795,19 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             BeginFW begin)
         {
             final long traceId = begin.traceId();
+            final long affinity = begin.affinity();
 
-            state = KafkaState.openingInitial(state);
+            if (affinity != leaderId)
+            {
+                cleanupClient(traceId, ERROR_NOT_LEADER_FOR_PARTITION);
+            }
+            else
+            {
+                state = KafkaState.openingInitial(state);
 
-            group.onClientFanoutMemberOpening(traceId, this);
+                group.onClientFanoutMemberOpening(traceId, this);
+            }
+
         }
 
         private void onClientInitialEnd(
@@ -887,7 +915,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             cursor.init(segmentNode, partitionOffset);
 
             router.setThrottle(replyId, this::onClientMessage);
-            doBegin(sender, routeId, replyId, traceId, authorization, affinity,
+            doBegin(sender, routeId, replyId, traceId, authorization, leaderId,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(group.partition.topic())
@@ -1145,7 +1173,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             state = KafkaState.closedReply(state);
             doEnd(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
-            doCleanupClient();
+            onClientReplyClosed();
         }
 
         private void doClientReplyAbort(
@@ -1153,7 +1181,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             state = KafkaState.closedReply(state);
             doAbort(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
-            doCleanupClient();
+            onClientReplyClosed();
         }
 
         private void doClientReplyEndIfNecessary(
@@ -1165,7 +1193,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
 
             state = KafkaState.closedReply(state);
-            doCleanupClient();
+            onClientReplyClosed();
         }
 
         private void doClientReplyAbortIfNecessary(
@@ -1177,7 +1205,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
 
             state = KafkaState.closedReply(state);
-            doCleanupClient();
+            onClientReplyClosed();
         }
 
         private void onClientReplyWindow(
@@ -1219,14 +1247,14 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final long traceId = reset.traceId();
 
             state = KafkaState.closedReply(state);
-            doCleanupClient();
+            onClientReplyClosed();
 
             group.onClientFanoutMemberClosed(traceId, this);
 
             doClientInitialResetIfNecessary(traceId, EMPTY_OCTETS);
         }
 
-        private void doCleanupClient()
+        private void onClientReplyClosed()
         {
             if (replyDebitor != null && replyDebitorIndex != NO_DEBITOR_INDEX)
             {
@@ -1235,6 +1263,26 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
 
             cursor.close();
+        }
+
+        private void cleanupClient(
+            long traceId,
+            int error)
+        {
+            final KafkaResetExFW kafkaResetEx = kafkaResetExRW.wrap(extBuffer, 0, extBuffer.capacity())
+                                                              .typeId(kafkaTypeId)
+                                                              .error(error)
+                                                              .build();
+
+            cleanupClient(traceId, kafkaResetEx);
+        }
+
+        private void cleanupClient(
+            long traceId,
+            Flyweight extension)
+        {
+            doClientInitialResetIfNecessary(traceId, extension);
+            doClientReplyAbortIfNecessary(traceId);
         }
     }
 }

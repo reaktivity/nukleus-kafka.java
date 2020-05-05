@@ -1127,6 +1127,8 @@ public final class KafkaClientMetaFactory implements StreamFactory
 
                 state = KafkaState.closedReply(state);
 
+                //cancelNextRequestSignal();
+
                 doApplicationEnd(traceId);
             }
 
@@ -1229,6 +1231,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
                 long traceId,
                 long authorization)
             {
+                //cancelNextRequestSignal();
                 state = KafkaState.closedInitial(state);
 
                 doEnd(network, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
@@ -1237,6 +1240,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
             private void doNetworkAbortIfNecessary(
                 long traceId)
             {
+                //cancelNextRequestSignal();
                 if (!KafkaState.initialClosed(state))
                 {
                     doAbort(network, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
@@ -1289,11 +1293,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
                     System.out.format("[client] %s META\n", topic);
                 }
 
-                if (nextRequestAt != NO_CANCEL_ID)
-                {
-                    signaler.cancel(nextRequestAt);
-                    nextRequestAt = NO_CANCEL_ID;
-                }
+                cancelNextRequestSignal();
 
                 final MutableDirectBuffer encodeBuffer = writeBuffer;
                 final int encodeOffset = DataFW.FIELD_OFFSET_PAYLOAD;
@@ -1330,6 +1330,15 @@ public final class KafkaClientMetaFactory implements StreamFactory
                         .build();
 
                 doNetworkData(traceId, budgetId, encodeBuffer, encodeOffset, encodeProgress);
+            }
+
+            private void cancelNextRequestSignal()
+            {
+                if (nextRequestAt != NO_CANCEL_ID)
+                {
+                    signaler.cancel(nextRequestAt);
+                    nextRequestAt = NO_CANCEL_ID;
+                }
             }
 
             private void encodeNetwork(
@@ -1526,6 +1535,8 @@ public final class KafkaClientMetaFactory implements StreamFactory
             private void cleanupNetwork(
                 long traceId)
             {
+                //cancelNextRequestSignal();
+
                 doNetworkResetIfNecessary(traceId);
                 doNetworkAbortIfNecessary(traceId);
 

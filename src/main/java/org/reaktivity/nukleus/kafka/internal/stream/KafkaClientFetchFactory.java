@@ -2023,6 +2023,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
             private void onNetworkReset(
                 ResetFW reset)
             {
+
                 final long traceId = reset.traceId();
 
                 if (KafkaConfiguration.DEBUG)
