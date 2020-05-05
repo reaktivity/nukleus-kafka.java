@@ -419,13 +419,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 correlations.remove(replyId);
                 leaderId = member.leaderId;
 
-                Iterator membersIterator = members.iterator();
-                while (membersIterator.hasNext())
-                {
-                    KafkaCacheClientFetchStream fetchMemberStream = (KafkaCacheClientFetchStream) membersIterator.next();
-                    fetchMemberStream.cleanupClient(traceId, ERROR_NOT_LEADER_FOR_PARTITION);
-                    membersIterator.remove();
-                }
+                members.forEach(m -> m.cleanupClient(traceId, ERROR_NOT_LEADER_FOR_PARTITION));
+                members.clear();
             }
 
             members.add(member);

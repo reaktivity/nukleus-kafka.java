@@ -433,13 +433,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 doServerFanoutReplyResetIfNecessary(traceId);
                 leaderId = member.leaderId;
 
-                Iterator membersIterator = members.iterator();
-                while (membersIterator.hasNext())
-                {
-                    KafkaCacheServerFetchStream fetchMemberStream = (KafkaCacheServerFetchStream) membersIterator.next();
-                    fetchMemberStream.cleanupServer(traceId, ERROR_NOT_LEADER_FOR_PARTITION);
-                    membersIterator.remove();
-                }
+                members.forEach(m -> m.cleanupServer(traceId, ERROR_NOT_LEADER_FOR_PARTITION));
+                members.clear();
             }
 
             members.add(member);
