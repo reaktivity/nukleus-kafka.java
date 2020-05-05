@@ -34,7 +34,6 @@ import java.util.function.Function;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
-import java.util.function.Predicate;
 import java.util.function.ToIntFunction;
 
 import org.agrona.DirectBuffer;
@@ -433,14 +432,11 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 doServerFanoutInitialAbortIfNecessary(traceId);
                 doServerFanoutReplyResetIfNecessary(traceId);
                 leaderId = member.leaderId;
-            }
 
-            Iterator membersIterator = members.iterator();
-            while (membersIterator.hasNext())
-            {
-                KafkaCacheServerFetchStream fetchMemberStream = (KafkaCacheServerFetchStream) membersIterator.next();
-                if (fetchMemberStream.leaderId != leaderId)
+                Iterator membersIterator = members.iterator();
+                while (membersIterator.hasNext())
                 {
+                    KafkaCacheServerFetchStream fetchMemberStream = (KafkaCacheServerFetchStream) membersIterator.next();
                     fetchMemberStream.cleanupServer(traceId, ERROR_NOT_LEADER_FOR_PARTITION);
                     membersIterator.remove();
                 }
