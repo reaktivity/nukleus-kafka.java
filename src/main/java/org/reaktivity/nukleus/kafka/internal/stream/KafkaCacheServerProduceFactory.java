@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.lang.System.currentTimeMillis;
+import static java.lang.Thread.currentThread;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
 import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
@@ -493,6 +494,13 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             OctetsFW payload,
             OctetsFW extension)
         {
+            if (KafkaConfiguration.DEBUG_PRODUCE)
+            {
+                System.out.format("[%d] [%d] [%d] kafka cache server fan [%s] %d - %d => %d\n",
+                        currentTimeMillis(), currentThread().getId(),
+                        initialId, partition, initialBudget, reserved, initialBudget - reserved);
+            }
+
             initialBudget -= reserved;
             assert initialBudget >= 0;
 
@@ -573,6 +581,13 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             final long budgetId = window.budgetId();
             final int credit = window.credit();
             final int padding = window.padding();
+
+            if (KafkaConfiguration.DEBUG_PRODUCE)
+            {
+                System.out.format("[%d] [%d] [%d] kafka cache server fan [%s] %d + %d => %d\n",
+                        currentTimeMillis(), currentThread().getId(),
+                        initialId, partition, initialBudget, credit, initialBudget + credit);
+            }
 
             if (ReaktorConfiguration.DEBUG_BUDGETS)
             {
@@ -888,6 +903,13 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             final OctetsFW payload = data.payload();
             final OctetsFW extension = data.extension();
 
+            if (KafkaConfiguration.DEBUG_PRODUCE)
+            {
+                System.out.format("[%d] [%d] [%d] kafka cache server [%s] %d - %d => %d\n",
+                        currentTimeMillis(), currentThread().getId(),
+                        initialId, fan.partition, initialBudget, reserved, initialBudget - reserved);
+            }
+
             initialBudget -= reserved;
 
             assert budgetId == fan.creditorId;
@@ -965,6 +987,13 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             int credit)
         {
             state = KafkaState.openedInitial(state);
+
+            if (KafkaConfiguration.DEBUG_PRODUCE)
+            {
+                System.out.format("[%d] [%d] [%d] kafka cache server [%s] %d + %d => %d\n",
+                        currentTimeMillis(), currentThread().getId(),
+                        initialId, fan.partition, initialBudget, credit, initialBudget + credit);
+            }
 
             initialBudget += credit;
 

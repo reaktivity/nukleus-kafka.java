@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.lang.System.currentTimeMillis;
+import static java.lang.Thread.currentThread;
 import static java.nio.ByteOrder.BIG_ENDIAN;
 import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
@@ -166,6 +167,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
     private final int produceMaxWaitMillis;
     private final long produceRequestMaxDelay;
+    private final ProduceAck produceAcks;
     private final int kafkaTypeId;
     private final int tcpTypeId;
     private final RouteManager router;
@@ -197,6 +199,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
     {
         this.produceMaxWaitMillis = config.clientProduceMaxResponseMillis();
         this.produceRequestMaxDelay = config.clientProduceMaxRequestMillis();
+        this.produceAcks = ProduceAck.valueOf(config.clientProduceAcks());
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.tcpTypeId = supplyTypeId.applyAsInt("tcp");
         this.router = router;
@@ -749,6 +752,13 @@ public final class KafkaClientProduceFactory implements StreamFactory
             final long traceId = data.traceId();
             final int reserved = data.reserved();
 
+            if (KafkaConfiguration.DEBUG_PRODUCE)
+            {
+                System.out.format("[%d] [%d] [%d] kafka client [%s[%d] %d - %d => %d\n",
+                        currentTimeMillis(), currentThread().getId(),
+                        initialId, client.topic, client.partitionId, initialBudget, reserved, initialBudget - reserved);
+            }
+
             initialBudget -= reserved;
 
             if (initialBudget < 0)
@@ -883,6 +893,13 @@ public final class KafkaClientProduceFactory implements StreamFactory
             int credit)
         {
             state = KafkaState.openedInitial(state);
+
+            if (KafkaConfiguration.DEBUG_PRODUCE)
+            {
+                System.out.format("[%d] [%d] [%d] kafka client [%s[%d] %d + %d => %d\n",
+                        currentTimeMillis(), currentThread().getId(),
+                        initialId, client.topic, client.partitionId, initialBudget, credit, initialBudget + credit);
+            }
 
             initialBudget += credit;
 
@@ -1420,7 +1437,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
             final ProduceRequestFW produceRequest = produceRequestRW.wrap(encodeBuffer, encodeProgress, encodeLimit)
                     .transactionalId(TRANSACTION_ID_NONE)
-                    .acks(a -> a.set(ProduceAck.IN_SYNC_REPLICAS))
+                    .acks(a -> a.set(produceAcks))
                     .timeout(produceMaxWaitMillis)
                     .topicCount(1)
                     .build();
@@ -1541,6 +1558,13 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
                 encodeableRequestBytes -= length;
                 assert encodeableRequestBytes >= 0;
+
+                if (KafkaConfiguration.DEBUG_PRODUCE)
+                {
+                    System.out.format("[%d] [%d] [%d] kafka client [%s[%d] encodeableRequestBytes %d\n",
+                            currentTimeMillis(), currentThread().getId(),
+                            initialId, topic, partitionId, encodeableRequestBytes);
+                }
             }
 
             final int remaining = maxLength - length;
@@ -1564,6 +1588,11 @@ public final class KafkaClientProduceFactory implements StreamFactory
                 {
                     doNetworkEnd(traceId, authorization);
                 }
+            }
+
+            if (produceAcks == ProduceAck.NONE && length > 0 && encodeableRequestBytes == 0)
+            {
+                onDecodeResponse(traceId);
             }
         }
 

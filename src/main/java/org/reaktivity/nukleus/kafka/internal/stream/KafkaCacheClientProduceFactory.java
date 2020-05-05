@@ -15,6 +15,8 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static java.lang.System.currentTimeMillis;
+import static java.lang.Thread.currentThread;
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
@@ -108,6 +110,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
     private final Function<String, KafkaCache> supplyCache;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
+    private final int initialBudgetMax;
 
     public KafkaCacheClientProduceFactory(
         KafkaConfiguration config,
@@ -138,6 +141,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         this.supplyCache = supplyCache;
         this.supplyCacheRoute = supplyCacheRoute;
         this.correlations = correlations;
+        this.initialBudgetMax = bufferPool.slotCapacity();
     }
 
     @Override
@@ -480,11 +484,17 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             final int reserved = data.reserved();
             final long budgetId = data.budgetId();
 
-            // TODO: reaktor test client debitor
-            // assert budgetId == budget.topicBudgetId;
+            assert budgetId == budget.topicBudgetId;
+
+            if (KafkaConfiguration.DEBUG_PRODUCE)
+            {
+                System.out.format("[%d] [%d] [%d] kafka cache client fan [%s] %d - %d => %d\n",
+                        currentTimeMillis(), currentThread().getId(),
+                        initialId, partition, initialBudget, reserved, initialBudget - reserved);
+            }
 
             initialBudget -= reserved;
-            assert initialBudget >= 0;
+            assert initialBudget >= -initialBudgetMax;
 
             if (initialSlot == NO_SLOT)
             {
@@ -539,6 +549,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             }
             else
             {
+                assert initialSlotRemaining == 0;
                 cleanupInitialSlotIfNecessary();
             }
         }
@@ -568,7 +579,10 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             members.forEach(s -> s.doClientInitialResetIfNecessary(traceId, extension));
 
-            onClientFanInitialClosed();
+            if (!KafkaState.initialClosed(state))
+            {
+                onClientFanInitialClosed();
+            }
 
             doClientFanReplyResetIfNecessary(traceId);
         }
@@ -581,6 +595,13 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             final int credit = window.credit();
             final int padding = window.padding();
 
+            if (KafkaConfiguration.DEBUG_PRODUCE)
+            {
+                System.out.format("[%d] [%d] [%d] kafka cache client fan [%s] %d + %d => %d\n",
+                        currentTimeMillis(), currentThread().getId(),
+                        initialId, partition, initialBudget, credit, initialBudget + credit);
+            }
+
             initialBudgetId = budgetId;
             initialBudget += credit;
             initialPadding = padding;
@@ -588,6 +609,11 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             if (!KafkaState.initialOpened(state))
             {
                 onClientFanInitialOpened();
+            }
+
+            if (initialSlot != NO_SLOT)
+            {
+                flushClientFanInitialData(traceId);
             }
 
             budget.credit(traceId, partitionIndex, credit);
@@ -839,6 +865,13 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             final long traceId = data.traceId();
             final int reserved = data.reserved();
 
+            if (KafkaConfiguration.DEBUG_PRODUCE)
+            {
+                System.out.format("[%d] [%d] [%d] kafka cache client [%s] %d - %d => %d\n",
+                        currentTimeMillis(), currentThread().getId(),
+                        initialId, fan.partition, initialBudget, reserved, initialBudget - reserved);
+            }
+
             initialBudget -= reserved;
 
             if (initialBudget < 0)
@@ -880,7 +913,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private void doClientInitialWindowIfNecessary(
             long traceId)
         {
-            final int credit = Math.max(fan.initialBudget - initialBudget, 0);
+            final int credit = Math.max(initialBudgetMax - initialBudget, 0);
 
             if (!KafkaState.initialOpened(state) || credit > 0)
             {
@@ -893,6 +926,13 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             int credit)
         {
             state = KafkaState.openedInitial(state);
+
+            if (KafkaConfiguration.DEBUG_PRODUCE)
+            {
+                System.out.format("[%d] [%d] [%d] kafka cache client [%s] %d + %d => %d\n",
+                        currentTimeMillis(), currentThread().getId(),
+                        initialId, fan.partition, initialBudget, credit, initialBudget + credit);
+            }
 
             initialBudget += credit;
 
