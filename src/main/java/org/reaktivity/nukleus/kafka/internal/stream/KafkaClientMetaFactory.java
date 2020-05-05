@@ -1127,7 +1127,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
 
                 state = KafkaState.closedReply(state);
 
-                //cancelNextRequestSignal();
+                cancelNextRequestSignal();
 
                 doApplicationEnd(traceId);
             }
@@ -1231,7 +1231,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
                 long traceId,
                 long authorization)
             {
-                //cancelNextRequestSignal();
+                cancelNextRequestSignal();
                 state = KafkaState.closedInitial(state);
 
                 doEnd(network, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
@@ -1240,7 +1240,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
             private void doNetworkAbortIfNecessary(
                 long traceId)
             {
-                //cancelNextRequestSignal();
+                cancelNextRequestSignal();
                 if (!KafkaState.initialClosed(state))
                 {
                     doAbort(network, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
@@ -1535,7 +1535,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
             private void cleanupNetwork(
                 long traceId)
             {
-                //cancelNextRequestSignal();
+                cancelNextRequestSignal();
 
                 doNetworkResetIfNecessary(traceId);
                 doNetworkAbortIfNecessary(traceId);
