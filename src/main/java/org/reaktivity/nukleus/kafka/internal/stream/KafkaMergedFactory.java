@@ -926,10 +926,10 @@ public final class KafkaMergedFactory implements StreamFactory
 
             cleanupBudgetCreditorIfNecessary();
 
-            describeStream.doDescribeReplyReset(traceId);
-            metaStream.doMetaReplyReset(traceId);
-            fetchStreams.forEach(f -> f.doFetchReplyReset(traceId));
-            produceStreams.forEach(f -> f.doProduceReplyReset(traceId));
+            describeStream.doDescribeReplyResetIfNecessary(traceId);
+            metaStream.doMetaReplyResetIfNecessary(traceId);
+            fetchStreams.forEach(f -> f.doFetchReplyResetIfNecessary(traceId));
+            produceStreams.forEach(f -> f.doProduceReplyResetIfNecessary(traceId));
 
             doMergedInitialResetIfNecessary(traceId);
         }
@@ -1357,7 +1357,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
         private long initialId;
         private long replyId;
-        private MessageConsumer receiver;
+        private MessageConsumer receiver = (m, b, i, l) -> {};
 
         private int state;
 
@@ -1581,6 +1581,7 @@ public final class KafkaMergedFactory implements StreamFactory
             long traceId)
         {
             state = KafkaState.closedReply(state);
+            correlations.remove(replyId);
 
             doReset(receiver, mergedFetch.resolvedId, replyId, traceId, mergedFetch.authorization);
         }
@@ -1592,7 +1593,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
         private long initialId;
         private long replyId;
-        private MessageConsumer receiver;
+        private MessageConsumer receiver = (m, b, i, l) -> {};
 
         private int state;
 
@@ -1814,6 +1815,7 @@ public final class KafkaMergedFactory implements StreamFactory
             long traceId)
         {
             state = KafkaState.closedReply(state);
+            correlations.remove(replyId);
 
             doReset(receiver, mergedFetch.resolvedId, replyId, traceId, mergedFetch.authorization);
         }
@@ -1828,7 +1830,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
         private long initialId;
         private long replyId;
-        private MessageConsumer receiver;
+        private MessageConsumer receiver = (m, b, i, l) -> {};
 
         private int state;
 
@@ -2081,6 +2083,7 @@ public final class KafkaMergedFactory implements StreamFactory
             long traceId)
         {
             state = KafkaState.closedReply(state);
+            correlations.remove(replyId);
 
             doReset(receiver, merged.resolvedId, replyId, traceId, merged.authorization);
         }
@@ -2102,7 +2105,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
         private long initialId;
         private long replyId;
-        private MessageConsumer receiver;
+        private MessageConsumer receiver = (m, b, i, l) -> {};
 
         private int state;
 
@@ -2431,6 +2434,7 @@ public final class KafkaMergedFactory implements StreamFactory
             long traceId)
         {
             state = KafkaState.closedReply(state);
+            correlations.remove(replyId);
 
             doReset(receiver, merged.resolvedId, replyId, traceId, merged.authorization);
         }
