@@ -65,7 +65,8 @@ final class KafkaMergedBudget
     int claim(
         long watcherId,
         int minimum,
-        int maximum)
+        int maximum,
+        int deferred)
     {
         final int budgetMax = (int)(Math.min(budget, Integer.MAX_VALUE) & 0x7fff_ffff);
 
@@ -83,7 +84,7 @@ final class KafkaMergedBudget
 
         if (claimed >= minimum && debitorIndex != NO_DEBITOR_INDEX)
         {
-            claimed = debitor.claim(debitorIndex, mergedWatcherId, minimum, maximum);
+            claimed = debitor.claim(debitorIndex, mergedWatcherId, minimum, claimed, deferred);
         }
 
         assert claimed == 0 || (minimum <= claimed && claimed <= maximum) :
@@ -95,7 +96,7 @@ final class KafkaMergedBudget
         }
 
         final int watcherAt = watchers.indexOf(watcherId);
-        if (claimed == maximum)
+        if (claimed == maximum + deferred)
         {
             if (watcherAt != -1)
             {
