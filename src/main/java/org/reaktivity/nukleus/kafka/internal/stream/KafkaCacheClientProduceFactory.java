@@ -58,6 +58,7 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ExtensionFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaProduceBeginExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaResetExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.route.RouteManager;
@@ -67,6 +68,8 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 {
     private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(new UnsafeBuffer(), 0, 0);
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
+
+    private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
     private static final String TRANSACTION_NONE = null;
 
@@ -89,6 +92,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
     private final ResetFW.Builder resetRW = new ResetFW.Builder();
     private final WindowFW.Builder windowRW = new WindowFW.Builder();
     private final KafkaBeginExFW.Builder kafkaBeginExRW = new KafkaBeginExFW.Builder();
+    private final KafkaResetExFW.Builder kafkaResetExRW = new KafkaResetExFW.Builder();
 
     private final MessageFunction<RouteFW> wrapRoute = (t, b, i, l) -> routeRO.wrap(b, i, i + l);
     private final DataFW bufferedDataRO = new DataFW();
@@ -98,6 +102,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
     private final BufferPool bufferPool;
     private final BudgetCreditor creditor;
     private final MutableDirectBuffer writeBuffer;
+    private final MutableDirectBuffer extBuffer;
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
     private final LongSupplier supplyBudgetId;
@@ -126,6 +131,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.router = router;
         this.writeBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
+        this.extBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
         this.bufferPool = bufferPool;
         this.creditor = creditor;
         this.supplyInitialId = supplyInitialId;
@@ -204,21 +210,14 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                 fan = newFan;
             }
 
-            if (fan != null)
-            {
-                assert fan.affinity == affinity || fan.state == 0 || KafkaState.closed(fan.state) :
-                        String.format("%d == %d || %d == 0 || KafkaState.closed(0x%08x)",
-                                fan.affinity, affinity, fan.state, fan.state);
-                fan.affinity = affinity;
-
-                newStream = new KafkaCacheClientProduceStream(
-                        fan,
-                        sender,
-                        routeId,
-                        initialId,
-                        affinity,
-                        authorization)::onClientMessage;
-            }
+            final int leaderId = cacheRoute.leadersByPartitionId.get(partitionId);
+            newStream = new KafkaCacheClientProduceStream(
+                    fan,
+                    sender,
+                    routeId,
+                    initialId,
+                    leaderId,
+                    authorization)::onClientMessage;
         }
 
         return newStream;
@@ -361,7 +360,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private final int partitionId;
         private final List<KafkaCacheClientProduceStream> members;
 
-        private long affinity;
+        private long leaderId;
         private long initialId;
         private long replyId;
         private MessageConsumer receiver;
@@ -382,7 +381,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private KafkaCacheClientProduceFan(
             long routeId,
             long authorization,
-            long affinity,
+            long leaderId,
             KafkaCacheClientBudget budget,
             KafkaCachePartition partition)
         {
@@ -392,13 +391,24 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             this.partition = partition;
             this.partitionId = partition.id();
             this.members = new ArrayList<>();
-            this.affinity = affinity;
+            this.leaderId = leaderId;
         }
 
         private void onClientFanMemberOpening(
             long traceId,
             KafkaCacheClientProduceStream member)
         {
+            if (member.leaderId != leaderId)
+            {
+                doClientFanInitialAbortIfNecessary(traceId);
+                doClientFanReplyResetIfNecessary(traceId);
+                correlations.remove(replyId);
+                leaderId = member.leaderId;
+
+                members.forEach(m -> m.cleanupClient(traceId, ERROR_NOT_LEADER_FOR_PARTITION));
+                members.clear();
+            }
+
             members.add(member);
 
             assert !members.isEmpty();
@@ -456,7 +466,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             correlations.put(replyId, this::onClientFanMessage);
             router.setThrottle(initialId, this::onClientFanMessage);
-            doBegin(receiver, routeId, initialId, traceId, authorization, affinity,
+            doBegin(receiver, routeId, initialId, traceId, authorization, leaderId,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .produce(p -> p.transaction(TRANSACTION_NONE)
@@ -769,7 +779,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private final long routeId;
         private final long initialId;
         private final long replyId;
-        private final long affinity;
+        private final long leaderId;
         private final long authorization;
 
         private int state;
@@ -781,7 +791,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             MessageConsumer sender,
             long routeId,
             long initialId,
-            long affinity,
+            long leaderId,
             long authorization)
         {
             this.fan = fan;
@@ -789,7 +799,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             this.routeId = routeId;
             this.initialId = initialId;
             this.replyId = supplyReplyId.applyAsLong(initialId);
-            this.affinity = affinity;
+            this.leaderId = leaderId;
             this.authorization = authorization;
         }
 
@@ -834,10 +844,19 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             BeginFW begin)
         {
             final long traceId = begin.traceId();
+            final long affinity = begin.affinity();
 
-            state = KafkaState.openingInitial(state);
+            if (affinity != leaderId)
+            {
+                cleanupClient(traceId, ERROR_NOT_LEADER_FOR_PARTITION);
+            }
+            else
+            {
+                state = KafkaState.openingInitial(state);
 
-            fan.onClientFanMemberOpening(traceId, this);
+                fan.onClientFanMemberOpening(traceId, this);
+            }
+
         }
 
         private void onClientInitialData(
@@ -957,7 +976,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             state = KafkaState.openingReply(state);
 
             router.setThrottle(replyId, this::onClientMessage);
-            doBegin(sender, routeId, replyId, traceId, authorization, affinity,
+            doBegin(sender, routeId, replyId, traceId, authorization, leaderId,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .produce(p -> p.transaction(TRANSACTION_NONE)
@@ -1019,6 +1038,26 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             fan.onClientFanMemberClosed(traceId, this);
 
             doClientInitialResetIfNecessary(traceId, EMPTY_OCTETS);
+        }
+
+        private void cleanupClient(
+            long traceId,
+            int error)
+        {
+            final KafkaResetExFW kafkaResetEx = kafkaResetExRW.wrap(extBuffer, 0, extBuffer.capacity())
+                                                              .typeId(kafkaTypeId)
+                                                              .error(error)
+                                                              .build();
+
+            cleanupClient(traceId, kafkaResetEx);
+        }
+
+        private void cleanupClient(
+            long traceId,
+            Flyweight extension)
+        {
+            doClientInitialResetIfNecessary(traceId, extension);
+            doClientReplyAbortIfNecessary(traceId);
         }
     }
 }
