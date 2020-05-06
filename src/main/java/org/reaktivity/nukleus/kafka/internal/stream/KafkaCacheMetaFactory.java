@@ -337,11 +337,11 @@ public final class KafkaCacheMetaFactory implements StreamFactory
         private final long authorization;
         private final KafkaCacheTopic topic;
         private final List<KafkaCacheMetaStream> members;
+        private final KafkaCacheRoute cacheRoute;
 
         private long initialId;
         private long replyId;
         private MessageConsumer receiver;
-        private Int2IntHashMap leadersByPartitionId;
 
         private int state;
 
@@ -357,6 +357,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             this.authorization = authorization;
             this.topic = topic;
             this.members = new ArrayList<>();
+            this.cacheRoute = supplyCacheRoute.apply(routeId);
         }
 
         private void onMetaFanoutMemberOpening(
@@ -384,7 +385,8 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             long traceId,
             KafkaCacheMetaStream member)
         {
-            if (leadersByPartitionId != null)
+            final Int2IntHashMap leadersByPartitionId = cacheRoute.leadersByPartitionId;
+            if (!leadersByPartitionId.isEmpty())
             {
                 final KafkaDataExFW kafkaDataEx =
                         kafkaDataExRW.wrap(extBuffer, 0, extBuffer.capacity())
@@ -608,11 +610,7 @@ public final class KafkaCacheMetaFactory implements StreamFactory
             if (kafkaMetaDataEx != null)
             {
                 final ArrayFW<KafkaPartitionFW> partitions = kafkaMetaDataEx.partitions();
-                if (leadersByPartitionId == null)
-                {
-                    leadersByPartitionId = new Int2IntHashMap(Integer.MIN_VALUE);
-                }
-
+                final Int2IntHashMap leadersByPartitionId = cacheRoute.leadersByPartitionId;
                 leadersByPartitionId.clear();
                 partitions.forEach(p -> leadersByPartitionId.put(p.partitionId(), p.leaderId()));
 

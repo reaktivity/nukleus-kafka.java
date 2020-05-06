@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import org.agrona.collections.Int2IntHashMap;
 import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.kafka.internal.budget.KafkaCacheClientBudget;
@@ -37,6 +38,8 @@ public final class KafkaCacheRoute
     public final Long2ObjectHashMap<KafkaCacheClientProduceFan> clientProduceFansByTopicPartition;
     public final Long2ObjectHashMap<KafkaCacheServerProduceFan> serverProduceFansByTopicPartition;
     public final Long2ObjectHashMap<KafkaCacheClientBudget> clientBudgetsByTopic;
+    public final Int2IntHashMap leadersByPartitionId;
+
 
     public KafkaCacheRoute(
         long routeId)
@@ -50,6 +53,7 @@ public final class KafkaCacheRoute
         this.clientProduceFansByTopicPartition = new Long2ObjectHashMap<>();
         this.serverProduceFansByTopicPartition = new Long2ObjectHashMap<>();
         this.clientBudgetsByTopic = new Long2ObjectHashMap<>();
+        this.leadersByPartitionId = new Int2IntHashMap(Integer.MIN_VALUE);
     }
 
     public int topicKey(
