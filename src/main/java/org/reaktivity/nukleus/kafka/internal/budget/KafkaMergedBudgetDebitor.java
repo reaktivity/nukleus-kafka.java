@@ -59,10 +59,21 @@ final class KafkaMergedBudgetDebitor implements BudgetDebitor
         int minimum,
         int maximum)
     {
+        return claim(mergedBudgetId, watcherId, minimum, maximum, 0);
+    }
+
+    @Override
+    public int claim(
+        long mergedBudgetId,
+        long watcherId,
+        int minimum,
+        int maximum,
+        int deferred)
+    {
         final KafkaMergedBudget mergedBudget = budgetsByMergedId.get(mergedBudgetId);
 
         // creditor may cleanup before debitor
-        return mergedBudget != null ? mergedBudget.claim(watcherId, minimum, maximum) : 0;
+        return mergedBudget != null ? mergedBudget.claim(watcherId, minimum, maximum, deferred) : 0;
     }
 
     @Override
