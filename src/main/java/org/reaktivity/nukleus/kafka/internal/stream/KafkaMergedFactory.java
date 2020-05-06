@@ -108,6 +108,7 @@ public final class KafkaMergedFactory implements StreamFactory
     private static final DirectBuffer EMPTY_BUFFER = new UnsafeBuffer();
     private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(EMPTY_BUFFER, 0, 0);
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
+    private static final MessageConsumer NO_RECEIVER = (m, b, i, l) -> {};
 
     private static final List<KafkaMergedFilter> EMPTY_MERGED_FILTERS = Collections.emptyList();
 
@@ -1357,7 +1358,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
         private long initialId;
         private long replyId;
-        private MessageConsumer receiver = (m, b, i, l) -> {};
+        private MessageConsumer receiver = NO_RECEIVER;
 
         private int state;
 
@@ -1593,7 +1594,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
         private long initialId;
         private long replyId;
-        private MessageConsumer receiver = (m, b, i, l) -> {};
+        private MessageConsumer receiver = NO_RECEIVER;
 
         private int state;
 
@@ -1830,7 +1831,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
         private long initialId;
         private long replyId;
-        private MessageConsumer receiver = (m, b, i, l) -> {};
+        private MessageConsumer receiver = NO_RECEIVER;
 
         private int state;
 
@@ -2105,7 +2106,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
         private long initialId;
         private long replyId;
-        private MessageConsumer receiver = (m, b, i, l) -> {};
+        private MessageConsumer receiver = NO_RECEIVER;
 
         private int state;
 
