@@ -1394,6 +1394,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             state = KafkaState.closedReply(state);
 
             doReset(receiver, bootstrap.resolvedId, replyId, traceId, bootstrap.authorization);
+            correlations.remove(replyId);
         }
     }
 }
