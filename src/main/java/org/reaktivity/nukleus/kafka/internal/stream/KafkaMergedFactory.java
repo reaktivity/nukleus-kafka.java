@@ -924,8 +924,7 @@ public final class KafkaMergedFactory implements StreamFactory
             final long traceId = reset.traceId();
 
             state = KafkaState.closedReply(state);
-
-            cleanupBudgetCreditorIfNecessary();
+            nextOffsetsById.clear();
 
             describeStream.doDescribeReplyResetIfNecessary(traceId);
             metaStream.doMetaReplyResetIfNecessary(traceId);
@@ -1078,13 +1077,20 @@ public final class KafkaMergedFactory implements StreamFactory
         private void doMergedReplyEndIfNecessary(
             long traceId)
         {
-            if (KafkaState.replyOpening(state) && !KafkaState.replyClosed(state))
+            if (KafkaState.replyOpening(state) &&
+                !KafkaState.replyClosed(state))
             {
-                doMergedReplyEnd(traceId);
                 describeStream.doDescribeReplyResetIfNecessary(traceId);
                 metaStream.doMetaReplyResetIfNecessary(traceId);
-                fetchStreams.forEach(f -> f.doFetchReplyResetIfNecessary(traceId));
                 produceStreams.forEach(f -> f.doProduceReplyResetIfNecessary(traceId));
+
+                state = KafkaState.closingReply(state);
+                nextOffsetsById.clear();
+                fetchStreams.forEach(f -> f.doFetchInitialAbortIfNecessary(traceId));
+                if (fetchStreams.isEmpty())
+                {
+                    doMergedReplyEnd(traceId);
+                }
             }
         }
 
@@ -1111,13 +1117,20 @@ public final class KafkaMergedFactory implements StreamFactory
         private void doMergedInitialResetIfNecessary(
             long traceId)
         {
-            if (KafkaState.initialOpening(state) && !KafkaState.initialClosed(state))
+            if (KafkaState.initialOpening(state) &&
+                !KafkaState.initialClosed(state))
             {
-                doMergedInitialReset(traceId);
                 describeStream.doDescribeInitialAbortIfNecessary(traceId);
                 metaStream.doMetaInitialAbortIfNecessary(traceId);
-                fetchStreams.forEach(f -> f.doFetchInitialAbortIfNecessary(traceId));
                 produceStreams.forEach(f -> f.doProduceInitialAbortIfNecessary(traceId));
+
+                state = KafkaState.closingInitial(state);
+                nextOffsetsById.clear();
+                fetchStreams.forEach(f -> f.doFetchReplyResetIfNecessary(traceId));
+                if (fetchStreams.isEmpty())
+                {
+                    doMergedInitialReset(traceId);
+                }
             }
         }
 
@@ -1132,6 +1145,7 @@ public final class KafkaMergedFactory implements StreamFactory
         {
             if (mergedReplyBudgetId != NO_CREDITOR_INDEX)
             {
+                assert fetchStreams.isEmpty();
                 creditor.release(mergedReplyBudgetId);
                 mergedReplyBudgetId = NO_CREDITOR_INDEX;
             }
@@ -1229,6 +1243,17 @@ public final class KafkaMergedFactory implements StreamFactory
                 else
                 {
                     fetchStreams.remove(leader);
+                    if (fetchStreams.isEmpty())
+                    {
+                        if (KafkaState.initialClosing(state))
+                        {
+                            doMergedInitialResetIfNecessary(traceId);
+                        }
+                        if (KafkaState.replyClosing(state))
+                        {
+                            doMergedReplyEndIfNecessary(traceId);
+                        }
+                    }
                 }
             }
             else
@@ -1930,7 +1955,8 @@ public final class KafkaMergedFactory implements StreamFactory
             state = KafkaState.closedInitial(state);
 
             final KafkaResetExFW kafkaResetEx = extension.get(kafkaResetExRO::tryWrap);
-            final int error = kafkaResetEx != null ? kafkaResetEx.error() : -1;
+            final int defaultError = KafkaState.replyClosed(state) ? ERROR_NOT_LEADER_FOR_PARTITION : -1;
+            final int error = kafkaResetEx != null ? kafkaResetEx.error() : defaultError;
 
             doFetchReplyResetIfNecessary(traceId);
 
@@ -2034,6 +2060,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
+            merged.onFetchPartitionLeaderError(traceId, partitionId, ERROR_NOT_LEADER_FOR_PARTITION);
             merged.doMergedReplyEndIfNecessary(traceId);
 
             doFetchInitialEndIfNecessary(traceId);
@@ -2046,6 +2073,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
+            merged.onFetchPartitionLeaderError(traceId, partitionId, ERROR_NOT_LEADER_FOR_PARTITION);
             merged.doMergedReplyAbortIfNecessary(traceId);
 
             doFetchInitialAbortIfNecessary(traceId);
