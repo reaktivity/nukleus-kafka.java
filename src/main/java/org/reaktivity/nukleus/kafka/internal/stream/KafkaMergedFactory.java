@@ -1145,7 +1145,6 @@ public final class KafkaMergedFactory implements StreamFactory
         {
             if (mergedReplyBudgetId != NO_CREDITOR_INDEX)
             {
-                assert fetchStreams.isEmpty();
                 creditor.release(mergedReplyBudgetId);
                 mergedReplyBudgetId = NO_CREDITOR_INDEX;
             }
