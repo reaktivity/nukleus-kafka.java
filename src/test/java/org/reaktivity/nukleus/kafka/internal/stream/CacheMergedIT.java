@@ -223,11 +223,11 @@ public class CacheMergedIT
     @Test
     @Specification({
         "${route}/cache.merged/controller",
-        "${client}/merged.fetch.ended/client",
-        "${server}/unmerged.fetch.ended/server"})
+        "${client}/merged.fetch.server.sent.close/client",
+        "${server}/unmerged.fetch.server.sent.close/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     @Configure(name = KAFKA_CACHE_SERVER_RECONNECT_DELAY_NAME, value = "0")
-    public void shouldEndMergedOnFetchEnded() throws Exception
+    public void shouldCloseMergedOnUnmergedFetchClose() throws Exception
     {
         k3po.finish();
     }
@@ -235,40 +235,11 @@ public class CacheMergedIT
     @Test
     @Specification({
         "${route}/cache.merged/controller",
-        "${client}/end.merged.after.fetch.ended/client",
-        "${server}/unmerged.fetch.ended.after.merged.initial.ended/server"})
+        "${client}/merged.fetch.server.sent.close.with.payload/client",
+        "${server}/unmerged.fetch.server.sent.close.with.payload/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     @Configure(name = KAFKA_CACHE_SERVER_RECONNECT_DELAY_NAME, value = "0")
-    public void shouldEndMergedAfterFetchEnded() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("MERGED_MESSAGE_RECEIVED");
-        k3po.notifyBarrier("FETCH_ENDED");
-        k3po.notifyBarrier("END_FETCH");
-        Thread.sleep(200);
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/cache.merged/controller",
-        "${client}/merged.fetch.aborted/client",
-        "${server}/unmerged.fetch.aborted/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
-    @Configure(name = KAFKA_CACHE_SERVER_RECONNECT_DELAY_NAME, value = "0")
-    public void shouldEndMergedOnFetchAborted() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/cache.merged/controller",
-        "${client}/end.merged.after.fetch.ended/client",
-        "${server}/unmerged.fetch.aborted.after.merged.initial.ended/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
-    @Configure(name = KAFKA_CACHE_SERVER_RECONNECT_DELAY_NAME, value = "0")
-    public void shouldEndMergedAfterFetchAborted() throws Exception
+    public void shouldCloseMergedOnUnmergedFetchCloseWithPayload() throws Exception
     {
         k3po.start();
         k3po.awaitBarrier("MERGED_MESSAGE_RECEIVED");
@@ -281,11 +252,11 @@ public class CacheMergedIT
     @Test
     @Specification({
         "${route}/cache.merged/controller",
-        "${client}/merged.fetch.aborted/client",
-        "${server}/unmerged.fetch.reset/server"})
+        "${client}/merged.fetch.server.sent.abort/client",
+        "${server}/unmerged.fetch.server.sent.abort/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     @Configure(name = KAFKA_CACHE_SERVER_RECONNECT_DELAY_NAME, value = "0")
-    public void shouldEndMergedOnFetchReset() throws Exception
+    public void shouldCloseMergedOnUnmergedFetchAbort() throws Exception
     {
         k3po.finish();
     }
@@ -293,11 +264,40 @@ public class CacheMergedIT
     @Test
     @Specification({
         "${route}/cache.merged/controller",
-        "${client}/end.merged.after.fetch.ended/client",
-        "${server}/unmerged.fetch.reset.and.aborted.after.merged.initial.ended/server"})
+        "${client}/merged.fetch.server.sent.close.with.payload/client",
+        "${server}/unmerged.fetch.server.sent.abort.with.payload/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     @Configure(name = KAFKA_CACHE_SERVER_RECONNECT_DELAY_NAME, value = "0")
-    public void shouldEndMergedAfterFetchReset() throws Exception
+    public void shouldCloseMergedOnUnmergedFetchAbortWithPayload() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("MERGED_MESSAGE_RECEIVED");
+        k3po.notifyBarrier("FETCH_ENDED");
+        k3po.notifyBarrier("END_FETCH");
+        Thread.sleep(200);
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
+        "${client}/merged.fetch.server.sent.abort/client",
+        "${server}/unmerged.fetch.server.sent.reset/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    @Configure(name = KAFKA_CACHE_SERVER_RECONNECT_DELAY_NAME, value = "0")
+    public void shouldCloseMergedOnUnmergedFetchReset() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
+        "${client}/merged.fetch.server.sent.close.with.payload/client",
+        "${server}/unmerged.fetch.server.sent.reset.and.abort.with.playload/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    @Configure(name = KAFKA_CACHE_SERVER_RECONNECT_DELAY_NAME, value = "0")
+    public void shouldCloseMergedOnUnmergedFetchResetWithPayload() throws Exception
     {
         k3po.start();
         k3po.awaitBarrier("MERGED_MESSAGE_RECEIVED");
