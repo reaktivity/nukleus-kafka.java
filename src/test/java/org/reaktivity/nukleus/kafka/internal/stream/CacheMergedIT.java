@@ -20,6 +20,8 @@ import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SEGMENT_BYTES;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SEGMENT_INDEX_BYTES;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_BOOTSTRAP;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_RECONNECT_DELAY_NAME;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CLIENT_PRODUCE_MAX_REQUEST_MILLIS_NAME;
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
@@ -34,6 +36,7 @@ import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.reaktor.ReaktorConfiguration;
 import org.reaktivity.reaktor.test.ReaktorRule;
+import org.reaktivity.reaktor.test.annotation.Configure;
 
 public class CacheMergedIT
 {
@@ -215,6 +218,35 @@ public class CacheMergedIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldProduceMergedMessageValuesDynamicHashed() throws Exception
     {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
+        "${client}/merged.fetch.ended/client",
+        "${server}/unmerged.fetch.ended/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    @Configure(name = KAFKA_CACHE_SERVER_RECONNECT_DELAY_NAME, value = "0")
+    public void shouldFetchMergedEnded() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
+        "${client}/end.merged.after.fetch.ended/client",
+        "${server}/unmerged.fetch.ended.after.merged.initial.ended/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    @Configure(name = KAFKA_CACHE_SERVER_RECONNECT_DELAY_NAME, value = "0")
+    public void shouldEndMergedAfterFetchEnded() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("MERGED_MESSAGE_RECEIVED");
+        k3po.notifyBarrier("FETCH_ENDED");
+        k3po.notifyBarrier("END_FETCH");
+        Thread.sleep(200);
         k3po.finish();
     }
 }
