@@ -29,6 +29,7 @@ public class KafkaConfiguration extends Configuration
     public static final boolean DEBUG_PRODUCE = DEBUG || Boolean.getBoolean("nukleus.kafka.debug.produce");
 
     public static final String KAFKA_CLIENT_PRODUCE_MAX_REQUEST_MILLIS_NAME = "nukleus.kafka.client.produce.max.request.millis";
+    public static final String KAFKA_CACHE_SERVER_RECONNECT_DELAY_NAME = "nukleus.kafka.cache.server.reconnect";
 
     public static final IntPropertyDef KAFKA_CLIENT_MAX_IDLE_MILLIS;
     public static final IntPropertyDef KAFKA_CLIENT_META_MAX_AGE_MILLIS;
@@ -71,7 +72,8 @@ public class KafkaConfiguration extends Configuration
         KAFKA_CLIENT_PRODUCE_MAX_RESPONSE_MILLIS = config.property("client.produce.max.response.millis", 120000);
         KAFKA_CLIENT_PRODUCE_MAX_BYTES = config.property("client.produce.max.bytes", Integer.MAX_VALUE);
         KAFKA_CLIENT_PRODUCE_ACKS = config.property("client.produce.acks", ProduceAck.IN_SYNC_REPLICAS.value());
-        KAFKA_CACHE_DIRECTORY = config.property(Path.class, "cache.directory", (c, v) -> cacheDirectory(c, v), KafkaNukleus.NAME);
+        KAFKA_CACHE_DIRECTORY = config.property(Path.class, "cache.directory",
+            KafkaConfiguration::cacheDirectory, KafkaNukleus.NAME);
         KAFKA_CACHE_SERVER_BOOTSTRAP = config.property("cache.server.bootstrap", true);
         KAFKA_CACHE_SERVER_RECONNECT_DELAY = config.property("cache.server.reconnect", 5);
         KAFKA_CACHE_CLIENT_RECONNECT_DELAY = config.property("cache.client.reconnect", 0);

@@ -2082,10 +2082,10 @@ public final class KafkaMergedFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
-            merged.onFetchPartitionLeaderError(traceId, partitionId, ERROR_NOT_LEADER_FOR_PARTITION);
             merged.doMergedReplyEndIfNecessary(traceId);
-
             doFetchInitialEndIfNecessary(traceId);
+
+            merged.onFetchPartitionLeaderError(traceId, partitionId, ERROR_NOT_LEADER_FOR_PARTITION);
         }
 
         private void onFetchReplyAbort(
@@ -2095,10 +2095,10 @@ public final class KafkaMergedFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
-            merged.onFetchPartitionLeaderError(traceId, partitionId, ERROR_NOT_LEADER_FOR_PARTITION);
             merged.doMergedReplyAbortIfNecessary(traceId);
-
             doFetchInitialAbortIfNecessary(traceId);
+
+            merged.onFetchPartitionLeaderError(traceId, partitionId, ERROR_NOT_LEADER_FOR_PARTITION);
         }
 
         private void doFetchReplyWindowIfNecessary(
