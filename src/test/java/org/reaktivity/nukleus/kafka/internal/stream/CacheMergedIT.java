@@ -243,8 +243,8 @@ public class CacheMergedIT
     {
         k3po.start();
         k3po.awaitBarrier("RECEIVED_MESSAGE");
-        k3po.notifyBarrier("CLOSE_MERGED");
-        k3po.notifyBarrier("CLOSE_FETCH");
+        k3po.notifyBarrier("CLOSE_MERGED_INITIAL");
+        k3po.notifyBarrier("CLOSE_UNMERGED_FETCH_REPLY");
         k3po.finish();
     }
 
@@ -271,8 +271,8 @@ public class CacheMergedIT
     {
         k3po.start();
         k3po.awaitBarrier("RECEIVED_MESSAGE");
-        k3po.notifyBarrier("CLOSE_MERGED");
-        k3po.notifyBarrier("ABORT_FETCH");
+        k3po.notifyBarrier("CLOSE_MERGED_INITIAL");
+        k3po.notifyBarrier("ABORT_UNMERGED_FETCH_REPLY");
         k3po.finish();
     }
 
@@ -299,8 +299,8 @@ public class CacheMergedIT
     {
         k3po.start();
         k3po.awaitBarrier("RECEIVED_MESSAGE");
-        k3po.notifyBarrier("CLOSE_MERGED");
-        k3po.notifyBarrier("RESET_FETCH");
+        k3po.notifyBarrier("CLOSE_MERGED_INITIAL");
+        k3po.notifyBarrier("RESET_UNMERGED_FETCH_INITIAL");
         k3po.finish();
     }
 }
