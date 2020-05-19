@@ -847,6 +847,7 @@ public final class KafkaMergedFactory implements StreamFactory
         private void onMergedInitialFlush(
             FlushFW flush)
         {
+            final long traceId = flush.traceId();
             final OctetsFW extension = flush.extension();
             final ExtensionFW flushEx = extension.get(extensionRO::tryWrap);
 
@@ -861,7 +862,10 @@ public final class KafkaMergedFactory implements StreamFactory
             if (capabilities != newCapabilities)
             {
                 this.capabilities = newCapabilities;
-                // TODO
+
+                // TODO: disable FETCH if now PRODUCE_ONLY
+                doFetchPartitionsIfNecessary(traceId);
+                doProducePartitionsIfNecessary(traceId);
             }
         }
 
@@ -1167,15 +1171,34 @@ public final class KafkaMergedFactory implements StreamFactory
             partitions.forEach(partition -> partitionCount.value++);
             assert leadersByPartitionId.size() == partitionCount.value;
 
+            doFetchPartitionsIfNecessary(traceId);
+            doProducePartitionsIfNecessary(traceId);
+        }
+
+        private void doFetchPartitionsIfNecessary(
+            long traceId)
+        {
             if (hasFetchCapability(capabilities))
             {
-                partitions.forEach(p -> doFetchPartitionIfNecessary(traceId, p.partitionId()));
+                final int partitionCount = leadersByPartitionId.size();
+                for (int partitionId = 0; partitionId < partitionCount; partitionId++)
+                {
+                    doFetchPartitionIfNecessary(traceId, partitionId);
+                }
                 assert fetchStreams.size() >= leadersByPartitionId.size();
             }
+        }
 
+        private void doProducePartitionsIfNecessary(
+            long traceId)
+        {
             if (hasProduceCapability(capabilities))
             {
-                partitions.forEach(p -> doProducePartitionIfNecessary(traceId, p.partitionId()));
+                final int partitionCount = leadersByPartitionId.size();
+                for (int partitionId = 0; partitionId < partitionCount; partitionId++)
+                {
+                    doProducePartitionIfNecessary(traceId, partitionId);
+                }
                 assert produceStreams.size() >= leadersByPartitionId.size();
             }
         }

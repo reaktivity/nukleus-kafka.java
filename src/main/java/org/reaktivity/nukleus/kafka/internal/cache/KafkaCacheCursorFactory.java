@@ -48,10 +48,12 @@ import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheDeltaFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
+import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryHeaderFW;
 
 public final class KafkaCacheCursorFactory
 {
     private final KafkaCacheDeltaFW deltaRO = new KafkaCacheDeltaFW();
+    private final KafkaCacheEntryHeaderFW cacheHeaderRO = new KafkaCacheEntryHeaderFW();
 
     private final MutableDirectBuffer writeBuffer;
     private final CRC32C checksum;
@@ -178,6 +180,11 @@ public final class KafkaCacheCursorFactory
                 assert segment != null;
                 final KafkaCacheFile logFile = segment.logFile();
                 assert logFile != null;
+
+                if (logFile.readBytes(position, cacheHeaderRO::tryWrap) == null)
+                {
+                    break;
+                }
 
                 nextEntry = logFile.readBytes(position, cacheEntry::wrap);
                 assert nextEntry != null;

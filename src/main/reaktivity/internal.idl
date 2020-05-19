@@ -17,6 +17,11 @@ scope internal
 {
     scope cache
     {
+        struct KafkaCacheEntryHeader
+        {
+            int64 offset;
+        }
+
         struct KafkaCacheEntry
         {
           int64 offset;

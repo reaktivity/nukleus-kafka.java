@@ -58,6 +58,7 @@ import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheDeltaFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
+import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryHeaderFW;
 
 public final class KafkaCachePartition
 {
@@ -77,6 +78,7 @@ public final class KafkaCachePartition
     private final KafkaCacheEntryFW headEntryRO = new KafkaCacheEntryFW();
     private final KafkaCacheEntryFW logEntryRO = new KafkaCacheEntryFW();
     private final KafkaCacheDeltaFW deltaEntryRO = new KafkaCacheDeltaFW();
+    private final KafkaCacheEntryHeaderFW cacheHeaderRO = new KafkaCacheEntryHeaderFW();
 
     private final MutableDirectBuffer entryInfo = new UnsafeBuffer(new byte[4 * Long.BYTES + 2 * Integer.BYTES]);
     private final MutableDirectBuffer valueInfo = new UnsafeBuffer(new byte[Integer.BYTES]);
@@ -595,6 +597,11 @@ public final class KafkaCachePartition
 
                 for (int logPosition = 0; logPosition < logFile.capacity(); )
                 {
+                    if (logFile.readBytes(logPosition, cacheHeaderRO::tryWrap) == null)
+                    {
+                        break;
+                    }
+
                     final KafkaCacheEntryFW logEntry = logFile.readBytes(logPosition, logEntryRO::wrap);
                     if ((logEntry.flags() & CACHE_ENTRY_FLAGS_DIRTY) == 0)
                     {
