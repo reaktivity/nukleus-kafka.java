@@ -582,7 +582,8 @@ public final class KafkaCachePartition
         }
 
         public void clean(
-            long now)
+            long now,
+            long partitionOffset)
         {
             assert next != sentinel; // not head segment
 
@@ -597,7 +598,9 @@ public final class KafkaCachePartition
 
                 for (int logPosition = 0; logPosition < logFile.capacity(); )
                 {
-                    if (logFile.readBytes(logPosition, cacheHeaderRO::tryWrap) == null)
+                    KafkaCacheEntryHeaderFW entryHeader = logFile.readBytes(logPosition, cacheHeaderRO::wrap);
+                    final long offset = entryHeader.offset$();
+                    if (offset > partitionOffset)
                     {
                         break;
                     }

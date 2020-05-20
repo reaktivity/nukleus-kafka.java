@@ -1011,7 +1011,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             Node segmentNode = partition.sentinel().next();
             while (!segmentNode.next().sentinel()) // avoid cleaning head
             {
-                segmentNode.clean(now);
+                segmentNode.clean(now, partitionOffset);
                 segmentNode = segmentNode.next();
             }
 

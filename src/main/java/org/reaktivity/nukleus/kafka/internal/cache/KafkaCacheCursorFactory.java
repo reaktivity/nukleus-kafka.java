@@ -126,7 +126,8 @@ public final class KafkaCacheCursorFactory
         }
 
         public KafkaCacheEntryFW next(
-            KafkaCacheEntryFW cacheEntry)
+            KafkaCacheEntryFW cacheEntry,
+            long partitionOffset)
         {
             KafkaCacheEntryFW nextEntry = null;
 
@@ -181,7 +182,8 @@ public final class KafkaCacheCursorFactory
                 final KafkaCacheFile logFile = segment.logFile();
                 assert logFile != null;
 
-                if (logFile.readBytes(position, cacheHeaderRO::tryWrap) == null)
+                KafkaCacheEntryHeaderFW entryHeader = logFile.readBytes(position, cacheHeaderRO::wrap);
+                if (entryHeader.offset$() > partitionOffset)
                 {
                     break;
                 }
