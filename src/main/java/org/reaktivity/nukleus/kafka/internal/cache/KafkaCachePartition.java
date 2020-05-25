@@ -281,7 +281,7 @@ public final class KafkaCachePartition
         KafkaCacheEntryFW ancestor,
         KafkaDeltaType deltaType)
     {
-        assert offset >= this.progress;
+        assert offset > this.progress;
         this.progress = offset;
 
         final Node head = sentinel.previous;
@@ -372,7 +372,6 @@ public final class KafkaCachePartition
         assert logAvailable >= logRequired : String.format("%s %d >= %d", headSegment, logAvailable, logRequired);
 
         logFile.appendBytes(headers);
-        //System.out.printf("Write %s %d \n", logFile.location().toString(), logFile.markValue());
 
         final long offsetDelta = (int)(progress - headSegment.baseOffset());
         final long indexEntry = (offsetDelta << 32) | logFile.markValue();
@@ -619,12 +618,8 @@ public final class KafkaCachePartition
                             appender.hashFile().appendLong(headerHashEntry);
                         });
 
-                        final long beforeCapacity = appender.logFile().capacity();
-
                         appender.logFile().appendBytes(logEntry);
 
-                        final int capacity = appender.logFile().capacity();
-                        assert capacity == beforeCapacity + logEntry.sizeof();
                         if (deltaPosition != -1)
                         {
                             final int newLogEntryAt = appender.logFile().capacity() - logEntry.sizeof();
@@ -643,9 +638,6 @@ public final class KafkaCachePartition
                     logPosition = logEntry.limit();
                 }
 
-
-                final long capacityAppend = appender.logFile().capacity();
-                assert capacityAppend <= logFile.capacity();
                 segment.close();
 
                 final KafkaCacheSegment frozen = appender.freeze();
@@ -702,11 +694,8 @@ public final class KafkaCachePartition
             long descendantOffset)
         {
             final KafkaCacheFile logFile = segment.logFile();
-            //System.out.printf("Write MarkDirty1 %s %d \n", logFile.location().toString(), logFile.capacity());
             logFile.writeLong(ancestor.offset() + FIELD_OFFSET_DESCENDANT, descendantOffset);
             logFile.writeInt(ancestor.offset() + FIELD_OFFSET_FLAGS, CACHE_ENTRY_FLAGS_DIRTY);
-            //System.out.printf("Write MarkDirty2 %s  %d %d \n", logFile.location().toString(), ancestor.offset(),
-            //    logFile.capacity());
             segment.markDirtyBytes(ancestor.sizeof());
         }
 

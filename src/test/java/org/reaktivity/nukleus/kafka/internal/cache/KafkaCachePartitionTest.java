@@ -236,7 +236,7 @@ public class KafkaCachePartitionTest
 
             long now = currentTimeMillis();
             tail10s.cleanableAt(now);
-            tail10.clean(now, 65768);
+            tail10.clean(now);
 
             KafkaCacheSegment clean10s = tail10.segment();
 
