@@ -63,11 +63,6 @@
   <dependencies>
     <dependency>
       <groupId>org.reaktivity</groupId>
-      <artifactId>nukleus</artifactId>
-      <version>develop-SNAPSHOT</version>
-    </dependency>
-    <dependency>
-      <groupId>org.reaktivity</groupId>
       <artifactId>nukleus-kafka.spec</artifactId>
       <version>${nukleus.kafka.spec.version}</version>
       <scope>provided</scope>

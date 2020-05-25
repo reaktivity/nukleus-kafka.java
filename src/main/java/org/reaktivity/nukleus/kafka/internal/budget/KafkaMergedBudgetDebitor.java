@@ -54,13 +54,23 @@ final class KafkaMergedBudgetDebitor implements BudgetDebitor
 
     @Override
     public int claim(
-        long traceId,
         long mergedBudgetId,
         long watcherId,
         int minimum,
         int maximum)
     {
-        return claim(traceId, mergedBudgetId, watcherId, minimum, maximum, 0);
+        return claim(mergedBudgetId, watcherId, minimum, maximum, 0);
+    }
+
+    @Override
+    public int claim(
+        long mergedBudgetId,
+        long watcherId,
+        int minimum,
+        int maximum,
+        int deferred)
+    {
+        return claim(0L, mergedBudgetId, watcherId, minimum, maximum, 0);
     }
 
     @Override

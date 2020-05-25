@@ -526,7 +526,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                 final OctetsFW payload = bufferedData.payload();
                 final OctetsFW extension = bufferedData.extension();
 
-                final long claimed = initialDebitor.claim(traceId, initialDebitorIndex, initialId, reserved, reserved);
+                final long claimed = initialDebitor.claim(traceId, initialDebitorIndex, initialId, reserved, reserved, 0);
                 if (claimed != reserved)
                 {
                     break;

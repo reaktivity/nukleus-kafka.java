@@ -1133,7 +1133,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                     if (valueClaimed != 0 && client.stream.replyDebitorIndex != NO_DEBITOR_INDEX)
                     {
                         valueClaimed = client.stream.replyDebitor.claim(traceId, client.stream.replyDebitorIndex,
-                                client.stream.replyId, minimum, maximum);
+                                client.stream.replyId, minimum, maximum, 0);
 
                         if (valueClaimed == 0)
                         {
@@ -1247,7 +1247,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 if (valueClaimed != 0 && client.stream.replyDebitorIndex != NO_DEBITOR_INDEX)
                 {
                     valueClaimed = client.stream.replyDebitor.claim(traceId, client.stream.replyDebitorIndex,
-                            client.stream.replyId, minimum, maximum);
+                            client.stream.replyId, minimum, maximum, 0);
 
                     if (valueClaimed == 0)
                     {
@@ -1319,7 +1319,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
             if (valueClaimed != 0 && client.stream.replyDebitorIndex != NO_DEBITOR_INDEX)
             {
                 valueClaimed = client.stream.replyDebitor.claim(traceId, client.stream.replyDebitorIndex,
-                        client.stream.replyId, minimum, maximum);
+                        client.stream.replyId, minimum, maximum, 0);
 
                 if (valueClaimed == 0)
                 {
