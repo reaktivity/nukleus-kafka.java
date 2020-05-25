@@ -1135,6 +1135,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 state = KafkaState.closingInitial(state);
                 nextOffsetsById.clear();
                 fetchStreams.forEach(f -> f.doFetchReplyResetIfNecessary(traceId));
+                creditor.cleanupChild(mergedReplyBudgetId);
                 if (fetchStreams.isEmpty())
                 {
                     doMergedInitialReset(traceId);
