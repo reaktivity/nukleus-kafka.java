@@ -68,7 +68,6 @@ public final class KafkaMergedBudgetCreditor implements MergedBudgetCreditor
         final KafkaMergedBudget mergedBudget = budgetsByMergedId.remove(mergedBudgetId);
         assert mergedBudget != null;
         mergedBudget.release();
-        creditor.release(mergedBudgetId);
     }
 
     @Override

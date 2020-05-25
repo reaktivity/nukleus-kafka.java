@@ -1152,9 +1152,6 @@ public final class KafkaMergedFactory implements StreamFactory
 
         private void cleanupBudgetCreditorIfNecessary()
         {
-            System.out.format("[%d] cleanupChild mergedReplyBudgetId=%d \n",
-                System.nanoTime(), mergedReplyBudgetId);
-
             if (mergedReplyBudgetId != NO_CREDITOR_INDEX)
             {
                 creditor.release(mergedReplyBudgetId);

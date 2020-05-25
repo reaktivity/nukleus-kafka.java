@@ -619,7 +619,6 @@ public final class KafkaCachePartition
                         });
 
                         appender.logFile().appendBytes(logEntry);
-
                         if (deltaPosition != -1)
                         {
                             final int newLogEntryAt = appender.logFile().capacity() - logEntry.sizeof();
