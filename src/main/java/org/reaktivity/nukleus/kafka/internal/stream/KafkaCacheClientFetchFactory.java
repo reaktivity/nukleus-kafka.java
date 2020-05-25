@@ -928,7 +928,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 replyBudget >= replyPadding &&
                 partitionOffset <= group.partitionOffset)
             {
-                final KafkaCacheEntryFW nextEntry = cursor.next(entryRO, group.partitionOffset);
+                final KafkaCacheEntryFW nextEntry = cursor.next(entryRO);
                 if (nextEntry == null)
                 {
                     break;
