@@ -16,7 +16,6 @@
 package org.reaktivity.nukleus.kafka.internal.budget;
 
 import java.util.function.LongFunction;
-import java.util.function.LongSupplier;
 
 import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.budget.BudgetCreditor;

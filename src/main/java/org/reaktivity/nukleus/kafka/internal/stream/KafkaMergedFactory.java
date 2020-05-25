@@ -15,10 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
-import static java.lang.System.currentTimeMillis;
-import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
-import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.FETCH_ONLY;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.PRODUCE_ONLY;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
@@ -39,7 +36,6 @@ import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.collections.MutableInteger;
 import org.agrona.concurrent.UnsafeBuffer;
-import org.reaktivity.nukleus.budget.BudgetCreditor;
 import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessageFunction;
@@ -82,7 +78,6 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaMergedFlushExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaMetaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaResetExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.SignalFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
@@ -100,8 +95,6 @@ public final class KafkaMergedFactory implements StreamFactory
     private static final String16FW CONFIG_NAME_MIN_COMPACTION_LAG_MILLIS = new String16FW("min.compaction.lag.ms");
     private static final String16FW CONFIG_NAME_MAX_COMPACTION_LAG_MILLIS = new String16FW("max.compaction.lag.ms");
     private static final String16FW CONFIG_NAME_MIN_CLEANABLE_DIRTY_RATIO = new String16FW("min.cleanable.dirty.ratio");
-
-    private static final int SYSTEM_SIGNAL_BUDGET_CLEANUP = 1;
 
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
     private static final int ERROR_UNKNOWN = -1;
@@ -1158,21 +1151,15 @@ public final class KafkaMergedFactory implements StreamFactory
 
         private void cleanupBudgetCreditorIfNecessary()
         {
+            System.out.format("[%d] cleanupChild mergedReplyBudgetId=%d \n",
+                System.nanoTime(), mergedReplyBudgetId);
+
             if (mergedReplyBudgetId != NO_CREDITOR_INDEX)
             {
                 creditor.release(mergedReplyBudgetId);
-                signaler.signalAt(currentTimeMillis() + SECONDS.toMillis(30000),
-                    SYSTEM_SIGNAL_BUDGET_CLEANUP,
-                    this::onBudgetCleanupSignal);
+                creditor.cleanupChild(mergedReplyBudgetId);
+                mergedReplyBudgetId = NO_CREDITOR_INDEX;
             }
-        }
-
-        private void onBudgetCleanupSignal(
-            int signalId)
-        {
-            assert signalId == SYSTEM_SIGNAL_BUDGET_CLEANUP;
-            creditor.cleanup(mergedReplyBudgetId);
-            mergedReplyBudgetId = NO_CREDITOR_INDEX;
         }
 
         private void onTopicConfigChanged(

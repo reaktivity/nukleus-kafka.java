@@ -15,15 +15,13 @@
  */
 package org.reaktivity.nukleus.kafka.internal.budget;
 
-import java.util.function.LongSupplier;
-
 import org.agrona.collections.Long2ObjectHashMap;
 import org.reaktivity.nukleus.budget.BudgetCreditor;
 
 public final class KafkaMergedBudgetCreditor implements MergedBudgetCreditor
 {
     private final Long2ObjectHashMap<KafkaMergedBudget> budgetsByMergedId;
-    private BudgetCreditor creditor;
+    private final BudgetCreditor creditor;
 
     KafkaMergedBudgetCreditor(
         Long2ObjectHashMap<KafkaMergedBudget> budgetsByMergedId,
@@ -70,6 +68,7 @@ public final class KafkaMergedBudgetCreditor implements MergedBudgetCreditor
         final KafkaMergedBudget mergedBudget = budgetsByMergedId.remove(mergedBudgetId);
         assert mergedBudget != null;
         mergedBudget.release();
+        creditor.release(mergedBudgetId);
     }
 
     @Override
@@ -80,9 +79,9 @@ public final class KafkaMergedBudgetCreditor implements MergedBudgetCreditor
     }
 
     @Override
-    public void cleanup(
+    public void cleanupChild(
         long childBudgetId)
     {
-        creditor.supplyChild(childBudgetId);
+        creditor.cleanupChild(childBudgetId);
     }
 }
