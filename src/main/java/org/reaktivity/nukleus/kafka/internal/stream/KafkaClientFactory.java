@@ -88,7 +88,7 @@ public final class KafkaClientFactory implements StreamFactory
                 supplyTypeId, correlations, supplyClientRoute);
 
         final KafkaMergedFactory clientMergedFactory = new KafkaMergedFactory(
-                config, router, signaler, writeBuffer, supplyInitialId, supplyReplyId, supplyTraceId,
+                config, router, writeBuffer, supplyInitialId, supplyReplyId, supplyTraceId,
                 supplyTypeId, correlations, accountant.creditor());
 
         final Int2ObjectHashMap<StreamFactory> streamFactoriesByKind = new Int2ObjectHashMap<>();

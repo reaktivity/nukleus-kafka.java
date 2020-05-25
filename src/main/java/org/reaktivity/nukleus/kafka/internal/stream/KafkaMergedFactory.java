@@ -36,7 +36,6 @@ import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.collections.MutableInteger;
 import org.agrona.concurrent.UnsafeBuffer;
-import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.function.MessageFunction;
 import org.reaktivity.nukleus.function.MessagePredicate;
@@ -151,13 +150,11 @@ public final class KafkaMergedFactory implements StreamFactory
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
-    private Signaler signaler;
     private final MergedBudgetCreditor creditor;
 
     public KafkaMergedFactory(
         KafkaConfiguration config,
         RouteManager router,
-        Signaler signaler,
         MutableDirectBuffer writeBuffer,
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
@@ -173,7 +170,6 @@ public final class KafkaMergedFactory implements StreamFactory
         this.supplyInitialId = supplyInitialId;
         this.supplyReplyId = supplyReplyId;
         this.correlations = correlations;
-        this.signaler = signaler;
         this.creditor = creditor;
     }
 
