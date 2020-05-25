@@ -70,7 +70,7 @@ final class KafkaMergedBudgetDebitor implements BudgetDebitor
         int maximum,
         int deferred)
     {
-        return claim(0L, mergedBudgetId, watcherId, minimum, maximum, 0);
+        return claim(0L, mergedBudgetId, watcherId, minimum, maximum, deferred);
     }
 
     @Override
