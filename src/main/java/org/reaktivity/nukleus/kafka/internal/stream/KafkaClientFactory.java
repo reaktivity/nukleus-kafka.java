@@ -24,6 +24,7 @@ import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
+import org.reaktivity.nukleus.budget.BudgetCreditor;
 import org.reaktivity.nukleus.budget.BudgetDebitor;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.concurrent.Signaler;
@@ -60,10 +61,11 @@ public final class KafkaClientFactory implements StreamFactory
         ToIntFunction<String> supplyTypeId,
         LongSupplier supplyBudgetId,
         LongFunction<BudgetDebitor> supplyDebitor,
+        BudgetCreditor creditor,
         LongFunction<KafkaClientRoute> supplyClientRoute)
     {
         final Long2ObjectHashMap<MessageConsumer> correlations = new Long2ObjectHashMap<>();
-        final KafkaMergedBudgetAccountant accountant = new KafkaMergedBudgetAccountant(supplyBudgetId, supplyDebitor);
+        final KafkaMergedBudgetAccountant accountant = new KafkaMergedBudgetAccountant(supplyDebitor, creditor);
 
         final KafkaClientMetaFactory clientMetaFactory = new KafkaClientMetaFactory(
                 config, router, signaler, writeBuffer, bufferPool,

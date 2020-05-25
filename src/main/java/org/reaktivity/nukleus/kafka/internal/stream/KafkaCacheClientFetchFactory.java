@@ -599,7 +599,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             state = KafkaState.openedReply(state);
 
             assert partitionId == this.partition.id();
-            assert partitionOffset >= 0 && partitionOffset >= this.partitionOffset;
+                assert partitionOffset >= 0 && partitionOffset >= this.partitionOffset;
             this.partitionOffset = partitionOffset;
 
             members.forEach(s -> s.doClientReplyBeginIfNecessary(traceId));
@@ -984,7 +984,11 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 {
                     final int lengthMax = reservedMax - replyPadding;
                     final int deferredMax = remaining - lengthMax;
-                    reserved = replyDebitor.claim(replyDebitorIndex, replyId, reservedMin, reservedMax, deferredMax);
+                    reserved = replyDebitor.claim(traceId, replyDebitorIndex, replyId, reservedMin, reservedMax, deferredMax);
+                }
+                else
+                {
+                    assert false;
                 }
 
                 if (reserved < replyPadding || (reserved == replyPadding && value != null))

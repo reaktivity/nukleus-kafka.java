@@ -55,12 +55,17 @@
     <nukleus.plugin.version>0.49</nukleus.plugin.version>
 
     <nukleus.kafka.spec.version>0.139</nukleus.kafka.spec.version>
-    <reaktor.version>0.133</reaktor.version>
+    <reaktor.version>develop-SNAPSHOT</reaktor.version>
 
     <kafka.clients.version>1.0.0</kafka.clients.version>
   </properties>
 
   <dependencies>
+    <dependency>
+      <groupId>org.reaktivity</groupId>
+      <artifactId>nukleus</artifactId>
+      <version>develop-SNAPSHOT</version>
+    </dependency>
     <dependency>
       <groupId>org.reaktivity</groupId>
       <artifactId>nukleus-kafka.spec</artifactId>
