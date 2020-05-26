@@ -49,6 +49,11 @@ final class KafkaMergedBudget
         this.watchers = new LongArrayList();
     }
 
+    public long budgetId()
+    {
+        return budgetId;
+    }
+
     long credit(
         long traceId,
         long credit)
@@ -63,6 +68,7 @@ final class KafkaMergedBudget
     }
 
     int claim(
+        long traceId,
         long watcherId,
         int minimum,
         int maximum,
@@ -84,7 +90,7 @@ final class KafkaMergedBudget
 
         if (claimed >= minimum && debitorIndex != NO_DEBITOR_INDEX)
         {
-            claimed = debitor.claim(debitorIndex, mergedWatcherId, minimum, claimed, deferred);
+            claimed = debitor.claim(traceId, debitorIndex, mergedWatcherId, minimum, claimed, deferred);
         }
 
         assert claimed == 0 || (minimum <= claimed && claimed <= maximum) :

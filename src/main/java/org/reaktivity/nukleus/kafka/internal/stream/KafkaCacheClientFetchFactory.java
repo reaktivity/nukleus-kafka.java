@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_BUDGET_ID;
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 
@@ -599,7 +600,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             state = KafkaState.openedReply(state);
 
             assert partitionId == this.partition.id();
-            assert partitionOffset >= 0 && partitionOffset >= this.partitionOffset;
+                assert partitionOffset >= 0 && partitionOffset >= this.partitionOffset;
             this.partitionOffset = partitionOffset;
 
             members.forEach(s -> s.doClientReplyBeginIfNecessary(traceId));
@@ -984,7 +985,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 {
                     final int lengthMax = reservedMax - replyPadding;
                     final int deferredMax = remaining - lengthMax;
-                    reserved = replyDebitor.claim(replyDebitorIndex, replyId, reservedMin, reservedMax, deferredMax);
+                    reserved = replyDebitor.claim(traceId, replyDebitorIndex, replyId, reservedMin, reservedMax, deferredMax);
                 }
 
                 if (reserved < replyPadding || (reserved == replyPadding && value != null))
@@ -1220,7 +1221,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             {
                 state = KafkaState.openedReply(state);
 
-                if (replyBudgetId != 0L && replyDebitorIndex == NO_DEBITOR_INDEX)
+                if (replyBudgetId != NO_BUDGET_ID && replyDebitorIndex == NO_DEBITOR_INDEX)
                 {
                     replyDebitor = supplyDebitor.apply(replyBudgetId);
                     replyDebitorIndex = replyDebitor.acquire(replyBudgetId, replyId, this::doClientReplyDataIfNecessary);

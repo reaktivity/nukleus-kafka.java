@@ -19,6 +19,7 @@ import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 
 import org.agrona.collections.Long2ObjectHashMap;
+import org.reaktivity.nukleus.budget.BudgetCreditor;
 import org.reaktivity.nukleus.budget.BudgetDebitor;
 
 public final class KafkaMergedBudgetAccountant
@@ -29,12 +30,13 @@ public final class KafkaMergedBudgetAccountant
     private final Long2ObjectHashMap<KafkaMergedBudget> budgetsByMergedId;
 
     public KafkaMergedBudgetAccountant(
+        LongFunction<BudgetDebitor> supplyDebitor,
         LongSupplier supplyBudgetId,
-        LongFunction<BudgetDebitor> supplyDebitor)
+        BudgetCreditor creditor)
     {
         this.supplyDebitor = supplyDebitor;
         this.budgetsByMergedId = new Long2ObjectHashMap<>();
-        this.creditor = new KafkaMergedBudgetCreditor(budgetsByMergedId, supplyBudgetId);
+        this.creditor = new KafkaMergedBudgetCreditor(budgetsByMergedId, supplyBudgetId, creditor);
         this.debitor = new KafkaMergedBudgetDebitor(budgetsByMergedId, supplyDebitor);
     }
 
