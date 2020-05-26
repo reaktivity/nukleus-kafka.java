@@ -281,7 +281,7 @@ public final class KafkaCachePartition
         KafkaCacheEntryFW ancestor,
         KafkaDeltaType deltaType)
     {
-        assert offset > this.progress;
+        assert offset >= this.progress;
         this.progress = offset;
 
         final Node head = sentinel.previous;
