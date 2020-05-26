@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_BUDGET_ID;
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 
@@ -1220,7 +1221,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             {
                 state = KafkaState.openedReply(state);
 
-                if (replyBudgetId != 0L && replyDebitorIndex == NO_DEBITOR_INDEX)
+                if (replyBudgetId != NO_BUDGET_ID && replyDebitorIndex == NO_DEBITOR_INDEX)
                 {
                     replyDebitor = supplyDebitor.apply(replyBudgetId);
                     replyDebitorIndex = replyDebitor.acquire(replyBudgetId, replyId, this::doClientReplyDataIfNecessary);
