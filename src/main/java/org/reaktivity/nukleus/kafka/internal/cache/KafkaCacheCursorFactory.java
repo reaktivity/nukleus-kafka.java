@@ -52,6 +52,7 @@ import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 public final class KafkaCacheCursorFactory
 {
     private final KafkaCacheDeltaFW deltaRO = new KafkaCacheDeltaFW();
+
     private final MutableDirectBuffer writeBuffer;
     private final CRC32C checksum;
     private final KafkaFilterCondition nullKeyInfo;
