@@ -18,18 +18,22 @@ package org.reaktivity.nukleus.kafka.internal.budget;
 import java.util.function.LongSupplier;
 
 import org.agrona.collections.Long2ObjectHashMap;
+import org.reaktivity.nukleus.budget.BudgetCreditor;
 
 public final class KafkaMergedBudgetCreditor implements MergedBudgetCreditor
 {
     private final Long2ObjectHashMap<KafkaMergedBudget> budgetsByMergedId;
     private final LongSupplier supplyBudgetId;
+    private final BudgetCreditor creditor;
 
     KafkaMergedBudgetCreditor(
         Long2ObjectHashMap<KafkaMergedBudget> budgetsByMergedId,
-        LongSupplier supplyBudgetId)
+        LongSupplier supplyBudgetId,
+        BudgetCreditor creditor)
     {
         this.budgetsByMergedId = budgetsByMergedId;
         this.supplyBudgetId = supplyBudgetId;
+        this.creditor = creditor;
     }
 
     @Override
@@ -45,7 +49,7 @@ public final class KafkaMergedBudgetCreditor implements MergedBudgetCreditor
         long budgetId)
     {
         assert watcherId != 0L;
-        final long mergedBudgetId = supplyBudgetId.getAsLong();
+        final long mergedBudgetId = budgetId != NO_BUDGET_ID ? supplyChild(budgetId) : supplyBudgetId.getAsLong();
         budgetsByMergedId.put(mergedBudgetId, new KafkaMergedBudget(budgetId, watcherId));
         return mergedBudgetId;
     }
@@ -68,6 +72,25 @@ public final class KafkaMergedBudgetCreditor implements MergedBudgetCreditor
     {
         final KafkaMergedBudget mergedBudget = budgetsByMergedId.remove(mergedBudgetId);
         assert mergedBudget != null;
+        final long budgetId = mergedBudget.budgetId();
+        if (budgetId != NO_BUDGET_ID)
+        {
+            creditor.cleanupChild(budgetId);
+        }
         mergedBudget.release();
+    }
+
+    @Override
+    public long supplyChild(
+        long budgetId)
+    {
+        return creditor.supplyChild(budgetId);
+    }
+
+    @Override
+    public void cleanupChild(
+        long budgetId)
+    {
+        creditor.cleanupChild(budgetId);
     }
 }

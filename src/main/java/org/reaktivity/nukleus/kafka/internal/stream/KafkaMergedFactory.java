@@ -890,7 +890,11 @@ public final class KafkaMergedFactory implements StreamFactory
             {
                 mergedReplyBudgetId = creditor.acquire(replyId, budgetId);
             }
-            creditor.credit(traceId, mergedReplyBudgetId, credit);
+
+            if (mergedReplyBudgetId != NO_CREDITOR_INDEX)
+            {
+                creditor.credit(traceId, mergedReplyBudgetId, credit);
+            }
 
             doUnmergedFetchReplyWindowsIfNecessary(traceId);
         }
@@ -1131,6 +1135,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 state = KafkaState.closingInitial(state);
                 nextOffsetsById.clear();
                 fetchStreams.forEach(f -> f.doFetchReplyResetIfNecessary(traceId));
+                creditor.cleanupChild(mergedReplyBudgetId);
                 if (fetchStreams.isEmpty())
                 {
                     doMergedInitialReset(traceId);
