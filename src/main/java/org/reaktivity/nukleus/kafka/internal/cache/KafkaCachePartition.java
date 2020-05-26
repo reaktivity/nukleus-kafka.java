@@ -267,12 +267,13 @@ public final class KafkaCachePartition
         KafkaDeltaType deltaType)
     {
         final long keyHash = computeHash(key);
-        writeEntryStart(offset, timestamp, key, keyHash, value != null ? value.sizeof() : -1, ancestor, deltaType);
+        writeEntryStart(0L, offset, timestamp, key, keyHash, value != null ? value.sizeof() : -1, ancestor, deltaType);
         writeEntryContinue(value);
         writeEntryFinish(headers, deltaType);
     }
 
     public void writeEntryStart(
+        long streamId,
         long offset,
         long timestamp,
         KafkaKeyFW key,
@@ -281,8 +282,9 @@ public final class KafkaCachePartition
         KafkaCacheEntryFW ancestor,
         KafkaDeltaType deltaType)
     {
-        assert offset >= this.progress;
+        assert offset > this.progress : String.format("%d > %d", offset, this.progress);
         this.progress = offset;
+        //System.out.printf("[0x%016x] %s %d\n", this, this.progress);
 
         final Node head = sentinel.previous;
         assert head != sentinel;

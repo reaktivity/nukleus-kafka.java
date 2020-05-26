@@ -49,6 +49,11 @@ final class KafkaMergedBudget
         this.watchers = new LongArrayList();
     }
 
+    public long budgetId()
+    {
+        return budgetId;
+    }
+
     long credit(
         long traceId,
         long credit)

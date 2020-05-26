@@ -65,7 +65,7 @@ public final class KafkaClientFactory implements StreamFactory
         LongFunction<KafkaClientRoute> supplyClientRoute)
     {
         final Long2ObjectHashMap<MessageConsumer> correlations = new Long2ObjectHashMap<>();
-        final KafkaMergedBudgetAccountant accountant = new KafkaMergedBudgetAccountant(supplyDebitor, creditor);
+        final KafkaMergedBudgetAccountant accountant = new KafkaMergedBudgetAccountant(supplyDebitor, supplyBudgetId, creditor);
 
         final KafkaClientMetaFactory clientMetaFactory = new KafkaClientMetaFactory(
                 config, router, signaler, writeBuffer, bufferPool,
