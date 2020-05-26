@@ -72,15 +72,15 @@ public final class KafkaMergedBudgetCreditor implements MergedBudgetCreditor
 
     @Override
     public long supplyChild(
-        long parentBudgetId)
+        long budgetId)
     {
-        return creditor.supplyChild(parentBudgetId);
+        return creditor.supplyChild(budgetId);
     }
 
     @Override
     public void cleanupChild(
-        long childBudgetId)
+        long budgetId)
     {
-        creditor.cleanupChild(childBudgetId);
+        creditor.cleanupChild(budgetId);
     }
 }
