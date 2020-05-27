@@ -686,8 +686,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
                 final long keyHash = partition.computeKeyHash(key);
                 final KafkaCacheEntryFW ancestor = findAndMarkAncestor(key, nextHead, (int) keyHash, partitionOffset);
-                partition.writeEntryStart(partitionOffset, timestamp, key,
-                    keyHash, valueLength, ancestor, deltaType);
+                partition.writeEntryStart(partitionOffset, timestamp, key, keyHash, valueLength, ancestor, deltaType);
             }
 
             if (valueFragment != null)
