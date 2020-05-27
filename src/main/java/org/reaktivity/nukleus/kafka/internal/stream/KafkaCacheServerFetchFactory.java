@@ -686,7 +686,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
                 final long keyHash = partition.computeKeyHash(key);
                 final KafkaCacheEntryFW ancestor = findAndMarkAncestor(key, nextHead, (int) keyHash, partitionOffset);
-                partition.writeEntryStart(data.streamId(), partitionOffset, timestamp, key,
+                partition.writeEntryStart(partitionOffset, timestamp, key,
                     keyHash, valueLength, ancestor, deltaType);
             }
 
@@ -976,7 +976,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         private void onServerFanoutInitialSignalSegmentRetain(
             SignalFW signal)
         {
-            partition.append(partitionOffset);
+            partition.append(partitionOffset + 1);
         }
 
         private void onServerFanoutInitialSignalSegmentDelete(
