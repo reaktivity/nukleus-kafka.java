@@ -632,6 +632,8 @@ public final class KafkaCachePartition
                         final int deltaBaseOffset = 0;
                         final long keyEntry = keyHash << 32 | deltaBaseOffset;
                         appender.keysFile().appendLong(keyEntry);
+
+                        appender.lastOffset(logOffset);
                     }
 
                     logPosition = logEntry.limit();
