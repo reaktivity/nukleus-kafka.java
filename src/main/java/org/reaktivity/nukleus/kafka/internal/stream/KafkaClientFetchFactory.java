@@ -913,8 +913,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
             {
                 if (KafkaConfiguration.DEBUG)
                 {
-                    System.out.format("[client] %s[%d] FETCH RecordSet %d\n",
-                            client.topic, client.partitionId, recordSet.length());
+                    System.out.format("[client] [0x%016x] %s[%d] FETCH RecordSet %d\n",
+                            client.replyId, client.topic, client.partitionId, recordSet.length());
                 }
 
                 final int responseProgress = recordSet.sizeof();
@@ -978,8 +978,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
             {
                 if (KafkaConfiguration.DEBUG)
                 {
-                    System.out.format("[client] %s[%d] FETCH RecordBatch %d\n",
-                            client.topic, client.partitionId, recordBatch.length());
+                    System.out.format("[client] [0x%016x] %s[%d] FETCH RecordBatch %d\n",
+                            client.replyId, client.topic, client.partitionId, recordBatch.length());
                 }
 
                 final int attributes = recordBatch.attributes();
@@ -1049,8 +1049,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
             {
                 if (KafkaConfiguration.DEBUG)
                 {
-                    System.out.format("[client] %s[%d] FETCH Record length %d\n",
-                            client.topic, client.partitionId, recordLength.value());
+                    System.out.format("[client] [0x%016x] %s[%d] FETCH Record length %d\n",
+                            client.replyId, client.topic, client.partitionId, recordLength.value());
                 }
 
                 final int sizeofRecord = recordLength.sizeof() + recordLength.value();
@@ -1099,7 +1099,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
             {
                 if (KafkaConfiguration.DEBUG)
                 {
-                    System.out.format("[client] %s[%d] FETCH Record %d\n", client.topic, client.partitionId, client.nextOffset);
+                    System.out.format("[client] [0x%016x] %s[%d] FETCH Record %d\n",
+                        client.replyId, client.topic, client.partitionId, client.nextOffset);
                 }
 
                 final Varint32FW recordLength = recordLengthRO.tryWrap(buffer, progress, limit);
@@ -1214,8 +1215,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
             {
                 if (KafkaConfiguration.DEBUG)
                 {
-                    System.out.format("[client] %s[%d] FETCH Record (init) %d\n",
-                            client.topic, client.partitionId, client.nextOffset);
+                    System.out.format("[client] [0x%016x] %s[%d] FETCH Record (init) %d\n",
+                            client.replyId, client.topic, client.partitionId, client.nextOffset);
                 }
 
                 final Varint32FW recordLength = recordLengthRO.tryWrap(buffer, progress, limit);
@@ -1333,8 +1334,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
             {
                 if (KafkaConfiguration.DEBUG)
                 {
-                    System.out.format("[client] %s[%d] FETCH Record (fin) %d\n",
-                            client.topic, client.partitionId, client.nextOffset);
+                    System.out.format("[client] [0x%016x] %s[%d] FETCH Record (fin) %d\n",
+                            client.replyId, client.topic, client.partitionId, client.nextOffset);
                 }
 
                 final int valueOffset = progress;
@@ -1384,8 +1385,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
                 if (KafkaConfiguration.DEBUG)
                 {
-                    System.out.format("[client] %s[%d] FETCH Record (cont) %d\n",
-                            client.topic, client.partitionId, client.nextOffset);
+                    System.out.format("[client] [0x%016x] %s[%d] FETCH Record (cont) %d\n",
+                            client.replyId, client.topic, client.partitionId, client.nextOffset);
                 }
 
                 final int valueOffset = progress;
@@ -1399,6 +1400,9 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
                 client.decodableRecordBytes -= valueProgress;
                 assert client.decodableRecordBytes >= 0;
+
+                client.decodableRecordSetBytes -= valueProgress;
+                assert client.decodableRecordSetBytes >= 0;
 
                 client.decodableRecordValueBytes -= valueProgress;
                 assert client.decodableRecordValueBytes >= 0;
@@ -2012,7 +2016,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
                 if (KafkaConfiguration.DEBUG)
                 {
-                    System.out.format("[client] %s[%s] FETCH aborted (%d bytes)\n", topic, partitionId, networkBytesReceived);
+                    System.out.format("[client] [0x%016x] %s[%s] FETCH aborted (%d bytes)\n",
+                        replyId, topic, partitionId, networkBytesReceived);
                 }
 
                 state = KafkaState.closedReply(state);
@@ -2027,7 +2032,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
                 if (KafkaConfiguration.DEBUG)
                 {
-                    System.out.format("[client] %s[%d] FETCH reset (%d bytes)\n", topic, partitionId, networkBytesReceived);
+                    System.out.format("[client] [0x%016x] %s[%d] FETCH reset (%d bytes)\n",
+                        replyId, topic, partitionId, networkBytesReceived);
                 }
 
                 state = KafkaState.closedInitial(state);
@@ -2258,7 +2264,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
                 if (KafkaConfiguration.DEBUG)
                 {
-                    System.out.format("%s[%d] OFFSETS %d\n", topic, partitionId, timestamp);
+                    System.out.format("[0x%016x] %s[%d] OFFSETS %d\n", replyId, topic, partitionId, timestamp);
                 }
 
                 doNetworkData(traceId, budgetId, encodeBuffer, encodeOffset, encodeProgress);
@@ -2323,7 +2329,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
                 if (KafkaConfiguration.DEBUG)
                 {
-                    System.out.format("%s[%d] FETCH %d\n", topic, partitionId, nextOffset);
+                    System.out.format("[0x%016x] %s[%d] FETCH %d\n", replyId, topic, partitionId, nextOffset);
                 }
 
                 doNetworkData(traceId, budgetId, encodeBuffer, encodeOffset, encodeProgress);
