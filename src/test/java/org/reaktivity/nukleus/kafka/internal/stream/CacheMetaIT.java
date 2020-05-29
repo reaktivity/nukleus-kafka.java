@@ -97,6 +97,9 @@ public class CacheMetaIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldReceiveTopicPartitionInfoChanged() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_FIRST_META");
+        k3po.notifyBarrier("SEND_SECOND_META");
         k3po.finish();
     }
 }
