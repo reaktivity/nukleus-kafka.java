@@ -975,7 +975,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         private void onServerFanoutInitialSignalSegmentRetain(
             SignalFW signal)
         {
-            partition.append(partitionOffset);
+            partition.append(partitionOffset + 1);
         }
 
         private void onServerFanoutInitialSignalSegmentDelete(
