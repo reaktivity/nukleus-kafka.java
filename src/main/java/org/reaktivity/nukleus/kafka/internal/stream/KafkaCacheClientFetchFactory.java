@@ -222,11 +222,18 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             if (fanout == null)
             {
                 final String cacheName = route.remoteAddress().asString();
+                final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
+                final long defaultOffset = routeEx.defaultOffset().get().value();
                 final KafkaCache cache = supplyCache.apply(cacheName);
                 final KafkaCacheTopic topic = cache.supplyTopic(topicName);
                 final KafkaCachePartition partition = topic.supplyPartition(partitionId);
                 final KafkaCacheClientFetchFanout newFanout =
-                        new KafkaCacheClientFetchFanout(resolvedId, authorization, affinity, partition);
+                        new KafkaCacheClientFetchFanout(
+                            resolvedId,
+                            authorization,
+                            affinity,
+                            partition,
+                            defaultOffset);
 
                 cacheRoute.clientFetchFanoutsByTopicPartition.put(partitionKey, newFanout);
                 fanout = newFanout;
@@ -398,12 +405,13 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long routeId,
             long authorization,
             long leaderId,
-            KafkaCachePartition partition)
+            KafkaCachePartition partition,
+            long defaultOffset)
         {
             this.routeId = routeId;
             this.authorization = authorization;
             this.partition = partition;
-            this.partitionOffset = OFFSET_MAXIMUM;
+            this.partitionOffset = defaultOffset;
             this.members = new ArrayList<>();
             this.leaderId = leaderId;
         }
@@ -469,26 +477,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
             if (!KafkaState.initialOpening(state))
             {
-                if (partitionOffset == OFFSET_MAXIMUM)
-                {
-                    members.forEach(this::setMinimumPartitionOffset);
-                    if (partitionOffset == OFFSET_MAXIMUM)
-                    {
-                        this.partitionOffset = OFFSET_LATEST;
-                    }
-                }
-
                 doClientFanoutInitialBegin(traceId);
-            }
-        }
-
-        private void setMinimumPartitionOffset(
-            KafkaCacheClientFetchStream member)
-        {
-            if (member.partitionOffset < partitionOffset &&
-                member.partitionOffset != OFFSET_LATEST)
-            {
-                this.partitionOffset = member.partitionOffset;
             }
         }
 
