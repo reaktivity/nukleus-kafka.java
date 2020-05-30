@@ -983,9 +983,9 @@ public final class KafkaClientFetchFactory implements StreamFactory
             {
                 if (KafkaConfiguration.DEBUG)
                 {
-                    System.out.format("[client] [0x%016x] %s[%d] FETCH RecordBatch %d %d %d %04x\n",
+                    System.out.format("[client] [0x%016x] %s[%d] FETCH RecordBatch %d %d %d\n",
                             client.replyId, client.topic, client.partitionId, recordBatch.baseOffset(),
-                        recordBatch.lastOffsetDelta(), recordBatch.length(), recordBatch.attributes());
+                        recordBatch.lastOffsetDelta(), recordBatch.length());
                 }
 
                 final int attributes = recordBatch.attributes();
@@ -1125,8 +1125,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
                 if (KafkaConfiguration.DEBUG)
                 {
-                    System.out.format("[client] [0x%016x] %s[%d] FETCH Record %d %02x\n",
-                        client.replyId, client.topic, client.partitionId, client.decodeRecordOffset, recordHeader.attributes());
+                    System.out.format("[client] [0x%016x] %s[%d] FETCH Record %d\n",
+                        client.replyId, client.topic, client.partitionId, client.decodeRecordOffset);
                 }
 
                 if (offsetAbs < client.nextOffset)
@@ -2608,10 +2608,6 @@ public final class KafkaClientFetchFactory implements StreamFactory
                         .build();
 
                 doApplicationData(traceId, authorization, FLAG_INIT | FLAG_FIN, reserved, value, kafkaDataEx);
-                if (KafkaConfiguration.DEBUG)
-                {
-                    System.out.format("[0x%016x] %s[%d] FETCHed %d\n", replyId, topic, partitionId, offset);
-                }
             }
 
             private void onDecodeFetchRecordValueInit(
