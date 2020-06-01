@@ -206,6 +206,7 @@ public class KafkaCacheFile implements AutoCloseable
 
                     capacity += writtenBytes;
                     remainingBytes -= fragmentBytes;
+                    srcIndex += fragmentBytes;
                     assert remainingBytes >= 0;
                 }
                 assert capacity <= maxCapacity;
