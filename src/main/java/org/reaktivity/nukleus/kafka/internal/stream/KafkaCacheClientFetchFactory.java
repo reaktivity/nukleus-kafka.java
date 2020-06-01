@@ -87,7 +87,6 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
     private static final long OFFSET_LATEST = KafkaOffsetType.LATEST.value();
     private static final long OFFSET_EARLIEST = KafkaOffsetType.EARLIEST.value();
-    private static final long OFFSET_MAXIMUM = Long.MAX_VALUE;
 
     private static final int FLAG_FIN = 0x01;
     private static final int FLAG_INIT = 0x02;
