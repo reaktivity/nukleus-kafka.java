@@ -82,12 +82,12 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 {
     private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(new UnsafeBuffer(), 0, 0);
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
+    private static final MessageConsumer NO_RECEIVER = (m, b, i, l) -> {};
 
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
     private static final long OFFSET_LATEST = KafkaOffsetType.LATEST.value();
     private static final long OFFSET_EARLIEST = KafkaOffsetType.EARLIEST.value();
-    private static final long OFFSET_MAXIMUM = Long.MAX_VALUE;
 
     private static final int FLAG_FIN = 0x01;
     private static final int FLAG_INIT = 0x02;
@@ -414,6 +414,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.partitionOffset = defaultOffset;
             this.members = new ArrayList<>();
             this.leaderId = leaderId;
+            this.receiver = NO_RECEIVER;
         }
 
         private void onClientFanoutMemberOpening(
@@ -506,7 +507,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void doClientFanoutInitialAbortIfNecessary(
             long traceId)
         {
-            if (!KafkaState.initialClosed(state))
+            if (KafkaState.initialOpened(state) && !KafkaState.initialClosed(state))
             {
                 doClientFanoutInitialAbort(traceId);
             }
@@ -667,7 +668,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void doClientFanoutReplyResetIfNecessary(
             long traceId)
         {
-            if (!KafkaState.replyClosed(state))
+            if (KafkaState.replyOpened(state) && !KafkaState.replyClosed(state))
             {
                 doClientFanoutReplyReset(traceId);
             }
