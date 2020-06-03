@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_BUDGET_ID;
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
+import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DEFAULT_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 
 import java.util.ArrayList;
@@ -224,7 +225,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 final String cacheName = route.remoteAddress().asString();
                 final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
                 final long defaultOffset = (routeEx != null) ?
-                    routeEx.defaultOffset().get().value() : KafkaRouteExFW.Builder.DEFAULT_DEFAULT_OFFSET.value();
+                    routeEx.defaultOffset().get().value() : DEFAULT_DEFAULT_OFFSET.value();
                 final KafkaCache cache = supplyCache.apply(cacheName);
                 final KafkaCacheTopic topic = cache.supplyTopic(topicName);
                 final KafkaCachePartition partition = topic.supplyPartition(partitionId);
