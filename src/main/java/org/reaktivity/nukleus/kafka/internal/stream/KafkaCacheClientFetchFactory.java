@@ -223,7 +223,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             {
                 final String cacheName = route.remoteAddress().asString();
                 final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
-                final long defaultOffset = routeEx.defaultOffset().get().value();
+                final long defaultOffset = (routeEx != null) ?
+                    routeEx.defaultOffset().get().value() : KafkaRouteExFW.Builder.DEFAULT_DEFAULT_OFFSET.value();
                 final KafkaCache cache = supplyCache.apply(cacheName);
                 final KafkaCacheTopic topic = cache.supplyTopic(topicName);
                 final KafkaCachePartition partition = topic.supplyPartition(partitionId);
