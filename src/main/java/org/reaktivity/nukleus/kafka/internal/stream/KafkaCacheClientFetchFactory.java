@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_BUDGET_ID;
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
+import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DEFAULT_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 
 import java.util.ArrayList;
@@ -82,12 +83,12 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 {
     private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(new UnsafeBuffer(), 0, 0);
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
+    private static final MessageConsumer NO_RECEIVER = (m, b, i, l) -> {};
 
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
     private static final long OFFSET_LATEST = KafkaOffsetType.LATEST.value();
     private static final long OFFSET_EARLIEST = KafkaOffsetType.EARLIEST.value();
-    private static final long OFFSET_MAXIMUM = Long.MAX_VALUE;
 
     private static final int FLAG_FIN = 0x01;
     private static final int FLAG_INIT = 0x02;
@@ -223,7 +224,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             {
                 final String cacheName = route.remoteAddress().asString();
                 final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
-                final long defaultOffset = routeEx.defaultOffset().get().value();
+                final long defaultOffset = (routeEx != null) ?
+                    routeEx.defaultOffset().get().value() : DEFAULT_DEFAULT_OFFSET.value();
                 final KafkaCache cache = supplyCache.apply(cacheName);
                 final KafkaCacheTopic topic = cache.supplyTopic(topicName);
                 final KafkaCachePartition partition = topic.supplyPartition(partitionId);
@@ -414,6 +416,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.partitionOffset = defaultOffset;
             this.members = new ArrayList<>();
             this.leaderId = leaderId;
+            this.receiver = NO_RECEIVER;
         }
 
         private void onClientFanoutMemberOpening(
@@ -506,7 +509,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void doClientFanoutInitialAbortIfNecessary(
             long traceId)
         {
-            if (!KafkaState.initialClosed(state))
+            if (KafkaState.initialOpened(state) && !KafkaState.initialClosed(state))
             {
                 doClientFanoutInitialAbort(traceId);
             }
@@ -667,7 +670,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void doClientFanoutReplyResetIfNecessary(
             long traceId)
         {
-            if (!KafkaState.replyClosed(state))
+            if (KafkaState.replyOpened(state) && !KafkaState.replyClosed(state))
             {
                 doClientFanoutReplyReset(traceId);
             }
