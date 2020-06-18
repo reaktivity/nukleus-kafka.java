@@ -427,7 +427,6 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             {
                 doClientFanoutInitialAbortIfNecessary(traceId);
                 doClientFanoutReplyResetIfNecessary(traceId);
-                correlations.remove(replyId);
                 leaderId = member.leaderId;
 
                 members.forEach(m -> m.cleanupClient(traceId, ERROR_NOT_LEADER_FOR_PARTITION));
@@ -464,7 +463,6 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
             if (members.isEmpty())
             {
-                correlations.remove(replyId);
                 doClientFanoutInitialAbortIfNecessary(traceId);
                 doClientFanoutReplyResetIfNecessary(traceId);
             }
@@ -680,6 +678,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long traceId)
         {
             state = KafkaState.closedReply(state);
+
+            correlations.remove(replyId);
 
             doReset(receiver, routeId, replyId, traceId, authorization, EMPTY_OCTETS);
         }
