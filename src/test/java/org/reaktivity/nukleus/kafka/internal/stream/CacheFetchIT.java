@@ -18,7 +18,9 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SEGMENT_BYTES;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SEGMENT_BYTES_NAME;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SEGMENT_INDEX_BYTES;
+import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SEGMENT_MILLIS_NAME;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_BOOTSTRAP;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_RECONNECT_DELAY;
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
@@ -39,6 +41,7 @@ import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopic;
 import org.reaktivity.reaktor.test.ReaktorRule;
+import org.reaktivity.reaktor.test.annotation.Configure;
 
 public class CacheFetchIT
 {
@@ -513,4 +516,25 @@ public class CacheFetchIT
         partition.append(1L);
         k3po.finish();
     }
+
+    @Test
+    @Specification({
+        "${route}/cache/controller",
+        "${client}/retain.segment/client",
+        "${server}/retain.segment/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    @Configure(name = KAFKA_CACHE_SEGMENT_BYTES_NAME, value = "200")
+    @Configure(name = KAFKA_CACHE_SEGMENT_MILLIS_NAME, value = "0")
+    public void shouldRetainSegment() throws Exception
+    {
+        partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_SECOND_MESSAGE");
+        k3po.notifyBarrier("SEND_THIRD_MESSAGE");
+        k3po.awaitBarrier("RECEIVED_THIRD_MESSAGE");
+        Thread.sleep(2000);
+        k3po.notifyBarrier("SEND_FOURTH_MESSAGE");
+        k3po.finish();
+    }
+
 }

@@ -670,7 +670,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void doClientFanoutReplyResetIfNecessary(
             long traceId)
         {
-            if (KafkaState.replyOpened(state) && !KafkaState.replyClosed(state))
+            if (!KafkaState.replyClosed(state))
             {
                 doClientFanoutReplyReset(traceId);
             }

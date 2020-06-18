@@ -30,6 +30,8 @@ public class KafkaConfiguration extends Configuration
 
     public static final String KAFKA_CLIENT_PRODUCE_MAX_REQUEST_MILLIS_NAME = "nukleus.kafka.client.produce.max.request.millis";
     public static final String KAFKA_CACHE_SERVER_RECONNECT_DELAY_NAME = "nukleus.kafka.cache.server.reconnect";
+    public static final String KAFKA_CACHE_SEGMENT_BYTES_NAME = "nukleus.kafka.cache.segment.bytes";
+    public static final String KAFKA_CACHE_SEGMENT_MILLIS_NAME = "nukleus.kafka.cache.segment.ms";
 
     public static final IntPropertyDef KAFKA_CLIENT_MAX_IDLE_MILLIS;
     public static final IntPropertyDef KAFKA_CLIENT_META_MAX_AGE_MILLIS;
