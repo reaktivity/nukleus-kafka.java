@@ -216,6 +216,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final String topicName = beginTopic.asString();
             final int partitionId = progress.partitionId();
             final long partitionOffset = progress.partitionOffset();
+            final long latestOffset = progress.latestOffset();
             final KafkaCacheRoute cacheRoute = supplyCacheRoute.apply(resolvedId);
             final long partitionKey = cacheRoute.topicPartitionKey(topicName, partitionId);
 
@@ -235,7 +236,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                             authorization,
                             affinity,
                             partition,
-                            defaultOffset);
+                            defaultOffset,
+                            latestOffset);
 
                 cacheRoute.clientFetchFanoutsByTopicPartition.put(partitionKey, newFanout);
                 fanout = newFanout;
@@ -252,6 +254,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     leaderId,
                     authorization,
                     partitionOffset,
+                    latestOffset,
                     condition,
                     deltaType)::onClientMessage;
         }
@@ -402,18 +405,21 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private int state;
 
         private long partitionOffset;
+        private long latestOffset;
 
         private KafkaCacheClientFetchFanout(
             long routeId,
             long authorization,
             long leaderId,
             KafkaCachePartition partition,
-            long defaultOffset)
+            long defaultOffset,
+            long latestOffset)
         {
             this.routeId = routeId;
             this.authorization = authorization;
             this.partition = partition;
             this.partitionOffset = defaultOffset;
+            this.latestOffset = latestOffset;
             this.members = new ArrayList<>();
             this.leaderId = leaderId;
             this.receiver = NO_RECEIVER;
@@ -498,7 +504,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(partition.topic())
                                      .partition(p -> p.partitionId(partition.id())
-                                                      .partitionOffset(partitionOffset)))
+                                                      // .partitionOffset(partitionOffset)))
+                                                      .partitionOffset(partitionOffset)
+                                                      .latestOffset(latestOffset)))
                         .build()
                         .sizeof()));
             state = KafkaState.openingInitial(state);
@@ -718,6 +726,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private long partitionOffset;
         private int messageOffset;
         private long initialGroupPartitionOffset;
+        private long latestOffset;
 
         KafkaCacheClientFetchStream(
             KafkaCacheClientFetchFanout group,
@@ -727,6 +736,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long leaderId,
             long authorization,
             long partitionOffset,
+            long latestOffset,
             KafkaFilterCondition condition,
             KafkaDeltaType deltaType)
         {
@@ -738,6 +748,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.leaderId = leaderId;
             this.authorization = authorization;
             this.partitionOffset = partitionOffset;
+            this.latestOffset = latestOffset;
             this.cursor = cursorFactory.newCursor(condition, deltaType);
             this.deltaType = deltaType;
         }
@@ -878,6 +889,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             state = KafkaState.openingReply(state);
 
             this.initialGroupPartitionOffset = group.partitionOffset;
+            this.latestOffset = group.latestOffset;
 
             if (partitionOffset == OFFSET_LATEST)
             {
@@ -904,7 +916,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(group.partition.topic())
                                      .partition(p -> p.partitionId(group.partition.id())
-                                                      .partitionOffset(partitionOffset))
+                                                      .partitionOffset(partitionOffset)
+                                                      .latestOffset(latestOffset))
                                      .deltaType(t -> t.set(deltaType)))
                         .build()
                         .sizeof()));
@@ -1066,7 +1079,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.timestamp(timestamp)
                                      .partition(p -> p.partitionId(partitionId)
-                                                      .partitionOffset(partitionOffset))
+                                                      .partitionOffset(partitionOffset)
+                                                      .latestOffset(latestOffset))
                                      .key(k -> k.length(key.length())
                                                 .value(key.value()))
                                      .delta(d -> d.type(t -> t.set(deltaType))
@@ -1102,7 +1116,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         .fetch(f -> f.deferred(deferred)
                                      .timestamp(timestamp)
                                      .partition(p -> p.partitionId(partitionId)
-                                     .partitionOffset(partitionOffset))
+                                                      .partitionOffset(partitionOffset)
+                                                      .latestOffset(latestOffset))
                                      .key(k -> k.length(key.length())
                                                 .value(key.value()))
                                      .delta(d -> d.type(t -> t.set(deltaType))
@@ -1143,7 +1158,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 ex -> ex.set((b, o, l) -> kafkaDataExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.partition(p -> p.partitionId(partitionId)
-                                                      .partitionOffset(partitionOffset))
+                                                      .partitionOffset(partitionOffset)
+                                                      .latestOffset(latestOffset))
                                      .delta(d -> d.type(t -> t.set(deltaType))
                                                   .ancestorOffset(ancestorOffset))
                                      .headers(hs -> headers.forEach(h -> hs.item(i -> i.nameLen(h.nameLen())

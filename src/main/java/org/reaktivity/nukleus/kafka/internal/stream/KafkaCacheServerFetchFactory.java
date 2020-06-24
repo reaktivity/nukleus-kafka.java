@@ -22,6 +22,7 @@ import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorRetryValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.LATEST;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DEFAULT_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
@@ -199,6 +200,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         final KafkaOffsetFW progress = kafkaFetchBeginEx.partition();
         final int partitionId = progress.partitionId();
         final long partitionOffset = progress.partitionOffset();
+        final long latestOffset = progress.latestOffset();
         final KafkaDeltaType deltaType = kafkaFetchBeginEx.deltaType().get();
 
         MessageConsumer newStream = null;
@@ -248,7 +250,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                     initialId,
                     leaderId,
                     authorization,
-                    partitionOffset)::onServerMessage;
+                    partitionOffset,
+                    latestOffset)::onServerMessage;
         }
 
         return newStream;
@@ -396,6 +399,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         private int state;
 
         private long partitionOffset;
+        private long latestOffset = DEFAULT_LATEST_OFFSET;
         private long retainId = NO_CANCEL_ID;
         private long deleteId = NO_CANCEL_ID;
         private long compactId = NO_CANCEL_ID;
@@ -502,6 +506,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             }
 
             this.partitionOffset = partition.nextOffset(defaultOffset);
+            this.latestOffset = partitionOffset;
 
             correlations.put(replyId, this::onServerFanoutMessage);
             router.setThrottle(initialId, this::onServerFanoutMessage);
@@ -510,7 +515,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(partition.topic())
                                      .partition(p -> p.partitionId(partition.id())
-                                                      .partitionOffset(partitionOffset)))
+                                                      .partitionOffset(partitionOffset)
+                                                      .latestOffset(latestOffset)))
                         .build()
                         .sizeof()));
             state = KafkaState.openingInitial(state);
@@ -604,6 +610,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             final KafkaOffsetFW progress = kafkaFetchBeginEx.partition();
             final int partitionId = progress.partitionId();
             final long partitionOffset = progress.partitionOffset();
+
+            this.latestOffset = progress.latestOffset();
 
             state = KafkaState.openedReply(state);
 
@@ -1069,6 +1077,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
         private int replyBudget;
         private long partitionOffset;
+        private long latestOffset;
 
         KafkaCacheServerFetchStream(
             KafkaCacheServerFetchFanout group,
@@ -1077,7 +1086,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             long initialId,
             long leaderId,
             long authorization,
-            long partitionOffset)
+            long partitionOffset,
+            long latestOffset)
         {
             this.group = group;
             this.sender = sender;
@@ -1087,6 +1097,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             this.leaderId = leaderId;
             this.authorization = authorization;
             this.partitionOffset = partitionOffset;
+            this.latestOffset = latestOffset;
         }
 
         private void onServerMessage(
@@ -1238,6 +1249,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             state = KafkaState.openingReply(state);
 
             this.partitionOffset = Math.max(partitionOffset, group.partitionOffset);
+            this.latestOffset = Math.max(latestOffset, group.latestOffset);
 
             router.setThrottle(replyId, this::onServerMessage);
             doBegin(sender, routeId, replyId, traceId, authorization, leaderId,
@@ -1245,7 +1257,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(group.partition.topic())
                                      .partition(p -> p.partitionId(group.partition.id())
-                                                      .partitionOffset(partitionOffset)))
+                                                      .partitionOffset(partitionOffset)
+                                                      .latestOffset(latestOffset)))
                         .build()
                         .sizeof()));
         }
@@ -1274,7 +1287,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 ex -> ex.set((b, o, l) -> kafkaFlushExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.partition(p -> p.partitionId(group.partition.id())
-                                                      .partitionOffset(group.partitionOffset)))
+                                                      .partitionOffset(group.partitionOffset)
+                                                      .latestOffset(latestOffset)))
                         .build()
                         .sizeof()));
 

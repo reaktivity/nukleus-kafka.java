@@ -22,6 +22,7 @@ import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CAC
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_BOOTSTRAP;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_RECONNECT_DELAY;
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
+import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Before;
@@ -60,6 +61,7 @@ public class CacheFetchIT
         .configure(KAFKA_CACHE_SERVER_RECONNECT_DELAY, 0)
         .configure(KAFKA_CACHE_SEGMENT_BYTES, 1 * 1024 * 1024)
         .configure(KAFKA_CACHE_SEGMENT_INDEX_BYTES, 256 * 1024)
+        .configure(REAKTOR_DRAIN_ON_CLOSE, false)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 

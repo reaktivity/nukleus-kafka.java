@@ -49,6 +49,7 @@ public class ClientFetchIT
         .counterValuesBufferCapacity(8192)
         .configure(REAKTOR_DRAIN_ON_CLOSE, false)
         .configure(REAKTOR_BUFFER_SLOT_CAPACITY, 8192)
+        .configure(REAKTOR_DRAIN_ON_CLOSE, false)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 
