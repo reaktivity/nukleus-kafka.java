@@ -169,6 +169,18 @@ public class CacheFetchIT
     @Test
     @Specification({
         "${route}/cache/controller",
+        "${client}/message.key.with.latest.offset/client",
+        "${server}/message.key.with.latest.offset/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessageKeyWithLatestOffset() throws Exception
+    {
+        partition.append(1L);
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache/controller",
         "${client}/message.key.null/client",
         "${server}/message.key.null/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
