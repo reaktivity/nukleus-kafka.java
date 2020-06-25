@@ -506,7 +506,6 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             }
 
             this.partitionOffset = partition.nextOffset(defaultOffset);
-            this.latestOffset = partitionOffset;
 
             correlations.put(replyId, this::onServerFanoutMessage);
             router.setThrottle(initialId, this::onServerFanoutMessage);
@@ -515,8 +514,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(partition.topic())
                                      .partition(p -> p.partitionId(partition.id())
-                                                      .partitionOffset(partitionOffset)
-                                                      .latestOffset(latestOffset)))
+                                                      .partitionOffset(partitionOffset)))
                         .build()
                         .sizeof()));
             state = KafkaState.openingInitial(state);
@@ -611,13 +609,12 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             final int partitionId = progress.partitionId();
             final long partitionOffset = progress.partitionOffset();
 
-            this.latestOffset = progress.latestOffset();
-
             state = KafkaState.openedReply(state);
 
             assert partitionId == partition.id();
             assert partitionOffset >= 0L && partitionOffset >= this.partitionOffset;
             this.partitionOffset = partitionOffset;
+            this.latestOffset = progress.latestOffset();
 
             partition.newHeadIfNecessary(partitionOffset);
 
@@ -1249,7 +1246,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             state = KafkaState.openingReply(state);
 
             this.partitionOffset = Math.max(partitionOffset, group.partitionOffset);
-            this.latestOffset = Math.max(latestOffset, group.latestOffset);
+            this.latestOffset = group.latestOffset;
 
             router.setThrottle(replyId, this::onServerMessage);
             doBegin(sender, routeId, replyId, traceId, authorization, leaderId,

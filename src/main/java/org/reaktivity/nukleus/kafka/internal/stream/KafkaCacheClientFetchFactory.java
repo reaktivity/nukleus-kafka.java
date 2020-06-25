@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_BUDGET_ID;
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DEFAULT_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 
@@ -216,7 +217,6 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final String topicName = beginTopic.asString();
             final int partitionId = progress.partitionId();
             final long partitionOffset = progress.partitionOffset();
-            final long latestOffset = progress.latestOffset();
             final KafkaCacheRoute cacheRoute = supplyCacheRoute.apply(resolvedId);
             final long partitionKey = cacheRoute.topicPartitionKey(topicName, partitionId);
 
@@ -237,7 +237,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                             affinity,
                             partition,
                             defaultOffset,
-                            latestOffset);
+                            DEFAULT_LATEST_OFFSET);
 
                 cacheRoute.clientFetchFanoutsByTopicPartition.put(partitionKey, newFanout);
                 fanout = newFanout;
@@ -254,7 +254,6 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     leaderId,
                     authorization,
                     partitionOffset,
-                    latestOffset,
                     condition,
                     deltaType)::onClientMessage;
         }
@@ -504,7 +503,6 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(partition.topic())
                                      .partition(p -> p.partitionId(partition.id())
-                                                      // .partitionOffset(partitionOffset)))
                                                       .partitionOffset(partitionOffset)
                                                       .latestOffset(latestOffset)))
                         .build()
@@ -600,6 +598,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             assert partitionId == this.partition.id();
                 assert partitionOffset >= 0 && partitionOffset >= this.partitionOffset;
             this.partitionOffset = partitionOffset;
+            this.latestOffset = partition.latestOffset();
 
             members.forEach(s -> s.doClientReplyBeginIfNecessary(traceId));
 
@@ -724,9 +723,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private int replyPadding;
 
         private long partitionOffset;
+        private long latestOffset;
         private int messageOffset;
         private long initialGroupPartitionOffset;
-        private long latestOffset;
 
         KafkaCacheClientFetchStream(
             KafkaCacheClientFetchFanout group,
@@ -736,7 +735,6 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long leaderId,
             long authorization,
             long partitionOffset,
-            long latestOffset,
             KafkaFilterCondition condition,
             KafkaDeltaType deltaType)
         {
@@ -748,7 +746,6 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.leaderId = leaderId;
             this.authorization = authorization;
             this.partitionOffset = partitionOffset;
-            this.latestOffset = latestOffset;
             this.cursor = cursorFactory.newCursor(condition, deltaType);
             this.deltaType = deltaType;
         }
