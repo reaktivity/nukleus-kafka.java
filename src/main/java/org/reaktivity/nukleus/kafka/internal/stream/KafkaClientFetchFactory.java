@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.codec.offsets.IsolationLevel.READ_UNCOMMITTED;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 
@@ -840,7 +841,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 final int partitionId = partition.partitionId();
                 final int errorCode = partition.errorCode();
 
-                client.latestOffset = partition.lastStableOffset();
+                client.latestOffset = Math.max(client.latestOffset, partition.lastStableOffset());
 
                 client.decodePartitionError = errorCode;
                 client.decodePartitionId = partitionId;
@@ -1956,6 +1957,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 this.topic = requireNonNull(topic);
                 this.partitionId = partitionId;
                 this.nextOffset = initialOffset;
+                this.latestOffset = DEFAULT_LATEST_OFFSET;
                 this.encoder = encodeFetchRequest;
                 this.decoder = decodeFetchResponse;
             }
