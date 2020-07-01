@@ -16,6 +16,7 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaAge.LIVE;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.FETCH_ONLY;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.PRODUCE_ONLY;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
@@ -45,6 +46,8 @@ import org.reaktivity.nukleus.kafka.internal.budget.MergedBudgetCreditor;
 import org.reaktivity.nukleus.kafka.internal.types.Array32FW;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaAge;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaAgeFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaConfigFW;
@@ -296,6 +299,9 @@ public final class KafkaMergedFactory implements StreamFactory
         case KafkaConditionFW.KIND_HEADER:
             mergedCondition = asMergedCondition(condition.header());
             break;
+        case KafkaConditionFW.KIND_AGE:
+            mergedCondition = asMergedCondition(condition.age());
+            break;
         }
 
         return mergedCondition;
@@ -334,6 +340,14 @@ public final class KafkaMergedFactory implements StreamFactory
         }
 
         return new KafkaMergedCondition.Header(nameBuffer, valueBuffer);
+    }
+
+    private static KafkaMergedCondition asMergedCondition(
+        KafkaAgeFW ageFW)
+    {
+        final KafkaAge age = ageFW.get();
+
+        return new KafkaMergedCondition.Age(age);
     }
 
     private static DirectBuffer copyBuffer(
@@ -481,6 +495,37 @@ public final class KafkaMergedFactory implements StreamFactory
                 else
                 {
                     header.valueLen(value.capacity()).value(value, 0, value.capacity());
+                }
+            }
+        }
+
+        private static final class Age extends KafkaMergedCondition
+        {
+            private final KafkaAge age;
+
+            private Age(
+                KafkaAge age)
+            {
+                this.age = age;
+            }
+
+            @Override
+            protected void set(
+                KafkaConditionFW.Builder condition)
+            {
+                condition.age(this::set);
+            }
+
+            private void set(
+                KafkaAgeFW.Builder age)
+            {
+                if (this.age == null)
+                {
+                    age.set(LIVE);
+                }
+                else
+                {
+                    age.set(this.age);
                 }
             }
         }
