@@ -973,11 +973,16 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             if ((reservedMin > 0 && replyBudget >= reservedMin) || (reservedMin == 0 && value == null))
             {
                 int reserved = reservedMax;
-                if (replyDebitorIndex != NO_DEBITOR_INDEX)
+                if (replyDebitorIndex != NO_DEBITOR_INDEX &&
+                    (reserved > replyPadding && reservedMin > replyPadding))
                 {
                     final int lengthMax = reservedMax - replyPadding;
                     final int deferredMax = remaining - lengthMax;
                     reserved = replyDebitor.claim(traceId, replyDebitorIndex, replyId, reservedMin, reservedMax, deferredMax);
+                }
+                else
+                {
+                    break flush;
                 }
 
                 if (reserved < replyPadding || (reserved == replyPadding && value != null))
