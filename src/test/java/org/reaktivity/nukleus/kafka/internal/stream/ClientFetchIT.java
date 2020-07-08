@@ -381,7 +381,7 @@ public class ClientFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/filter.header/client",
+        "${client}/ filter.header/client",
         "${server}/filter.header/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithHeaderFilter() throws Exception
