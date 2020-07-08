@@ -283,34 +283,34 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
         MessageConsumer newStream = null;
 
-        if (beginEx != null && kafkaFetchBeginEx != null &&
-            kafkaFetchBeginEx.filters().isEmpty())
+        if (beginEx != null && kafkaFetchBeginEx != null)
         {
-
             final String16FW beginTopic = kafkaFetchBeginEx.topic();
 
-            final MessagePredicate filter = (t, b, i, l) ->
+            if (kafkaFetchBeginEx.filters().isEmpty())
             {
-                final RouteFW route = wrapRoute.apply(t, b, i, l);
-                final KafkaRouteExFW routeEx = route.extension().get(kafkaRouteExRO::tryWrap);
-                final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
-                final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : DEFAULT_DELTA_TYPE;
-                return !route.localAddress().equals(route.remoteAddress()) &&
-                        (beginTopic != null && (routeTopic == null || routeTopic.equals(beginTopic))) &&
-                        routeDeltaType == KafkaDeltaType.NONE;
-            };
+                final MessagePredicate filter = (t, b, i, l) ->
+                {
+                    final RouteFW route = wrapRoute.apply(t, b, i, l);
+                    final KafkaRouteExFW routeEx = route.extension().get(kafkaRouteExRO::tryWrap);
+                    final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
+                    final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : DEFAULT_DELTA_TYPE;
+                    return !route.localAddress().equals(route.remoteAddress()) &&
+                               (beginTopic != null && (routeTopic == null || routeTopic.equals(beginTopic))) &&
+                               routeDeltaType == KafkaDeltaType.NONE;
+                };
 
-            final RouteFW route = router.resolve(routeId, authorization, filter, wrapRoute);
+                final RouteFW route = router.resolve(routeId, authorization, filter, wrapRoute);
 
-            if (route != null)
-            {
-                final long resolvedId = route.correlationId();
-                final String topic = beginTopic != null ? beginTopic.asString() : null;
-                final KafkaOffsetFW partition = kafkaFetchBeginEx.partition();
-                final int partitionId = partition.partitionId();
-                final long initialOffset = partition.partitionOffset();
+                if (route != null)
+                {
+                    final long resolvedId = route.correlationId();
+                    final String topic = beginTopic != null ? beginTopic.asString() : null;
+                    final KafkaOffsetFW partition = kafkaFetchBeginEx.partition();
+                    final int partitionId = partition.partitionId();
+                    final long initialOffset = partition.partitionOffset();
 
-                newStream = new KafkaFetchStream(
+                    newStream = new KafkaFetchStream(
                         application,
                         routeId,
                         initialId,
@@ -319,6 +319,41 @@ public final class KafkaClientFetchFactory implements StreamFactory
                         partitionId,
                         leaderId,
                         initialOffset)::onApplication;
+                }
+            }
+            else
+            {
+                final MessagePredicate filter = (t, b, i, l) ->
+                {
+                    final RouteFW route = wrapRoute.apply(t, b, i, l);
+                    final KafkaRouteExFW routeEx = route.extension().get(kafkaRouteExRO::tryWrap);
+                    final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
+                    final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : DEFAULT_DELTA_TYPE;
+                    return !route.localAddress().equals(route.remoteAddress()) &&
+                               (beginTopic != null && (routeTopic == null || routeTopic.equals(beginTopic))) &&
+                               routeDeltaType == KafkaDeltaType.NONE;
+                };
+
+                final RouteFW route = router.resolve(routeId, authorization, filter, wrapRoute);
+
+                if (route != null)
+                {
+                    final long resolvedId = route.correlationId();
+                    final String topic = beginTopic != null ? beginTopic.asString() : null;
+                    final KafkaOffsetFW partition = kafkaFetchBeginEx.partition();
+                    final int partitionId = partition.partitionId();
+                    final long initialOffset = partition.partitionOffset();
+
+                    newStream = new KafkaFetchStream(
+                        application,
+                        routeId,
+                        initialId,
+                        resolvedId,
+                        topic,
+                        partitionId,
+                        leaderId,
+                        initialOffset)::onApplication;
+                }
             }
         }
 
