@@ -1030,20 +1030,24 @@ public final class KafkaMergedFactory implements StreamFactory
 
                 final KafkaFetchDataExFW kafkaFetchDataEx = kafkaDataEx.fetch();
                 final KafkaOffsetFW partition = kafkaFetchDataEx.partition();
+                final int partitionId = partition.partitionId();
+                final long partitionOffset = partition.partitionOffset();
+                final long latestOffset = partition.latestOffset();
                 final int deferred = kafkaFetchDataEx.deferred();
                 final long timestamp = kafkaFetchDataEx.timestamp();
                 final KafkaKeyFW key = kafkaFetchDataEx.key();
                 final ArrayFW<KafkaHeaderFW> headers = kafkaFetchDataEx.headers();
                 final KafkaDeltaFW delta = kafkaFetchDataEx.delta();
 
-                nextOffsetsById.put(partition.partitionId(), partition.partitionOffset() + 1);
+                nextOffsetsById.put(partitionId, partitionOffset + 1);
 
                 newKafkaDataEx = kafkaDataExRW.wrap(extBuffer, 0, extBuffer.capacity())
                      .typeId(kafkaTypeId)
                      .merged(f -> f.deferred(deferred)
                                    .timestamp(timestamp)
-                                   .partition(p -> p.partitionId(partition.partitionId())
-                                                    .partitionOffset(partition.partitionOffset()))
+                                   .partition(p -> p.partitionId(partitionId)
+                                                    .partitionOffset(partitionOffset)
+                                                    .latestOffset(latestOffset))
                                    .progress(ps -> nextOffsetsById.longForEach((p, o) -> ps.item(i -> i.partitionId((int) p)
                                                                                                        .partitionOffset(o))))
                                    .key(k -> k.length(key.length())

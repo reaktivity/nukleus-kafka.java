@@ -129,8 +129,6 @@ public class ClientMergedIT
         k3po.finish();
     }
 
-
-    @Ignore("filtered")
     @Test
     @Specification({
         "${route}/client.merged/controller",
