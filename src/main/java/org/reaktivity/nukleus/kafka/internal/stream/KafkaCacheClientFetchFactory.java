@@ -970,7 +970,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             assert partitionOffset >= this.partitionOffset : String.format("%d >= %d", partitionOffset, this.partitionOffset);
 
             flush:
-            if ((reservedMin > 0 && replyBudget >= reservedMin) || (reservedMin == 0 && value == null))
+            if (replyBudget >= reservedMin &&
+                (reservedMin > replyPadding || (reservedMin == replyPadding && value == null)))
             {
                 int reserved = reservedMax;
                 boolean claimed = false;
@@ -984,8 +985,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
                 if (reserved < replyPadding || (reserved == replyPadding && value != null && remaining > 0))
                 {
-                    assert !claimed : String.format("reserved=%d replyPadding=%d messageOffset=%d %s",
-                        reserved, replyPadding, messageOffset, value);
+                    assert !claimed : String.format("reserved=%d replyBudget=%d replyPadding=%d messageOffset=%d " +
+                                                    "reservedMin=%d reservedMax=%d %s",
+                        reserved, replyBudget, replyPadding, messageOffset, reservedMin, reservedMax, value);
                     break flush;
                 }
 
