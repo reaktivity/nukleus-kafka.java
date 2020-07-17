@@ -18,13 +18,9 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
-import static org.reaktivity.nukleus.kafka.internal.types.KafkaAge.LIVE;
-import static org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW.KIND_AGE;
-import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.codec.offsets.IsolationLevel.READ_UNCOMMITTED;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
@@ -46,7 +42,6 @@ import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.types.Array32FW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
-import org.reaktivity.nukleus.kafka.internal.types.KafkaAge;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
@@ -289,7 +284,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
 
         MessageConsumer newStream = null;
 
-        if (beginEx != null && kafkaFetchBeginEx != null)
+        if (beginEx != null && kafkaFetchBeginEx != null &&
+                kafkaFetchBeginEx.filters().isEmpty())
         {
             final String16FW beginTopic = kafkaFetchBeginEx.topic();
 
@@ -300,8 +296,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
                 final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : DEFAULT_DELTA_TYPE;
                 return !route.localAddress().equals(route.remoteAddress()) &&
-                           (beginTopic != null && (routeTopic == null || routeTopic.equals(beginTopic))) &&
-                           routeDeltaType == KafkaDeltaType.NONE;
+                        (beginTopic != null && (routeTopic == null || routeTopic.equals(beginTopic))) &&
+                        routeDeltaType == KafkaDeltaType.NONE;
             };
 
             final RouteFW route = router.resolve(routeId, authorization, filter, wrapRoute);
@@ -314,6 +310,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 final Array32FW<KafkaFilterFW> filters = kafkaFetchBeginEx.filters();
                 final int partitionId = partition.partitionId();
                 final long initialOffset = partition.partitionOffset();
+                final long latestOffset = partition.latestOffset();
 
                 newStream = new KafkaFetchStream(
                     application,
@@ -322,6 +319,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                     resolvedId,
                     topic,
                     partitionId,
+                    latestOffset,
                     filters,
                     leaderId,
                     initialOffset)::onApplication;
@@ -703,8 +701,6 @@ public final class KafkaClientFetchFactory implements StreamFactory
             final int errorCode = partition.errorCode();
             final long partitionOffset = partition.offset$();
 
-            System.out.printf("offset=%s, latestOffset=%s\n", partitionOffset, client.latestOffset);
-
             progress = partition.limit();
 
             client.decodableResponseBytes -= partition.sizeof();
@@ -849,7 +845,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 final int partitionId = partition.partitionId();
                 final int errorCode = partition.errorCode();
 
-                client.latestOffset = Math.max(client.latestOffset, partition.lastStableOffset());
+                client.latestOffset = partition.lastStableOffset();
 
                 client.decodePartitionError = errorCode;
                 client.decodePartitionId = partitionId;
@@ -1140,10 +1136,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                         client.replyId, client.topic, client.partitionId, client.decodeRecordOffset);
                 }
 
-                final Array32FW<KafkaFilterFW> filters = client.filters;
-                boolean matchesFilters = matchFilters(client, offsetAbs, filters);
-
-                if (offsetAbs < client.nextOffset || (!filters.isEmpty() && !matchesFilters))
+                if (offsetAbs < client.nextOffset)
                 {
                     client.decodableRecordBytes = sizeofRecord;
                     client.decoder = decodeIgnoreRecord;
@@ -1228,37 +1221,6 @@ public final class KafkaClientFetchFactory implements StreamFactory
         }
 
         return progress;
-    }
-
-    private boolean matchFilters(
-        KafkaFetchStream.KafkaFetchClient client,
-        long offsetAbs,
-        Array32FW<KafkaFilterFW> filters)
-    {
-        AtomicBoolean matchesFilters = new AtomicBoolean(false);
-        filters.forEach(f ->
-        {
-            AtomicBoolean matchesConditions = new AtomicBoolean(true);
-            f.conditions().forEach(c ->
-            {
-                switch (c.kind())
-                {
-                case KIND_AGE:
-                    KafkaAge age = c.age().get();
-                    if (age == LIVE)
-                    {
-                        if (offsetAbs < client.latestOffset)
-                        {
-                            matchesConditions.set(false);
-                            break;
-                        }
-                    }
-                    break;
-                }
-            });
-            matchesFilters.set(matchesFilters.get() | matchesConditions.get());
-        });
-        return matchesFilters.get();
     }
 
     private int decodeFetchRecordInit(
@@ -1658,6 +1620,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
             long resolvedId,
             String topic,
             int partitionId,
+            long latestOffset,
             Array32FW<KafkaFilterFW> filters,
             long leaderId,
             long initialOffset)
@@ -1669,7 +1632,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
             this.filters = filters;
             this.leaderId = leaderId;
             this.clientRoute = supplyClientRoute.apply(resolvedId);
-            this.client = new KafkaFetchClient(resolvedId, topic, partitionId, initialOffset, filters);
+            this.client = new KafkaFetchClient(resolvedId, topic, partitionId, initialOffset, latestOffset, filters);
         }
 
         private void onApplication(
@@ -1994,6 +1957,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 String topic,
                 int partitionId,
                 long initialOffset,
+                long latestOffset,
                 Array32FW<KafkaFilterFW> filters)
             {
                 this.stream = KafkaFetchStream.this;
@@ -2005,7 +1969,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 this.partitionId = partitionId;
                 this.nextOffset = initialOffset;
                 this.filters = filters;
-                this.latestOffset = DEFAULT_LATEST_OFFSET;
+                this.latestOffset = latestOffset;
                 this.encoder = encodeFetchRequest;
                 this.decoder = decodeFetchResponse;
             }

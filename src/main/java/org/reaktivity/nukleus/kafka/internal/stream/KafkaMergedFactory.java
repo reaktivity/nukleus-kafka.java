@@ -16,7 +16,6 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
-import static org.reaktivity.nukleus.kafka.internal.types.KafkaAge.LIVE;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.FETCH_ONLY;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.PRODUCE_ONLY;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
@@ -519,14 +518,7 @@ public final class KafkaMergedFactory implements StreamFactory
             private void set(
                 KafkaAgeFW.Builder age)
             {
-                if (this.age == null)
-                {
-                    age.set(LIVE);
-                }
-                else
-                {
-                    age.set(this.age);
-                }
+                age.set(this.age);
             }
         }
 

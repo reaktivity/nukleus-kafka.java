@@ -135,11 +135,10 @@ public class CacheMergedIT
         k3po.finish();
     }
 
-    @Ignore("requires k3po parallel reads")
     @Test
     @Specification({
         "${route}/cache.merged/controller",
-        "${client}/merged.fetch.filter.age/client",
+        "${client}/merged.fetch.filter.age.live/client",
         "${server}/unmerged.fetch.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldFetchMergedMessagesWithAgeFilter() throws Exception

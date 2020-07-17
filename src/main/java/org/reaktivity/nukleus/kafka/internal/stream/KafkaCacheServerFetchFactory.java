@@ -250,8 +250,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                     initialId,
                     leaderId,
                     authorization,
-                    partitionOffset,
-                    latestOffset)::onServerMessage;
+                    partitionOffset)::onServerMessage;
         }
 
         return newStream;
@@ -704,6 +703,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 assert kafkaFetchDataEx != null;
                 final int partitionId = kafkaFetchDataEx.partition().partitionId();
                 final long partitionOffset = kafkaFetchDataEx.partition().partitionOffset();
+                final long latestOffset = kafkaFetchDataEx.partition().latestOffset();
                 final KafkaDeltaFW delta = kafkaFetchDataEx.delta();
                 final ArrayFW<KafkaHeaderFW> headers = kafkaFetchDataEx.headers();
 
@@ -715,6 +715,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 partition.writeEntryFinish(headers, deltaType);
 
                 this.partitionOffset = partitionOffset;
+                this.latestOffset = latestOffset;
 
                 members.forEach(s -> s.doServerReplyFlushIfNecessary(traceId));
             }
@@ -1074,7 +1075,6 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
         private int replyBudget;
         private long partitionOffset;
-        private long latestOffset;
 
         KafkaCacheServerFetchStream(
             KafkaCacheServerFetchFanout group,
@@ -1083,8 +1083,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             long initialId,
             long leaderId,
             long authorization,
-            long partitionOffset,
-            long latestOffset)
+            long partitionOffset)
         {
             this.group = group;
             this.sender = sender;
@@ -1094,7 +1093,6 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             this.leaderId = leaderId;
             this.authorization = authorization;
             this.partitionOffset = partitionOffset;
-            this.latestOffset = latestOffset;
         }
 
         private void onServerMessage(
@@ -1246,7 +1244,6 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             state = KafkaState.openingReply(state);
 
             this.partitionOffset = Math.max(partitionOffset, group.partitionOffset);
-            this.latestOffset = group.latestOffset;
 
             router.setThrottle(replyId, this::onServerMessage);
             doBegin(sender, routeId, replyId, traceId, authorization, leaderId,
@@ -1255,7 +1252,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                         .fetch(f -> f.topic(group.partition.topic())
                                      .partition(p -> p.partitionId(group.partition.id())
                                                       .partitionOffset(partitionOffset)
-                                                      .latestOffset(latestOffset)))
+                                                      .latestOffset(group.latestOffset)))
                         .build()
                         .sizeof()));
         }
@@ -1285,7 +1282,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.partition(p -> p.partitionId(group.partition.id())
                                                       .partitionOffset(group.partitionOffset)
-                                                      .latestOffset(latestOffset)))
+                                                      .latestOffset(group.latestOffset)))
                         .build()
                         .sizeof()));
 

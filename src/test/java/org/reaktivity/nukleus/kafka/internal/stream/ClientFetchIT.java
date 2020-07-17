@@ -381,7 +381,7 @@ public class ClientFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/ filter.header/client",
+        "${client}/filter.header/client",
         "${server}/filter.header/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithHeaderFilter() throws Exception
@@ -409,6 +409,18 @@ public class ClientFetchIT
         "${server}/filter.header.or.header/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
     public void shouldReceiveMessagesWithHeaderOrHeaderFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("TODO")
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/fetch.filter.age.live/client",
+        "${server}/fetch.filter.age.live/server"})
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithAgeFilter() throws Exception
     {
         k3po.finish();
     }

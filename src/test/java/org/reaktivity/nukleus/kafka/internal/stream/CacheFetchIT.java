@@ -381,6 +381,9 @@ public class CacheFetchIT
     public void shouldReceiveMessagesWithNoFilter() throws Exception
     {
         partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_2");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
         k3po.finish();
     }
 
@@ -477,6 +480,22 @@ public class CacheFetchIT
     public void shouldReceiveMessagesWithKeyOrHeaderAndHeaderFilter() throws Exception
     {
         partition.append(1L);
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache/controller",
+        "${client}/filter.age.live/client",
+        "${server}/filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithLiveAgeFilter() throws Exception
+    {
+        partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_3");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
+        k3po.finish();
         k3po.finish();
     }
 

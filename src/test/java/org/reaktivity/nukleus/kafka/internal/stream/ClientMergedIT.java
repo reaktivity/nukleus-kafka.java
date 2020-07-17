@@ -129,10 +129,11 @@ public class ClientMergedIT
         k3po.finish();
     }
 
+    @Ignore("filtered")
     @Test
     @Specification({
         "${route}/client.merged/controller",
-        "${client}/merged.fetch.filter.age/client",
+        "${client}/merged.fetch.filter.age.live/client",
         "${server}/unmerged.fetch.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldFetchMergedMessagesWithAgeFilter() throws Exception
