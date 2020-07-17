@@ -542,7 +542,7 @@ public final class KafkaCacheCursorFactory
             }
         }
 
-        private static final class Historical extends KafkaFilterCondition
+        private static final class Historical extends None
         {
             private long latest;
 
@@ -558,21 +558,14 @@ public final class KafkaCacheCursorFactory
                 int position)
             {
                 this.latest = latest;
-                return NEXT_SEGMENT;
-            }
-
-            @Override
-            public long next(
-                long cursor)
-            {
-                return cursor;
+                return super.reset(segment, offset, latest, position);
             }
 
             @Override
             public boolean test(
                 KafkaCacheEntryFW cacheEntry)
             {
-                return cacheEntry.offset$() <= latest;
+                return super.test(cacheEntry) && cacheEntry.offset$() <= latest;
             }
         }
 
