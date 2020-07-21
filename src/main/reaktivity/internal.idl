@@ -29,7 +29,6 @@ scope internal
           int32 valueLen;
           octets[valueLen] value = null;
           kafka::KafkaHeader[] headers;
-          kafka:KafkaAge age;
         }
 
         struct KafkaCacheDelta

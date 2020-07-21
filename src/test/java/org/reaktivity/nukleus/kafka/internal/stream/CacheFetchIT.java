@@ -396,6 +396,9 @@ public class CacheFetchIT
     public void shouldReceiveMessagesWithKeyFilter() throws Exception
     {
         partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_2");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
         k3po.finish();
     }
 
@@ -408,6 +411,8 @@ public class CacheFetchIT
     public void shouldReceiveMessagesWithKeyAndHeaderFilter() throws Exception
     {
         partition.append(1L);
+        k3po.start();
+        k3po.notifyBarrier("SEND_MESSAGE_3");
         k3po.finish();
     }
 
@@ -420,6 +425,9 @@ public class CacheFetchIT
     public void shouldReceiveMessagesWithKeyOrHeaderFilter() throws Exception
     {
         partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_2");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
         k3po.finish();
     }
 
@@ -432,6 +440,9 @@ public class CacheFetchIT
     public void shouldReceiveMessagesWithHeaderFilter() throws Exception
     {
         partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_2");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
         k3po.finish();
     }
 
@@ -444,6 +455,9 @@ public class CacheFetchIT
     public void shouldReceiveMessagesWithHeaderAndHeaderFilter() throws Exception
     {
         partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_4");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
         k3po.finish();
     }
 
@@ -456,6 +470,9 @@ public class CacheFetchIT
     public void shouldReceiveMessagesWithHeaderOrHeaderFilter() throws Exception
     {
         partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_2");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
         k3po.finish();
     }
 
@@ -468,6 +485,9 @@ public class CacheFetchIT
     public void shouldReceiveMessagesWithKeyAndHeaderOrHeaderFilter() throws Exception
     {
         partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_2");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
         k3po.finish();
     }
 
@@ -480,6 +500,9 @@ public class CacheFetchIT
     public void shouldReceiveMessagesWithKeyOrHeaderAndHeaderFilter() throws Exception
     {
         partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_2");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
         k3po.finish();
     }
 

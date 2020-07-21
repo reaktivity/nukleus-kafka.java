@@ -857,7 +857,7 @@ public final class KafkaCacheCursorFactory
         KafkaAgeFW age)
     {
         KafkaFilterCondition condition;
-        switch(age.get())
+        switch (age.get())
         {
         case LIVE:
             condition = new KafkaFilterCondition.Live();

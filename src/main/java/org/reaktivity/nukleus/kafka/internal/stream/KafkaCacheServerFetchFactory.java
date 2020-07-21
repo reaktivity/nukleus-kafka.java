@@ -200,7 +200,6 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         final KafkaOffsetFW progress = kafkaFetchBeginEx.partition();
         final int partitionId = progress.partitionId();
         final long partitionOffset = progress.partitionOffset();
-        final long latestOffset = progress.latestOffset();
         final KafkaDeltaType deltaType = kafkaFetchBeginEx.deltaType().get();
 
         MessageConsumer newStream = null;

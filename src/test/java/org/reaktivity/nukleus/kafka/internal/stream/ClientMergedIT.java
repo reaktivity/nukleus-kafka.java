@@ -149,6 +149,10 @@ public class ClientMergedIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldFetchMergedMessagesWithNoFilter() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_B2");
+        k3po.notifyBarrier("SEND_MESSAGE_A3");
+        k3po.notifyBarrier("SEND_MESSAGE_B3");
         k3po.finish();
     }
 

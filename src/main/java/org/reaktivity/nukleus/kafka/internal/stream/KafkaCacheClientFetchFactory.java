@@ -934,7 +934,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 partitionOffset <= group.partitionOffset)
             {
                 final KafkaCacheEntryFW nextEntry = cursor.next(entryRO);
-                if (nextEntry == null)
+
+                if (nextEntry == null || nextEntry.offset$() > group.latestOffset)
                 {
                     break;
                 }
