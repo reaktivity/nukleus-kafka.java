@@ -236,8 +236,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                             authorization,
                             affinity,
                             partition,
-                            defaultOffset,
-                            DEFAULT_LATEST_OFFSET);
+                            defaultOffset);
 
                 cacheRoute.clientFetchFanoutsByTopicPartition.put(partitionKey, newFanout);
                 fanout = newFanout;
@@ -411,14 +410,13 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long authorization,
             long leaderId,
             KafkaCachePartition partition,
-            long defaultOffset,
-            long latestOffset)
+            long defaultOffset)
         {
             this.routeId = routeId;
             this.authorization = authorization;
             this.partition = partition;
             this.partitionOffset = defaultOffset;
-            this.latestOffset = latestOffset;
+            this.latestOffset = DEFAULT_LATEST_OFFSET;
             this.members = new ArrayList<>();
             this.leaderId = leaderId;
             this.receiver = NO_RECEIVER;

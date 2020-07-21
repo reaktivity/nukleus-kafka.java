@@ -395,8 +395,6 @@ public final class KafkaCacheCursorFactory
 
             private KafkaCacheIndexFile hashFile;
 
-            protected long latestOffset;
-
             @Override
             public final long reset(
                 KafkaCacheSegment segment,
@@ -404,7 +402,6 @@ public final class KafkaCacheCursorFactory
                 long latestOffset,
                 int position)
             {
-                this.latestOffset = latestOffset;
                 long cursor = NEXT_SEGMENT;
 
                 if (segment != null)
@@ -517,7 +514,7 @@ public final class KafkaCacheCursorFactory
 
         private static final class Live extends None
         {
-            private long latest;
+            private long historical;
 
             private Live()
             {
@@ -530,7 +527,7 @@ public final class KafkaCacheCursorFactory
                 long latest,
                 int position)
             {
-                this.latest = latest;
+                this.historical = latest;
                 return super.reset(segment, offset, latest, position);
             }
 
@@ -538,13 +535,13 @@ public final class KafkaCacheCursorFactory
             public boolean test(
                 KafkaCacheEntryFW cacheEntry)
             {
-                return super.test(cacheEntry) && cacheEntry.offset$() > latest;
+                return super.test(cacheEntry) && cacheEntry.offset$() > historical;
             }
         }
 
         private static final class Historical extends None
         {
-            private long latest;
+            private long historical;
 
             private Historical()
             {
@@ -557,7 +554,7 @@ public final class KafkaCacheCursorFactory
                 long latest,
                 int position)
             {
-                this.latest = latest;
+                this.historical = latest;
                 return super.reset(segment, offset, latest, position);
             }
 
@@ -565,7 +562,7 @@ public final class KafkaCacheCursorFactory
             public boolean test(
                 KafkaCacheEntryFW cacheEntry)
             {
-                return super.test(cacheEntry) && cacheEntry.offset$() <= latest;
+                return super.test(cacheEntry) && cacheEntry.offset$() <= historical;
             }
         }
 
