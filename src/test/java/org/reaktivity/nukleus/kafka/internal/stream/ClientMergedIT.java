@@ -129,6 +129,18 @@ public class ClientMergedIT
         k3po.finish();
     }
 
+    @Ignore("filtered")
+    @Test
+    @Specification({
+        "${route}/client.merged/controller",
+        "${client}/merged.fetch.filter.age.live/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedMessagesWithAgeFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
     @Test
     @Specification({
         "${route}/client.merged/controller",
@@ -137,6 +149,10 @@ public class ClientMergedIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldFetchMergedMessagesWithNoFilter() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_B2");
+        k3po.notifyBarrier("SEND_MESSAGE_A3");
+        k3po.notifyBarrier("SEND_MESSAGE_B3");
         k3po.finish();
     }
 

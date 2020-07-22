@@ -40,8 +40,10 @@ import org.reaktivity.nukleus.function.MessageFunction;
 import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
+import org.reaktivity.nukleus.kafka.internal.types.Array32FW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW;
@@ -283,9 +285,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
         MessageConsumer newStream = null;
 
         if (beginEx != null && kafkaFetchBeginEx != null &&
-            kafkaFetchBeginEx.filters().isEmpty())
+                kafkaFetchBeginEx.filters().isEmpty())
         {
-
             final String16FW beginTopic = kafkaFetchBeginEx.topic();
 
             final MessagePredicate filter = (t, b, i, l) ->
@@ -306,18 +307,22 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 final long resolvedId = route.correlationId();
                 final String topic = beginTopic != null ? beginTopic.asString() : null;
                 final KafkaOffsetFW partition = kafkaFetchBeginEx.partition();
+                final Array32FW<KafkaFilterFW> filters = kafkaFetchBeginEx.filters();
                 final int partitionId = partition.partitionId();
                 final long initialOffset = partition.partitionOffset();
+                final long latestOffset = partition.latestOffset();
 
                 newStream = new KafkaFetchStream(
-                        application,
-                        routeId,
-                        initialId,
-                        resolvedId,
-                        topic,
-                        partitionId,
-                        leaderId,
-                        initialOffset)::onApplication;
+                    application,
+                    routeId,
+                    initialId,
+                    resolvedId,
+                    topic,
+                    partitionId,
+                    latestOffset,
+                    filters,
+                    leaderId,
+                    initialOffset)::onApplication;
             }
         }
 
@@ -839,6 +844,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
             {
                 final int partitionId = partition.partitionId();
                 final int errorCode = partition.errorCode();
+
+                client.latestOffset = partition.lastStableOffset();
 
                 client.decodePartitionError = errorCode;
                 client.decodePartitionId = partitionId;
@@ -1596,6 +1603,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
         private final long leaderId;
         private final KafkaClientRoute clientRoute;
         private final KafkaFetchClient client;
+        private final Array32FW<KafkaFilterFW> filters;
 
         private int state;
 
@@ -1612,6 +1620,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
             long resolvedId,
             String topic,
             int partitionId,
+            long latestOffset,
+            Array32FW<KafkaFilterFW> filters,
             long leaderId,
             long initialOffset)
         {
@@ -1619,9 +1629,10 @@ public final class KafkaClientFetchFactory implements StreamFactory
             this.routeId = routeId;
             this.initialId = initialId;
             this.replyId = supplyReplyId.applyAsLong(initialId);
+            this.filters = filters;
             this.leaderId = leaderId;
             this.clientRoute = supplyClientRoute.apply(resolvedId);
-            this.client = new KafkaFetchClient(resolvedId, topic, partitionId, initialOffset);
+            this.client = new KafkaFetchClient(resolvedId, topic, partitionId, initialOffset, latestOffset, filters);
         }
 
         private void onApplication(
@@ -1746,11 +1757,12 @@ public final class KafkaClientFetchFactory implements StreamFactory
             long authorization,
             String topic,
             int partitionId,
-            long partitionOffset)
+            long partitionOffset,
+            long latestOffset)
         {
             if (!KafkaState.replyOpening(state))
             {
-                doApplicationBegin(traceId, authorization, topic, partitionId, partitionOffset);
+                doApplicationBegin(traceId, authorization, topic, partitionId, partitionOffset, latestOffset);
             }
         }
 
@@ -1759,7 +1771,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
             long authorization,
             String topic,
             int partitionId,
-            long partitionOffset)
+            long partitionOffset,
+            long latestOffset)
         {
             state = KafkaState.openingReply(state);
 
@@ -1769,7 +1782,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
                                                         .typeId(kafkaTypeId)
                                                         .fetch(m -> m.topic(topic)
                                                                      .partition(p -> p.partitionId(partitionId)
-                                                                                      .partitionOffset(partitionOffset)))
+                                                                                      .partitionOffset(partitionOffset)
+                                                                                      .latestOffset(latestOffset)))
                                                         .build()
                                                         .sizeof()));
         }
@@ -1895,8 +1909,10 @@ public final class KafkaClientFetchFactory implements StreamFactory
             private final MessageConsumer network;
             private final String topic;
             private final int partitionId;
+            private final Array32FW<KafkaFilterFW> filters;
 
             private long nextOffset;
+            private long latestOffset;
 
             private int state;
             private long authorization;
@@ -1940,7 +1956,9 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 long routeId,
                 String topic,
                 int partitionId,
-                long initialOffset)
+                long initialOffset,
+                long latestOffset,
+                Array32FW<KafkaFilterFW> filters)
             {
                 this.stream = KafkaFetchStream.this;
                 this.routeId = routeId;
@@ -1950,6 +1968,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 this.topic = requireNonNull(topic);
                 this.partitionId = partitionId;
                 this.nextOffset = initialOffset;
+                this.filters = filters;
+                this.latestOffset = latestOffset;
                 this.encoder = encodeFetchRequest;
                 this.decoder = decodeFetchResponse;
             }
@@ -2550,7 +2570,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 case ERROR_NONE:
                     assert partitionId == this.partitionId;
                     doApplicationWindow(traceId, 0L, 0, 0);
-                    doApplicationBeginIfNecessary(traceId, authorization, topic, partitionId, nextOffset);
+                    doApplicationBeginIfNecessary(traceId, authorization, topic, partitionId, nextOffset, latestOffset);
                     break;
                 case ERROR_OFFSET_OUT_OF_RANGE:
                     assert partitionId == this.partitionId;
@@ -2594,7 +2614,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                         .fetch(f ->
                         {
                             f.timestamp(timestamp);
-                            f.partition(p -> p.partitionId(decodePartitionId).partitionOffset(offset));
+                            f.partition(p -> p.partitionId(decodePartitionId).partitionOffset(offset).latestOffset(latestOffset));
                             f.key(k -> setKey(k, key));
                             final int headersLimit = headers.capacity();
                             int headerProgress = 0;
@@ -2626,7 +2646,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
                                      .timestamp(timestamp)
                                      .headersSizeMax(headersSizeMax)
                                      .partition(p -> p.partitionId(decodePartitionId)
-                                                      .partitionOffset(offset))
+                                                      .partitionOffset(offset)
+                                                      .latestOffset(latestOffset))
                                      .key(k -> setKey(k, key)))
                         .build();
 
@@ -2655,7 +2676,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f ->
                         {
-                            f.partition(p -> p.partitionId(decodePartitionId).partitionOffset(offset));
+                            f.partition(p -> p.partitionId(decodePartitionId).partitionOffset(offset).latestOffset(latestOffset));
                             final int headersLimit = headers.capacity();
                             int headerProgress = 0;
                             for (int headerIndex = 0; headerIndex < headerCount; headerIndex++)
