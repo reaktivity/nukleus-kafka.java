@@ -22,6 +22,7 @@ import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorRetryValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.LATEST;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DEFAULT_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
@@ -396,6 +397,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         private int state;
 
         private long partitionOffset;
+        private long latestOffset = DEFAULT_LATEST_OFFSET;
         private long retainId = NO_CANCEL_ID;
         private long deleteId = NO_CANCEL_ID;
         private long compactId = NO_CANCEL_ID;
@@ -610,6 +612,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             assert partitionId == partition.id();
             assert partitionOffset >= 0L && partitionOffset >= this.partitionOffset;
             this.partitionOffset = partitionOffset;
+            this.latestOffset = progress.latestOffset();
 
             partition.newHeadIfNecessary(partitionOffset);
 
@@ -699,6 +702,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 assert kafkaFetchDataEx != null;
                 final int partitionId = kafkaFetchDataEx.partition().partitionId();
                 final long partitionOffset = kafkaFetchDataEx.partition().partitionOffset();
+                final long latestOffset = kafkaFetchDataEx.partition().latestOffset();
                 final KafkaDeltaFW delta = kafkaFetchDataEx.delta();
                 final ArrayFW<KafkaHeaderFW> headers = kafkaFetchDataEx.headers();
 
@@ -710,6 +714,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 partition.writeEntryFinish(headers, deltaType);
 
                 this.partitionOffset = partitionOffset;
+                this.latestOffset = latestOffset;
 
                 members.forEach(s -> s.doServerReplyFlushIfNecessary(traceId));
             }
@@ -1245,7 +1250,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(group.partition.topic())
                                      .partition(p -> p.partitionId(group.partition.id())
-                                                      .partitionOffset(partitionOffset)))
+                                                      .partitionOffset(partitionOffset)
+                                                      .latestOffset(group.latestOffset)))
                         .build()
                         .sizeof()));
         }
@@ -1274,7 +1280,8 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 ex -> ex.set((b, o, l) -> kafkaFlushExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.partition(p -> p.partitionId(group.partition.id())
-                                                      .partitionOffset(group.partitionOffset)))
+                                                      .partitionOffset(group.partitionOffset)
+                                                      .latestOffset(group.latestOffset)))
                         .build()
                         .sizeof()));
 

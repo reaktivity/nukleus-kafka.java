@@ -6,7 +6,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.reaktivity</groupId>
   <artifactId>nukleus-kafka</artifactId>
-  <version>0.243</version>
+  <version>0.244</version>
   <name>Kafka Nukleus Implementation</name>
   <description>Kafka Nukleus Implementation</description>
   <url>https://github.com/reaktivity/nukleus-kafka.java</url>
@@ -43,7 +43,7 @@
     <checkstyle.config.location>src/conf/checkstyle/configuration.xml</checkstyle.config.location>
     <checkstyle.suppressions.location>src/conf/checkstyle/suppressions.xml</checkstyle.suppressions.location>
     <jacoco.coverage.ratio>0.77</jacoco.coverage.ratio>
-    <jacoco.missed.count>3</jacoco.missed.count>
+    <jacoco.missed.count>4</jacoco.missed.count>
 
     <junit.version>4.12</junit.version>
     <jmh.version>1.17.4</jmh.version>
@@ -54,7 +54,7 @@
 
     <nukleus.plugin.version>0.57</nukleus.plugin.version>
 
-    <nukleus.kafka.spec.version>0.141</nukleus.kafka.spec.version>
+    <nukleus.kafka.spec.version>0.142</nukleus.kafka.spec.version>
     <reaktor.version>0.136</reaktor.version>
 
     <kafka.clients.version>1.0.0</kafka.clients.version>

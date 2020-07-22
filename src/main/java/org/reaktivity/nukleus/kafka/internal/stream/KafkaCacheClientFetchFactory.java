@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_BUDGET_ID;
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DEFAULT_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 
@@ -402,6 +403,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private int state;
 
         private long partitionOffset;
+        private long latestOffset;
 
         private KafkaCacheClientFetchFanout(
             long routeId,
@@ -414,6 +416,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.authorization = authorization;
             this.partition = partition;
             this.partitionOffset = defaultOffset;
+            this.latestOffset = DEFAULT_LATEST_OFFSET;
             this.members = new ArrayList<>();
             this.leaderId = leaderId;
             this.receiver = NO_RECEIVER;
@@ -498,7 +501,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(partition.topic())
                                      .partition(p -> p.partitionId(partition.id())
-                                                      .partitionOffset(partitionOffset)))
+                                                      .partitionOffset(partitionOffset)
+                                                      .latestOffset(latestOffset)))
                         .build()
                         .sizeof()));
             state = KafkaState.openingInitial(state);
@@ -592,6 +596,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             assert partitionId == this.partition.id();
                 assert partitionOffset >= 0 && partitionOffset >= this.partitionOffset;
             this.partitionOffset = partitionOffset;
+            this.latestOffset = partition.latestOffset();
 
             members.forEach(s -> s.doClientReplyBeginIfNecessary(traceId));
 
@@ -608,9 +613,11 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final KafkaFetchFlushExFW kafkaFetchFlushEx = kafkaFlushEx.fetch();
             final KafkaOffsetFW partition = kafkaFetchFlushEx.partition();
             final long partitionOffset = partition.partitionOffset();
+            final long latestOffset = partition.latestOffset();
 
             assert partitionOffset >= this.partitionOffset;
             this.partitionOffset = partitionOffset;
+            this.latestOffset = latestOffset;
 
             members.forEach(s -> s.doClientReplyDataIfNecessary(traceId));
 
@@ -716,6 +723,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private int replyPadding;
 
         private long partitionOffset;
+        private long initialGroupLatestOffset;
         private int messageOffset;
         private long initialGroupPartitionOffset;
 
@@ -878,6 +886,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             state = KafkaState.openingReply(state);
 
             this.initialGroupPartitionOffset = group.partitionOffset;
+            this.initialGroupLatestOffset = group.latestOffset;
 
             if (partitionOffset == OFFSET_LATEST)
             {
@@ -896,7 +905,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             {
                 segmentNode = segmentNode.next();
             }
-            cursor.init(segmentNode, partitionOffset);
+            cursor.init(segmentNode, partitionOffset, initialGroupLatestOffset);
 
             router.setThrottle(replyId, this::onClientMessage);
             doBegin(sender, routeId, replyId, traceId, authorization, leaderId,
@@ -904,7 +913,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(group.partition.topic())
                                      .partition(p -> p.partitionId(group.partition.id())
-                                                      .partitionOffset(partitionOffset))
+                                                      .partitionOffset(partitionOffset)
+                                                      .latestOffset(initialGroupLatestOffset))
                                      .deltaType(t -> t.set(deltaType)))
                         .build()
                         .sizeof()));
@@ -922,7 +932,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 partitionOffset <= group.partitionOffset)
             {
                 final KafkaCacheEntryFW nextEntry = cursor.next(entryRO);
-                if (nextEntry == null)
+
+                if (nextEntry == null || nextEntry.offset$() > group.latestOffset)
                 {
                     break;
                 }
@@ -966,6 +977,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final int lengthMin = Math.min(remaining, 1024);
             final int reservedMax = Math.min(remaining + replyPadding, replyBudget);
             final int reservedMin = Math.min(lengthMin + replyPadding, reservedMax);
+            final long latestOffset = group.latestOffset;
 
             assert partitionOffset >= this.partitionOffset : String.format("%d >= %d", partitionOffset, this.partitionOffset);
 
@@ -1020,18 +1032,18 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 {
                 case FLAG_INIT | FLAG_FIN:
                     doClientReplyDataFull(traceId, timestamp, key, headers, deltaType, ancestor, fragment,
-                                          reserved, flags, partitionId, partitionOffset);
+                                          reserved, flags, partitionId, partitionOffset, latestOffset);
                     break;
                 case FLAG_INIT:
                     doClientReplyDataInit(traceId, deferred, timestamp, key, deltaType, ancestor, fragment,
-                                          reserved, length, flags, partitionId, partitionOffset);
+                                          reserved, length, flags, partitionId, partitionOffset, latestOffset);
                     break;
                 case FLAG_NONE:
                     doClientReplyDataNone(traceId, fragment, reserved, length, flags);
                     break;
                 case FLAG_FIN:
                     doClientReplyDataFin(traceId, headers, deltaType, ancestor, fragment,
-                                         reserved, length, flags, partitionId, partitionOffset);
+                                         reserved, length, flags, partitionId, partitionOffset, latestOffset);
                     break;
                 }
 
@@ -1062,7 +1074,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             int reserved,
             int flags,
             int partitionId,
-            long partitionOffset)
+            long partitionOffset,
+            long latestOffset)
         {
             replyBudget -= reserved;
             assert replyBudget >= 0 : String.format("[%016x] %d >= 0", replyId, replyBudget);
@@ -1072,7 +1085,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.timestamp(timestamp)
                                      .partition(p -> p.partitionId(partitionId)
-                                                      .partitionOffset(partitionOffset))
+                                                      .partitionOffset(partitionOffset)
+                                                      .latestOffset(latestOffset))
                                      .key(k -> k.length(key.length())
                                                 .value(key.value()))
                                      .delta(d -> d.type(t -> t.set(deltaType))
@@ -1097,7 +1111,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             int length,
             int flags,
             int partitionId,
-            long partitionOffset)
+            long partitionOffset,
+            long latestOffset)
         {
             replyBudget -= reserved;
             assert replyBudget >= 0 : String.format("[%016x] %d >= 0", replyId, replyBudget);
@@ -1108,7 +1123,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         .fetch(f -> f.deferred(deferred)
                                      .timestamp(timestamp)
                                      .partition(p -> p.partitionId(partitionId)
-                                     .partitionOffset(partitionOffset))
+                                                      .partitionOffset(partitionOffset)
+                                                      .latestOffset(latestOffset))
                                      .key(k -> k.length(key.length())
                                                 .value(key.value()))
                                      .delta(d -> d.type(t -> t.set(deltaType))
@@ -1140,7 +1156,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             int length,
             int flags,
             int partitionId,
-            long partitionOffset)
+            long partitionOffset,
+            long latestOffset)
         {
             replyBudget -= reserved;
             assert replyBudget >= 0 : String.format("[%016x] %d >= 0", replyId, replyBudget);
@@ -1149,7 +1166,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 ex -> ex.set((b, o, l) -> kafkaDataExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.partition(p -> p.partitionId(partitionId)
-                                                      .partitionOffset(partitionOffset))
+                                                      .partitionOffset(partitionOffset)
+                                                      .latestOffset(latestOffset))
                                      .delta(d -> d.type(t -> t.set(deltaType))
                                                   .ancestorOffset(ancestorOffset))
                                      .headers(hs -> headers.forEach(h -> hs.item(i -> i.nameLen(h.nameLen())
