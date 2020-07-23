@@ -845,7 +845,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 final int partitionId = partition.partitionId();
                 final int errorCode = partition.errorCode();
 
-                client.latestOffset = partition.lastStableOffset();
+                client.latestOffset = partition.highWatermark() - 1;
 
                 client.decodePartitionError = errorCode;
                 client.decodePartitionId = partitionId;
