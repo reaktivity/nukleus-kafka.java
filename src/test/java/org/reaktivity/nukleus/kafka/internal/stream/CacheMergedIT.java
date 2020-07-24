@@ -224,6 +224,28 @@ public class CacheMergedIT
     @Test
     @Specification({
         "${route}/cache.merged/controller",
+        "${client}/merged.fetch.partition.offsets.earliest/client",
+        "${server}/unmerged.fetch.partition.offsets.earliest/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedPartitionOffsetsEarliest() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
+        "${client}/merged.fetch.partition.offsets.earliest.overflow/client",
+        "${server}/unmerged.fetch.partition.offsets.earliest/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedPartitionOffsetsEarliestOverflow() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
         "${client}/merged.produce.message.values/client",
         "${server}/unmerged.produce.message.values/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
