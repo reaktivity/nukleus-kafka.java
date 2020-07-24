@@ -1232,6 +1232,13 @@ public final class KafkaMergedFactory implements StreamFactory
                     doFetchPartitionIfNecessary(traceId, partitionId);
                 }
                 assert fetchStreams.size() >= leadersByPartitionId.size();
+
+                int offsetCount = nextOffsetsById.size();
+                for (int partitionId = partitionCount; partitionId < offsetCount; partitionId++)
+                {
+                    nextOffsetsById.remove(partitionId);
+                }
+                assert nextOffsetsById.size() <= leadersByPartitionId.size();
             }
         }
 
