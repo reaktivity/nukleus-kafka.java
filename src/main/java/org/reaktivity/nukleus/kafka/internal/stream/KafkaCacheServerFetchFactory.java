@@ -1074,6 +1074,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
 
         private int replyBudget;
         private long partitionOffset;
+        private long latestOffset;
 
         KafkaCacheServerFetchStream(
             KafkaCacheServerFetchFanout group,
@@ -1259,7 +1260,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
         private void doServerReplyFlushIfNecessary(
             long traceId)
         {
-            if (partitionOffset <= group.partitionOffset &&
+            if ((partitionOffset <= group.partitionOffset || latestOffset <= group.latestOffset) &&
                 replyBudget >= SIZE_OF_FLUSH_WITH_EXTENSION)
             {
                 doServerReplyFlush(traceId, SIZE_OF_FLUSH_WITH_EXTENSION);
@@ -1270,7 +1271,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             long traceId,
             int reserved)
         {
-            assert partitionOffset <= group.partitionOffset;
+            assert partitionOffset <= group.partitionOffset || latestOffset <= group.latestOffset;
 
             replyBudget -= reserved;
 
@@ -1286,6 +1287,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                         .sizeof()));
 
             this.partitionOffset = group.partitionOffset + 1;
+            this.latestOffset = group.latestOffset + 1;
         }
 
         private void doServerReplyEndIfNecessary(
