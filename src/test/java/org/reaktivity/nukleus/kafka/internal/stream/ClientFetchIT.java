@@ -31,9 +31,16 @@ import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.reaktor.test.ReaktorRule;
+import org.reaktivity.reaktor.test.annotation.Configure;
 
 public class ClientFetchIT
 {
+    private static final String REAKTOR_BUFFER_SLOT_CAPACITY_NAME = "reaktor.buffer.slot.capacity";
+    static
+    {
+        assert REAKTOR_BUFFER_SLOT_CAPACITY_NAME.equals(REAKTOR_BUFFER_SLOT_CAPACITY.name());
+    }
+
     private final K3poRule k3po = new K3poRule()
             .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
             .addScriptRoot("server", "org/reaktivity/specification/kafka/fetch.v5")
@@ -47,7 +54,6 @@ public class ClientFetchIT
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(8192)
-        .configure(REAKTOR_DRAIN_ON_CLOSE, false)
         .configure(REAKTOR_BUFFER_SLOT_CAPACITY, 8192)
         .configure(REAKTOR_DRAIN_ON_CLOSE, false)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
@@ -234,6 +240,7 @@ public class ClientFetchIT
         "${client}/message.value.100k/client",
         "${server}/message.value.100k/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    @Configure(name = REAKTOR_BUFFER_SLOT_CAPACITY_NAME, value = "65536")
     public void shouldReceiveMessageValue100k() throws Exception
     {
         k3po.finish();
