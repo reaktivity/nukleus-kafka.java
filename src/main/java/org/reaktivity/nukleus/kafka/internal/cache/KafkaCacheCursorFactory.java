@@ -333,7 +333,7 @@ public final class KafkaCacheCursorFactory
         public abstract boolean test(
             KafkaCacheEntryFW cacheEntry);
 
-        private static class None extends KafkaFilterCondition
+        private static final class None extends KafkaFilterCondition
         {
             private KafkaCacheIndexFile indexFile;
 
@@ -472,6 +472,58 @@ public final class KafkaCacheCursorFactory
             }
         }
 
+        private static class Age extends KafkaFilterCondition
+        {
+            private KafkaCacheIndexFile indexFile;
+
+            @Override
+            public long reset(
+                KafkaCacheSegment segment,
+                long offset,
+                long latestOffset,
+                int position)
+            {
+                long cursor = NEXT_SEGMENT;
+
+                if (segment != null)
+                {
+                    final KafkaCacheIndexFile indexFile = segment.indexFile();
+                    assert indexFile != null;
+
+                    this.indexFile = indexFile;
+
+                    final int offsetDelta = (int)(offset - segment.baseOffset());
+                    cursor = indexFile.first(offsetDelta);
+                }
+                else
+                {
+                    this.indexFile = null;
+                }
+
+                return cursor;
+            }
+
+            @Override
+            public long next(
+                long cursor)
+            {
+                return indexFile != null ? indexFile.resolve(cursor) : NEXT_SEGMENT;
+            }
+
+            @Override
+            public boolean test(
+                KafkaCacheEntryFW cacheEntry)
+            {
+                return cacheEntry != null;
+            }
+
+            @Override
+            public String toString()
+            {
+                return String.format("%s[]", getClass().getSimpleName());
+            }
+        }
+
         private static final class Key extends Equals
         {
             private Key(
@@ -512,7 +564,7 @@ public final class KafkaCacheCursorFactory
             }
         }
 
-        private static final class Live extends None
+        private static final class Live extends Age
         {
             private long historical;
 
@@ -539,7 +591,7 @@ public final class KafkaCacheCursorFactory
             }
         }
 
-        private static final class Historical extends None
+        private static final class Historical extends Age
         {
             private long historical;
 

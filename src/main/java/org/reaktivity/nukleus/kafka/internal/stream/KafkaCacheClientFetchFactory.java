@@ -723,9 +723,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private int replyPadding;
 
         private long partitionOffset;
-        private long initialGroupLatestOffset;
         private int messageOffset;
         private long initialGroupPartitionOffset;
+        private long initialGroupLatestOffset;
 
         KafkaCacheClientFetchStream(
             KafkaCacheClientFetchFanout group,
