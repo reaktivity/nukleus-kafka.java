@@ -1417,7 +1417,6 @@ public final class KafkaClientFetchFactory implements StreamFactory
             }
             else
             {
-                assert length >= decodeMaxBytes;
                 assert client.decodableRecordValueBytes != -1 : "record headers overflow decode buffer";
 
                 if (KafkaConfiguration.DEBUG)
@@ -2505,7 +2504,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
                         final MutableDirectBuffer decodeBuffer = decodePool.buffer(decodeSlot);
                         decodeBuffer.putBytes(0, buffer, progress, limit - progress);
                         decodeSlotOffset = limit - progress;
-                        decodeSlotReserved = (limit - progress) * reserved / (limit - offset);
+                        decodeSlotReserved = (int) ((long) (limit - progress) * reserved / (limit - offset));
+                        assert decodeSlotReserved >= 0;
                     }
 
                     final int credit = decodePool.slotCapacity() - decodeSlotOffset - replyBudget;
