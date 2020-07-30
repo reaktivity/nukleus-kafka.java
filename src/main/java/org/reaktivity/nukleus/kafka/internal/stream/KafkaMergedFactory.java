@@ -19,6 +19,7 @@ import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.FETCH_ONLY;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.PRODUCE_ONLY;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
+import static org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW.Builder.DEFAULT_MINIMUM;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -619,7 +620,8 @@ public final class KafkaMergedFactory implements StreamFactory
         long authorization,
         long budgetId,
         int credit,
-        int padding)
+        int padding,
+        int minimum)
     {
         final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
@@ -629,6 +631,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 .budgetId(budgetId)
                 .credit(credit)
                 .padding(padding)
+                .minimum(minimum)
                 .build();
 
         sender.accept(window.typeId(), window.buffer(), window.offset(), window.sizeof());
@@ -691,6 +694,7 @@ public final class KafkaMergedFactory implements StreamFactory
         private long replyBudgetId;
         private int replyBudget;
         private int replyPadding;
+        private int replyMinimum;
 
         private int nextNullKeyHash;
         private int fetchStreamIndex;
@@ -913,10 +917,12 @@ public final class KafkaMergedFactory implements StreamFactory
             final long budgetId = window.budgetId();
             final int credit = window.credit();
             final int padding = window.padding();
+            final int minimum = window.minimum();
 
             replyBudgetId = budgetId;
             replyBudget += credit;
             replyPadding = padding;
+            replyMinimum = minimum;
 
             if (KafkaState.replyOpening(state))
             {
@@ -1111,7 +1117,7 @@ public final class KafkaMergedFactory implements StreamFactory
             initialBudget += credit;
 
             doWindow(sender, routeId, initialId, traceId, authorization,
-                    budgetId, credit, padding);
+                    budgetId, credit, padding, DEFAULT_MINIMUM);
         }
 
         private void doMergedInitialReset(
@@ -1666,7 +1672,7 @@ public final class KafkaMergedFactory implements StreamFactory
             replyBudget += credit;
 
             doWindow(receiver, mergedFetch.resolvedId, replyId, traceId, mergedFetch.authorization,
-                0L, credit, mergedFetch.replyPadding);
+                0L, credit, mergedFetch.replyPadding, DEFAULT_MINIMUM);
         }
 
         private void doDescribeReplyResetIfNecessary(
@@ -1900,7 +1906,7 @@ public final class KafkaMergedFactory implements StreamFactory
             replyBudget += credit;
 
             doWindow(receiver, mergedFetch.resolvedId, replyId, traceId, mergedFetch.authorization,
-                0L, credit, mergedFetch.replyPadding);
+                0L, credit, mergedFetch.replyPadding, DEFAULT_MINIMUM);
         }
 
         private void doMetaReplyResetIfNecessary(
@@ -2169,7 +2175,7 @@ public final class KafkaMergedFactory implements StreamFactory
                     replyBudget += credit;
 
                     doWindow(receiver, merged.resolvedId, replyId, traceId, merged.authorization,
-                        merged.mergedReplyBudgetId, credit, merged.replyPadding);
+                        merged.mergedReplyBudgetId, credit, merged.replyPadding, merged.replyMinimum);
                 }
             }
         }
@@ -2520,7 +2526,7 @@ public final class KafkaMergedFactory implements StreamFactory
                     replyBudget += credit;
 
                     doWindow(receiver, merged.resolvedId, replyId, traceId, merged.authorization,
-                        merged.mergedReplyBudgetId, credit, merged.replyPadding);
+                        merged.mergedReplyBudgetId, credit, merged.replyPadding, DEFAULT_MINIMUM);
                 }
             }
         }
