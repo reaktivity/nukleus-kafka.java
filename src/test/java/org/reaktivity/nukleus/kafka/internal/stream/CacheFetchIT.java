@@ -24,6 +24,7 @@ import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CAC
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_BOOTSTRAP;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_RECONNECT_DELAY;
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
+import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE;
 import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Before;
@@ -63,6 +64,7 @@ public class CacheFetchIT
         .configure(KAFKA_CACHE_SERVER_RECONNECT_DELAY, 0)
         .configure(KAFKA_CACHE_SEGMENT_BYTES, 1 * 1024 * 1024)
         .configure(KAFKA_CACHE_SEGMENT_INDEX_BYTES, 256 * 1024)
+        .configure(REAKTOR_DRAIN_ON_CLOSE, false)
         .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
         .clean();
 
@@ -382,6 +384,9 @@ public class CacheFetchIT
     public void shouldReceiveMessagesWithNoFilter() throws Exception
     {
         partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_2");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
         k3po.finish();
     }
 
@@ -394,6 +399,9 @@ public class CacheFetchIT
     public void shouldReceiveMessagesWithKeyFilter() throws Exception
     {
         partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_2");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
         k3po.finish();
     }
 
@@ -406,6 +414,8 @@ public class CacheFetchIT
     public void shouldReceiveMessagesWithKeyAndHeaderFilter() throws Exception
     {
         partition.append(1L);
+        k3po.start();
+        k3po.notifyBarrier("SEND_MESSAGE_3");
         k3po.finish();
     }
 
@@ -418,6 +428,9 @@ public class CacheFetchIT
     public void shouldReceiveMessagesWithKeyOrHeaderFilter() throws Exception
     {
         partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_2");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
         k3po.finish();
     }
 
@@ -430,6 +443,9 @@ public class CacheFetchIT
     public void shouldReceiveMessagesWithHeaderFilter() throws Exception
     {
         partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_2");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
         k3po.finish();
     }
 
@@ -442,6 +458,9 @@ public class CacheFetchIT
     public void shouldReceiveMessagesWithHeaderAndHeaderFilter() throws Exception
     {
         partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_4");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
         k3po.finish();
     }
 
@@ -454,6 +473,9 @@ public class CacheFetchIT
     public void shouldReceiveMessagesWithHeaderOrHeaderFilter() throws Exception
     {
         partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_2");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
         k3po.finish();
     }
 
@@ -466,6 +488,9 @@ public class CacheFetchIT
     public void shouldReceiveMessagesWithKeyAndHeaderOrHeaderFilter() throws Exception
     {
         partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_2");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
         k3po.finish();
     }
 
@@ -478,6 +503,39 @@ public class CacheFetchIT
     public void shouldReceiveMessagesWithKeyOrHeaderAndHeaderFilter() throws Exception
     {
         partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_2");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache/controller",
+        "${client}/filter.age.live/client",
+        "${server}/filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithLiveAgeFilter() throws Exception
+    {
+        partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_2");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache/controller",
+        "${client}/filter.age.historical/client",
+        "${server}/filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithHistoricalAgeFilter() throws Exception
+    {
+        partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_2");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
         k3po.finish();
     }
 

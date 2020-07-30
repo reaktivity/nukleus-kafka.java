@@ -138,11 +138,45 @@ public class CacheMergedIT
     @Test
     @Specification({
         "${route}/cache.merged/controller",
+        "${client}/merged.fetch.filter.age.live/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedMessagesWithLiveAgeFilter() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("FILTERED_MESSAGE_B2");
+        k3po.notifyBarrier("SEND_MESSAGE_A3");
+        k3po.notifyBarrier("SEND_MESSAGE_B3");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
+        "${client}/merged.fetch.filter.age.historical/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedMessagesWithHistoricalAgeFilter() throws Exception
+    {
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_B2");
+        k3po.notifyBarrier("SEND_MESSAGE_A3");
+        k3po.notifyBarrier("SEND_MESSAGE_B3");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
         "${client}/merged.fetch.filter.none/client",
         "${server}/unmerged.fetch.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldFetchMergedMessagesWithNoFilter() throws Exception
     {
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_B2");
+        k3po.notifyBarrier("SEND_MESSAGE_A3");
+        k3po.notifyBarrier("SEND_MESSAGE_B3");
         k3po.finish();
     }
 
@@ -183,6 +217,28 @@ public class CacheMergedIT
         "${server}/unmerged.fetch.partition.leader.aborted/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldFetchMergedPartitionLeaderAborted() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
+        "${client}/merged.fetch.partition.offsets.earliest/client",
+        "${server}/unmerged.fetch.partition.offsets.earliest/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedPartitionOffsetsEarliest() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
+        "${client}/merged.fetch.partition.offsets.earliest.overflow/client",
+        "${server}/unmerged.fetch.partition.offsets.earliest/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedPartitionOffsetsEarliestOverflow() throws Exception
     {
         k3po.finish();
     }

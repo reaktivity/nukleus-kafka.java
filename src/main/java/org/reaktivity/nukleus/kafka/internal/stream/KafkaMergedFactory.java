@@ -45,6 +45,8 @@ import org.reaktivity.nukleus.kafka.internal.budget.MergedBudgetCreditor;
 import org.reaktivity.nukleus.kafka.internal.types.Array32FW;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaAge;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaAgeFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaConfigFW;
@@ -296,6 +298,9 @@ public final class KafkaMergedFactory implements StreamFactory
         case KafkaConditionFW.KIND_HEADER:
             mergedCondition = asMergedCondition(condition.header());
             break;
+        case KafkaConditionFW.KIND_AGE:
+            mergedCondition = asMergedCondition(condition.age());
+            break;
         }
 
         return mergedCondition;
@@ -334,6 +339,14 @@ public final class KafkaMergedFactory implements StreamFactory
         }
 
         return new KafkaMergedCondition.Header(nameBuffer, valueBuffer);
+    }
+
+    private static KafkaMergedCondition asMergedCondition(
+        KafkaAgeFW ageFW)
+    {
+        final KafkaAge age = ageFW.get();
+
+        return new KafkaMergedCondition.Age(age);
     }
 
     private static DirectBuffer copyBuffer(
@@ -482,6 +495,30 @@ public final class KafkaMergedFactory implements StreamFactory
                 {
                     header.valueLen(value.capacity()).value(value, 0, value.capacity());
                 }
+            }
+        }
+
+        private static final class Age extends KafkaMergedCondition
+        {
+            private final KafkaAge age;
+
+            private Age(
+                KafkaAge age)
+            {
+                this.age = age;
+            }
+
+            @Override
+            protected void set(
+                KafkaConditionFW.Builder condition)
+            {
+                condition.age(this::set);
+            }
+
+            private void set(
+                KafkaAgeFW.Builder age)
+            {
+                age.set(this.age);
             }
         }
 
@@ -985,20 +1022,24 @@ public final class KafkaMergedFactory implements StreamFactory
 
                 final KafkaFetchDataExFW kafkaFetchDataEx = kafkaDataEx.fetch();
                 final KafkaOffsetFW partition = kafkaFetchDataEx.partition();
+                final int partitionId = partition.partitionId();
+                final long partitionOffset = partition.partitionOffset();
+                final long latestOffset = partition.latestOffset();
                 final int deferred = kafkaFetchDataEx.deferred();
                 final long timestamp = kafkaFetchDataEx.timestamp();
                 final KafkaKeyFW key = kafkaFetchDataEx.key();
                 final ArrayFW<KafkaHeaderFW> headers = kafkaFetchDataEx.headers();
                 final KafkaDeltaFW delta = kafkaFetchDataEx.delta();
 
-                nextOffsetsById.put(partition.partitionId(), partition.partitionOffset() + 1);
+                nextOffsetsById.put(partitionId, partitionOffset + 1);
 
                 newKafkaDataEx = kafkaDataExRW.wrap(extBuffer, 0, extBuffer.capacity())
                      .typeId(kafkaTypeId)
                      .merged(f -> f.deferred(deferred)
                                    .timestamp(timestamp)
-                                   .partition(p -> p.partitionId(partition.partitionId())
-                                                    .partitionOffset(partition.partitionOffset()))
+                                   .partition(p -> p.partitionId(partitionId)
+                                                    .partitionOffset(partitionOffset)
+                                                    .latestOffset(latestOffset))
                                    .progress(ps -> nextOffsetsById.longForEach((p, o) -> ps.item(i -> i.partitionId((int) p)
                                                                                                        .partitionOffset(o))))
                                    .key(k -> k.length(key.length())
@@ -1191,6 +1232,13 @@ public final class KafkaMergedFactory implements StreamFactory
                     doFetchPartitionIfNecessary(traceId, partitionId);
                 }
                 assert fetchStreams.size() >= leadersByPartitionId.size();
+
+                int offsetCount = nextOffsetsById.size();
+                for (int partitionId = partitionCount; partitionId < offsetCount; partitionId++)
+                {
+                    nextOffsetsById.remove(partitionId);
+                }
+                assert nextOffsetsById.size() <= leadersByPartitionId.size();
             }
         }
 
