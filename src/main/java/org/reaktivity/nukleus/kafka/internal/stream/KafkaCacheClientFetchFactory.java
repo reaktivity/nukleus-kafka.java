@@ -721,6 +721,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private long replyBudgetId;
         private int replyBudget;
         private int replyPadding;
+        private int replyMinimum;
 
         private long partitionOffset;
         private int messageOffset;
@@ -976,7 +977,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final int remaining = value != null ? value.sizeof() - messageOffset : 0;
             final int lengthMin = Math.min(remaining, 1024);
             final int reservedMax = Math.min(remaining + replyPadding, replyBudget);
-            final int reservedMin = Math.min(lengthMin + replyPadding, reservedMax);
+            final int reservedMin = Math.max(Math.min(lengthMin + replyPadding, reservedMax), replyMinimum);
             final long latestOffset = group.latestOffset;
 
             assert partitionOffset >= this.partitionOffset : String.format("%d >= %d", partitionOffset, this.partitionOffset);
@@ -1225,6 +1226,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final long budgetId = window.budgetId();
             final int credit = window.credit();
             final int padding = window.padding();
+            final int minimum = window.minimum();
 
             assert replyBudgetId == 0L || replyBudgetId == budgetId :
                 String.format("%d == 0 || %d == %d)", replyBudgetId, replyBudgetId, budgetId);
@@ -1232,6 +1234,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             replyBudgetId = budgetId;
             replyBudget += credit;
             replyPadding = padding;
+            replyMinimum = minimum;
 
             if (!KafkaState.replyOpened(state))
             {
