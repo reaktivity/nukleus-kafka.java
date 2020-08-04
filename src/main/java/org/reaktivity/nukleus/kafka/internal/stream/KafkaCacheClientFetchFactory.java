@@ -976,7 +976,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final OctetsFW value = nextEntry.value();
             final int remaining = value != null ? value.sizeof() - messageOffset : 0;
             final int lengthMin = Math.min(remaining, 1024);
-            final int reservedMax = Math.min(remaining + replyPadding, replyBudget);
+            final int reservedMax = Math.max(Math.min(remaining + replyPadding, replyBudget), replyMinimum);
             final int reservedMin = Math.max(Math.min(lengthMin + replyPadding, reservedMax), replyMinimum);
             final long latestOffset = group.latestOffset;
 
@@ -990,7 +990,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 boolean claimed = false;
                 if (replyDebitorIndex != NO_DEBITOR_INDEX)
                 {
-                    final int lengthMax = reservedMax - replyPadding;
+                    final int lengthMax = Math.min(reservedMax - replyPadding, remaining);
                     final int deferredMax = remaining - lengthMax;
                     reserved = replyDebitor.claim(traceId, replyDebitorIndex, replyId, reservedMin, reservedMax, deferredMax);
                     claimed = reserved > 0;
@@ -1004,7 +1004,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     break flush;
                 }
 
-                final int length = reserved - replyPadding;
+                final int length = Math.min(reserved - replyPadding, remaining);
                 assert length >= 0 : String.format("%d >= 0", length);
 
                 final int deferred = remaining - length;
