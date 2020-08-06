@@ -721,6 +721,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private long replyBudgetId;
         private int replyBudget;
         private int replyPadding;
+        private int replyMinimum;
 
         private long partitionOffset;
         private int messageOffset;
@@ -975,8 +976,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final OctetsFW value = nextEntry.value();
             final int remaining = value != null ? value.sizeof() - messageOffset : 0;
             final int lengthMin = Math.min(remaining, 1024);
-            final int reservedMax = Math.min(remaining + replyPadding, replyBudget);
-            final int reservedMin = Math.min(lengthMin + replyPadding, reservedMax);
+            final int reservedMax = Math.max(Math.min(remaining + replyPadding, replyBudget), replyMinimum);
+            final int reservedMin = Math.max(Math.min(lengthMin + replyPadding, reservedMax), replyMinimum);
             final long latestOffset = group.latestOffset;
 
             assert partitionOffset >= this.partitionOffset : String.format("%d >= %d", partitionOffset, this.partitionOffset);
@@ -989,7 +990,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 boolean claimed = false;
                 if (replyDebitorIndex != NO_DEBITOR_INDEX)
                 {
-                    final int lengthMax = reservedMax - replyPadding;
+                    final int lengthMax = Math.min(reservedMax - replyPadding, remaining);
                     final int deferredMax = remaining - lengthMax;
                     reserved = replyDebitor.claim(traceId, replyDebitorIndex, replyId, reservedMin, reservedMax, deferredMax);
                     claimed = reserved > 0;
@@ -1003,7 +1004,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     break flush;
                 }
 
-                final int length = reserved - replyPadding;
+                final int length = Math.min(reserved - replyPadding, remaining);
                 assert length >= 0 : String.format("%d >= 0", length);
 
                 final int deferred = remaining - length;
@@ -1225,6 +1226,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final long budgetId = window.budgetId();
             final int credit = window.credit();
             final int padding = window.padding();
+            final int minimum = window.minimum();
 
             assert replyBudgetId == 0L || replyBudgetId == budgetId :
                 String.format("%d == 0 || %d == %d)", replyBudgetId, replyBudgetId, budgetId);
@@ -1232,6 +1234,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             replyBudgetId = budgetId;
             replyBudget += credit;
             replyPadding = padding;
+            replyMinimum = minimum;
 
             if (!KafkaState.replyOpened(state))
             {
