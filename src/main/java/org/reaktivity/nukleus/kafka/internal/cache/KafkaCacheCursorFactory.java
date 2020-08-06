@@ -83,7 +83,7 @@ public final class KafkaCacheCursorFactory
 
         private Node segmentNode;
         private KafkaCacheSegment segment;
-        private long offset;
+        public long offset;
         private long latestOffset;
         private long cursor;
 
@@ -266,7 +266,7 @@ public final class KafkaCacheCursorFactory
         public void advance(
             long offset)
         {
-            assert offset > this.offset : String.format("%d > %d", offset, this.offset);
+            assert offset > this.offset : String.format("%d > %d %s", offset, this.offset, segment);
             this.offset = offset;
             this.cursor = nextIndex(nextValue(cursor));
 
