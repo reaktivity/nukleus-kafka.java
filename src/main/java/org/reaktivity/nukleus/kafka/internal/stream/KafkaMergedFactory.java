@@ -900,8 +900,13 @@ public final class KafkaMergedFactory implements StreamFactory
             {
                 this.capabilities = newCapabilities;
 
-                // TODO: disable FETCH if now PRODUCE_ONLY
-                doFetchPartitionsIfNecessary(traceId);
+                if (hasFetchCapability(newCapabilities))
+                {
+                    filters.clear();
+                    filters.addAll(asMergedFilters(kafkaMergedFlushEx.filters()));
+                    doFetchPartitionsIfNecessary(traceId);
+                }
+
                 doProducePartitionsIfNecessary(traceId);
             }
         }
