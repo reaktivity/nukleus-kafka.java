@@ -51,6 +51,7 @@ import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.Node;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopic;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaAge;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
@@ -243,6 +244,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
 
             final KafkaFilterCondition condition = cursorFactory.asCondition(filters);
+            final KafkaAge age = filters.anyMatch(a -> a.conditions().anyMatch(c -> c.age().get() != KafkaAge.HISTORICAL)) ?
+                KafkaAge.LIVE : KafkaAge.HISTORICAL;
             final int leaderId = cacheRoute.leadersByPartitionId.get(partitionId);
 
             newStream = new KafkaCacheClientFetchStream(
@@ -254,6 +257,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     authorization,
                     partitionOffset,
                     condition,
+                    age,
                     deltaType)::onClientMessage;
         }
 
@@ -712,6 +716,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private final long authorization;
         private final KafkaCacheCursor cursor;
         private final KafkaDeltaType deltaType;
+        private final KafkaAge maximumAge;
 
         private int state;
 
@@ -737,6 +742,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long authorization,
             long initialOffset,
             KafkaFilterCondition condition,
+            KafkaAge maximumAge,
             KafkaDeltaType deltaType)
         {
             this.group = group;
@@ -748,6 +754,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.authorization = authorization;
             this.initialOffset = initialOffset;
             this.cursor = cursorFactory.newCursor(condition, deltaType);
+            this.maximumAge = maximumAge;
             this.deltaType = deltaType;
         }
 
@@ -955,6 +962,12 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 if (replyBudget == replyBudgetSnapshot)
                 {
                     break;
+                }
+
+                if (maximumAge == KafkaAge.HISTORICAL && cursor.offset > initialGroupLatestOffset)
+                {
+                    doClientReplyEndIfNecessary(traceId);
+                    group.onClientFanoutMemberClosed(traceId, this);
                 }
             }
         }

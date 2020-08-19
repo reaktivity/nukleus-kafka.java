@@ -239,6 +239,8 @@ public final class KafkaMergedFactory implements StreamFactory
                 }
             });
             List<KafkaMergedFilter> mergedFilters = asMergedFilters(filters);
+            final KafkaAge age = filters.anyMatch(a -> a.conditions().anyMatch(c -> c.age().get() != KafkaAge.HISTORICAL)) ?
+                KafkaAge.LIVE : KafkaAge.HISTORICAL;
 
             newStream = new KafkaMergedStream(
                     sender,
@@ -252,6 +254,7 @@ public final class KafkaMergedFactory implements StreamFactory
                     initialOffsetsById,
                     defaultOffset,
                     mergedFilters,
+                    age,
                     deltaType)::onMergedMessage;
         }
 
@@ -684,6 +687,7 @@ public final class KafkaMergedFactory implements StreamFactory
         private final Long2LongHashMap nextOffsetsById;
         private final long defaultOffset;
         private final List<KafkaMergedFilter> filters;
+        private final KafkaAge maximumAge;
         private final KafkaDeltaType deltaType;
 
         private int state;
@@ -714,6 +718,7 @@ public final class KafkaMergedFactory implements StreamFactory
             Long2LongHashMap initialOffsetsById,
             long defaultOffset,
             List<KafkaMergedFilter> filters,
+            KafkaAge maximumAge,
             KafkaDeltaType deltaType)
         {
             this.sender = sender;
@@ -733,6 +738,7 @@ public final class KafkaMergedFactory implements StreamFactory
             this.nextOffsetsById = initialOffsetsById;
             this.defaultOffset = defaultOffset;
             this.filters = filters;
+            this.maximumAge = maximumAge;
             this.deltaType = deltaType;
         }
 
@@ -1316,7 +1322,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 final KafkaUnmergedFetchStream leader = findFetchPartitionLeader(partitionId);
                 assert leader != null;
 
-                if (nextOffsetsById.containsKey(partitionId))
+                if (nextOffsetsById.containsKey(partitionId) && maximumAge != KafkaAge.HISTORICAL)
                 {
                     final long partitionOffset = nextFetchPartitionOffset(partitionId);
                     leader.doFetchInitialBegin(traceId, partitionOffset);
