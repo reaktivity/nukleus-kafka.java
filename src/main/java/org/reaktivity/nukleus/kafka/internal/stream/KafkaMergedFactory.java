@@ -241,7 +241,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 }
             });
             List<KafkaMergedFilter> mergedFilters = asMergedFilters(filters);
-            final KafkaAge maximumAge =
+            final KafkaAge maximumAge = filters.isEmpty() ||
                 filters.anyMatch(a -> !a.conditions().anyMatch(c -> c.kind() == KIND_AGE && c.age().get() == HISTORICAL)) ?
                 KafkaAge.LIVE : HISTORICAL;
 
@@ -2022,8 +2022,7 @@ public final class KafkaMergedFactory implements StreamFactory
         private void doFetchInitialAbortIfNecessary(
             long traceId)
         {
-            if (!KafkaState.initialClosed(state) &&
-                !(merged.maximumAge == HISTORICAL && !KafkaState.replyClosed(state)))
+            if (!KafkaState.initialClosed(state))
             {
                 doFetchInitialAbort(traceId);
             }
@@ -2151,10 +2150,18 @@ public final class KafkaMergedFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
-            merged.doMergedReplyEndIfNecessary(traceId);
+            if (merged.maximumAge != HISTORICAL)
+            {
+                merged.doMergedReplyEndIfNecessary(traceId);
+            }
             doFetchInitialEndIfNecessary(traceId);
 
             merged.onFetchPartitionLeaderError(traceId, partitionId, ERROR_NOT_LEADER_FOR_PARTITION);
+
+            if (merged.maximumAge == HISTORICAL && merged.fetchStreams.isEmpty())
+            {
+                merged.doMergedReplyEndIfNecessary(traceId);
+            }
         }
 
         private void onFetchReplyAbort(

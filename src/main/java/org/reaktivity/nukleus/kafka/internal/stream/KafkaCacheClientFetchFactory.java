@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_BUDGET_ID;
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaAge.HISTORICAL;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaAge.LIVE;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW.KIND_AGE;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DEFAULT_OFFSET;
@@ -246,9 +247,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
 
             final KafkaFilterCondition condition = cursorFactory.asCondition(filters);
-            final KafkaAge maximumAge =
+            final KafkaAge maximumAge = filters.isEmpty() ||
                 filters.anyMatch(a -> !a.conditions().anyMatch(c -> c.kind() == KIND_AGE && c.age().get() == HISTORICAL)) ?
-                    KafkaAge.LIVE : HISTORICAL;
+                    LIVE : HISTORICAL;
             final int leaderId = cacheRoute.leadersByPartitionId.get(partitionId);
 
             newStream = new KafkaCacheClientFetchStream(
@@ -934,11 +935,12 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void doClientReplyDataIfNecessary(
             long traceId)
         {
-            assert !KafkaState.replyClosing(state) :
+            assert !KafkaState.closing(state) :
                 String.format("!replyClosing(%08x) [%016x] [%016x] [%016x] %s",
                         state, replyBudgetId, replyId, replyDebitorIndex, replyDebitor);
 
             while (KafkaState.replyOpened(state) &&
+                !KafkaState.replyClosing(state) &&
                 replyBudget >= replyPadding &&
                 cursor.offset <= group.partitionOffset)
             {
@@ -970,7 +972,6 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 if (maximumAge == HISTORICAL && cursor.offset > initialGroupLatestOffset)
                 {
                     doClientReplyEndIfNecessary(traceId);
-                    group.onClientFanoutMemberClosed(traceId, this);
                     break;
                 }
             }
