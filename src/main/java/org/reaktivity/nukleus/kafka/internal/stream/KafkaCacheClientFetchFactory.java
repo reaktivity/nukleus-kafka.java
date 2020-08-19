@@ -244,7 +244,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
 
             final KafkaFilterCondition condition = cursorFactory.asCondition(filters);
-            final KafkaAge age = filters.anyMatch(a -> a.conditions().anyMatch(c -> c.age().get() != KafkaAge.HISTORICAL)) ?
+            final KafkaAge maximumAge = filters.anyMatch(a -> a.conditions().anyMatch(c -> c.age().get() != KafkaAge.HISTORICAL)) ?
                 KafkaAge.LIVE : KafkaAge.HISTORICAL;
             final int leaderId = cacheRoute.leadersByPartitionId.get(partitionId);
 
@@ -257,7 +257,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     authorization,
                     partitionOffset,
                     condition,
-                    age,
+                    maximumAge,
                     deltaType)::onClientMessage;
         }
 

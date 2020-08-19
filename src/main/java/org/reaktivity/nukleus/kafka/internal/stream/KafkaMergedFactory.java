@@ -239,7 +239,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 }
             });
             List<KafkaMergedFilter> mergedFilters = asMergedFilters(filters);
-            final KafkaAge age = filters.anyMatch(a -> a.conditions().anyMatch(c -> c.age().get() != KafkaAge.HISTORICAL)) ?
+            final KafkaAge maximumAge = filters.anyMatch(a -> a.conditions().anyMatch(c -> c.age().get() != KafkaAge.HISTORICAL)) ?
                 KafkaAge.LIVE : KafkaAge.HISTORICAL;
 
             newStream = new KafkaMergedStream(
@@ -254,7 +254,7 @@ public final class KafkaMergedFactory implements StreamFactory
                     initialOffsetsById,
                     defaultOffset,
                     mergedFilters,
-                    age,
+                    maximumAge,
                     deltaType)::onMergedMessage;
         }
 
