@@ -17,6 +17,8 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_BUDGET_ID;
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaAge.HISTORICAL;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW.KIND_AGE;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DEFAULT_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
@@ -244,8 +246,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
 
             final KafkaFilterCondition condition = cursorFactory.asCondition(filters);
-            final KafkaAge maximumAge = filters.anyMatch(a -> a.conditions().anyMatch(c -> c.age().get() != KafkaAge.HISTORICAL)) ?
-                KafkaAge.LIVE : KafkaAge.HISTORICAL;
+            final KafkaAge maximumAge =
+                filters.anyMatch(a -> !a.conditions().anyMatch(c -> c.kind() == KIND_AGE && c.age().get() == HISTORICAL)) ?
+                    KafkaAge.LIVE : HISTORICAL;
             final int leaderId = cacheRoute.leadersByPartitionId.get(partitionId);
 
             newStream = new KafkaCacheClientFetchStream(
@@ -964,7 +967,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     break;
                 }
 
-                if (maximumAge == KafkaAge.HISTORICAL && cursor.offset > initialGroupLatestOffset)
+                if (maximumAge == HISTORICAL && cursor.offset > initialGroupLatestOffset)
                 {
                     doClientReplyEndIfNecessary(traceId);
                     group.onClientFanoutMemberClosed(traceId, this);
