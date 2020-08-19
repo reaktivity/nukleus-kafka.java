@@ -968,6 +968,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 {
                     doClientReplyEndIfNecessary(traceId);
                     group.onClientFanoutMemberClosed(traceId, this);
+                    break;
                 }
             }
         }
