@@ -16,8 +16,10 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaAge.HISTORICAL;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.FETCH_ONLY;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.PRODUCE_ONLY;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW.KIND_AGE;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 import static org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW.Builder.DEFAULT_MINIMUM;
 
@@ -717,6 +719,7 @@ public final class KafkaMergedFactory implements StreamFactory
         private final long defaultOffset;
         private final KafkaDeltaType deltaType;
 
+        private KafkaAge maximumAge;
         private List<KafkaMergedFilter> filters;
 
         private int state;
@@ -827,6 +830,9 @@ public final class KafkaMergedFactory implements StreamFactory
             final KafkaMergedBeginExFW mergedBeginEx = beginEx.merged();
 
             this.filters = asMergedFilters(mergedBeginEx.filters());
+            this.maximumAge = filters.isEmpty() ||
+                filters.anyMatch(a -> !a.conditions().anyMatch(c -> c.kind() == KIND_AGE && c.age().get() == HISTORICAL)) ?
+                KafkaAge.LIVE : HISTORICAL;
 
             describeStream.doDescribeInitialBegin(traceId);
         }
@@ -1364,7 +1370,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 final KafkaUnmergedFetchStream leader = findFetchPartitionLeader(partitionId);
                 assert leader != null;
 
-                if (nextOffsetsById.containsKey(partitionId))
+                if (nextOffsetsById.containsKey(partitionId) && maximumAge != HISTORICAL)
                 {
                     final long partitionOffset = nextFetchPartitionOffset(partitionId);
                     leader.doFetchInitialBegin(traceId, partitionOffset);
@@ -2189,10 +2195,18 @@ public final class KafkaMergedFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
-            merged.doMergedReplyEndIfNecessary(traceId);
+            if (merged.maximumAge != HISTORICAL)
+            {
+                merged.doMergedReplyEndIfNecessary(traceId);
+            }
             doFetchInitialEndIfNecessary(traceId);
 
             merged.onFetchPartitionLeaderError(traceId, partitionId, ERROR_NOT_LEADER_FOR_PARTITION);
+
+            if (merged.maximumAge == HISTORICAL && merged.fetchStreams.isEmpty())
+            {
+                merged.doMergedReplyEndIfNecessary(traceId);
+            }
         }
 
         private void onFetchReplyAbort(
