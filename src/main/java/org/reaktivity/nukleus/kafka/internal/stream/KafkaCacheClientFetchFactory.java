@@ -17,6 +17,9 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_BUDGET_ID;
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaAge.HISTORICAL;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaAge.LIVE;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW.KIND_AGE;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DEFAULT_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
@@ -51,6 +54,7 @@ import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.Node;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopic;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaAge;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
@@ -243,6 +247,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
 
             final KafkaFilterCondition condition = cursorFactory.asCondition(filters);
+            final KafkaAge maximumAge = filters.isEmpty() ||
+                filters.anyMatch(a -> !a.conditions().anyMatch(c -> c.kind() == KIND_AGE && c.age().get() == HISTORICAL)) ?
+                    LIVE : HISTORICAL;
             final int leaderId = cacheRoute.leadersByPartitionId.get(partitionId);
 
             newStream = new KafkaCacheClientFetchStream(
@@ -254,6 +261,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     authorization,
                     partitionOffset,
                     condition,
+                    maximumAge,
                     deltaType)::onClientMessage;
         }
 
@@ -712,6 +720,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private final long authorization;
         private final KafkaCacheCursor cursor;
         private final KafkaDeltaType deltaType;
+        private final KafkaAge maximumAge;
 
         private int state;
 
@@ -737,6 +746,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long authorization,
             long initialOffset,
             KafkaFilterCondition condition,
+            KafkaAge maximumAge,
             KafkaDeltaType deltaType)
         {
             this.group = group;
@@ -748,6 +758,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.authorization = authorization;
             this.initialOffset = initialOffset;
             this.cursor = cursorFactory.newCursor(condition, deltaType);
+            this.maximumAge = maximumAge;
             this.deltaType = deltaType;
         }
 
@@ -924,11 +935,12 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void doClientReplyDataIfNecessary(
             long traceId)
         {
-            assert !KafkaState.replyClosing(state) :
+            assert !KafkaState.closing(state) :
                 String.format("!replyClosing(%08x) [%016x] [%016x] [%016x] %s",
                         state, replyBudgetId, replyId, replyDebitorIndex, replyDebitor);
 
             while (KafkaState.replyOpened(state) &&
+                !KafkaState.replyClosing(state) &&
                 replyBudget >= replyPadding &&
                 cursor.offset <= group.partitionOffset)
             {
@@ -954,6 +966,12 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
                 if (replyBudget == replyBudgetSnapshot)
                 {
+                    break;
+                }
+
+                if (maximumAge == HISTORICAL && cursor.offset > initialGroupLatestOffset)
+                {
+                    doClientReplyEndIfNecessary(traceId);
                     break;
                 }
             }

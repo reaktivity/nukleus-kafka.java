@@ -16,8 +16,10 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaAge.HISTORICAL;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.FETCH_ONLY;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.PRODUCE_ONLY;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW.KIND_AGE;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 import static org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW.Builder.DEFAULT_MINIMUM;
 
@@ -239,6 +241,9 @@ public final class KafkaMergedFactory implements StreamFactory
                 }
             });
             List<KafkaMergedFilter> mergedFilters = asMergedFilters(filters);
+            final KafkaAge maximumAge = filters.isEmpty() ||
+                filters.anyMatch(a -> !a.conditions().anyMatch(c -> c.kind() == KIND_AGE && c.age().get() == HISTORICAL)) ?
+                KafkaAge.LIVE : HISTORICAL;
 
             newStream = new KafkaMergedStream(
                     sender,
@@ -252,6 +257,7 @@ public final class KafkaMergedFactory implements StreamFactory
                     initialOffsetsById,
                     defaultOffset,
                     mergedFilters,
+                    maximumAge,
                     deltaType)::onMergedMessage;
         }
 
@@ -299,7 +305,7 @@ public final class KafkaMergedFactory implements StreamFactory
         case KafkaConditionFW.KIND_HEADER:
             mergedCondition = asMergedCondition(condition.header());
             break;
-        case KafkaConditionFW.KIND_AGE:
+        case KIND_AGE:
             mergedCondition = asMergedCondition(condition.age());
             break;
         }
@@ -684,6 +690,7 @@ public final class KafkaMergedFactory implements StreamFactory
         private final Long2LongHashMap nextOffsetsById;
         private final long defaultOffset;
         private final List<KafkaMergedFilter> filters;
+        private final KafkaAge maximumAge;
         private final KafkaDeltaType deltaType;
 
         private int state;
@@ -714,6 +721,7 @@ public final class KafkaMergedFactory implements StreamFactory
             Long2LongHashMap initialOffsetsById,
             long defaultOffset,
             List<KafkaMergedFilter> filters,
+            KafkaAge maximumAge,
             KafkaDeltaType deltaType)
         {
             this.sender = sender;
@@ -733,6 +741,7 @@ public final class KafkaMergedFactory implements StreamFactory
             this.nextOffsetsById = initialOffsetsById;
             this.defaultOffset = defaultOffset;
             this.filters = filters;
+            this.maximumAge = maximumAge;
             this.deltaType = deltaType;
         }
 
@@ -1316,7 +1325,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 final KafkaUnmergedFetchStream leader = findFetchPartitionLeader(partitionId);
                 assert leader != null;
 
-                if (nextOffsetsById.containsKey(partitionId))
+                if (nextOffsetsById.containsKey(partitionId) && maximumAge != HISTORICAL)
                 {
                     final long partitionOffset = nextFetchPartitionOffset(partitionId);
                     leader.doFetchInitialBegin(traceId, partitionOffset);
@@ -2141,10 +2150,18 @@ public final class KafkaMergedFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
-            merged.doMergedReplyEndIfNecessary(traceId);
+            if (merged.maximumAge != HISTORICAL)
+            {
+                merged.doMergedReplyEndIfNecessary(traceId);
+            }
             doFetchInitialEndIfNecessary(traceId);
 
             merged.onFetchPartitionLeaderError(traceId, partitionId, ERROR_NOT_LEADER_FOR_PARTITION);
+
+            if (merged.maximumAge == HISTORICAL && merged.fetchStreams.isEmpty())
+            {
+                merged.doMergedReplyEndIfNecessary(traceId);
+            }
         }
 
         private void onFetchReplyAbort(
