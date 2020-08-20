@@ -828,11 +828,13 @@ public final class KafkaMergedFactory implements StreamFactory
 
             final KafkaBeginExFW beginEx = kafkaBeginExRO.wrap(buffer, offset, limit);
             final KafkaMergedBeginExFW mergedBeginEx = beginEx.merged();
+            final Array32FW<KafkaFilterFW> filters = mergedBeginEx.filters();
 
-            this.filters = asMergedFilters(mergedBeginEx.filters());
             this.maximumAge = filters.isEmpty() ||
                 filters.anyMatch(a -> !a.conditions().anyMatch(c -> c.kind() == KIND_AGE && c.age().get() == HISTORICAL)) ?
                 KafkaAge.LIVE : HISTORICAL;
+
+            this.filters = asMergedFilters(mergedBeginEx.filters());
 
             describeStream.doDescribeInitialBegin(traceId);
         }
@@ -950,7 +952,12 @@ public final class KafkaMergedFactory implements StreamFactory
             if (capabilities != newCapabilities)
             {
                 this.capabilities = newCapabilities;
-                final List<KafkaMergedFilter> newFilters = asMergedFilters(kafkaMergedFlushEx.filters());
+                final Array32FW<KafkaFilterFW> filters = kafkaMergedFlushEx.filters();
+                final List<KafkaMergedFilter> newFilters = asMergedFilters(filters);
+
+                this.maximumAge = filters.isEmpty() ||
+                    filters.anyMatch(a -> !a.conditions().anyMatch(c -> c.kind() == KIND_AGE && c.age().get() == HISTORICAL)) ?
+                    KafkaAge.LIVE : HISTORICAL;
 
                 if (hasFetchCapability(capabilities) && hasFetchCapability(newCapabilities))
                 {
