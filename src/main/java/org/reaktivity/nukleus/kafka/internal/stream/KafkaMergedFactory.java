@@ -760,7 +760,7 @@ public final class KafkaMergedFactory implements StreamFactory
             this.fetchStreams = new ArrayList<>();
             this.produceStreams = new ArrayList<>();
             this.leadersByPartitionId = new Int2IntHashMap(-1);
-            this.latestOffsetByPartitionId = new Long2LongHashMap(-1);
+            this.latestOffsetByPartitionId = new Long2LongHashMap(-3);
             this.nextOffsetsById = initialOffsetsById;
             this.defaultOffset = defaultOffset;
             this.filters = filters;
