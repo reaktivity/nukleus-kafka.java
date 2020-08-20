@@ -154,14 +154,10 @@ public class CacheMergedIT
     @Specification({
         "${route}/cache.merged/controller",
         "${client}/merged.fetch.filter.age.historical/client",
-        "${server}/unmerged.fetch.filter.none/server"})
+        "${server}/unmerged.fetch.filter.age.historical/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldFetchMergedMessagesWithHistoricalAgeFilter() throws Exception
     {
-        k3po.start();
-        k3po.awaitBarrier("RECEIVED_MESSAGE_B2");
-        k3po.notifyBarrier("SEND_MESSAGE_A3");
-        k3po.notifyBarrier("SEND_MESSAGE_B3");
         k3po.finish();
     }
 
