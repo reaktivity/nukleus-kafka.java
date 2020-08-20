@@ -540,7 +540,7 @@ public final class KafkaMergedFactory implements StreamFactory
         long traceId,
         long authorization,
         long affinity,
-        Flyweight.Builder.Visitor beginEx)
+        Flyweight.Builder.Visitor extension)
     {
         final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
@@ -548,7 +548,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 .traceId(traceId)
                 .authorization(authorization)
                 .affinity(affinity)
-                .extension(b -> b.set(beginEx))
+                .extension(b -> b.set(extension))
                 .build();
 
         receiver.accept(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
@@ -1066,11 +1066,7 @@ public final class KafkaMergedFactory implements StreamFactory
             {
                 builder.capabilities(c -> c.set(FETCH_ONLY)).topic(topic);
                 latestOffsetByPartitionId.longForEach(
-                    (k, v) -> builder.partitionsItem(i ->
-                    {
-                        i.partitionId((int) k);
-                        i.latestOffset(v);
-                    }));
+            (k, v) -> builder.partitionsItem(i -> i.partitionId((int) k).partitionOffset(0L).latestOffset(v)));
             };
         }
 
@@ -1360,7 +1356,7 @@ public final class KafkaMergedFactory implements StreamFactory
             long latestOffset)
         {
             nextOffsetsById.putIfAbsent(partitionId, defaultOffset);
-            latestOffsetByPartitionId.putIfAbsent(partitionId, latestOffset);
+            latestOffsetByPartitionId.put(partitionId, latestOffset);
 
             if (nextOffsetsById.size() == fetchStreams.size())
             {
