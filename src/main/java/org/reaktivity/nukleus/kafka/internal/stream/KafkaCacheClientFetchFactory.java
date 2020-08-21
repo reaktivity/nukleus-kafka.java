@@ -949,12 +949,15 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
                 if (nextEntry == null || nextEntry.offset$() > group.latestOffset)
                 {
-                    cursor.advance(group.partitionOffset + 1);
+                    if (maximumAge == HISTORICAL)
+                    {
+                        cursor.advance(group.partitionOffset + 1);
+                    }
                     break;
                 }
 
                 final long descendantOffset = nextEntry.descendant();
-                if (descendantOffset != -1L && descendantOffset <= initialGroupLatestOffset)
+                if (descendantOffset != -1L && descendantOffset <= initialGroupPartitionOffset)
                 {
                     this.messageOffset = 0;
 
@@ -963,6 +966,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 }
 
                 final int replyBudgetSnapshot = replyBudget;
+
                 doClientReplyData(traceId, nextEntry);
 
                 if (replyBudget == replyBudgetSnapshot ||
