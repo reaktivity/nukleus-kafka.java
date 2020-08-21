@@ -91,6 +91,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
     private static final MessageConsumer NO_RECEIVER = (m, b, i, l) -> {};
 
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
+    private static final long NO_LATEST_OFFSET = -1;
 
     private static final long OFFSET_LATEST = KafkaOffsetType.LATEST.value();
     private static final long OFFSET_EARLIEST = KafkaOffsetType.EARLIEST.value();
@@ -948,6 +949,10 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
                 if (nextEntry == null || nextEntry.offset$() > group.latestOffset)
                 {
+                    if (maximumAge == HISTORICAL)
+                    {
+                        cursor.advance(group.partitionOffset + 1);
+                    }
                     break;
                 }
 
@@ -964,16 +969,16 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
                 doClientReplyData(traceId, nextEntry);
 
-                if (replyBudget == replyBudgetSnapshot)
+                if (replyBudget == replyBudgetSnapshot ||
+                    (maximumAge == HISTORICAL && cursor.offset > initialGroupLatestOffset))
                 {
                     break;
                 }
+            }
 
-                if (maximumAge == HISTORICAL && cursor.offset > initialGroupLatestOffset)
-                {
-                    doClientReplyEndIfNecessary(traceId);
-                    break;
-                }
+            if (maximumAge == HISTORICAL && cursor.offset > initialGroupLatestOffset)
+            {
+                doClientReplyEndIfNecessary(traceId);
             }
         }
 
