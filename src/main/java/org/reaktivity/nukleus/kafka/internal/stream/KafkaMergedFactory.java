@@ -567,7 +567,7 @@ public final class KafkaMergedFactory implements StreamFactory
         long traceId,
         long authorization,
         long affinity,
-        Consumer<OctetsFW.Builder> extension)
+        Flyweight.Builder.Visitor extension)
     {
         final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
@@ -575,8 +575,29 @@ public final class KafkaMergedFactory implements StreamFactory
                 .traceId(traceId)
                 .authorization(authorization)
                 .affinity(affinity)
-                .extension(extension)
+                .extension(b -> b.set(extension))
                 .build();
+
+        receiver.accept(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
+    }
+
+    private void doBegin(
+        MessageConsumer receiver,
+        long routeId,
+        long streamId,
+        long traceId,
+        long authorization,
+        long affinity,
+        Consumer<OctetsFW.Builder> extension)
+    {
+        final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                                     .routeId(routeId)
+                                     .streamId(streamId)
+                                     .traceId(traceId)
+                                     .authorization(authorization)
+                                     .affinity(affinity)
+                                     .extension(extension)
+                                     .build();
 
         receiver.accept(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
     }
@@ -715,6 +736,7 @@ public final class KafkaMergedFactory implements StreamFactory
         private final List<KafkaUnmergedFetchStream> fetchStreams;
         private final List<KafkaUnmergedProduceStream> produceStreams;
         private final Int2IntHashMap leadersByPartitionId;
+        private final Long2LongHashMap latestOffsetByPartitionId;
         private final Long2LongHashMap nextOffsetsById;
         private final long defaultOffset;
         private final KafkaDeltaType deltaType;
@@ -765,6 +787,7 @@ public final class KafkaMergedFactory implements StreamFactory
             this.fetchStreams = new ArrayList<>();
             this.produceStreams = new ArrayList<>();
             this.leadersByPartitionId = new Int2IntHashMap(-1);
+            this.latestOffsetByPartitionId = new Long2LongHashMap(-3);
             this.nextOffsetsById = initialOffsetsById;
             this.defaultOffset = defaultOffset;
             this.deltaType = deltaType;
@@ -1066,8 +1089,36 @@ public final class KafkaMergedFactory implements StreamFactory
                 state = KafkaState.openedReply(state);
             }
 
-            doBegin(sender, routeId, replyId, traceId, authorization, affinity, EMPTY_EXTENSION);
+            if (capabilities == FETCH_ONLY)
+            {
+                doBegin(sender, routeId, replyId, traceId, authorization, affinity, httpBeginExToKafka());
+            }
+            else
+            {
+                doBegin(sender, routeId, replyId, traceId, authorization, affinity, EMPTY_EXTENSION);
+            }
+
             doUnmergedFetchReplyWindowsIfNecessary(traceId);
+        }
+
+        private Flyweight.Builder.Visitor httpBeginExToKafka()
+        {
+            return (buffer, offset, maxLimit) ->
+                kafkaBeginExRW.wrap(buffer, offset, maxLimit)
+                              .typeId(kafkaTypeId)
+                              .merged(beginExToKafkaMerged())
+                              .build()
+                              .limit() - offset;
+        }
+
+        private Consumer<KafkaMergedBeginExFW.Builder> beginExToKafkaMerged()
+        {
+            return builder ->
+            {
+                builder.capabilities(c -> c.set(FETCH_ONLY)).topic(topic);
+                latestOffsetByPartitionId.longForEach(
+                    (k, v) -> builder.partitionsItem(i -> i.partitionId((int) k).partitionOffset(0L).latestOffset(v)));
+            };
         }
 
         private void doMergedReplyData(
@@ -1352,9 +1403,11 @@ public final class KafkaMergedFactory implements StreamFactory
 
         private void onFetchPartitionLeaderReady(
             long traceId,
-            long partitionId)
+            long partitionId,
+            long latestOffset)
         {
             nextOffsetsById.putIfAbsent(partitionId, defaultOffset);
+            latestOffsetByPartitionId.put(partitionId, latestOffset);
 
             if (nextOffsetsById.size() == fetchStreams.size())
             {
@@ -2164,7 +2217,16 @@ public final class KafkaMergedFactory implements StreamFactory
 
             final long traceId = begin.traceId();
 
-            merged.onFetchPartitionLeaderReady(traceId, partitionId);
+            final OctetsFW extension = begin.extension();
+            final ExtensionFW beginEx = extensionRO.tryWrap(extension.buffer(), extension.offset(), extension.limit());
+            final KafkaBeginExFW kafkaBeginEx = beginEx != null && beginEx.typeId() == kafkaTypeId ?
+                kafkaBeginExRO.tryWrap(extension.buffer(), extension.offset(), extension.limit()) : null;
+
+            assert kafkaBeginEx != null;
+
+            final long latestOffset = kafkaBeginEx.fetch().partition().latestOffset();
+
+            merged.onFetchPartitionLeaderReady(traceId, partitionId, latestOffset);
 
             doFetchReplyWindowIfNecessary(traceId);
         }
