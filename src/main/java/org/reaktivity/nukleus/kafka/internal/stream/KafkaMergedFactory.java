@@ -428,9 +428,21 @@ public final class KafkaMergedFactory implements StreamFactory
         }
 
         @Override
-        public boolean equals(Object obj)
+        public boolean equals(
+            Object obj)
         {
-            return Objects.equals(this, obj);
+            if (this == obj)
+            {
+                return true;
+            }
+
+            if (!(obj instanceof KafkaMergedFilter))
+            {
+                return false;
+            }
+
+            KafkaMergedFilter that = (KafkaMergedFilter) obj;
+            return Objects.equals(this.conditions, that.conditions);
         }
     }
 
@@ -531,6 +543,31 @@ public final class KafkaMergedFactory implements StreamFactory
                     header.valueLen(value.capacity()).value(value, 0, value.capacity());
                 }
             }
+
+            @Override
+            public int hashCode()
+            {
+                return Objects.hash(name, value);
+            }
+
+            @Override
+            public boolean equals(
+                Object o)
+            {
+                if (this == o)
+                {
+                    return true;
+                }
+
+                if (!(o instanceof Header))
+                {
+                    return false;
+                }
+
+                final Header that = (Header) o;
+                return Objects.equals(this.name, that.name) &&
+                        Objects.equals(this.value, that.value);
+            }
         }
 
         private static final class Age extends KafkaMergedCondition
@@ -554,6 +591,30 @@ public final class KafkaMergedFactory implements StreamFactory
                 KafkaAgeFW.Builder age)
             {
                 age.set(this.age);
+            }
+
+            @Override
+            public int hashCode()
+            {
+                return Objects.hash(age);
+            }
+
+            @Override
+            public boolean equals(
+                Object o)
+            {
+                if (this == o)
+                {
+                    return true;
+                }
+
+                if (!(o instanceof Age))
+                {
+                    return false;
+                }
+
+                final Age that = (Age) o;
+                return Objects.equals(this.age, that.age);
             }
         }
 
