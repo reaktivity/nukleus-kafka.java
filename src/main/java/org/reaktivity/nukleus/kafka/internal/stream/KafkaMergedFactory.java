@@ -974,7 +974,6 @@ public final class KafkaMergedFactory implements StreamFactory
 
             if (capabilities != newCapabilities)
             {
-                this.capabilities = newCapabilities;
                 final Array32FW<KafkaFilterFW> filters = kafkaMergedFlushEx.filters();
                 final List<KafkaMergedFilter> newFilters = asMergedFilters(filters);
 
@@ -987,6 +986,7 @@ public final class KafkaMergedFactory implements StreamFactory
                     assert Objects.equals(this.filters, newFilters);
                 }
 
+                this.capabilities = newCapabilities;
                 this.filters = newFilters;
 
                 doFetchPartitionsIfNecessary(traceId);
