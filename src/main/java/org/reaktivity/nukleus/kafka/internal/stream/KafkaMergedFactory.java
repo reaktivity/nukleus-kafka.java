@@ -914,11 +914,8 @@ public final class KafkaMergedFactory implements StreamFactory
             final KafkaMergedBeginExFW mergedBeginEx = beginEx.merged();
             final Array32FW<KafkaFilterFW> filters = mergedBeginEx.filters();
 
-            this.maximumAge = filters.isEmpty() ||
-                filters.anyMatch(a -> !a.conditions().anyMatch(c -> c.kind() == KIND_AGE && c.age().get() == HISTORICAL)) ?
-                KafkaAge.LIVE : HISTORICAL;
-
-            this.filters = asMergedFilters(mergedBeginEx.filters());
+            this.maximumAge = asMaximumAge(filters);
+            this.filters = asMergedFilters(filters);
 
             describeStream.doDescribeInitialBegin(traceId);
         }
@@ -974,6 +971,14 @@ public final class KafkaMergedFactory implements StreamFactory
                     this.producer = null;
                 }
             }
+        }
+
+        private KafkaAge asMaximumAge(
+            Array32FW<KafkaFilterFW> filters)
+        {
+            return filters.isEmpty() ||
+                       filters.anyMatch(a -> !a.conditions().anyMatch(c -> c.kind() == KIND_AGE && c.age().get() == HISTORICAL)) ?
+                       KafkaAge.LIVE : HISTORICAL;
         }
 
         private int nextPartition(
@@ -1038,9 +1043,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 final Array32FW<KafkaFilterFW> filters = kafkaMergedFlushEx.filters();
                 final List<KafkaMergedFilter> newFilters = asMergedFilters(filters);
 
-                this.maximumAge = filters.isEmpty() ||
-                    filters.anyMatch(a -> !a.conditions().anyMatch(c -> c.kind() == KIND_AGE && c.age().get() == HISTORICAL)) ?
-                    KafkaAge.LIVE : HISTORICAL;
+                this.maximumAge = asMaximumAge(filters);
 
                 if (hasFetchCapability(capabilities) && hasFetchCapability(newCapabilities))
                 {
