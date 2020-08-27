@@ -225,7 +225,6 @@ public final class KafkaMergedFactory implements StreamFactory
         {
             final long resolvedId = route.correlationId();
             final ArrayFW<KafkaOffsetFW> partitions = kafkaMergedBeginEx.partitions();
-            final ArrayFW<KafkaFilterFW> filters = kafkaMergedBeginEx.filters();
 
             final KafkaOffsetFW partition = partitions.matchFirst(p -> p.partitionId() == -1L);
             final long defaultOffset = partition != null ? partition.partitionOffset() : KafkaOffsetType.EARLIEST.value();
@@ -240,10 +239,6 @@ public final class KafkaMergedFactory implements StreamFactory
                     initialOffsetsById.put(partitionId, partitionOffset);
                 }
             });
-            List<KafkaMergedFilter> mergedFilters = asMergedFilters(filters);
-            final KafkaAge maximumAge = filters.isEmpty() ||
-                filters.anyMatch(a -> !a.conditions().anyMatch(c -> c.kind() == KIND_AGE && c.age().get() == HISTORICAL)) ?
-                KafkaAge.LIVE : HISTORICAL;
 
             newStream = new KafkaMergedStream(
                     sender,
@@ -256,8 +251,6 @@ public final class KafkaMergedFactory implements StreamFactory
                     capabilities,
                     initialOffsetsById,
                     defaultOffset,
-                    mergedFilters,
-                    maximumAge,
                     deltaType)::onMergedMessage;
         }
 
@@ -305,7 +298,7 @@ public final class KafkaMergedFactory implements StreamFactory
         case KafkaConditionFW.KIND_HEADER:
             mergedCondition = asMergedCondition(condition.header());
             break;
-        case KIND_AGE:
+        case KafkaConditionFW.KIND_AGE:
             mergedCondition = asMergedCondition(condition.age());
             break;
         }
@@ -427,6 +420,30 @@ public final class KafkaMergedFactory implements StreamFactory
         {
             this.conditions = conditions;
         }
+
+        @Override
+        public int hashCode()
+        {
+            return conditions.hashCode();
+        }
+
+        @Override
+        public boolean equals(
+            Object obj)
+        {
+            if (this == obj)
+            {
+                return true;
+            }
+
+            if (!(obj instanceof KafkaMergedFilter))
+            {
+                return false;
+            }
+
+            KafkaMergedFilter that = (KafkaMergedFilter) obj;
+            return Objects.equals(this.conditions, that.conditions);
+        }
     }
 
     private abstract static class KafkaMergedCondition
@@ -459,6 +476,29 @@ public final class KafkaMergedFactory implements StreamFactory
                 {
                     key.length(value.capacity()).value(value, 0, value.capacity());
                 }
+            }
+
+            @Override
+            public int hashCode()
+            {
+                return Objects.hash(value);
+            }
+
+            @Override
+            public boolean equals(Object obj)
+            {
+                if (this == obj)
+                {
+                    return true;
+                }
+
+                if (!(obj instanceof Key))
+                {
+                    return false;
+                }
+
+                Key that = (Key) obj;
+                return Objects.equals(this.value, that.value);
             }
         }
 
@@ -503,6 +543,31 @@ public final class KafkaMergedFactory implements StreamFactory
                     header.valueLen(value.capacity()).value(value, 0, value.capacity());
                 }
             }
+
+            @Override
+            public int hashCode()
+            {
+                return Objects.hash(name, value);
+            }
+
+            @Override
+            public boolean equals(
+                Object o)
+            {
+                if (this == o)
+                {
+                    return true;
+                }
+
+                if (!(o instanceof Header))
+                {
+                    return false;
+                }
+
+                final Header that = (Header) o;
+                return Objects.equals(this.name, that.name) &&
+                        Objects.equals(this.value, that.value);
+            }
         }
 
         private static final class Age extends KafkaMergedCondition
@@ -526,6 +591,30 @@ public final class KafkaMergedFactory implements StreamFactory
                 KafkaAgeFW.Builder age)
             {
                 age.set(this.age);
+            }
+
+            @Override
+            public int hashCode()
+            {
+                return Objects.hash(age);
+            }
+
+            @Override
+            public boolean equals(
+                Object o)
+            {
+                if (this == o)
+                {
+                    return true;
+                }
+
+                if (!(o instanceof Age))
+                {
+                    return false;
+                }
+
+                final Age that = (Age) o;
+                return Objects.equals(this.age, that.age);
             }
         }
 
@@ -711,9 +800,10 @@ public final class KafkaMergedFactory implements StreamFactory
         private final Long2LongHashMap latestOffsetByPartitionId;
         private final Long2LongHashMap nextOffsetsById;
         private final long defaultOffset;
-        private final List<KafkaMergedFilter> filters;
-        private final KafkaAge maximumAge;
         private final KafkaDeltaType deltaType;
+
+        private KafkaAge maximumAge;
+        private List<KafkaMergedFilter> filters;
 
         private int state;
         private KafkaCapabilities capabilities;
@@ -742,8 +832,6 @@ public final class KafkaMergedFactory implements StreamFactory
             KafkaCapabilities capabilities,
             Long2LongHashMap initialOffsetsById,
             long defaultOffset,
-            List<KafkaMergedFilter> filters,
-            KafkaAge maximumAge,
             KafkaDeltaType deltaType)
         {
             this.sender = sender;
@@ -763,8 +851,6 @@ public final class KafkaMergedFactory implements StreamFactory
             this.latestOffsetByPartitionId = new Long2LongHashMap(-3);
             this.nextOffsetsById = initialOffsetsById;
             this.defaultOffset = defaultOffset;
-            this.filters = filters;
-            this.maximumAge = maximumAge;
             this.deltaType = deltaType;
         }
 
@@ -818,6 +904,18 @@ public final class KafkaMergedFactory implements StreamFactory
             state = KafkaState.openingInitial(state);
 
             router.setThrottle(replyId, this::onMergedMessage);
+
+            final OctetsFW extension = begin.extension();
+            final DirectBuffer buffer = extension.buffer();
+            final int offset = extension.offset();
+            final int limit = extension.limit();
+
+            final KafkaBeginExFW beginEx = kafkaBeginExRO.wrap(buffer, offset, limit);
+            final KafkaMergedBeginExFW mergedBeginEx = beginEx.merged();
+            final Array32FW<KafkaFilterFW> filters = mergedBeginEx.filters();
+
+            this.maximumAge = asMaximumAge(filters);
+            this.filters = asMergedFilters(filters);
 
             describeStream.doDescribeInitialBegin(traceId);
         }
@@ -873,6 +971,14 @@ public final class KafkaMergedFactory implements StreamFactory
                     this.producer = null;
                 }
             }
+        }
+
+        private KafkaAge asMaximumAge(
+            Array32FW<KafkaFilterFW> filters)
+        {
+            return filters.isEmpty() ||
+                       filters.anyMatch(a -> !a.conditions().anyMatch(c -> c.kind() == KIND_AGE && c.age().get() == HISTORICAL)) ?
+                       KafkaAge.LIVE : HISTORICAL;
         }
 
         private int nextPartition(
@@ -934,9 +1040,19 @@ public final class KafkaMergedFactory implements StreamFactory
 
             if (capabilities != newCapabilities)
             {
-                this.capabilities = newCapabilities;
+                final Array32FW<KafkaFilterFW> filters = kafkaMergedFlushEx.filters();
+                final List<KafkaMergedFilter> newFilters = asMergedFilters(filters);
 
-                // TODO: disable FETCH if now PRODUCE_ONLY
+                this.maximumAge = asMaximumAge(filters);
+
+                if (hasFetchCapability(capabilities) && hasFetchCapability(newCapabilities))
+                {
+                    assert Objects.equals(this.filters, newFilters);
+                }
+
+                this.capabilities = newCapabilities;
+                this.filters = newFilters;
+
                 doFetchPartitionsIfNecessary(traceId);
                 doProducePartitionsIfNecessary(traceId);
             }
