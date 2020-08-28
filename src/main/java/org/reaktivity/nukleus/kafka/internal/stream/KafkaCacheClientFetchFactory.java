@@ -91,10 +91,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
     private static final MessageConsumer NO_RECEIVER = (m, b, i, l) -> {};
 
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
-    private static final long NO_LATEST_OFFSET = -1;
 
-    private static final long OFFSET_LATEST = KafkaOffsetType.LATEST.value();
-    private static final long OFFSET_EARLIEST = KafkaOffsetType.EARLIEST.value();
+    private static final long OFFSET_LIVE = KafkaOffsetType.LATEST.value();
+    private static final long OFFSET_HISTORICAL = KafkaOffsetType.EARLIEST.value();
 
     private static final int FLAG_FIN = 0x01;
     private static final int FLAG_INIT = 0x02;
@@ -901,11 +900,11 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.initialGroupPartitionOffset = group.partitionOffset;
             this.initialGroupLatestOffset = group.latestOffset;
 
-            if (initialOffset == OFFSET_LATEST)
+            if (initialOffset == OFFSET_LIVE)
             {
-                this.initialOffset = group.latestOffset;
+                this.initialOffset = group.latestOffset + 1;
             }
-            else if (initialOffset == OFFSET_EARLIEST)
+            else if (initialOffset == OFFSET_HISTORICAL)
             {
                 final Node segmentNode = group.partition.seekNotBefore(0L);
                 assert !segmentNode.sentinel();
