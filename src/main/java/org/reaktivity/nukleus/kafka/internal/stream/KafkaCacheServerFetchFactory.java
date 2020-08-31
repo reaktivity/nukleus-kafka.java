@@ -23,7 +23,7 @@ import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorRetryValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
-import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.LATEST;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.LIVE;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DEFAULT_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 
@@ -418,7 +418,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             this.partition = partition;
             this.deltaType = deltaType;
             this.defaultOffset = defaultOffset;
-            this.retentionMillisMax = defaultOffset == LATEST ? SECONDS.toMillis(30) : Long.MAX_VALUE;
+            this.retentionMillisMax = defaultOffset == LIVE ? SECONDS.toMillis(30) : Long.MAX_VALUE;
             this.members = new ArrayList<>();
             this.leaderId = leaderId;
         }

@@ -227,7 +227,7 @@ public final class KafkaMergedFactory implements StreamFactory
             final ArrayFW<KafkaOffsetFW> partitions = kafkaMergedBeginEx.partitions();
 
             final KafkaOffsetFW partition = partitions.matchFirst(p -> p.partitionId() == -1L);
-            final long defaultOffset = partition != null ? partition.partitionOffset() : KafkaOffsetType.EARLIEST.value();
+            final long defaultOffset = partition != null ? partition.partitionOffset() : KafkaOffsetType.HISTORICAL.value();
 
             final Long2LongHashMap initialOffsetsById = new Long2LongHashMap(-3L);
             partitions.forEach(p ->
@@ -1048,6 +1048,23 @@ public final class KafkaMergedFactory implements StreamFactory
                 if (hasFetchCapability(capabilities) && hasFetchCapability(newCapabilities))
                 {
                     assert Objects.equals(this.filters, newFilters);
+                }
+
+                if (hasFetchCapability(newCapabilities) && !hasFetchCapability(capabilities))
+                {
+                    final Long2LongHashMap initialOffsetsById = new Long2LongHashMap(-3L);
+                    kafkaMergedFlushEx.progress().forEach(p ->
+                    {
+                        final long partitionId = p.partitionId();
+                        if (partitionId >= 0L)
+                        {
+                            final long partitionOffset = p.partitionOffset();
+                            initialOffsetsById.put(partitionId, partitionOffset);
+                        }
+                    });
+
+                    nextOffsetsById.clear();
+                    nextOffsetsById.putAll(initialOffsetsById);
                 }
 
                 this.capabilities = newCapabilities;
