@@ -70,9 +70,7 @@ public final class KafkaCachePartition
 
     private static final int CACHE_ENTRY_FLAGS_DIRTY = 0x01;
 
-    public static final int OFFSET_EARLIEST = KafkaOffsetType.EARLIEST.value();
-
-    public static final int OFFSET_LATEST = KafkaOffsetType.LATEST.value();
+    private static final long OFFSET_HISTORICAL = KafkaOffsetType.HISTORICAL.value();
 
     private final KafkaCacheEntryFW headEntryRO = new KafkaCacheEntryFW();
     private final KafkaCacheEntryFW logEntryRO = new KafkaCacheEntryFW();
@@ -118,7 +116,7 @@ public final class KafkaCachePartition
         this.sortSpaceRef = sortSpaceRef;
         this.sentinel = new Node();
         this.checksum = new CRC32C();
-        this.progress = OFFSET_EARLIEST;
+        this.progress = OFFSET_HISTORICAL;
     }
 
     public String cache()

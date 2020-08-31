@@ -155,7 +155,7 @@ public final class KafkaController implements Controller
                                                : KafkaDeltaType.NONE))
                                        .defaultOffset(t -> t.set(object.has("defaultOffset")
                                                ? KafkaOffsetType.valueOf(defaultOffset)
-                                               : KafkaOffsetType.EARLIEST))
+                                               : KafkaOffsetType.HISTORICAL))
                                        .build();
                 }
             }
