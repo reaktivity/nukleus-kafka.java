@@ -75,7 +75,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
     private static final String16FW CONFIG_NAME_MAX_COMPACTION_LAG_MILLIS = new String16FW("max.compaction.lag.ms");
     private static final String16FW CONFIG_NAME_MIN_CLEANABLE_DIRTY_RATIO = new String16FW("min.cleanable.dirty.ratio");
 
-    private static final long OFFSET_EARLIEST = KafkaOffsetType.EARLIEST.value();
+    private static final long OFFSET_HISTORICAL = KafkaOffsetType.HISTORICAL.value();
 
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
@@ -176,7 +176,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         {
             final long resolvedId = route.correlationId();
             final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
-            final long defaultOffset = routeEx != null ? routeEx.defaultOffset().get().value() : OFFSET_EARLIEST;
+            final long defaultOffset = routeEx != null ? routeEx.defaultOffset().get().value() : OFFSET_HISTORICAL;
 
             newStream = new KafkaBootstrapStream(
                     sender,
@@ -1196,7 +1196,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(bootstrap.topic)
-                                     .partition(p -> p.partitionId(partitionId).partitionOffset(OFFSET_EARLIEST)))
+                                     .partition(p -> p.partitionId(partitionId).partitionOffset(OFFSET_HISTORICAL)))
                         .build()
                         .sizeof()));
         }

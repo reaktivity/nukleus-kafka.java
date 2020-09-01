@@ -16,15 +16,17 @@
 package org.reaktivity.nukleus.kafka.internal.cache;
 
 import static java.lang.System.currentTimeMillis;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.OFFSET_LATEST;
 
 import java.nio.file.Path;
 import java.util.function.IntFunction;
 
 import org.agrona.MutableDirectBuffer;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType;
 
 public final class KafkaCacheSegment extends KafkaCacheObject<KafkaCacheSegment>
 {
+    private static final long OFFSET_LIVE = KafkaOffsetType.LIVE.value();
+
     private final Path location;
     private final String name;
     private final int id;
@@ -72,7 +74,7 @@ public final class KafkaCacheSegment extends KafkaCacheObject<KafkaCacheSegment>
         this.name = name;
         this.id = id;
         this.baseOffset = baseOffset;
-        this.lastOffset = OFFSET_LATEST;
+        this.lastOffset = OFFSET_LIVE;
         this.timestamp = currentTimeMillis();
         this.logFile = new KafkaCacheFile.Log(location, baseOffset, config.segmentBytes, appendBuf);
         this.deltaFile = new KafkaCacheFile.Delta(location, baseOffset, config.segmentBytes, appendBuf);
@@ -137,7 +139,7 @@ public final class KafkaCacheSegment extends KafkaCacheObject<KafkaCacheSegment>
 
     public long nextOffset()
     {
-        return lastOffset == OFFSET_LATEST ? baseOffset : lastOffset + 1;
+        return lastOffset == OFFSET_LIVE ? baseOffset : lastOffset + 1;
     }
 
     public long timestamp()

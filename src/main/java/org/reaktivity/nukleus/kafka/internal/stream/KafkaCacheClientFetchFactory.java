@@ -92,8 +92,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
-    private static final long OFFSET_LIVE = KafkaOffsetType.LATEST.value();
-    private static final long OFFSET_HISTORICAL = KafkaOffsetType.EARLIEST.value();
+    private static final long OFFSET_LIVE = KafkaOffsetType.LIVE.value();
+    private static final long OFFSET_HISTORICAL = KafkaOffsetType.HISTORICAL.value();
 
     private static final int FLAG_FIN = 0x01;
     private static final int FLAG_INIT = 0x02;
