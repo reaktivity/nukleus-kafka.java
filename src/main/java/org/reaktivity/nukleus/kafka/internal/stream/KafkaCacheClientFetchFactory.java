@@ -519,7 +519,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void doClientFanoutInitialAbortIfNecessary(
             long traceId)
         {
-            if (KafkaState.initialOpened(state) && !KafkaState.initialClosed(state))
+            if (KafkaState.initialOpening(state) && !KafkaState.initialClosed(state))
             {
                 doClientFanoutInitialAbort(traceId);
             }
