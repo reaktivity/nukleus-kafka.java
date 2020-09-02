@@ -42,7 +42,7 @@ public final class KafkaCacheTopicConfig
 
     private static final String16FW CLEANUP_POLICY_COMPACT = new String16FW("compact");
     private static final String16FW CLEANUP_POLICY_DELETE = new String16FW("delete");
-    private static final String16FW CLEANUP_POLICY_COMPACT_DELETE = new String16FW("compact, delete");
+    private static final String16FW CLEANUP_POLICY_COMPACT_DELETE = new String16FW("compact,delete");
 
     public volatile KafkaCacheCleanupPolicy cleanupPolicy;
     public volatile int maxMessageBytes;
