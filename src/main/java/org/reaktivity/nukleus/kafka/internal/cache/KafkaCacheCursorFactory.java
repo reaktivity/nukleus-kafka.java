@@ -183,8 +183,12 @@ public final class KafkaCacheCursorFactory
                 final KafkaCacheFile logFile = segment.logFile();
                 assert logFile != null;
 
-                nextEntry = logFile.readBytes(position, cacheEntry::wrap);
-                assert nextEntry != null;
+                nextEntry = logFile.readBytes(position, cacheEntry::tryWrap);
+
+                if (nextEntry == null)
+                {
+                    break next;
+                }
 
                 final long nextOffset = nextEntry.offset$();
 
