@@ -246,7 +246,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
             final KafkaFilterCondition condition = cursorFactory.asCondition(filters);
             final long latestOffset = kafkaFetchBeginEx.partition().latestOffset();
-            final KafkaOffsetType maximumAge = KafkaOffsetType.valueOf((byte) latestOffset);
+            final KafkaOffsetType maximumOffset = KafkaOffsetType.valueOf((byte) latestOffset);
             final int leaderId = cacheRoute.leadersByPartitionId.get(partitionId);
 
             newStream = new KafkaCacheClientFetchStream(
@@ -258,7 +258,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     authorization,
                     partitionOffset,
                     condition,
-                    maximumAge,
+                    maximumOffset,
                     deltaType)::onClientMessage;
         }
 
@@ -717,7 +717,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private final long authorization;
         private final KafkaCacheCursor cursor;
         private final KafkaDeltaType deltaType;
-        private final KafkaOffsetType maximumAge;
+        private final KafkaOffsetType maximumOffset;
 
         private int state;
 
@@ -743,7 +743,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long authorization,
             long initialOffset,
             KafkaFilterCondition condition,
-            KafkaOffsetType maximumAge,
+            KafkaOffsetType maximumOffset,
             KafkaDeltaType deltaType)
         {
             this.group = group;
@@ -755,7 +755,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.authorization = authorization;
             this.initialOffset = initialOffset;
             this.cursor = cursorFactory.newCursor(condition, deltaType);
-            this.maximumAge = maximumAge;
+            this.maximumOffset = maximumOffset;
             this.deltaType = deltaType;
         }
 
@@ -945,7 +945,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
                 if (nextEntry == null || nextEntry.offset$() > group.latestOffset)
                 {
-                    if (maximumAge == HISTORICAL)
+                    if (maximumOffset == HISTORICAL)
                     {
                         cursor.advance(group.partitionOffset + 1);
                     }
@@ -966,13 +966,13 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 doClientReplyData(traceId, nextEntry);
 
                 if (replyBudget == replyBudgetSnapshot ||
-                    (maximumAge == HISTORICAL && cursor.offset > initialGroupLatestOffset))
+                    (maximumOffset == HISTORICAL && cursor.offset > initialGroupLatestOffset))
                 {
                     break;
                 }
             }
 
-            if (maximumAge == HISTORICAL && cursor.offset > initialGroupLatestOffset)
+            if (maximumOffset == HISTORICAL && cursor.offset > initialGroupLatestOffset)
             {
                 doClientReplyEndIfNecessary(traceId);
             }
