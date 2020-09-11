@@ -17,10 +17,9 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_BUDGET_ID;
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
-import static org.reaktivity.nukleus.kafka.internal.types.KafkaAge.HISTORICAL;
-import static org.reaktivity.nukleus.kafka.internal.types.KafkaAge.LIVE;
-import static org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW.KIND_AGE;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.HISTORICAL;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.LIVE;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DEFAULT_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 
@@ -54,7 +53,6 @@ import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.Node;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopic;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
-import org.reaktivity.nukleus.kafka.internal.types.KafkaAge;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
@@ -92,8 +90,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
-    private static final long OFFSET_LIVE = KafkaOffsetType.LIVE.value();
-    private static final long OFFSET_HISTORICAL = KafkaOffsetType.HISTORICAL.value();
+    private static final long OFFSET_LIVE = LIVE.value();
+    private static final long OFFSET_HISTORICAL = HISTORICAL.value();
 
     private static final int FLAG_FIN = 0x01;
     private static final int FLAG_INIT = 0x02;
@@ -247,9 +245,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
 
             final KafkaFilterCondition condition = cursorFactory.asCondition(filters);
-            final KafkaAge maximumAge = filters.isEmpty() ||
-                filters.anyMatch(a -> !a.conditions().anyMatch(c -> c.kind() == KIND_AGE && c.age().get() == HISTORICAL)) ?
-                    LIVE : HISTORICAL;
+            final long latestOffset = kafkaFetchBeginEx.partition().latestOffset();
+            final KafkaOffsetType maximumOffset = KafkaOffsetType.valueOf((byte) latestOffset);
             final int leaderId = cacheRoute.leadersByPartitionId.get(partitionId);
 
             newStream = new KafkaCacheClientFetchStream(
@@ -261,7 +258,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     authorization,
                     partitionOffset,
                     condition,
-                    maximumAge,
+                    maximumOffset,
                     deltaType)::onClientMessage;
         }
 
@@ -720,7 +717,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private final long authorization;
         private final KafkaCacheCursor cursor;
         private final KafkaDeltaType deltaType;
-        private final KafkaAge maximumAge;
+        private final KafkaOffsetType maximumOffset;
 
         private int state;
 
@@ -746,7 +743,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long authorization,
             long initialOffset,
             KafkaFilterCondition condition,
-            KafkaAge maximumAge,
+            KafkaOffsetType maximumOffset,
             KafkaDeltaType deltaType)
         {
             this.group = group;
@@ -758,7 +755,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.authorization = authorization;
             this.initialOffset = initialOffset;
             this.cursor = cursorFactory.newCursor(condition, deltaType);
-            this.maximumAge = maximumAge;
+            this.maximumOffset = maximumOffset;
             this.deltaType = deltaType;
         }
 
@@ -948,7 +945,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
                 if (nextEntry == null || nextEntry.offset$() > group.latestOffset)
                 {
-                    if (maximumAge == HISTORICAL)
+                    if (maximumOffset == HISTORICAL)
                     {
                         cursor.advance(group.partitionOffset + 1);
                     }
@@ -969,13 +966,13 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 doClientReplyData(traceId, nextEntry);
 
                 if (replyBudget == replyBudgetSnapshot ||
-                    (maximumAge == HISTORICAL && cursor.offset > initialGroupLatestOffset))
+                    (maximumOffset == HISTORICAL && cursor.offset > initialGroupLatestOffset))
                 {
                     break;
                 }
             }
 
-            if (maximumAge == HISTORICAL && cursor.offset > initialGroupLatestOffset)
+            if (maximumOffset == HISTORICAL && cursor.offset > initialGroupLatestOffset)
             {
                 doClientReplyEndIfNecessary(traceId);
             }
