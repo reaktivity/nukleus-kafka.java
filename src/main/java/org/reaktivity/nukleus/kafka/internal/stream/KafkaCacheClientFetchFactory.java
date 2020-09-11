@@ -19,6 +19,7 @@ import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_BUDGET_ID;
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.HISTORICAL;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.LIVE;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DEFAULT_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 
@@ -89,7 +90,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
-    private static final long OFFSET_LIVE = KafkaOffsetType.LIVE.value();
+    private static final long OFFSET_LIVE = LIVE.value();
     private static final long OFFSET_HISTORICAL = HISTORICAL.value();
 
     private static final int FLAG_FIN = 0x01;
