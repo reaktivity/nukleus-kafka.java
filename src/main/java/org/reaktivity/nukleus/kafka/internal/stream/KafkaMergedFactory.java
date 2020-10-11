@@ -1146,6 +1146,7 @@ public final class KafkaMergedFactory implements StreamFactory
             fetchStreams.forEach(f -> f.doFetchReplyResetIfNecessary(traceId));
             produceStreams.forEach(f -> f.doProduceReplyResetIfNecessary(traceId));
 
+            cleanupBudgetCreditorIfNecessary();
             doMergedInitialResetIfNecessary(traceId);
         }
 
