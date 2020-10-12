@@ -16,10 +16,10 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
-import static org.reaktivity.nukleus.kafka.internal.types.KafkaAge.HISTORICAL;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.FETCH_ONLY;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.PRODUCE_ONLY;
-import static org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW.KIND_AGE;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.HISTORICAL;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.LIVE;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 import static org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW.Builder.DEFAULT_MINIMUM;
 
@@ -227,7 +227,7 @@ public final class KafkaMergedFactory implements StreamFactory
             final ArrayFW<KafkaOffsetFW> partitions = kafkaMergedBeginEx.partitions();
 
             final KafkaOffsetFW partition = partitions.matchFirst(p -> p.partitionId() == -1L);
-            final long defaultOffset = partition != null ? partition.partitionOffset() : KafkaOffsetType.HISTORICAL.value();
+            final long defaultOffset = partition != null ? partition.partitionOffset() : HISTORICAL.value();
 
             final Long2LongHashMap initialOffsetsById = new Long2LongHashMap(-3L);
             partitions.forEach(p ->
@@ -802,7 +802,7 @@ public final class KafkaMergedFactory implements StreamFactory
         private final long defaultOffset;
         private final KafkaDeltaType deltaType;
 
-        private KafkaAge maximumAge;
+        private KafkaOffsetType maximumOffset;
         private List<KafkaMergedFilter> filters;
 
         private int state;
@@ -914,7 +914,7 @@ public final class KafkaMergedFactory implements StreamFactory
             final KafkaMergedBeginExFW mergedBeginEx = beginEx.merged();
             final Array32FW<KafkaFilterFW> filters = mergedBeginEx.filters();
 
-            this.maximumAge = asMaximumAge(filters);
+            this.maximumOffset = asMaximumOffset(mergedBeginEx.partitions());
             this.filters = asMergedFilters(filters);
 
             describeStream.doDescribeInitialBegin(traceId);
@@ -973,12 +973,11 @@ public final class KafkaMergedFactory implements StreamFactory
             }
         }
 
-        private KafkaAge asMaximumAge(
-            Array32FW<KafkaFilterFW> filters)
+        private KafkaOffsetType asMaximumOffset(
+            Array32FW<KafkaOffsetFW> partitions)
         {
-            return filters.isEmpty() ||
-                       filters.anyMatch(a -> !a.conditions().anyMatch(c -> c.kind() == KIND_AGE && c.age().get() == HISTORICAL)) ?
-                       KafkaAge.LIVE : HISTORICAL;
+            return partitions.isEmpty() ||
+                   partitions.anyMatch(p -> p.latestOffset() != HISTORICAL.value()) ? LIVE : HISTORICAL;
         }
 
         private int nextPartition(
@@ -1043,7 +1042,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 final Array32FW<KafkaFilterFW> filters = kafkaMergedFlushEx.filters();
                 final List<KafkaMergedFilter> newFilters = asMergedFilters(filters);
 
-                this.maximumAge = asMaximumAge(filters);
+                this.maximumOffset = asMaximumOffset(kafkaMergedFlushEx.progress());
 
                 if (hasFetchCapability(capabilities) && hasFetchCapability(newCapabilities))
                 {
@@ -1511,7 +1510,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 final KafkaUnmergedFetchStream leader = findFetchPartitionLeader(partitionId);
                 assert leader != null;
 
-                if (nextOffsetsById.containsKey(partitionId) && maximumAge != HISTORICAL)
+                if (nextOffsetsById.containsKey(partitionId) && maximumOffset != HISTORICAL)
                 {
                     final long partitionOffset = nextFetchPartitionOffset(partitionId);
                     leader.doFetchInitialBegin(traceId, partitionOffset);
@@ -2181,7 +2180,9 @@ public final class KafkaMergedFactory implements StreamFactory
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(merged.topic)
-                                     .partition(p -> p.partitionId(partitionId).partitionOffset(partitionOffset))
+                                     .partition(p -> p.partitionId(partitionId)
+                                                      .partitionOffset(partitionOffset)
+                                                      .latestOffset(merged.maximumOffset.value()))
                                      .filters(fs -> merged.filters.forEach(mf -> fs.item(i -> setFetchFilter(i, mf))))
                                      .deltaType(t -> t.set(merged.deltaType)))
                         .build()
@@ -2345,7 +2346,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
-            if (merged.maximumAge != HISTORICAL)
+            if (merged.maximumOffset != HISTORICAL)
             {
                 merged.doMergedReplyEndIfNecessary(traceId);
             }
@@ -2353,7 +2354,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             merged.onFetchPartitionLeaderError(traceId, partitionId, ERROR_NOT_LEADER_FOR_PARTITION);
 
-            if (merged.maximumAge == HISTORICAL && merged.fetchStreams.isEmpty())
+            if (merged.maximumOffset == HISTORICAL && merged.fetchStreams.isEmpty())
             {
                 merged.doMergedReplyEndIfNecessary(traceId);
             }

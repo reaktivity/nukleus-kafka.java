@@ -1670,14 +1670,14 @@ public final class KafkaClientFetchFactory implements StreamFactory
             final long traceId = begin.traceId();
             final long authorization = begin.authorization();
 
+            state = KafkaState.openingInitial(state);
+
             if (clientRoute.partitions.get(client.partitionId) != leaderId)
             {
                 cleanupApplication(traceId, ERROR_NOT_LEADER_FOR_PARTITION);
             }
             else
             {
-                state = KafkaState.openingInitial(state);
-
                 client.doNetworkBegin(traceId, authorization, leaderId);
             }
         }
@@ -1853,7 +1853,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
             long traceId,
             Flyweight extension)
         {
-            if (KafkaState.initialOpening(state) && !KafkaState.initialClosed(state))
+            if (!KafkaState.initialClosed(state))
             {
                 doApplicationReset(traceId, extension);
             }
