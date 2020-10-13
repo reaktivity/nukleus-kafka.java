@@ -998,14 +998,13 @@ public final class KafkaMergedFactory implements StreamFactory
             assert !KafkaState.initialClosed(state);
             state = KafkaState.closedInitial(state);
 
-            if (KafkaState.replyOpening(state) &&
-                !KafkaState.replyClosed(state))
-            {
-                describeStream.doDescribeInitialEndIfNecessary(traceId);
-                metaStream.doMetaInitialEndIfNecessary(traceId);
-                fetchStreams.forEach(f -> f.doFetchInitialEndIfNecessary(traceId));
-                produceStreams.forEach(f -> f.doProduceInitialEndIfNecessary(traceId));
+            describeStream.doDescribeInitialEndIfNecessary(traceId);
+            metaStream.doMetaInitialEndIfNecessary(traceId);
+            fetchStreams.forEach(f -> f.doFetchInitialEndIfNecessary(traceId));
+            produceStreams.forEach(f -> f.doProduceInitialEndIfNecessary(traceId));
 
+            if (fetchStreams.isEmpty())
+            {
                 doMergedReplyEndIfNecessary(traceId);
             }
 
@@ -1026,8 +1025,8 @@ public final class KafkaMergedFactory implements StreamFactory
                 fetchStreams.forEach(f -> f.doFetchInitialAbortIfNecessary(traceId));
                 produceStreams.forEach(f -> f.doProduceInitialEndIfNecessary(traceId));
 
-                doMergedReplyAbortIfNecessary(traceId);
             }
+            doMergedReplyAbortIfNecessary(traceId);
         }
 
         private void onMergedInitialFlush(
@@ -1157,8 +1156,8 @@ public final class KafkaMergedFactory implements StreamFactory
                 fetchStreams.forEach(f -> f.doFetchReplyResetIfNecessary(traceId));
                 produceStreams.forEach(f -> f.doProduceReplyResetIfNecessary(traceId));
 
-                doMergedInitialResetIfNecessary(traceId);
             }
+            doMergedInitialResetIfNecessary(traceId);
         }
 
         private void doMergedReplyBeginIfNecessary(
