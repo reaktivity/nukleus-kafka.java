@@ -1530,6 +1530,11 @@ public final class KafkaMergedFactory implements StreamFactory
                     fetchStreams.remove(leader);
                     if (fetchStreams.isEmpty())
                     {
+                        if (KafkaState.closed(state))
+                        {
+                            cleanupBudgetCreditorIfNecessary();
+                        }
+
                         if (KafkaState.initialClosing(state))
                         {
                             doMergedInitialResetIfNecessary(traceId);
@@ -1538,6 +1543,7 @@ public final class KafkaMergedFactory implements StreamFactory
                         {
                             doMergedReplyEndIfNecessary(traceId);
                         }
+
                     }
                 }
             }
