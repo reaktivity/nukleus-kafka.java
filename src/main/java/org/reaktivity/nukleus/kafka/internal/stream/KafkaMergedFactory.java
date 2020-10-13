@@ -1000,7 +1000,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             describeStream.doDescribeInitialEndIfNecessary(traceId);
             metaStream.doMetaInitialEndIfNecessary(traceId);
-            fetchStreams.forEach(f -> f.doFetchInitialEndIfNecessary(traceId));
+            fetchStreams.forEach(f -> f.onMergedInitialEnd(traceId));
             produceStreams.forEach(f -> f.doProduceInitialEndIfNecessary(traceId));
 
             if (fetchStreams.isEmpty())
@@ -1019,7 +1019,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             describeStream.doDescribeInitialAbortIfNecessary(traceId);
             metaStream.doMetaInitialAbortIfNecessary(traceId);
-            fetchStreams.forEach(f -> f.doFetchInitialAbortIfNecessary(traceId));
+            fetchStreams.forEach(f -> f.onMergedInitialAbort(traceId));
             produceStreams.forEach(f -> f.doProduceInitialEndIfNecessary(traceId));
 
             if (fetchStreams.isEmpty())
@@ -1149,7 +1149,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             describeStream.doDescribeReplyResetIfNecessary(traceId);
             metaStream.doMetaReplyResetIfNecessary(traceId);
-            fetchStreams.forEach(f -> f.doFetchReplyResetIfNecessary(traceId));
+            fetchStreams.forEach(f -> f.onMergedReplyReset(traceId));
             produceStreams.forEach(f -> f.doProduceReplyResetIfNecessary(traceId));
 
             if (fetchStreams.isEmpty())
@@ -2199,11 +2199,19 @@ public final class KafkaMergedFactory implements StreamFactory
                         .sizeof()));
         }
 
+        private void onMergedInitialEnd(
+            long traceId)
+        {
+            if (!KafkaState.replyClosing(state))
+            {
+                doFetchInitialEndIfNecessary(traceId);
+            }
+        }
+
         private void doFetchInitialEndIfNecessary(
             long traceId)
         {
-            if (!KafkaState.initialClosed(state) &&
-                !KafkaState.replyClosing(state))
+            if (!KafkaState.initialClosed(state))
             {
                 doFetchInitialEnd(traceId);
             }
@@ -2217,11 +2225,19 @@ public final class KafkaMergedFactory implements StreamFactory
             doEnd(receiver, merged.resolvedId, initialId, traceId, merged.authorization, EMPTY_EXTENSION);
         }
 
+        private void onMergedInitialAbort(
+            long traceId)
+        {
+            if (!KafkaState.replyClosing(state))
+            {
+                doFetchInitialAbortIfNecessary(traceId);
+            }
+        }
+
         private void doFetchInitialAbortIfNecessary(
             long traceId)
         {
-            if (!KafkaState.initialClosed(state) &&
-                !KafkaState.replyClosing(state))
+            if (!KafkaState.initialClosed(state))
             {
                 doFetchInitialAbort(traceId);
             }
@@ -2405,11 +2421,19 @@ public final class KafkaMergedFactory implements StreamFactory
             }
         }
 
+        private void onMergedReplyReset(
+            long traceId)
+        {
+            if (!KafkaState.initialClosing(state))
+            {
+                doFetchReplyResetIfNecessary(traceId);
+            }
+        }
+
         private void doFetchReplyResetIfNecessary(
             long traceId)
         {
-            if (!KafkaState.replyClosed(state) &&
-                !KafkaState.initialClosing(state))
+            if (!KafkaState.replyClosed(state))
             {
                 doFetchReplyReset(traceId);
             }
