@@ -1007,7 +1007,6 @@ public final class KafkaMergedFactory implements StreamFactory
             {
                 doMergedReplyEndIfNecessary(traceId);
             }
-
         }
 
         private void onMergedInitialAbort(
@@ -1018,7 +1017,7 @@ public final class KafkaMergedFactory implements StreamFactory
             assert !KafkaState.initialClosed(state);
             state = KafkaState.closedInitial(state);
 
-            if (!KafkaState.replyClosed(state))
+            if (fetchStreams.isEmpty())
             {
                 describeStream.doDescribeInitialAbortIfNecessary(traceId);
                 metaStream.doMetaInitialAbortIfNecessary(traceId);
@@ -1148,8 +1147,7 @@ public final class KafkaMergedFactory implements StreamFactory
             state = KafkaState.closedReply(state);
             nextOffsetsById.clear();
 
-            if (KafkaState.initialOpening(state) &&
-                !KafkaState.initialClosed(state))
+            if (fetchStreams.isEmpty())
             {
                 describeStream.doDescribeReplyResetIfNecessary(traceId);
                 metaStream.doMetaReplyResetIfNecessary(traceId);
