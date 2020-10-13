@@ -658,6 +658,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final OctetsFW extension = reset.extension();
 
             members.forEach(s -> s.doClientInitialResetIfNecessary(traceId, extension));
+            members.forEach(s -> s.doClientReplyAbortIfNecessary(traceId));
 
             state = KafkaState.closedInitial(state);
 
