@@ -1017,15 +1017,15 @@ public final class KafkaMergedFactory implements StreamFactory
             assert !KafkaState.initialClosed(state);
             state = KafkaState.closedInitial(state);
 
+            describeStream.doDescribeInitialAbortIfNecessary(traceId);
+            metaStream.doMetaInitialAbortIfNecessary(traceId);
+            fetchStreams.forEach(f -> f.doFetchInitialAbortIfNecessary(traceId));
+            produceStreams.forEach(f -> f.doProduceInitialEndIfNecessary(traceId));
+
             if (fetchStreams.isEmpty())
             {
-                describeStream.doDescribeInitialAbortIfNecessary(traceId);
-                metaStream.doMetaInitialAbortIfNecessary(traceId);
-                fetchStreams.forEach(f -> f.doFetchInitialAbortIfNecessary(traceId));
-                produceStreams.forEach(f -> f.doProduceInitialEndIfNecessary(traceId));
-
+                doMergedReplyAbortIfNecessary(traceId);
             }
-            doMergedReplyAbortIfNecessary(traceId);
         }
 
         private void onMergedInitialFlush(
@@ -1147,15 +1147,15 @@ public final class KafkaMergedFactory implements StreamFactory
             state = KafkaState.closedReply(state);
             nextOffsetsById.clear();
 
+            describeStream.doDescribeReplyResetIfNecessary(traceId);
+            metaStream.doMetaReplyResetIfNecessary(traceId);
+            fetchStreams.forEach(f -> f.doFetchReplyResetIfNecessary(traceId));
+            produceStreams.forEach(f -> f.doProduceReplyResetIfNecessary(traceId));
+
             if (fetchStreams.isEmpty())
             {
-                describeStream.doDescribeReplyResetIfNecessary(traceId);
-                metaStream.doMetaReplyResetIfNecessary(traceId);
-                fetchStreams.forEach(f -> f.doFetchReplyResetIfNecessary(traceId));
-                produceStreams.forEach(f -> f.doProduceReplyResetIfNecessary(traceId));
-
+                doMergedInitialResetIfNecessary(traceId);
             }
-            doMergedInitialResetIfNecessary(traceId);
         }
 
         private void doMergedReplyBeginIfNecessary(
