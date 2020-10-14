@@ -1109,7 +1109,8 @@ public final class KafkaMergedFactory implements StreamFactory
             doUnmergedFetchReplyWindowsIfNecessary(traceId);
         }
 
-        private void acquireCreditorIfNecessary(long budgetId)
+        private void acquireCreditorIfNecessary(
+            long budgetId)
         {
             if (mergedReplyBudgetId == NO_CREDITOR_INDEX && KafkaState.replyOpened(state))
             {
