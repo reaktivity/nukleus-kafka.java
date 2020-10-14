@@ -1099,10 +1099,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 state = KafkaState.openedReply(state);
             }
 
-            if (mergedReplyBudgetId == NO_CREDITOR_INDEX)
-            {
-                mergedReplyBudgetId = creditor.acquire(replyId, budgetId);
-            }
+            acquireCreditorIfNecessary(budgetId);
 
             if (mergedReplyBudgetId != NO_CREDITOR_INDEX)
             {
@@ -1110,6 +1107,14 @@ public final class KafkaMergedFactory implements StreamFactory
             }
 
             doUnmergedFetchReplyWindowsIfNecessary(traceId);
+        }
+
+        private void acquireCreditorIfNecessary(long budgetId)
+        {
+            if (mergedReplyBudgetId == NO_CREDITOR_INDEX && KafkaState.replyOpened(state))
+            {
+                mergedReplyBudgetId = creditor.acquire(replyId, budgetId);
+            }
         }
 
         private void doUnmergedFetchReplyWindowsIfNecessary(
@@ -1177,6 +1182,8 @@ public final class KafkaMergedFactory implements StreamFactory
             {
                 state = KafkaState.openedReply(state);
             }
+
+            acquireCreditorIfNecessary(replyBudgetId);
 
             if (capabilities == FETCH_ONLY)
             {
