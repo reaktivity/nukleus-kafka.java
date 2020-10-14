@@ -314,7 +314,7 @@ public class CacheMergedIT
     @Test
     @Specification({
         "${route}/cache.merged/controller",
-        "${client}/merged.fetch.server.sent.close.with.message/client",
+        "${client}/merged.fetch.server.sent.abort.with.message/client",
         "${server}/unmerged.fetch.server.sent.abort.with.message/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     @Configure(name = KAFKA_CACHE_SERVER_RECONNECT_DELAY_NAME, value = "0")
@@ -341,7 +341,7 @@ public class CacheMergedIT
     @Test
     @Specification({
         "${route}/cache.merged/controller",
-        "${client}/merged.fetch.server.sent.close.with.message/client",
+        "${client}/merged.fetch.server.sent.abort.with.message/client",
         "${server}/unmerged.fetch.server.sent.reset.and.abort.with.message/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     @Configure(name = KAFKA_CACHE_SERVER_RECONNECT_DELAY_NAME, value = "0")
