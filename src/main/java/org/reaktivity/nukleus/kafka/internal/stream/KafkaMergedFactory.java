@@ -1097,11 +1097,10 @@ public final class KafkaMergedFactory implements StreamFactory
             if (KafkaState.replyOpening(state))
             {
                 state = KafkaState.openedReply(state);
-            }
-
-            if (mergedReplyBudgetId == NO_CREDITOR_INDEX)
-            {
-                mergedReplyBudgetId = creditor.acquire(replyId, budgetId);
+                if (mergedReplyBudgetId == NO_CREDITOR_INDEX)
+                {
+                    mergedReplyBudgetId = creditor.acquire(replyId, budgetId);
+                }
             }
 
             if (mergedReplyBudgetId != NO_CREDITOR_INDEX)
@@ -1173,9 +1172,14 @@ public final class KafkaMergedFactory implements StreamFactory
             assert !KafkaState.replyOpening(state);
             state = KafkaState.openingReply(state);
 
-            if (replyBudget > 0)
+            if (!KafkaState.replyOpened(state) && replyBudget > 0)
             {
                 state = KafkaState.openedReply(state);
+                if (mergedReplyBudgetId == NO_CREDITOR_INDEX)
+                {
+                    mergedReplyBudgetId = creditor.acquire(replyId, replyBudgetId);
+                    creditor.credit(traceId, mergedReplyBudgetId, replyBudget);
+                }
             }
 
             if (capabilities == FETCH_ONLY)
