@@ -480,6 +480,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
         }
 
         stream.client.doEncodeRecordInit(traceId, timestamp, key, value);
+        stream.encoder = encodeRecordCon;
 
         return progress;
     }
@@ -494,7 +495,8 @@ public final class KafkaClientProduceFactory implements StreamFactory
         int progress,
         int limit)
     {
-        final int length = limit - progress;
+        stream.client.doEncodeRecordCon(traceId, data.payload());
+        stream.encoder = this::encodeRecordFin;
 
         return progress;
     }
@@ -1408,7 +1410,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
         private void doEncodeRecordCon(
             long traceId,
-            long timestamp,
             OctetsFW value)
         {
             final MutableDirectBuffer encodeBuffer = writeBuffer;
