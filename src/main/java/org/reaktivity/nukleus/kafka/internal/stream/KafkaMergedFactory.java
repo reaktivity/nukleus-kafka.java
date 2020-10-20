@@ -16,10 +16,10 @@
 package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
-import static org.reaktivity.nukleus.kafka.internal.types.KafkaAge.HISTORICAL;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.FETCH_ONLY;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.PRODUCE_ONLY;
-import static org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW.KIND_AGE;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.HISTORICAL;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.LIVE;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 import static org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW.Builder.DEFAULT_MINIMUM;
 
@@ -227,7 +227,7 @@ public final class KafkaMergedFactory implements StreamFactory
             final ArrayFW<KafkaOffsetFW> partitions = kafkaMergedBeginEx.partitions();
 
             final KafkaOffsetFW partition = partitions.matchFirst(p -> p.partitionId() == -1L);
-            final long defaultOffset = partition != null ? partition.partitionOffset() : KafkaOffsetType.EARLIEST.value();
+            final long defaultOffset = partition != null ? partition.partitionOffset() : HISTORICAL.value();
 
             final Long2LongHashMap initialOffsetsById = new Long2LongHashMap(-3L);
             partitions.forEach(p ->
@@ -802,7 +802,7 @@ public final class KafkaMergedFactory implements StreamFactory
         private final long defaultOffset;
         private final KafkaDeltaType deltaType;
 
-        private KafkaAge maximumAge;
+        private KafkaOffsetType maximumOffset;
         private List<KafkaMergedFilter> filters;
 
         private int state;
@@ -914,7 +914,7 @@ public final class KafkaMergedFactory implements StreamFactory
             final KafkaMergedBeginExFW mergedBeginEx = beginEx.merged();
             final Array32FW<KafkaFilterFW> filters = mergedBeginEx.filters();
 
-            this.maximumAge = asMaximumAge(filters);
+            this.maximumOffset = asMaximumOffset(mergedBeginEx.partitions());
             this.filters = asMergedFilters(filters);
 
             describeStream.doDescribeInitialBegin(traceId);
@@ -973,12 +973,11 @@ public final class KafkaMergedFactory implements StreamFactory
             }
         }
 
-        private KafkaAge asMaximumAge(
-            Array32FW<KafkaFilterFW> filters)
+        private KafkaOffsetType asMaximumOffset(
+            Array32FW<KafkaOffsetFW> partitions)
         {
-            return filters.isEmpty() ||
-                       filters.anyMatch(a -> !a.conditions().anyMatch(c -> c.kind() == KIND_AGE && c.age().get() == HISTORICAL)) ?
-                       KafkaAge.LIVE : HISTORICAL;
+            return partitions.isEmpty() ||
+                   partitions.anyMatch(p -> p.latestOffset() != HISTORICAL.value()) ? LIVE : HISTORICAL;
         }
 
         private int nextPartition(
@@ -1001,10 +1000,13 @@ public final class KafkaMergedFactory implements StreamFactory
 
             describeStream.doDescribeInitialEndIfNecessary(traceId);
             metaStream.doMetaInitialEndIfNecessary(traceId);
-            fetchStreams.forEach(f -> f.doFetchInitialEndIfNecessary(traceId));
+            fetchStreams.forEach(f -> f.onMergedInitialEnd(traceId));
             produceStreams.forEach(f -> f.doProduceInitialEndIfNecessary(traceId));
 
-            doMergedReplyEndIfNecessary(traceId);
+            if (fetchStreams.isEmpty())
+            {
+                doMergedReplyEndIfNecessary(traceId);
+            }
         }
 
         private void onMergedInitialAbort(
@@ -1017,10 +1019,13 @@ public final class KafkaMergedFactory implements StreamFactory
 
             describeStream.doDescribeInitialAbortIfNecessary(traceId);
             metaStream.doMetaInitialAbortIfNecessary(traceId);
-            fetchStreams.forEach(f -> f.doFetchInitialAbortIfNecessary(traceId));
+            fetchStreams.forEach(f -> f.onMergedInitialAbort(traceId));
             produceStreams.forEach(f -> f.doProduceInitialEndIfNecessary(traceId));
 
-            doMergedReplyAbortIfNecessary(traceId);
+            if (fetchStreams.isEmpty())
+            {
+                doMergedReplyAbortIfNecessary(traceId);
+            }
         }
 
         private void onMergedInitialFlush(
@@ -1043,11 +1048,28 @@ public final class KafkaMergedFactory implements StreamFactory
                 final Array32FW<KafkaFilterFW> filters = kafkaMergedFlushEx.filters();
                 final List<KafkaMergedFilter> newFilters = asMergedFilters(filters);
 
-                this.maximumAge = asMaximumAge(filters);
+                this.maximumOffset = asMaximumOffset(kafkaMergedFlushEx.progress());
 
                 if (hasFetchCapability(capabilities) && hasFetchCapability(newCapabilities))
                 {
                     assert Objects.equals(this.filters, newFilters);
+                }
+
+                if (hasFetchCapability(newCapabilities) && !hasFetchCapability(capabilities))
+                {
+                    final Long2LongHashMap initialOffsetsById = new Long2LongHashMap(-3L);
+                    kafkaMergedFlushEx.progress().forEach(p ->
+                    {
+                        final long partitionId = p.partitionId();
+                        if (partitionId >= 0L)
+                        {
+                            final long partitionOffset = p.partitionOffset();
+                            initialOffsetsById.put(partitionId, partitionOffset);
+                        }
+                    });
+
+                    nextOffsetsById.clear();
+                    nextOffsetsById.putAll(initialOffsetsById);
                 }
 
                 this.capabilities = newCapabilities;
@@ -1075,11 +1097,10 @@ public final class KafkaMergedFactory implements StreamFactory
             if (KafkaState.replyOpening(state))
             {
                 state = KafkaState.openedReply(state);
-            }
-
-            if (mergedReplyBudgetId == NO_CREDITOR_INDEX)
-            {
-                mergedReplyBudgetId = creditor.acquire(replyId, budgetId);
+                if (mergedReplyBudgetId == NO_CREDITOR_INDEX)
+                {
+                    mergedReplyBudgetId = creditor.acquire(replyId, budgetId);
+                }
             }
 
             if (mergedReplyBudgetId != NO_CREDITOR_INDEX)
@@ -1127,10 +1148,13 @@ public final class KafkaMergedFactory implements StreamFactory
 
             describeStream.doDescribeReplyResetIfNecessary(traceId);
             metaStream.doMetaReplyResetIfNecessary(traceId);
-            fetchStreams.forEach(f -> f.doFetchReplyResetIfNecessary(traceId));
+            fetchStreams.forEach(f -> f.onMergedReplyReset(traceId));
             produceStreams.forEach(f -> f.doProduceReplyResetIfNecessary(traceId));
 
-            doMergedInitialResetIfNecessary(traceId);
+            if (fetchStreams.isEmpty())
+            {
+                doMergedInitialResetIfNecessary(traceId);
+            }
         }
 
         private void doMergedReplyBeginIfNecessary(
@@ -1148,9 +1172,14 @@ public final class KafkaMergedFactory implements StreamFactory
             assert !KafkaState.replyOpening(state);
             state = KafkaState.openingReply(state);
 
-            if (replyBudget > 0)
+            if (!KafkaState.replyOpened(state) && replyBudget > 0)
             {
                 state = KafkaState.openedReply(state);
+                if (mergedReplyBudgetId == NO_CREDITOR_INDEX)
+                {
+                    mergedReplyBudgetId = creditor.acquire(replyId, replyBudgetId);
+                    creditor.credit(traceId, mergedReplyBudgetId, replyBudget);
+                }
             }
 
             if (capabilities == FETCH_ONLY)
@@ -1359,6 +1388,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 nextOffsetsById.clear();
                 fetchStreams.forEach(f -> f.doFetchReplyResetIfNecessary(traceId));
                 creditor.cleanupChild(mergedReplyBudgetId);
+                cleanupBudgetCreditorIfNecessary();
                 if (fetchStreams.isEmpty())
                 {
                     doMergedInitialReset(traceId);
@@ -1494,7 +1524,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 final KafkaUnmergedFetchStream leader = findFetchPartitionLeader(partitionId);
                 assert leader != null;
 
-                if (nextOffsetsById.containsKey(partitionId) && maximumAge != HISTORICAL)
+                if (nextOffsetsById.containsKey(partitionId) && maximumOffset != HISTORICAL)
                 {
                     final long partitionOffset = nextFetchPartitionOffset(partitionId);
                     leader.doFetchInitialBegin(traceId, partitionOffset);
@@ -1504,6 +1534,11 @@ public final class KafkaMergedFactory implements StreamFactory
                     fetchStreams.remove(leader);
                     if (fetchStreams.isEmpty())
                     {
+                        if (KafkaState.closed(state))
+                        {
+                            cleanupBudgetCreditorIfNecessary();
+                        }
+
                         if (KafkaState.initialClosing(state))
                         {
                             doMergedInitialResetIfNecessary(traceId);
@@ -1512,6 +1547,7 @@ public final class KafkaMergedFactory implements StreamFactory
                         {
                             doMergedReplyEndIfNecessary(traceId);
                         }
+
                     }
                 }
             }
@@ -2164,11 +2200,22 @@ public final class KafkaMergedFactory implements StreamFactory
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(merged.topic)
-                                     .partition(p -> p.partitionId(partitionId).partitionOffset(partitionOffset))
+                                     .partition(p -> p.partitionId(partitionId)
+                                                      .partitionOffset(partitionOffset)
+                                                      .latestOffset(merged.maximumOffset.value()))
                                      .filters(fs -> merged.filters.forEach(mf -> fs.item(i -> setFetchFilter(i, mf))))
                                      .deltaType(t -> t.set(merged.deltaType)))
                         .build()
                         .sizeof()));
+        }
+
+        private void onMergedInitialEnd(
+            long traceId)
+        {
+            if (!KafkaState.replyClosing(state))
+            {
+                doFetchInitialEndIfNecessary(traceId);
+            }
         }
 
         private void doFetchInitialEndIfNecessary(
@@ -2186,6 +2233,15 @@ public final class KafkaMergedFactory implements StreamFactory
             state = KafkaState.closedInitial(state);
 
             doEnd(receiver, merged.resolvedId, initialId, traceId, merged.authorization, EMPTY_EXTENSION);
+        }
+
+        private void onMergedInitialAbort(
+            long traceId)
+        {
+            if (!KafkaState.replyClosing(state))
+            {
+                doFetchInitialAbortIfNecessary(traceId);
+            }
         }
 
         private void doFetchInitialAbortIfNecessary(
@@ -2328,7 +2384,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
-            if (merged.maximumAge != HISTORICAL)
+            if (merged.maximumOffset != HISTORICAL)
             {
                 merged.doMergedReplyEndIfNecessary(traceId);
             }
@@ -2336,7 +2392,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             merged.onFetchPartitionLeaderError(traceId, partitionId, ERROR_NOT_LEADER_FOR_PARTITION);
 
-            if (merged.maximumAge == HISTORICAL && merged.fetchStreams.isEmpty())
+            if (merged.maximumOffset == HISTORICAL && merged.fetchStreams.isEmpty())
             {
                 merged.doMergedReplyEndIfNecessary(traceId);
             }
@@ -2372,6 +2428,15 @@ public final class KafkaMergedFactory implements StreamFactory
                     doWindow(receiver, merged.resolvedId, replyId, traceId, merged.authorization,
                         merged.mergedReplyBudgetId, credit, merged.replyPadding, merged.replyMinimum);
                 }
+            }
+        }
+
+        private void onMergedReplyReset(
+            long traceId)
+        {
+            if (!KafkaState.initialClosing(state))
+            {
+                doFetchReplyResetIfNecessary(traceId);
             }
         }
 

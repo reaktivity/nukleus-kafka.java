@@ -183,8 +183,12 @@ public final class KafkaCacheCursorFactory
                 final KafkaCacheFile logFile = segment.logFile();
                 assert logFile != null;
 
-                nextEntry = logFile.readBytes(position, cacheEntry::wrap);
-                assert nextEntry != null;
+                nextEntry = logFile.readBytes(position, cacheEntry::tryWrap);
+
+                if (nextEntry == null)
+                {
+                    break next;
+                }
 
                 final long nextOffset = nextEntry.offset$();
 
@@ -654,14 +658,16 @@ public final class KafkaCacheCursorFactory
                         final KafkaFilterCondition condition = conditions.get(i);
                         final long nextCursor = condition.reset(segment, offset, latestOffset, position);
 
-                        nextCursorMin = minByValue(nextCursor, nextCursorMin);
-                        nextCursorMax = maxByValue(nextCursor, nextCursorMax);
-
-                        if (nextCursorMin == NEXT_SEGMENT)
+                        if (i == 0 || nextCursorMin != NEXT_SEGMENT)
                         {
-                            nextCursorMax = nextCursorMin;
-                            break;
+                            nextCursorMin = minByValue(nextCursor, nextCursorMin);
+                            nextCursorMax = maxByValue(nextCursor, nextCursorMax);
                         }
+                    }
+
+                    if (nextCursorMin == NEXT_SEGMENT)
+                    {
+                        nextCursorMax = nextCursorMin;
                     }
 
                     if (cursorRetryValue(nextCursorMax) ||
