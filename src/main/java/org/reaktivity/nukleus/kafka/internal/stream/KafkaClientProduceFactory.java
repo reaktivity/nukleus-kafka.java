@@ -1428,6 +1428,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
             encodeSlotBuffer.putBytes(encodeSlotLimit, encodeBuffer, 0, encodeProgress);
             encodeSlotLimit += encodeProgress;
+            encodeableRecordBytes += encodeProgress;
 
             if (headers.fieldCount() > 0)
             {
@@ -1438,7 +1439,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
                 final int encodeSlotMaxLimit = encodePool.slotCapacity() - headerItemsSize;
                 encodeSlotBuffer.putBytes(encodeSlotMaxLimit, headerItems, 0, headerItemsSize);
             }
-            encodeableRecordBytes += encodeProgress;
         }
 
         private void doEncodeRecordCon(
@@ -1451,7 +1451,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
                 final MutableDirectBuffer encodeSlotBuffer = encodePool.buffer(encodeSlot);
 
                 final int length = value.sizeof();
-                encodeSlotBuffer.putBytes(encodeSlotLimit, value.value(), 0, length);
+                encodeSlotBuffer.putBytes(encodeSlotLimit,  value.buffer(), value.offset(), length);
                 encodeSlotLimit += length;
                 encodeableRecordBytes += length;
             }
