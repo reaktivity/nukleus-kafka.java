@@ -1490,10 +1490,12 @@ public final class KafkaClientProduceFactory implements StreamFactory
                 encodeProgress += headerItemsSize;
             }
 
+            encodeSlotBuffer.putBytes(encodeSlotLimit, encodeBuffer, 0, encodeProgress);
+            encodeSlotLimit += encodeProgress;
+
             final int recordSize = (encodeSlotLimit - recordHeaderOffset) + encodeProgress - RECORD_LENGTH_MAX;
 
             RecordHeaderFW recordHeader = recordHeaderRO.wrap(encodeSlotBuffer, recordHeaderOffset,  recordHeaderOffset + recordHeaderLimit);
-
             RecordHeaderFW newRecordHeader = recordHeaderRW.wrap(encodeBuffer, 0, recordHeaderLimit)
                                          .length(recordSize)
                                          .attributes(recordHeader.attributes())
@@ -1504,16 +1506,19 @@ public final class KafkaClientProduceFactory implements StreamFactory
                                          .valueLength(recordHeader.valueLength())
                                          .build();
 
-            final int recordHeaderNewLimit = newRecordHeader.limit();
-            if (recordHeaderNewLimit != recordHeaderLimit)
+            final int newRecordHeaderLimit = newRecordHeader.limit();
+            if (newRecordHeaderLimit != recordHeaderLimit)
             {
-                encodeSlotBuffer.putBytes(recordHeaderOffset, encodeBuffer, 0, recordHeaderLimit);
+                encodeSlotBuffer.putBytes(recordHeaderOffset, encodeBuffer, 0, newRecordHeaderLimit);
+                final int recordHeaderMaxLimit = recordHeaderOffset + newRecordHeaderLimit;
+                final int length = encodeSlotLimit - (recordHeaderOffset + recordHeaderLimit);
+                encodeSlotBuffer.putBytes(recordHeaderMaxLimit, encodeSlotBuffer, recordHeaderLimit, length);
             }
 
-            encodeSlotLimit += encodeProgress;
-
+            final int recordHeaderLimitDiff = recordHeaderLimit - newRecordHeaderLimit;
+            encodeSlotLimit -= recordHeaderLimitDiff;
             encodeableRecordCount++;
-            encodeableRecordBytes += encodeProgress;
+            encodeableRecordBytes += encodeProgress - recordHeaderLimitDiff;
 
             encodeableRecordBatchTimestampMax = Math.max(encodeableRecordBatchTimestamp, encodeableRecordTimestamp);
 
