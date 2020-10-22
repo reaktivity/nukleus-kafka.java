@@ -40,12 +40,12 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.Node;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
-import org.reaktivity.nukleus.kafka.internal.types.KafkaAgeFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaNotFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheDeltaFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
@@ -476,12 +476,16 @@ public final class KafkaCacheCursorFactory
             }
         }
 
-        private static class Age extends KafkaFilterCondition
+        private abstract static class NotEquals extends KafkaFilterCondition
         {
-            private KafkaCacheIndexFile indexFile;
+            private final int hash;
+            private final DirectBuffer value;
+            private final DirectBuffer comparable;
+
+            private KafkaCacheIndexFile hashFile;
 
             @Override
-            public long reset(
+            public final long reset(
                 KafkaCacheSegment segment,
                 long offset,
                 long latestOffset,
@@ -491,40 +495,64 @@ public final class KafkaCacheCursorFactory
 
                 if (segment != null)
                 {
-                    final KafkaCacheIndexFile indexFile = segment.indexFile();
-                    assert indexFile != null;
+                    final KafkaCacheIndexFile hashFile = segment.hashFile();
+                    assert hashFile != null;
 
-                    this.indexFile = indexFile;
+                    this.hashFile = hashFile;
 
-                    final int offsetDelta = (int)(offset - segment.baseOffset());
-                    cursor = indexFile.first(offsetDelta);
+                    if (position == POSITION_UNSET)
+                    {
+                        final KafkaCacheIndexFile indexFile = segment.indexFile();
+                        assert indexFile != null;
+                        final int offsetDelta = (int)(offset - segment.baseOffset());
+                        position = cursorValue(indexFile.first(offsetDelta));
+                    }
+
+                    cursor = hashFile.first(hash);
+                    if (cursorValue(cursor) != cursorValue(RETRY_SEGMENT))
+                    {
+                        final int cursorIndex = cursorIndex(cursor);
+                        final long cursorFirstHashWithPosition = cursor(cursorIndex, position);
+                        cursor = hashFile.ceiling(hash, cursorFirstHashWithPosition);
+                    }
                 }
                 else
                 {
-                    this.indexFile = null;
+                    this.hashFile = null;
                 }
 
                 return cursor;
             }
 
             @Override
-            public long next(
+            public final long next(
                 long cursor)
             {
-                return indexFile != null ? indexFile.resolve(cursor) : NEXT_SEGMENT;
+                return hashFile != null ? hashFile.resolve(cursor) : NEXT_SEGMENT;
             }
 
             @Override
-            public boolean test(
-                KafkaCacheEntryFW cacheEntry)
+            public final String toString()
             {
-                return cacheEntry != null;
+                return String.format("%s[%08x]", getClass().getSimpleName(), hash);
             }
 
-            @Override
-            public String toString()
+            protected NotEquals(
+                CRC32C checksum,
+                DirectBuffer buffer,
+                int index,
+                int length)
             {
-                return String.format("%s[]", getClass().getSimpleName());
+                this.value = copyBuffer(buffer, index, length);
+                this.hash = computeHash(buffer, index, length, checksum);
+                this.comparable = new UnsafeBuffer();
+            }
+
+            protected final boolean test(
+                Flyweight header)
+            {
+                comparable.wrap(header.buffer(), header.offset(), header.sizeof());
+                return comparable.compareTo(value) != 0;
             }
         }
 
@@ -568,57 +596,43 @@ public final class KafkaCacheCursorFactory
             }
         }
 
-        private static final class Live extends Age
+        private static final class NotKey extends NotEquals
         {
-            private long historical;
-
-            private Live()
+            private NotKey(
+                CRC32C checksum,
+                KafkaKeyFW key)
             {
-            }
-
-            @Override
-            public long reset(
-                KafkaCacheSegment segment,
-                long offset,
-                long latest,
-                int position)
-            {
-                this.historical = latest;
-                return super.reset(segment, offset, latest, position);
+                super(checksum, key.buffer(), key.offset(), key.sizeof());
             }
 
             @Override
             public boolean test(
                 KafkaCacheEntryFW cacheEntry)
             {
-                return super.test(cacheEntry) && cacheEntry.offset$() > historical;
+                return test(cacheEntry.key());
             }
         }
 
-        private static final class Historical extends Age
+        private static final class NotHeader extends NotEquals
         {
-            private long historical;
+            private final MutableBoolean match;
 
-            private Historical()
+            private NotHeader(
+                CRC32C checksum,
+                KafkaHeaderFW header)
             {
-            }
-
-            @Override
-            public long reset(
-                KafkaCacheSegment segment,
-                long offset,
-                long latest,
-                int position)
-            {
-                this.historical = latest;
-                return super.reset(segment, offset, latest, position);
+                super(checksum, header.buffer(), header.offset(), header.sizeof());
+                this.match = new MutableBoolean();
             }
 
             @Override
             public boolean test(
                 KafkaCacheEntryFW cacheEntry)
             {
-                return super.test(cacheEntry) && cacheEntry.offset$() <= historical;
+                final ArrayFW<KafkaHeaderFW> headers = cacheEntry.headers();
+                match.value = false;
+                headers.forEach(header -> match.value |= test(header));
+                return match.value;
             }
         }
 
@@ -885,8 +899,8 @@ public final class KafkaCacheCursorFactory
         case KafkaConditionFW.KIND_HEADER:
             asCondition = asHeaderCondition(condition.header());
             break;
-        case KafkaConditionFW.KIND_AGE:
-            asCondition = asAgeCondition(condition.age());
+        case KafkaConditionFW.KIND_NOT:
+            asCondition = asNotCondition(condition.not());
             break;
         }
 
@@ -908,20 +922,25 @@ public final class KafkaCacheCursorFactory
         return new KafkaFilterCondition.Header(checksum, header);
     }
 
-    private KafkaFilterCondition asAgeCondition(
-        KafkaAgeFW age)
+    private KafkaFilterCondition asNotCondition(
+        KafkaNotFW not)
     {
-        KafkaFilterCondition condition;
-        switch (age.get())
+        final KafkaConditionFW condition = not.condition();
+
+        KafkaFilterCondition filterCondition = null;
+        switch (condition.kind())
         {
-        case LIVE:
-            condition = new KafkaFilterCondition.Live();
+        case KafkaConditionFW.KIND_KEY:
+            final KafkaKeyFW key = condition.key();
+            final OctetsFW value = key.value();
+
+            filterCondition = value == null ? nullKeyInfo : new KafkaFilterCondition.NotKey(checksum, key);
             break;
-        default:
-            condition = new KafkaFilterCondition.Historical();
+        case KafkaConditionFW.KIND_HEADER:
+            filterCondition = new KafkaFilterCondition.NotHeader(checksum, condition.header());
             break;
         }
-        return condition;
+        return filterCondition;
     }
 
     private static KafkaFilterCondition.Key initNullKeyInfo(
