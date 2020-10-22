@@ -90,6 +90,10 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
     private static final int KAFKA_RECORD_FRAMING = 100; // TODO
 
+    private static final int FLAGS_CON = 0x00;
+    private static final int FLAGS_FIN = 0x01;
+    private static final int FLAGS_INIT = 0x02;
+
     private static final byte RECORD_BATCH_MAGIC = 2;
     private static final short RECORD_BATCH_ATTRIBUTES_NONE = 0;
     private static final short RECORD_BATCH_ATTRIBUTES_NO_TIMESTAMP = 0x08;
@@ -160,9 +164,10 @@ public final class KafkaClientProduceFactory implements StreamFactory
     private final ProducePartitionResponseFW producePartitionResponseRO = new ProducePartitionResponseFW();
     private final ProduceResponseTrailerFW produceResponseTrailerRO = new ProduceResponseTrailerFW();
 
-    private final KafkaProduceClientStreamEncoder encodeRecordInit = this::encodeRecordInit;
-    private final KafkaProduceClientStreamEncoder encodeRecordCon = this::encodeRecordCon;
-    private final KafkaProduceClientStreamEncoder encodeRecordFin = this::encodeRecordFin;
+    private final KafkaProduceClientEncoder encodeRecord = this::encodeRecord;
+    private final KafkaProduceClientEncoder encodeRecordInit = this::encodeRecordInit;
+    private final KafkaProduceClientEncoder encodeRecordCon = this::encodeRecordCon;
+    private final KafkaProduceClientEncoder encodeRecordFin = this::encodeRecordFin;
 
     private final KafkaProduceClientDecoder decodeProduceResponse = this::decodeProduceResponse;
     private final KafkaProduceClientDecoder decodeProduce = this::decodeProduce;
@@ -443,30 +448,54 @@ public final class KafkaClientProduceFactory implements StreamFactory
     }
 
     @FunctionalInterface
-    private interface KafkaProduceClientStreamEncoder
+    private interface KafkaProduceClientEncoder
     {
         int encode(
-            KafkaProduceStream stream,
+            KafkaProduceClient client,
             long traceId,
             long authorization,
             long budgetId,
             int reserved,
-            DataFW data,
+            int flags,
+            OctetsFW payload,
+            OctetsFW extension,
             int progress,
             int limit);
     }
 
-    private int encodeRecordInit(
-        KafkaProduceStream stream,
+    private int encodeRecord(
+        KafkaProduceClient client,
         long traceId,
         long authorization,
         long budgetId,
         int reserved,
-        DataFW data,
+        int flags,
+        OctetsFW payload,
+        OctetsFW extension,
         int progress,
         int limit)
     {
-        final KafkaDataExFW kafkaDataEx = data.extension().get(kafkaDataExRO::tryWrap);
+        if (client.dataFlags == FLAGS_INIT)
+        {
+            client.encoder = this::encodeRecordInit;
+        }
+
+        return progress;
+    }
+
+    private int encodeRecordInit(
+        KafkaProduceClient client,
+        long traceId,
+        long authorization,
+        long budgetId,
+        int reserved,
+        int flags,
+        OctetsFW payload,
+        OctetsFW extension,
+        int progress,
+        int limit)
+    {
+        final KafkaDataExFW kafkaDataEx = extension.get(kafkaDataExRO::tryWrap);
         assert kafkaDataEx != null;
         assert kafkaDataEx.kind() == KafkaDataExFW.KIND_PRODUCE;
         final KafkaProduceDataExFW kafkaProduceDataEx = kafkaDataEx.produce();
@@ -474,53 +503,58 @@ public final class KafkaClientProduceFactory implements StreamFactory
         final KafkaKeyFW key = kafkaProduceDataEx.key();
         final Array32FW<KafkaHeaderFW> headers = kafkaProduceDataEx.headers();
 
-        final OctetsFW value = data.payload();
-
         // TODO: flow control includes headers (extension)
-        if (stream.client.encodeSlot != NO_SLOT &&
-            stream.client.encodeSlotLimit + data.sizeof() + KAFKA_RECORD_FRAMING > encodePool.slotCapacity())
+        if (client.encodeSlot != NO_SLOT &&
+            client.encodeSlotLimit + payload.sizeof() + KAFKA_RECORD_FRAMING > encodePool.slotCapacity())
         {
-            stream.client.doEncodeRequestIfNecessary(traceId);
+            client.doEncodeRequestIfNecessary(traceId);
         }
 
-        stream.client.doEncodeRecordInit(traceId, timestamp, key, value, headers);
-        stream.encoder = encodeRecordCon;
+        client.doEncodeRecordInit(traceId, timestamp, key, payload, headers);
+        client.encoder = encodeRecordCon;
+        client.dataFlags = FLAGS_INIT;
 
         return progress;
     }
 
     private int encodeRecordCon(
-        KafkaProduceStream stream,
+        KafkaProduceClient client,
         long traceId,
         long authorization,
         long budgetId,
         int reserved,
-        DataFW data,
+        int flags,
+        OctetsFW payload,
+        OctetsFW extension,
         int progress,
         int limit)
     {
-        final OctetsFW payload = data.payload();
         final int length = payload != null ? payload.sizeof() : 0;
-        stream.client.doEncodeRecordCon(traceId, payload);
-        stream.encoder = this::encodeRecordFin;
+        client.doEncodeRecordCon(traceId, payload);
+        client.encoder = this::encodeRecordFin;
+        client.dataFlags = FLAGS_CON;
 
         return progress + length;
     }
 
     private int encodeRecordFin(
-        KafkaProduceStream stream,
+        KafkaProduceClient client,
         long traceId,
         long authorization,
         long budgetId,
         int reserved,
-        DataFW data,
+        int flags,
+        OctetsFW payload,
+        OctetsFW extension,
         int progress,
         int limit)
     {
-        stream.client.doEncodeRecordFin(traceId);
-        stream.encoder = this::encodeRecordInit;
+        client.doEncodeRecordFin(traceId);
+        assert progress == limit;
+        client.encoder = this::encodeRecord;
+        client.dataFlags = FLAGS_FIN;
 
-        return progress + 1;
+        return progress;
     }
 
     @FunctionalInterface
@@ -770,8 +804,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
         private int initialBudget;
 
-        private KafkaProduceClientStreamEncoder encoder;
-
         KafkaProduceStream(
             MessageConsumer application,
             long routeId,
@@ -786,7 +818,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
             this.initialId = initialId;
             this.replyId = supplyReplyId.applyAsLong(initialId);
             this.affinity = affinity;
-            this.encoder = encodeRecordInit;
             this.client = new KafkaProduceClient(this, resolvedId, topic, partitionId);
         }
 
@@ -846,7 +877,9 @@ public final class KafkaClientProduceFactory implements StreamFactory
             final long budgetId = data.budgetId();
             final long traceId = data.traceId();
             final int reserved = data.reserved();
+            final int flags = data.flags();
             final OctetsFW payload = data.payload();
+            final OctetsFW extension = data.extension();
             int progress = payload != null ? payload.offset() : -1;
             final int limit = payload != null? payload.limit() : -1;
 
@@ -866,13 +899,16 @@ public final class KafkaClientProduceFactory implements StreamFactory
             }
             else
             {
-                KafkaProduceClientStreamEncoder previous = null;
-
-                while (progress <= limit && previous != encoder)
-                {
-                    previous = encoder;
-                    progress = encoder.encode(this, traceId, authorization, budgetId,  reserved,data, progress, limit);
-                }
+                client.encode(
+                    traceId,
+                    authorization,
+                    budgetId,
+                    reserved,
+                    flags,
+                    payload,
+                    extension,
+                    progress,
+                    limit);
             }
         }
 
@@ -1043,6 +1079,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
         private final KafkaClientRoute clientRoute;
 
         private int state;
+        private int dataFlags;
         private long authorization;
 
         private long initialBudgetId;
@@ -1074,10 +1111,11 @@ public final class KafkaClientProduceFactory implements StreamFactory
         private int nextResponseId;
 
         private KafkaProduceClientDecoder decoder;
+        private KafkaProduceClientEncoder encoder;
         private int signaledRequestId;
         private int recordHeaderOffset;
         private int recordHeaderLimit;
-        private int headerItemsSize;
+        private int encodeableRecordHeadersBytes;
 
         KafkaProduceClient(
             KafkaProduceStream stream,
@@ -1093,6 +1131,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
             this.topic = requireNonNull(topic);
             this.partitionId = partitionId;
             this.decoder = decodeProduceResponse;
+            this.encoder = encodeRecord;
             this.clientRoute = supplyClientRoute.apply(routeId);
             this.encodeableRecordBatchTimestamp = TIMESTAMP_NONE;
             this.encodeableRecordBatchTimestampMax = TIMESTAMP_NONE;
@@ -1384,6 +1423,36 @@ public final class KafkaClientProduceFactory implements StreamFactory
             doWindow(network, routeId, replyId, traceId, authorization, budgetId, credit, padding);
         }
 
+        private void encode(
+            long traceId,
+            long authorization,
+            long budgetId,
+            int reserved,
+            int flags,
+            OctetsFW payload,
+            OctetsFW extension,
+            int progress,
+            int limit)
+        {
+            KafkaProduceClientEncoder previous = null;
+            dataFlags = flags & FLAGS_INIT;
+
+            while (progress <= limit && previous != encoder)
+            {
+                previous = encoder;
+                progress = encoder.encode(
+                    this,
+                    traceId,
+                    authorization,
+                    budgetId,
+                    reserved,
+                    dataFlags,
+                    payload,
+                    extension,
+                    progress,
+                    limit);
+            }
+        }
 
         private void doEncodeRecordInit(
             long traceId,
@@ -1404,14 +1473,14 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
             final int timestampDelta = (int) (timestamp - encodeableRecordBatchTimestamp);
             RecordHeaderFW recordHeader = recordHeaderRW.wrap(encodeBuffer, encodeProgress, encodeLimit)
-                                                        .length(Integer.MAX_VALUE)
-                                                        .attributes(RECORD_ATTRIBUTES_NONE)
-                                                        .timestampDelta(timestampDelta)
-                                                        .offsetDelta(encodeableRecordCount)
-                                                        .keyLength(key.length())
-                                                        .key(key.value())
-                                                        .valueLength(value != null ? value.sizeof() : -1)
-                                                        .build();
+                                   .length(Integer.MAX_VALUE)
+                                   .attributes(RECORD_ATTRIBUTES_NONE)
+                                   .timestampDelta(timestampDelta)
+                                   .offsetDelta(encodeableRecordCount)
+                                   .keyLength(key.length())
+                                   .key(key.value())
+                                   .valueLength(value != null ? value.sizeof() : -1)
+                                   .build();
 
             encodeProgress = recordHeader.limit();
 
@@ -1434,11 +1503,11 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
             if (headers.fieldCount() > 0)
             {
-                headerItemsSize = headers.sizeof();
+                encodeableRecordHeadersBytes = headers.sizeof();
 
                 //TODO: check if this requires increasing encodeSlotLimit
-                final int encodeSlotMaxLimit = encodePool.slotCapacity() - headerItemsSize;
-                encodeSlotBuffer.putBytes(encodeSlotMaxLimit, headers.buffer(), headers.offset(), headerItemsSize);
+                final int encodeSlotMaxLimit = encodePool.slotCapacity() - encodeableRecordHeadersBytes;
+                encodeSlotBuffer.putBytes(encodeSlotMaxLimit, headers.buffer(), headers.offset(), encodeableRecordHeadersBytes);
             }
         }
 
@@ -1469,15 +1538,15 @@ public final class KafkaClientProduceFactory implements StreamFactory
             int encodeProgress = 0;
 
             Array32FW<KafkaHeaderFW> headers = EMPTY_HEADER;
-            if (headerItemsSize > 0)
+            if (encodeableRecordHeadersBytes > 0)
             {
                 final int encodeSlotMaxLimit = encodePool.slotCapacity();
-                headers = kafkaHeaderRO.wrap(encodeSlotBuffer, encodeSlotMaxLimit - headerItemsSize, encodeSlotMaxLimit);
+                headers = kafkaHeaderRO.wrap(encodeSlotBuffer, encodeSlotMaxLimit - encodeableRecordHeadersBytes, encodeSlotMaxLimit);
             }
             final int headersCount = headers.fieldCount();
             final RecordTrailerFW recordTrailer = recordTrailerRW.wrap(encodeBuffer, encodeProgress, encodeLimit)
-                                                                 .headerCount(headersCount)
-                                                                 .build();
+                    .headerCount(headersCount)
+                    .build();
 
             encodeProgress = recordTrailer.limit();
 
