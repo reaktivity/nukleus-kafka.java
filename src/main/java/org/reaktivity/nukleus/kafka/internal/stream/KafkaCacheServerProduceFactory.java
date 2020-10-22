@@ -69,6 +69,9 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
     private static final String TRANSACTION_NONE = null;
 
+    private static final int FLAGS_FIN = 0x01;
+    private static final int FLAGS_INIT = 0x02;
+
     private static final DirectBuffer EMPTY_BUFFER = new UnsafeBuffer();
     private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(EMPTY_BUFFER, 0, 0);
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
@@ -817,6 +820,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         private final long leaderId;
         private final long authorization;
 
+        private int initialFlags;
         private int state;
 
         private int initialBudget;
@@ -901,6 +905,16 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             final long budgetId = data.budgetId();
             final int reserved = data.reserved();
             final OctetsFW payload = data.payload();
+
+            assert (flags & FLAGS_INIT) != (initialFlags & FLAGS_INIT);
+
+            initialFlags |= flags;
+
+            if ((initialFlags & FLAGS_FIN) != 0)
+            {
+                initialFlags = 0;
+            }
+
             final OctetsFW extension = data.extension();
 
             if (KafkaConfiguration.DEBUG_PRODUCE)
