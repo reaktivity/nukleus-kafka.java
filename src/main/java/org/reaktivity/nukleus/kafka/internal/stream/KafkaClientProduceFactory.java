@@ -166,8 +166,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
     private final KafkaProduceClientEncoder encodeRecord = this::encodeRecord;
     private final KafkaProduceClientEncoder encodeRecordInit = this::encodeRecordInit;
-    private final KafkaProduceClientEncoder encodeRecordCon = this::encodeRecordCon;
-    private final KafkaProduceClientEncoder encodeRecordFin = this::encodeRecordFin;
+    private final KafkaProduceClientEncoder encodeRecordFin = this::encodeRecordConFin;
 
     private final KafkaProduceClientDecoder decodeProduceResponse = this::decodeProduceResponse;
     private final KafkaProduceClientDecoder decodeProduce = this::decodeProduce;
@@ -511,13 +510,13 @@ public final class KafkaClientProduceFactory implements StreamFactory
         }
 
         client.doEncodeRecordInit(traceId, timestamp, key, payload, headers);
-        client.encoder = encodeRecordCon;
+        client.encoder = this::encodeRecordConFin;
         client.dataFlags = FLAGS_INIT;
 
         return progress;
     }
 
-    private int encodeRecordCon(
+    private int encodeRecordConFin(
         KafkaProduceClient client,
         long traceId,
         long authorization,
@@ -531,28 +530,17 @@ public final class KafkaClientProduceFactory implements StreamFactory
     {
         final int length = payload != null ? payload.sizeof() : 0;
         client.doEncodeRecordCon(traceId, payload);
-        client.encoder = this::encodeRecordFin;
         client.dataFlags = FLAGS_CON;
 
-        return progress + length;
-    }
+        progress += length;
 
-    private int encodeRecordFin(
-        KafkaProduceClient client,
-        long traceId,
-        long authorization,
-        long budgetId,
-        int reserved,
-        int flags,
-        OctetsFW payload,
-        OctetsFW extension,
-        int progress,
-        int limit)
-    {
-        client.doEncodeRecordFin(traceId);
-        assert progress == limit;
-        client.encoder = this::encodeRecord;
-        client.dataFlags = FLAGS_FIN;
+        if ((flags & FLAGS_FIN) == FLAGS_FIN)
+        {
+            client.doEncodeRecordFin(traceId);
+            assert progress == limit;
+            client.encoder = this::encodeRecord;
+            client.dataFlags = FLAGS_FIN;
+        }
 
         return progress;
     }
@@ -1446,7 +1434,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
                     authorization,
                     budgetId,
                     reserved,
-                    dataFlags,
+                    flags,
                     payload,
                     extension,
                     progress,
