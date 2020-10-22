@@ -1103,6 +1103,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
         private KafkaProduceClientDecoder decoder;
         private KafkaProduceClientEncoder encoder;
         private int signaledRequestId;
+        private int encodeableRecordHeadersBytes;
 
         KafkaProduceClient(
             KafkaProduceStream stream,
