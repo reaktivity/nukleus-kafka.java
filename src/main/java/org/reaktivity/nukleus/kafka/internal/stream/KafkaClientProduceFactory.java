@@ -1557,7 +1557,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
             encodeableRecordBatchTimestampMax = Math.max(encodeableRecordBatchTimestamp, encodeableRecordTimestamp);
 
-            stream.client.doSignalNextRequestIfNecessary(traceId);
+            doSignalNextRequestIfNecessary(traceId);
         }
 
         private void doSignalNextRequestIfNecessary(
