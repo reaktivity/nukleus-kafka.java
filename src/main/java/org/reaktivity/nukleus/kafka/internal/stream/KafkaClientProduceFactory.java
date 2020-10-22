@@ -1480,8 +1480,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
             final int valueLength = value != null ? value.sizeof() : 0;
             final int recordLength = recordHeader.limit();
             final int headerSize = headers.items().capacity();
-            final int recordSize = recordLength + valueLength + encodeableRequestBytesDeferred +
-                recordTrailerSize + headerSize - RECORD_LENGTH_MAX;
+            final int recordSize = recordLength + valueLength + valueDeferred + recordTrailerSize + headerSize - RECORD_LENGTH_MAX;
 
             recordHeader = recordHeaderRW.wrap(encodeBuffer, encodeProgress, encodeLimit)
                                          .length(recordSize)
