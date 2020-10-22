@@ -501,6 +501,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
         final long timestamp = kafkaProduceDataEx.timestamp();
         final KafkaKeyFW key = kafkaProduceDataEx.key();
         final Array32FW<KafkaHeaderFW> headers = kafkaProduceDataEx.headers();
+        client.encodeableRequestBytesDeferred = kafkaProduceDataEx.deferred();
 
         // TODO: flow control includes headers (extension)
         if (client.encodeSlot != NO_SLOT &&
@@ -1086,6 +1087,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
         private int encodeableRecordCount;
         private int encodeableRecordBytes;
         private int encodeableRequestBytes;
+        public int encodeableRequestBytesDeferred;;
 
         private int decodeSlot = NO_SLOT;
         private int decodeSlotOffset;
@@ -1101,8 +1103,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
         private KafkaProduceClientDecoder decoder;
         private KafkaProduceClientEncoder encoder;
         private int signaledRequestId;
-        private int recordHeaderOffset;
-        private int recordHeaderLimit;
         private int encodeableRecordHeadersBytes;
 
         KafkaProduceClient(
@@ -1459,6 +1459,12 @@ public final class KafkaClientProduceFactory implements StreamFactory
             final int encodeLimit = writeBuffer.capacity();
             int encodeProgress = 0;
 
+            final int headersCount = headers.fieldCount();
+            final RecordTrailerFW recordTrailer = recordTrailerRW.wrap(encodeBuffer, 0, encodeLimit)
+                                                                 .headerCount(headersCount)
+                                                                 .build();
+            final int recordTrailerSize = recordTrailer.limit();
+
             final int timestampDelta = (int) (timestamp - encodeableRecordBatchTimestamp);
             RecordHeaderFW recordHeader = recordHeaderRW.wrap(encodeBuffer, encodeProgress, encodeLimit)
                     .length(Integer.MAX_VALUE)
@@ -1470,6 +1476,20 @@ public final class KafkaClientProduceFactory implements StreamFactory
                     .valueLength(value != null ? value.sizeof() : -1)
                     .build();
 
+            final int valueLength = value != null ? value.sizeof() : 0;
+            final int recordSize = recordHeader.limit() + valueLength + encodeableRequestBytesDeferred +
+                       recordTrailerSize + headers.items().capacity() - RECORD_LENGTH_MAX;
+
+            recordHeader = recordHeaderRW.wrap(encodeBuffer, encodeProgress, encodeLimit)
+                                         .length(recordSize)
+                                         .attributes(RECORD_ATTRIBUTES_NONE)
+                                         .timestampDelta(timestampDelta)
+                                         .offsetDelta(encodeableRecordCount)
+                                         .keyLength(key.length())
+                                         .key(key.value())
+                                         .valueLength(value != null ? value.sizeof() : -1)
+                                         .build();
+
             encodeProgress = recordHeader.limit();
 
             if (encodeSlot == NO_SLOT)
@@ -1479,9 +1499,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
                 encodeSlotLimit = encodeSlotOffset;
             }
 
-            recordHeaderOffset = encodeSlotLimit;
-            recordHeaderLimit = recordHeader.limit();
-
             assert encodeSlot != NO_SLOT;
             final MutableDirectBuffer encodeSlotBuffer = encodePool.buffer(encodeSlot);
 
@@ -1489,7 +1506,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
             encodeSlotLimit += encodeProgress;
             encodeableRecordBytes += encodeProgress;
 
-            if (headers.fieldCount() > 0)
+            if (headersCount > 0)
             {
                 encodeableRecordHeadersBytes = headers.sizeof();
 
@@ -1551,33 +1568,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
             encodeSlotLimit += encodeProgress;
             encodeableRecordBytes += encodeProgress;
 
-            final int recordSize = encodeSlotLimit - recordHeaderOffset - RECORD_LENGTH_MAX;
-
-            final int recordHeaderMaxLimit = recordHeaderOffset + recordHeaderLimit;
-            RecordHeaderFW recordHeader = recordHeaderRO.wrap(encodeSlotBuffer, recordHeaderOffset,
-                recordHeaderMaxLimit);
-            RecordHeaderFW newRecordHeader = recordHeaderRW.wrap(encodeBuffer, 0, recordHeaderLimit)
-                                         .length(recordSize)
-                                         .attributes(recordHeader.attributes())
-                                         .timestampDelta(recordHeader.timestampDelta())
-                                         .offsetDelta(recordHeader.offsetDelta())
-                                         .keyLength(recordHeader.keyLength())
-                                         .key(recordHeader.key())
-                                         .valueLength(recordHeader.valueLength())
-                                         .build();
-
-            final int newRecordHeaderLimit = newRecordHeader.limit();
-            if (newRecordHeaderLimit != recordHeaderLimit)
-            {
-                encodeSlotBuffer.putBytes(recordHeaderOffset, encodeBuffer, 0, newRecordHeaderLimit);
-                final int newRecordHeaderMaxLimit = recordHeaderOffset + newRecordHeaderLimit;
-                final int length = encodeSlotLimit - recordHeaderMaxLimit;
-                encodeSlotBuffer.putBytes(newRecordHeaderMaxLimit, encodeSlotBuffer, recordHeaderMaxLimit, length);
-            }
-
-            final int recordHeaderLimitDiff = recordHeaderLimit - newRecordHeaderLimit;
-            encodeSlotLimit -= recordHeaderLimitDiff;
-            encodeableRecordBytes -= recordHeaderLimitDiff;
             encodeableRecordCount++;
 
             encodeableRecordBatchTimestampMax = Math.max(encodeableRecordBatchTimestamp, encodeableRecordTimestamp);
