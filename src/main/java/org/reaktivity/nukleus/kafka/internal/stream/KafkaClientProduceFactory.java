@@ -510,7 +510,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
             client.doEncodeRequestIfNecessary(traceId);
         }
 
-        client.doEncodeRecordInit(traceId, timestamp, deferred, key, payload, headers);
+        client.doEncodeRecordInit(traceId, timestamp, key, payload, deferred, headers);
         client.encoder = this::encodeRecordConFin;
         client.dataFlags = FLAGS_INIT;
 
@@ -1445,9 +1445,9 @@ public final class KafkaClientProduceFactory implements StreamFactory
         private void doEncodeRecordInit(
             long traceId,
             long timestamp,
-            int dataDeferred,
             KafkaKeyFW key,
             OctetsFW value,
+            int valueDeferred,
             Array32FW<KafkaHeaderFW> headers)
         {
             encodeableRecordTimestamp = timestamp;
@@ -1466,7 +1466,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
                                                                  .build();
             final int recordTrailerSize = recordTrailer.limit();
 
-            final int timestampDelta = (int) (timestamp - dataDeferred);
+            final int timestampDelta = (int) (timestamp - encodeableRecordBatchTimestamp);
             RecordHeaderFW recordHeader = recordHeaderRW.wrap(encodeBuffer, encodeProgress, encodeLimit)
                     .length(Integer.MAX_VALUE)
                     .attributes(RECORD_ATTRIBUTES_NONE)
