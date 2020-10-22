@@ -501,7 +501,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
         final long timestamp = kafkaProduceDataEx.timestamp();
         final KafkaKeyFW key = kafkaProduceDataEx.key();
         final Array32FW<KafkaHeaderFW> headers = kafkaProduceDataEx.headers();
-        client.encodeableRequestBytesDeferred = kafkaProduceDataEx.deferred();
+        final int deferred = kafkaProduceDataEx.deferred();
 
         // TODO: flow control includes headers (extension)
         if (client.encodeSlot != NO_SLOT &&
@@ -510,7 +510,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
             client.doEncodeRequestIfNecessary(traceId);
         }
 
-        client.doEncodeRecordInit(traceId, timestamp, key, payload, headers);
+        client.doEncodeRecordInit(traceId, timestamp, deferred, key, payload, headers);
         client.encoder = this::encodeRecordConFin;
         client.dataFlags = FLAGS_INIT;
 
@@ -1103,7 +1103,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
         private KafkaProduceClientDecoder decoder;
         private KafkaProduceClientEncoder encoder;
         private int signaledRequestId;
-        private int encodeableRecordHeadersBytes;
 
         KafkaProduceClient(
             KafkaProduceStream stream,
@@ -1445,6 +1444,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
         private void doEncodeRecordInit(
             long traceId,
             long timestamp,
+            int dataDeferred,
             KafkaKeyFW key,
             OctetsFW value,
             Array32FW<KafkaHeaderFW> headers)
@@ -1465,7 +1465,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
                                                                  .build();
             final int recordTrailerSize = recordTrailer.limit();
 
-            final int timestampDelta = (int) (timestamp - encodeableRecordBatchTimestamp);
+            final int timestampDelta = (int) (timestamp - dataDeferred);
             RecordHeaderFW recordHeader = recordHeaderRW.wrap(encodeBuffer, encodeProgress, encodeLimit)
                     .length(Integer.MAX_VALUE)
                     .attributes(RECORD_ATTRIBUTES_NONE)
