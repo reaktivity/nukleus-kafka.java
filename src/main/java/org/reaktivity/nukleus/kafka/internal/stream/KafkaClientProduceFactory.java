@@ -1473,14 +1473,14 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
             final int timestampDelta = (int) (timestamp - encodeableRecordBatchTimestamp);
             RecordHeaderFW recordHeader = recordHeaderRW.wrap(encodeBuffer, encodeProgress, encodeLimit)
-                                   .length(Integer.MAX_VALUE)
-                                   .attributes(RECORD_ATTRIBUTES_NONE)
-                                   .timestampDelta(timestampDelta)
-                                   .offsetDelta(encodeableRecordCount)
-                                   .keyLength(key.length())
-                                   .key(key.value())
-                                   .valueLength(value != null ? value.sizeof() : -1)
-                                   .build();
+                    .length(Integer.MAX_VALUE)
+                    .attributes(RECORD_ATTRIBUTES_NONE)
+                    .timestampDelta(timestampDelta)
+                    .offsetDelta(encodeableRecordCount)
+                    .keyLength(key.length())
+                    .key(key.value())
+                    .valueLength(value != null ? value.sizeof() : -1)
+                    .build();
 
             encodeProgress = recordHeader.limit();
 
