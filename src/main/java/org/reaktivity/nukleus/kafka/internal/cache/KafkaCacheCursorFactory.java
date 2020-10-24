@@ -135,6 +135,8 @@ public final class KafkaCacheCursorFactory
             next:
             while (nextEntry == null)
             {
+                // TODO - handle NotEquals
+                //      -
                 final long cursorNext = condition.next(cursor);
                 if (cursorRetryValue(cursorNext))
                 {
@@ -192,6 +194,7 @@ public final class KafkaCacheCursorFactory
 
                 final long nextOffset = nextEntry.offset$();
 
+                // TODO: when doing reset, condition.reset(condition)
                 // TODO: remove nextOffset < offset from if condition
                 if (nextOffset < offset || !condition.test(nextEntry))
                 {
@@ -476,13 +479,17 @@ public final class KafkaCacheCursorFactory
             }
         }
 
-        private abstract static class NotEquals extends KafkaFilterCondition
+        private abstract static class Not extends KafkaFilterCondition
         {
+            private final None none;
+
             private final int hash;
             private final DirectBuffer value;
             private final DirectBuffer comparable;
 
-            private KafkaCacheIndexFile hashFile;
+            private final KafkaFilterCondition nested;
+
+            private long anchor;
 
             @Override
             public final long reset(
@@ -491,35 +498,10 @@ public final class KafkaCacheCursorFactory
                 long latestOffset,
                 int position)
             {
-                long cursor = NEXT_SEGMENT;
+                long cursor = none.reset(segment, offset, latestOffset, position);
+                final long nestedCursor = nested.reset(segment, offset, latestOffset, position);
 
-                if (segment != null)
-                {
-                    final KafkaCacheIndexFile hashFile = segment.hashFile();
-                    assert hashFile != null;
-
-                    this.hashFile = hashFile;
-
-                    if (position == POSITION_UNSET)
-                    {
-                        final KafkaCacheIndexFile indexFile = segment.indexFile();
-                        assert indexFile != null;
-                        final int offsetDelta = (int)(offset - segment.baseOffset());
-                        position = cursorValue(indexFile.first(offsetDelta));
-                    }
-
-                    cursor = hashFile.first(hash);
-                    if (cursorValue(cursor) != cursorValue(RETRY_SEGMENT))
-                    {
-                        final int cursorIndex = cursorIndex(cursor);
-                        final long cursorFirstHashWithPosition = cursor(cursorIndex, position);
-                        cursor = hashFile.ceiling(hash, cursorFirstHashWithPosition);
-                    }
-                }
-                else
-                {
-                    this.hashFile = null;
-                }
+                anchor = cursorValue(nestedCursor);
 
                 return cursor;
             }
@@ -528,7 +510,15 @@ public final class KafkaCacheCursorFactory
             public final long next(
                 long cursor)
             {
-                return hashFile != null ? hashFile.resolve(cursor) : NEXT_SEGMENT;
+                long cursorNext = NEXT_SEGMENT;
+                int position = cursorValue(cursor);
+
+                if (position > anchor)
+                {
+                    cursorNext = nested.next(cursor);
+                }
+
+                return cursorNext;
             }
 
             @Override
@@ -537,20 +527,28 @@ public final class KafkaCacheCursorFactory
                 return String.format("%s[%08x]", getClass().getSimpleName(), hash);
             }
 
-            protected NotEquals(
+            protected Not(
                 CRC32C checksum,
+                KafkaFilterCondition nested,
                 DirectBuffer buffer,
                 int index,
                 int length)
             {
+                this.none = new None();
+                this.nested = nested;
                 this.value = copyBuffer(buffer, index, length);
                 this.hash = computeHash(buffer, index, length, checksum);
                 this.comparable = new UnsafeBuffer();
             }
 
             protected final boolean test(
+                KafkaCacheEntryFW cacheEntry,
                 Flyweight header)
             {
+                if (cacheEntry != null && (cacheEntry.offset() < anchor || !nested.test(cacheEntry)))
+                {
+                    return true;
+                }
                 comparable.wrap(header.buffer(), header.offset(), header.sizeof());
                 return comparable.compareTo(value) != 0;
             }
@@ -596,24 +594,24 @@ public final class KafkaCacheCursorFactory
             }
         }
 
-        private static final class NotKey extends NotEquals
+        private static final class NotKey extends Not
         {
             private NotKey(
                 CRC32C checksum,
                 KafkaKeyFW key)
             {
-                super(checksum, key.buffer(), key.offset(), key.sizeof());
+                super(checksum, new Key(checksum, key), key.buffer(), key.offset(), key.sizeof());
             }
 
             @Override
             public boolean test(
                 KafkaCacheEntryFW cacheEntry)
             {
-                return test(cacheEntry.key());
+                return test(cacheEntry, cacheEntry.key());
             }
         }
 
-        private static final class NotHeader extends NotEquals
+        private static final class NotHeader extends Not
         {
             private final MutableBoolean match;
 
@@ -621,7 +619,7 @@ public final class KafkaCacheCursorFactory
                 CRC32C checksum,
                 KafkaHeaderFW header)
             {
-                super(checksum, header.buffer(), header.offset(), header.sizeof());
+                super(checksum, new Header(checksum, header), header.buffer(), header.offset(), header.sizeof());
                 this.match = new MutableBoolean();
             }
 
@@ -631,7 +629,7 @@ public final class KafkaCacheCursorFactory
             {
                 final ArrayFW<KafkaHeaderFW> headers = cacheEntry.headers();
                 match.value = false;
-                headers.forEach(header -> match.value |= test(header));
+                headers.forEach(header -> match.value |= test(cacheEntry, header));
                 return match.value;
             }
         }
@@ -931,13 +929,30 @@ public final class KafkaCacheCursorFactory
         switch (condition.kind())
         {
         case KafkaConditionFW.KIND_KEY:
+        {
             final KafkaKeyFW key = condition.key();
             final OctetsFW value = key.value();
 
             filterCondition = value == null ? nullKeyInfo : new KafkaFilterCondition.NotKey(checksum, key);
             break;
+        }
         case KafkaConditionFW.KIND_HEADER:
             filterCondition = new KafkaFilterCondition.NotHeader(checksum, condition.header());
+            break;
+        case KafkaConditionFW.KIND_NOT:
+            final KafkaConditionFW notCondition = condition.not().condition();
+            switch (notCondition.kind())
+            {
+            case KafkaConditionFW.KIND_KEY:
+                final KafkaKeyFW key = condition.key();
+                final OctetsFW value = key.value();
+
+                filterCondition = value == null ? nullKeyInfo : new KafkaFilterCondition.Key(checksum, key);
+                break;
+            case KafkaConditionFW.KIND_HEADER:
+                filterCondition = new KafkaFilterCondition.Header(checksum, condition.header());
+                break;
+            }
             break;
         }
         return filterCondition;
