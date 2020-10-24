@@ -1001,7 +1001,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
             flush:
             if (replyBudget >= reservedMin &&
-                (reservedMin > replyPadding || (reservedMin == replyPadding && value == null)))
+                (reservedMin > replyPadding || (reservedMin == replyPadding && (value == null || value.sizeof() == 0))))
             {
                 int reserved = reservedMax;
                 boolean claimed = false;
