@@ -6,7 +6,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.reaktivity</groupId>
   <artifactId>nukleus-kafka</artifactId>
-  <version>0.266</version>
+  <version>0.267</version>
   <name>Kafka Nukleus Implementation</name>
   <description>Kafka Nukleus Implementation</description>
   <url>https://github.com/reaktivity/nukleus-kafka.java</url>
@@ -45,17 +45,17 @@
     <jacoco.coverage.ratio>0.77</jacoco.coverage.ratio>
     <jacoco.missed.count>4</jacoco.missed.count>
 
-    <junit.version>4.12</junit.version>
+    <junit.version>4.13.1</junit.version>
     <jmh.version>1.17.4</jmh.version>
     <jmh.profilers.version>0.1.3</jmh.profilers.version>
     <jmock.version>2.6.0</jmock.version>
 
-    <k3po.version>3.0.0</k3po.version>
+    <k3po.version>3.1.0</k3po.version>
 
     <nukleus.plugin.version>0.69</nukleus.plugin.version>
 
-    <nukleus.kafka.spec.version>0.153</nukleus.kafka.spec.version>
-    <reaktor.version>0.140</reaktor.version>
+    <nukleus.kafka.spec.version>0.156</nukleus.kafka.spec.version>
+    <reaktor.version>0.146</reaktor.version>
 
     <kafka.clients.version>1.0.0</kafka.clients.version>
   </properties>

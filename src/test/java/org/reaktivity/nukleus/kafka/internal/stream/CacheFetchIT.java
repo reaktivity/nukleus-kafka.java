@@ -241,6 +241,18 @@ public class CacheFetchIT
     @Test
     @Specification({
         "${route}/cache/controller",
+        "${client}/message.value.empty/client",
+        "${server}/message.value.empty/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessageValueEmpty() throws Exception
+    {
+        partition.append(10L);
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache/controller",
         "${client}/message.value.null/client",
         "${server}/message.value.null/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
