@@ -892,13 +892,10 @@ public final class KafkaCacheCursorFactory
             switch (notCondition.kind())
             {
             case KafkaConditionFW.KIND_KEY:
-                final KafkaKeyFW key = condition.key();
-                final OctetsFW value = key.value();
-
-                filterCondition = value == null ? nullKeyInfo : new KafkaFilterCondition.Key(checksum, key);
+                filterCondition = asKeyCondition(notCondition.key());
                 break;
             case KafkaConditionFW.KIND_HEADER:
-                filterCondition = new KafkaFilterCondition.Header(checksum, condition.header());
+                filterCondition = asHeaderCondition(notCondition.header());
                 break;
             }
             break;
