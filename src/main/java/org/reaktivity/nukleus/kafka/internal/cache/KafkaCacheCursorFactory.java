@@ -480,7 +480,6 @@ public final class KafkaCacheCursorFactory
         private static final class Not extends KafkaFilterCondition
         {
             private final None none;
-
             private final KafkaFilterCondition nested;
 
             private long anchor;
@@ -500,9 +499,8 @@ public final class KafkaCacheCursorFactory
                 int position)
             {
                 long cursor = none.reset(segment, offset, latestOffset, position);
-                final long nestedCursor = nested.reset(segment, offset, latestOffset, position);
 
-                anchor = cursorValue(nestedCursor);
+                anchor = nested.reset(segment, offset, latestOffset, position);
 
                 return cursor;
             }
@@ -511,11 +509,18 @@ public final class KafkaCacheCursorFactory
             public long next(
                 long cursor)
             {
-                long cursorNext = cursorValue(cursor);
+                long cursorNext = none.next(cursor);
 
-                if (cursorNext > anchor)
+                if (cursorRetryValue(anchor))
                 {
-                    cursorNext = nested.next(cursor);
+                    anchor = nested.next(anchor);
+                }
+
+                while (!cursorRetryValue(cursorNext) &&
+                    anchor != NEXT_SEGMENT &&
+                    cursorValue(cursorNext) > cursorValue(anchor))
+                {
+                    anchor = nested.next(nextIndex(nextValue(anchor)));
                 }
 
                 return cursorNext;
@@ -525,11 +530,8 @@ public final class KafkaCacheCursorFactory
             public boolean test(
                 KafkaCacheEntryFW cacheEntry)
             {
-                if (cacheEntry != null && cacheEntry.offset() < anchor)
-                {
-                    return true;
-                }
-                return !nested.test(cacheEntry);
+                return none.test(cacheEntry) &&
+                    (cacheEntry.offset() < cursorValue(anchor) || !nested.test(cacheEntry));
             }
 
             @Override
