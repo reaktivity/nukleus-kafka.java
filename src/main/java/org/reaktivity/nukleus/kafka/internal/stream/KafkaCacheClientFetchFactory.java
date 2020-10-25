@@ -992,6 +992,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final long ancestor = nextEntry.ancestor();
             final OctetsFW value = nextEntry.value();
             final int remaining = value != null ? value.sizeof() - messageOffset : 0;
+            assert remaining >= 0;
             final int lengthMin = Math.min(remaining, 1024);
             final int reservedMax = Math.max(Math.min(remaining + replyPadding, replyBudget), replyMinimum);
             final int reservedMin = Math.max(Math.min(lengthMin + replyPadding, reservedMax), replyMinimum);
@@ -1001,7 +1002,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
             flush:
             if (replyBudget >= reservedMin &&
-                (reservedMin > replyPadding || (reservedMin == replyPadding && value == null)))
+                (reservedMin > replyPadding || (reservedMin == replyPadding && remaining == 0)))
             {
                 int reserved = reservedMax;
                 boolean claimed = false;
