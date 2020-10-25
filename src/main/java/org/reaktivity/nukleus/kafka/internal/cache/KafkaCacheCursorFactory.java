@@ -477,7 +477,7 @@ public final class KafkaCacheCursorFactory
             }
         }
 
-        private static class Not extends KafkaFilterCondition
+        private static final class Not extends KafkaFilterCondition
         {
             private final None none;
 
@@ -485,8 +485,15 @@ public final class KafkaCacheCursorFactory
 
             private long anchor;
 
+            private Not(
+                KafkaFilterCondition nested)
+            {
+                this.none = new None();
+                this.nested = nested;
+            }
+
             @Override
-            public final long reset(
+            public long reset(
                 KafkaCacheSegment segment,
                 long offset,
                 long latestOffset,
@@ -501,7 +508,7 @@ public final class KafkaCacheCursorFactory
             }
 
             @Override
-            public final long next(
+            public long next(
                 long cursor)
             {
                 long cursorNext = cursorValue(cursor);
@@ -515,19 +522,6 @@ public final class KafkaCacheCursorFactory
             }
 
             @Override
-            public final String toString()
-            {
-                return String.format("%s[%s]", getClass().getSimpleName(), nested.toString());
-            }
-
-            private Not(
-                KafkaFilterCondition nested)
-            {
-                this.none = new None();
-                this.nested = nested;
-            }
-
-            @Override
             public boolean test(
                 KafkaCacheEntryFW cacheEntry)
             {
@@ -536,6 +530,12 @@ public final class KafkaCacheCursorFactory
                     return true;
                 }
                 return !nested.test(cacheEntry);
+            }
+
+            @Override
+            public String toString()
+            {
+                return String.format("%s[%s]", getClass().getSimpleName(), nested.toString());
             }
         }
 
