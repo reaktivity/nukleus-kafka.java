@@ -135,8 +135,6 @@ public final class KafkaCacheCursorFactory
             next:
             while (nextEntry == null)
             {
-                // TODO - handle NotEquals
-                //      -
                 final long cursorNext = condition.next(cursor);
                 if (cursorRetryValue(cursorNext))
                 {
@@ -506,10 +504,9 @@ public final class KafkaCacheCursorFactory
             public final long next(
                 long cursor)
             {
-                long cursorNext = NEXT_SEGMENT;
-                int position = cursorValue(cursor);
+                long cursorNext = cursorValue(cursor);
 
-                if (position > anchor)
+                if (cursorNext > anchor)
                 {
                     cursorNext = nested.next(cursor);
                 }
@@ -534,7 +531,7 @@ public final class KafkaCacheCursorFactory
             public boolean test(
                 KafkaCacheEntryFW cacheEntry)
             {
-                if (cacheEntry != null && (cacheEntry.offset() < anchor || !nested.test(cacheEntry)))
+                if (cacheEntry != null && cacheEntry.offset() < anchor)
                 {
                     return true;
                 }
