@@ -419,16 +419,4 @@ public class ClientFetchIT
     {
         k3po.finish();
     }
-
-    @Ignore("TODO")
-    @Test
-    @Specification({
-        "${route}/client/controller",
-        "${client}/fetch.filter.age.live/client",
-        "${server}/fetch.filter.age.live/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessagesWithAgeFilter() throws Exception
-    {
-        k3po.finish();
-    }
 }
