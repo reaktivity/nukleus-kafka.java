@@ -79,6 +79,30 @@ public class CacheMergedIT
     @Test
     @Specification({
         "${route}/cache.merged/controller",
+        "${client}/merged.fetch.filter.not.key/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedMessagesWithNotKeyFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("requires k3po parallel reads")
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
+        "${client}/merged.fetch.filter.not.header/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedMessagesWithNotHeaderFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("requires k3po parallel reads")
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
         "${client}/merged.fetch.filter.header.and.header/client",
         "${server}/unmerged.fetch.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -131,32 +155,6 @@ public class CacheMergedIT
         "${server}/unmerged.fetch.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldFetchMergedMessagesWithKeyOrHeaderFilter() throws Exception
-    {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/cache.merged/controller",
-        "${client}/merged.fetch.filter.age.live/client",
-        "${server}/unmerged.fetch.filter.none/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
-    public void shouldFetchMergedMessagesWithLiveAgeFilter() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("FILTERED_MESSAGE_B2");
-        k3po.notifyBarrier("SEND_MESSAGE_A3");
-        k3po.notifyBarrier("SEND_MESSAGE_B3");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/cache.merged/controller",
-        "${client}/merged.fetch.filter.age.historical/client",
-        "${server}/unmerged.fetch.filter.age.historical/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
-    public void shouldFetchMergedMessagesWithHistoricalAgeFilter() throws Exception
     {
         k3po.finish();
     }
