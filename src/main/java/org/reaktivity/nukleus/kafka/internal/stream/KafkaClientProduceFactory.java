@@ -1417,14 +1417,15 @@ public final class KafkaClientProduceFactory implements StreamFactory
         {
             final int length = limit - progress;
             if (encodeSlot != NO_SLOT &&
+                encodeableRequestBytes > 0 &&
                 encodeSlotLimit + length + KAFKA_RECORD_FRAMING + encodeableRecordHeadersBytes > encodePool.slotCapacity())
             {
-                doEncodeRequestIfNecessary(traceId);
+                doNetworkData(traceId, EMPTY_BUFFER, 0, 0);
             }
 
             KafkaProduceClientEncoder previous = null;
             dataFlags = flags & FLAGS_INIT;
-            final int currentProgress = progress;
+            final int previousProgress = progress;
 
             while (progress <= limit && previous != encoder)
             {
@@ -1433,7 +1434,11 @@ public final class KafkaClientProduceFactory implements StreamFactory
                     progress, limit);
             }
 
-            stream.doApplicationWindowIfNecessary(traceId, progress - currentProgress);
+            final int credit = progress - previousProgress;
+            if (credit > KAFKA_RECORD_FRAMING)
+            {
+                stream.doApplicationWindow(traceId, 0L, credit);
+            }
         }
 
         private void doEncodeRecordInit(
@@ -1523,17 +1528,18 @@ public final class KafkaClientProduceFactory implements StreamFactory
         {
             if (value != null)
             {
+                final int length = value.sizeof();
+
+                if (encodeSlotLimit  + length + encodeableRecordHeadersBytes + KAFKA_RECORD_FRAMING >= encodePool.slotCapacity())
+                {
+                    doEncodeRequestIfNecessary(traceId);
+                }
+
                 assert encodeSlot != NO_SLOT;
                 final MutableDirectBuffer encodeSlotBuffer = encodePool.buffer(encodeSlot);
 
-                final int length = value.sizeof();
                 encodeSlotBuffer.putBytes(encodeSlotLimit,  value.buffer(), value.offset(), length);
                 encodeSlotLimit += length;
-
-                if (encodeSlotLimit + encodeableRecordHeadersBytes + KAFKA_RECORD_FRAMING >= encodePool.slotCapacity())
-                {
-                    doNetworkData(traceId, EMPTY_BUFFER, 0, 0);
-                }
             }
         }
 
@@ -1881,7 +1887,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
         {
             nextResponseId++;
 
-            stream.doApplicationWindowIfNecessary(traceId, encodeMaxBytes - encodeSlotLimit);
+            stream.doApplicationWindowIfNecessary(traceId, encodeMaxBytes - encodeSlotLimit - encodeableRecordHeadersBytes);
 
             if (encodeSlot != NO_SLOT)
             {
