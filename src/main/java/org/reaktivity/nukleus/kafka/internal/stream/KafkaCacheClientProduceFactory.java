@@ -870,6 +870,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             final int reserved = data.reserved();
 
             final int flags = data.flags();
+
             assert (flags & FLAGS_INIT) != (initialFlags & FLAGS_INIT);
 
             initialFlags |= flags;

@@ -48,8 +48,6 @@ import org.reaktivity.nukleus.kafka.internal.budget.MergedBudgetCreditor;
 import org.reaktivity.nukleus.kafka.internal.types.Array32FW;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
-import org.reaktivity.nukleus.kafka.internal.types.KafkaAge;
-import org.reaktivity.nukleus.kafka.internal.types.KafkaAgeFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaConfigFW;
@@ -58,6 +56,7 @@ import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaNotFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaPartitionFW;
@@ -298,8 +297,8 @@ public final class KafkaMergedFactory implements StreamFactory
         case KafkaConditionFW.KIND_HEADER:
             mergedCondition = asMergedCondition(condition.header());
             break;
-        case KafkaConditionFW.KIND_AGE:
-            mergedCondition = asMergedCondition(condition.age());
+        case KafkaConditionFW.KIND_NOT:
+            mergedCondition = asMergedCondition(condition.not());
             break;
         }
 
@@ -342,11 +341,48 @@ public final class KafkaMergedFactory implements StreamFactory
     }
 
     private static KafkaMergedCondition asMergedCondition(
-        KafkaAgeFW ageFW)
+        KafkaNotFW not)
     {
-        final KafkaAge age = ageFW.get();
+        final KafkaConditionFW condition = not.condition();
 
-        return new KafkaMergedCondition.Age(age);
+        KafkaMergedCondition mergedCondition = null;
+        switch (condition.kind())
+        {
+        case KafkaConditionFW.KIND_KEY:
+        {
+            final KafkaKeyFW key = condition.key();
+            final OctetsFW value = key.value();
+
+            DirectBuffer valueBuffer = null;
+            if (value != null)
+            {
+                valueBuffer = copyBuffer(value);
+            }
+
+            mergedCondition = new KafkaMergedCondition.NotKey(valueBuffer);
+            break;
+        }
+        case KafkaConditionFW.KIND_HEADER:
+            final KafkaHeaderFW header = condition.header();
+            final OctetsFW name = header.name();
+            final OctetsFW value = header.value();
+
+            DirectBuffer nameBuffer = null;
+            if (name != null)
+            {
+                nameBuffer = copyBuffer(name);
+            }
+
+            DirectBuffer valueBuffer = null;
+            if (value != null)
+            {
+                valueBuffer = copyBuffer(value);
+            }
+
+            mergedCondition = new KafkaMergedCondition.NotHeader(nameBuffer, valueBuffer);
+            break;
+        }
+        return mergedCondition;
     }
 
     private static DirectBuffer copyBuffer(
@@ -570,33 +606,106 @@ public final class KafkaMergedFactory implements StreamFactory
             }
         }
 
-        private static final class Age extends KafkaMergedCondition
+        private static final class NotKey extends KafkaMergedCondition
         {
-            private final KafkaAge age;
+            private final DirectBuffer value;
 
-            private Age(
-                KafkaAge age)
+            private NotKey(
+                DirectBuffer value)
             {
-                this.age = age;
+                this.value = value;
             }
 
             @Override
             protected void set(
                 KafkaConditionFW.Builder condition)
             {
-                condition.age(this::set);
+                condition.key(this::set);
             }
 
             private void set(
-                KafkaAgeFW.Builder age)
+                KafkaKeyFW.Builder key)
             {
-                age.set(this.age);
+                if (value == null)
+                {
+                    key.length(-1).value((OctetsFW) null);
+                }
+                else
+                {
+                    key.length(value.capacity()).value(value, 0, value.capacity());
+                }
             }
 
             @Override
             public int hashCode()
             {
-                return Objects.hash(age);
+                return Objects.hash(value);
+            }
+
+            @Override
+            public boolean equals(Object obj)
+            {
+                if (this == obj)
+                {
+                    return false;
+                }
+
+                if (!(obj instanceof NotKey))
+                {
+                    return false;
+                }
+
+                NotKey that = (NotKey) obj;
+                return !Objects.equals(this.value, that.value);
+            }
+        }
+
+        private static final class NotHeader extends KafkaMergedCondition
+        {
+            private final DirectBuffer name;
+            private final DirectBuffer value;
+
+            private NotHeader(
+                DirectBuffer name,
+                DirectBuffer value)
+            {
+                this.name = name;
+                this.value = value;
+            }
+
+            @Override
+            protected void set(
+                KafkaConditionFW.Builder condition)
+            {
+                condition.header(this::set);
+            }
+
+            private void set(
+                KafkaHeaderFW.Builder header)
+            {
+                if (name == null)
+                {
+                    header.nameLen(-1).name((OctetsFW) null);
+                }
+                else
+                {
+                    header.nameLen(name.capacity()).name(name, 0, name.capacity());
+                }
+
+                if (value == null)
+                {
+                    header.valueLen(-1).value((OctetsFW) null);
+                }
+                else
+                {
+                    header.valueLen(value.capacity()).value(value, 0, value.capacity());
+                }
+            }
+
+            @Override
+            public int hashCode()
+            {
+                return Objects.hash(name, value);
             }
 
             @Override
@@ -605,16 +714,17 @@ public final class KafkaMergedFactory implements StreamFactory
             {
                 if (this == o)
                 {
-                    return true;
+                    return false;
                 }
 
-                if (!(o instanceof Age))
+                if (!(o instanceof NotHeader))
                 {
                     return false;
                 }
 
-                final Age that = (Age) o;
-                return Objects.equals(this.age, that.age);
+                final NotHeader that = (NotHeader) o;
+                return Objects.equals(this.name, that.name) &&
+                        !Objects.equals(this.value, that.value);
             }
         }
 
