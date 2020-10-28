@@ -1425,7 +1425,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
             KafkaProduceClientEncoder previous = null;
             dataFlags = flags & FLAGS_INIT;
-            final int previousProgress = progress;
+            final int offset = progress;
 
             while (progress <= limit && previous != encoder)
             {
@@ -1434,10 +1434,10 @@ public final class KafkaClientProduceFactory implements StreamFactory
                     progress, limit);
             }
 
-            final int credit = progress - previousProgress;
-            if (credit > KAFKA_RECORD_FRAMING)
+            final int encodedBytes = progress - offset;
+            if (encodedBytes > 0)
             {
-                stream.doApplicationWindow(traceId, 0L, credit);
+                stream.doApplicationWindow(traceId, 0L, encodedBytes);
             }
         }
 
@@ -1480,7 +1480,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
             final int headerSize = headers.items().capacity();
             final int recordSize = recordHeaderSize + valueSize + encodeableRecordBytesDeferred + recordTrailerSize +
                         headerSize - RECORD_LENGTH_MAX;
-            final int totalValueLength = (value != null ? value.sizeof() : -1) + encodeableRecordBytesDeferred;
+            final int valueLength = (value != null ? value.sizeof() + encodeableRecordBytesDeferred : -1);
 
             recordHeader = recordHeaderRW.wrap(encodeBuffer, encodeProgress, encodeLimit)
                                          .length(recordSize)
@@ -1489,7 +1489,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
                                          .offsetDelta(encodeableRecordCount)
                                          .keyLength(key.length())
                                          .key(key.value())
-                                         .valueLength(totalValueLength)
+                                         .valueLength(valueLength)
                                          .build();
 
             final int newRecordSize = recordHeader.limit();
@@ -1530,7 +1530,8 @@ public final class KafkaClientProduceFactory implements StreamFactory
             {
                 final int length = value.sizeof();
 
-                if (encodeSlotLimit  + length + encodeableRecordHeadersBytes + KAFKA_RECORD_FRAMING >= encodePool.slotCapacity())
+                final int encodeableBytes = KAFKA_RECORD_FRAMING + (encodeSlotLimit - encodeSlotOffset) + length + encodeableRecordHeadersBytes;
+                if (encodeableBytes >= encodePool.slotCapacity())
                 {
                     doEncodeRequestIfNecessary(traceId);
                 }
