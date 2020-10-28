@@ -40,12 +40,12 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.Node;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
-import org.reaktivity.nukleus.kafka.internal.types.KafkaAgeFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaNotFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheDeltaFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
@@ -192,6 +192,7 @@ public final class KafkaCacheCursorFactory
 
                 final long nextOffset = nextEntry.offset$();
 
+                // TODO: when doing reset, condition.reset(condition)
                 // TODO: remove nextOffset < offset from if condition
                 if (nextOffset < offset || !condition.test(nextEntry))
                 {
@@ -476,9 +477,19 @@ public final class KafkaCacheCursorFactory
             }
         }
 
-        private static class Age extends KafkaFilterCondition
+        private static final class Not extends KafkaFilterCondition
         {
-            private KafkaCacheIndexFile indexFile;
+            private final None none;
+            private final KafkaFilterCondition nested;
+
+            private long anchor;
+
+            private Not(
+                KafkaFilterCondition nested)
+            {
+                this.none = new None();
+                this.nested = nested;
+            }
 
             @Override
             public long reset(
@@ -487,22 +498,9 @@ public final class KafkaCacheCursorFactory
                 long latestOffset,
                 int position)
             {
-                long cursor = NEXT_SEGMENT;
+                long cursor = none.reset(segment, offset, latestOffset, position);
 
-                if (segment != null)
-                {
-                    final KafkaCacheIndexFile indexFile = segment.indexFile();
-                    assert indexFile != null;
-
-                    this.indexFile = indexFile;
-
-                    final int offsetDelta = (int)(offset - segment.baseOffset());
-                    cursor = indexFile.first(offsetDelta);
-                }
-                else
-                {
-                    this.indexFile = null;
-                }
+                anchor = nested.reset(segment, offset, latestOffset, position);
 
                 return cursor;
             }
@@ -511,20 +509,35 @@ public final class KafkaCacheCursorFactory
             public long next(
                 long cursor)
             {
-                return indexFile != null ? indexFile.resolve(cursor) : NEXT_SEGMENT;
+                long cursorNext = none.next(cursor);
+
+                if (cursorRetryValue(anchor))
+                {
+                    anchor = nested.next(anchor);
+                }
+
+                while (!cursorRetryValue(cursorNext) &&
+                    anchor != NEXT_SEGMENT &&
+                    cursorValue(cursorNext) > cursorValue(anchor))
+                {
+                    anchor = nested.next(nextIndex(nextValue(anchor)));
+                }
+
+                return cursorNext;
             }
 
             @Override
             public boolean test(
                 KafkaCacheEntryFW cacheEntry)
             {
-                return cacheEntry != null;
+                return none.test(cacheEntry) &&
+                    (cacheEntry.offset() < cursorValue(anchor) || !nested.test(cacheEntry));
             }
 
             @Override
             public String toString()
             {
-                return String.format("%s[]", getClass().getSimpleName());
+                return String.format("%s[%s]", getClass().getSimpleName(), nested.toString());
             }
         }
 
@@ -565,60 +578,6 @@ public final class KafkaCacheCursorFactory
                 match.value = false;
                 headers.forEach(header -> match.value |= test(header));
                 return match.value;
-            }
-        }
-
-        private static final class Live extends Age
-        {
-            private long historical;
-
-            private Live()
-            {
-            }
-
-            @Override
-            public long reset(
-                KafkaCacheSegment segment,
-                long offset,
-                long latest,
-                int position)
-            {
-                this.historical = latest;
-                return super.reset(segment, offset, latest, position);
-            }
-
-            @Override
-            public boolean test(
-                KafkaCacheEntryFW cacheEntry)
-            {
-                return super.test(cacheEntry) && cacheEntry.offset$() > historical;
-            }
-        }
-
-        private static final class Historical extends Age
-        {
-            private long historical;
-
-            private Historical()
-            {
-            }
-
-            @Override
-            public long reset(
-                KafkaCacheSegment segment,
-                long offset,
-                long latest,
-                int position)
-            {
-                this.historical = latest;
-                return super.reset(segment, offset, latest, position);
-            }
-
-            @Override
-            public boolean test(
-                KafkaCacheEntryFW cacheEntry)
-            {
-                return super.test(cacheEntry) && cacheEntry.offset$() <= historical;
             }
         }
 
@@ -885,8 +844,8 @@ public final class KafkaCacheCursorFactory
         case KafkaConditionFW.KIND_HEADER:
             asCondition = asHeaderCondition(condition.header());
             break;
-        case KafkaConditionFW.KIND_AGE:
-            asCondition = asAgeCondition(condition.age());
+        case KafkaConditionFW.KIND_NOT:
+            asCondition = asNotCondition(condition.not());
             break;
         }
 
@@ -908,20 +867,40 @@ public final class KafkaCacheCursorFactory
         return new KafkaFilterCondition.Header(checksum, header);
     }
 
-    private KafkaFilterCondition asAgeCondition(
-        KafkaAgeFW age)
+    private KafkaFilterCondition asNotCondition(
+        KafkaNotFW not)
     {
-        KafkaFilterCondition condition;
-        switch (age.get())
+        final KafkaConditionFW condition = not.condition();
+
+        KafkaFilterCondition filterCondition = null;
+        switch (condition.kind())
         {
-        case LIVE:
-            condition = new KafkaFilterCondition.Live();
-            break;
-        default:
-            condition = new KafkaFilterCondition.Historical();
+        case KafkaConditionFW.KIND_KEY:
+        {
+            final KafkaKeyFW key = condition.key();
+            final OctetsFW value = key.value();
+
+            filterCondition = value == null ? nullKeyInfo :
+                                  new KafkaFilterCondition.Not(new KafkaFilterCondition.Key(checksum, key));
             break;
         }
-        return condition;
+        case KafkaConditionFW.KIND_HEADER:
+            filterCondition = new KafkaFilterCondition.Not(new KafkaFilterCondition.Header(checksum, condition.header()));
+            break;
+        case KafkaConditionFW.KIND_NOT:
+            final KafkaConditionFW notCondition = condition.not().condition();
+            switch (notCondition.kind())
+            {
+            case KafkaConditionFW.KIND_KEY:
+                filterCondition = asKeyCondition(notCondition.key());
+                break;
+            case KafkaConditionFW.KIND_HEADER:
+                filterCondition = asHeaderCondition(notCondition.header());
+                break;
+            }
+            break;
+        }
+        return filterCondition;
     }
 
     private static KafkaFilterCondition.Key initNullKeyInfo(

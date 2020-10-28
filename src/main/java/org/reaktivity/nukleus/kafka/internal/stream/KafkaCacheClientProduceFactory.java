@@ -71,6 +71,9 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
+    private static final int FLAGS_FIN = 0x01;
+    private static final int FLAGS_INIT = 0x02;
+
     private static final String TRANSACTION_NONE = null;
 
     private final RouteFW routeRO = new RouteFW();
@@ -783,6 +786,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private final long authorization;
 
         private int state;
+        private int initialFlags = 0;
 
         private int initialBudget;
 
@@ -864,6 +868,17 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         {
             final long traceId = data.traceId();
             final int reserved = data.reserved();
+
+            final int flags = data.flags();
+            assert flags == 0x03;
+            assert (flags & FLAGS_INIT) != (initialFlags & FLAGS_INIT);
+
+            initialFlags |= flags;
+
+            if ((initialFlags & FLAGS_FIN) != 0)
+            {
+                initialFlags = 0;
+            }
 
             if (KafkaConfiguration.DEBUG_PRODUCE)
             {
