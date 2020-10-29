@@ -187,6 +187,7 @@ public class CacheProduceIT
         k3po.finish();
     }
 
+    @Ignore
     @Test
     @Specification({
         "${route}/cache/controller",
@@ -198,6 +199,7 @@ public class CacheProduceIT
         k3po.finish();
     }
 
+    @Ignore
     @Test
     @Specification({
         "${route}/cache/controller",
