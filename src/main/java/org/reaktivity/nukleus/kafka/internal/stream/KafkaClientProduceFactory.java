@@ -1480,7 +1480,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
             final int headerSize = headers.items().capacity();
             final int recordSize = recordHeaderSize + valueSize + encodeableRecordBytesDeferred + recordTrailerSize +
                         headerSize - RECORD_LENGTH_MAX;
-            final int valueLength = (value != null ? value.sizeof() + encodeableRecordBytesDeferred : -1);
+            final int valueLength = value != null ? value.sizeof() + encodeableRecordBytesDeferred : -1;
 
             recordHeader = recordHeaderRW.wrap(encodeBuffer, encodeProgress, encodeLimit)
                                          .length(recordSize)
@@ -1530,7 +1530,8 @@ public final class KafkaClientProduceFactory implements StreamFactory
             {
                 final int length = value.sizeof();
 
-                final int encodeableBytes = KAFKA_RECORD_FRAMING + (encodeSlotLimit - encodeSlotOffset) + length + encodeableRecordHeadersBytes;
+                final int encodeableBytes = KAFKA_RECORD_FRAMING + (encodeSlotLimit - encodeSlotOffset) + length +
+                                            encodeableRecordHeadersBytes;
                 if (encodeableBytes >= encodePool.slotCapacity())
                 {
                     doEncodeRequestIfNecessary(traceId);
@@ -1582,7 +1583,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
             if (encodeableRecordBytesDeferred > 0)
             {
-                encodeableRecordBytesDeferred = 0;
                 doNetworkData(traceId, EMPTY_BUFFER, 0, 0);
             }
             else
@@ -1785,7 +1785,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
             }
             else
             {
-                if (encodeableRecordBytesDeferred == 0)
+                if (encodeableRequestBytes == 0)
                 {
                     cleanupEncodeSlotIfNecessary();
                 }
