@@ -15,6 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
+import static java.nio.ByteOrder.BIG_ENDIAN;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursor;
@@ -26,6 +27,9 @@ import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.nextIndex;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.nextValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.previousIndex;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaSkip.SKIP;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaValueMatchFW.KIND_SKIP;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaValueMatchFW.KIND_VALUE;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -36,17 +40,23 @@ import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.LongHashSet;
 import org.agrona.collections.MutableBoolean;
+import org.agrona.collections.MutableInteger;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.Node;
+import org.reaktivity.nukleus.kafka.internal.types.Array32FW;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeadersFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaNotFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaValueFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaValueMatchFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
+import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheDeltaFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 
@@ -541,6 +551,140 @@ public final class KafkaCacheCursorFactory
             }
         }
 
+        private static final class HeaderSequence extends KafkaFilterCondition
+        {
+            private final String16FW nameRO = new String16FW(BIG_ENDIAN);
+            private final KafkaValueMatchFW valueMatchRO = new KafkaValueMatchFW();
+
+            private final List<KafkaFilterCondition> headerConditions;
+
+            private final UnsafeBuffer headersBuffer;
+
+            private final And and;
+            private final KafkaHeadersFW headers;
+
+            private final MutableBoolean matchCandidate;
+            private final MutableInteger progress;
+
+            private HeaderSequence(
+                CRC32C checksum,
+                KafkaHeadersFW headers)
+            {
+                this.headersBuffer = new UnsafeBuffer(new byte[1024]);
+                this.headerConditions = new ArrayList<>();
+                this.headers = headers;
+                this.matchCandidate = new MutableBoolean();
+                this.progress = new MutableInteger();
+
+                final OctetsFW name = headers.name();
+                final DirectBuffer buffer = name.buffer();
+                final int offset = name.offset();
+                final int sizeof = name.sizeof();
+
+                nameRO.tryWrap(buffer, offset, sizeof);
+
+                headers.values().forEach(hv ->
+                {
+                    final KafkaValueFW value = hv.value();
+
+                    switch (hv.kind())
+                    {
+                    case KIND_VALUE:
+                        final OctetsFW bytes = value.value();
+                        final KafkaHeaderFW header = new KafkaHeaderFW.Builder()
+                                     .wrap(headersBuffer, 0, headersBuffer.capacity())
+                                     .nameLen(sizeof)
+                                     .name(name)
+                                     .valueLen(bytes.sizeof())
+                                     .value(bytes)
+                                     .build();
+                        headerConditions.add(new Header(checksum, header));
+                        break;
+                    }
+                });
+
+                this.and = new And(headerConditions);
+            }
+
+            @Override
+            public long reset(
+                KafkaCacheSegment segment,
+                long offset,
+                long latestOffset,
+                int position)
+            {
+                return and.reset(segment, offset, latestOffset, position);
+            }
+
+            @Override
+            public long next(
+                long cursor)
+            {
+                return and.next(cursor);
+            }
+
+            @Override
+            public boolean test(
+                KafkaCacheEntryFW cacheEntry)
+            {
+                final Array32FW<KafkaHeaderFW> headers = cacheEntry.headers();
+                final Array32FW<KafkaValueMatchFW> values = this.headers.values();
+                final DirectBuffer items = values.items();
+                final int capacity = items.capacity();
+
+                progress.value = 0;
+                matchCandidate.value = false;
+
+                valueMatchRO.wrap(items, progress.value, capacity);
+                progress.value = valueMatchRO.limit();
+
+                headers.forEach(header ->
+                {
+                    if (progress.value < capacity)
+                    {
+                        switch (valueMatchRO.kind())
+                        {
+                        case KIND_VALUE:
+                            final KafkaValueFW value = valueMatchRO.value();
+
+                            if (header.name().equals(nameRO) && header.value().equals(value.value()))
+                            {
+                                valueMatchRO.wrap(items, progress.value, capacity);
+                                progress.value = valueMatchRO.limit();
+                            }
+                            break;
+                        case KIND_SKIP:
+                            if (header.name().equals(nameRO))
+                            {
+                                valueMatchRO.wrap(items, progress.value, capacity);
+                                progress.value = valueMatchRO.limit();
+                            }
+                            break;
+                        }
+
+                        if (progress.value == capacity)
+                        {
+                            matchCandidate.value = true;
+                        }
+                    }
+                    else
+                    {
+                        final int kind = valueMatchRO.kind();
+                        if (matchCandidate.value && (kind == KIND_VALUE ||
+                                                    (kind == KIND_SKIP && valueMatchRO.skip().get() == SKIP)))
+                        {
+                            if (header.name().equals(nameRO))
+                            {
+                                matchCandidate.value = false;
+                            }
+                        }
+                    }
+                });
+
+                return matchCandidate.value;
+            }
+        }
+
         private static final class Key extends Equals
         {
             private Key(
@@ -847,6 +991,9 @@ public final class KafkaCacheCursorFactory
         case KafkaConditionFW.KIND_NOT:
             asCondition = asNotCondition(condition.not());
             break;
+        case KafkaConditionFW.KIND_HEADERS:
+            asCondition = asHeadersCondition(condition.headers());
+            break;
         }
 
         assert asCondition != null;
@@ -901,6 +1048,12 @@ public final class KafkaCacheCursorFactory
             break;
         }
         return filterCondition;
+    }
+
+    private KafkaFilterCondition asHeadersCondition(
+        KafkaHeadersFW headers)
+    {
+        return new KafkaFilterCondition.HeaderSequence(checksum, headers);
     }
 
     private static KafkaFilterCondition.Key initNullKeyInfo(
