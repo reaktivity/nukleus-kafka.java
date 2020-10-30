@@ -2650,6 +2650,8 @@ public final class KafkaMergedFactory implements StreamFactory
             OctetsFW payload,
             OctetsFW extension)
         {
+            initialBudget -= reserved;
+
             Flyweight newKafkaDataEx = EMPTY_OCTETS;
 
             if (flags != FLAGS_NONE)
