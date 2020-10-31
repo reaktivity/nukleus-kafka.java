@@ -553,8 +553,11 @@ public final class KafkaCacheCursorFactory
 
         private static final class HeaderSequence extends KafkaFilterCondition
         {
-            private final String16FW nameRO = new String16FW(BIG_ENDIAN);
+            private final OctetsFW nameRO = new OctetsFW();
             private final KafkaValueMatchFW valueMatchRO = new KafkaValueMatchFW();
+            private final KafkaHeaderFW headerRO = new KafkaHeaderFW();
+
+            private final UnsafeBuffer nameBufferRO = new UnsafeBuffer(0, 0);
 
             private final List<KafkaFilterCondition> headerConditions;
 
@@ -577,11 +580,9 @@ public final class KafkaCacheCursorFactory
                 this.progress = new MutableInteger();
 
                 final OctetsFW name = headers.name();
-                final DirectBuffer buffer = name.buffer();
-                final int offset = name.offset();
-                final int sizeof = name.sizeof();
+                final DirectBuffer nameBuffer = name.value();
 
-                nameRO.tryWrap(buffer, offset, sizeof);
+                nameRO.wrap(nameBuffer, 0, nameBuffer.capacity());
 
                 headers.values().forEach(hv ->
                 {
@@ -591,12 +592,14 @@ public final class KafkaCacheCursorFactory
                     {
                     case KIND_VALUE:
                         final OctetsFW bytes = value.value();
+                        final DirectBuffer valueBuffer = bytes.value();
+
                         final KafkaHeaderFW header = new KafkaHeaderFW.Builder()
                                      .wrap(headersBuffer, 0, headersBuffer.capacity())
-                                     .nameLen(sizeof)
-                                     .name(name)
-                                     .valueLen(bytes.sizeof())
-                                     .value(bytes)
+                                     .nameLen(nameBuffer.capacity())
+                                     .name(nameBuffer, 0, nameBuffer.capacity())
+                                     .valueLen(valueBuffer.capacity())
+                                     .value(valueBuffer, 0, valueBuffer.capacity())
                                      .build();
                         headerConditions.add(new Header(checksum, header));
                         break;
