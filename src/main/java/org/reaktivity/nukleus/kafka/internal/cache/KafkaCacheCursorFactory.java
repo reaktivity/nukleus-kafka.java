@@ -15,7 +15,6 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import static java.nio.ByteOrder.BIG_ENDIAN;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursor;
@@ -56,7 +55,6 @@ import org.reaktivity.nukleus.kafka.internal.types.KafkaNotFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaValueFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaValueMatchFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
-import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheDeltaFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 
@@ -555,9 +553,6 @@ public final class KafkaCacheCursorFactory
         {
             private final OctetsFW nameRO = new OctetsFW();
             private final KafkaValueMatchFW valueMatchRO = new KafkaValueMatchFW();
-            private final KafkaHeaderFW headerRO = new KafkaHeaderFW();
-
-            private final UnsafeBuffer nameBufferRO = new UnsafeBuffer(0, 0);
 
             private final List<KafkaFilterCondition> headerConditions;
 
@@ -581,6 +576,7 @@ public final class KafkaCacheCursorFactory
 
                 final OctetsFW name = headers.name();
                 final DirectBuffer nameBuffer = name.value();
+                nameBuffer.capacity();
 
                 nameRO.wrap(nameBuffer, 0, nameBuffer.capacity());
 
