@@ -26,7 +26,7 @@ import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.nextIndex;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.nextValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.previousIndex;
-import static org.reaktivity.nukleus.kafka.internal.types.KafkaSkip.SKIP;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaSkip.SKIP_MANY;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaValueMatchFW.KIND_SKIP;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaValueMatchFW.KIND_VALUE;
 
@@ -39,7 +39,6 @@ import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.LongHashSet;
 import org.agrona.collections.MutableBoolean;
-import org.agrona.collections.MutableInteger;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.Node;
 import org.reaktivity.nukleus.kafka.internal.types.Array32FW;
@@ -61,6 +60,8 @@ import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 public final class KafkaCacheCursorFactory
 {
     private final KafkaCacheDeltaFW deltaRO = new KafkaCacheDeltaFW();
+    private final KafkaValueMatchFW valueMatchRO = new KafkaValueMatchFW();
+    private final KafkaHeaderFW headerRO = new KafkaHeaderFW();
 
     private final MutableDirectBuffer writeBuffer;
     private final CRC32C checksum;
@@ -551,58 +552,60 @@ public final class KafkaCacheCursorFactory
 
         private static final class HeaderSequence extends KafkaFilterCondition
         {
-            private final OctetsFW nameRO = new OctetsFW();
-            private final KafkaValueMatchFW valueMatchRO = new KafkaValueMatchFW();
-
-            private final List<KafkaFilterCondition> headerConditions;
-
-            private final UnsafeBuffer headersBuffer;
-
+            private final OctetsFW name;
+            private final Array32FW<KafkaValueMatchFW> matches;
             private final And and;
-            private final KafkaHeadersFW headers;
-
-            private final MutableBoolean matchCandidate;
-            private final MutableInteger progress;
+            private final KafkaValueMatchFW valueMatchRO;
+            private final KafkaHeaderFW headersItemRO;
 
             private HeaderSequence(
                 CRC32C checksum,
+                KafkaValueMatchFW valueMatch,
+                KafkaHeaderFW headersItem,
                 KafkaHeadersFW headers)
             {
-                this.headersBuffer = new UnsafeBuffer(new byte[1024]);
-                this.headerConditions = new ArrayList<>();
-                this.headers = headers;
-                this.matchCandidate = new MutableBoolean();
-                this.progress = new MutableInteger();
+                final DirectBuffer headersCopyBuf = copyBuffer(headers.buffer(), headers.offset(), headers.limit());
+                final KafkaHeadersFW headersCopy = new KafkaHeadersFW().wrap(headersCopyBuf, 0, headersCopyBuf.capacity());
 
                 final OctetsFW name = headers.name();
-                final DirectBuffer nameBuffer = name.value();
-                nameBuffer.capacity();
+                final Array32FW<KafkaValueMatchFW> matches = headers.values();
+                final List<KafkaFilterCondition> conditions = new ArrayList<>();
 
-                nameRO.wrap(nameBuffer, 0, nameBuffer.capacity());
+                DirectBuffer matchItems = matches.items();
+                int matchItemOffset = 0;
+                int matchItemsCapacity = matchItems.capacity();
 
-                headers.values().forEach(hv ->
+                while (matchItemOffset < matchItemsCapacity)
                 {
-                    final KafkaValueFW value = hv.value();
+                    final KafkaValueMatchFW matchItem = valueMatch.wrap(matchItems, matchItemOffset, matchItemsCapacity);
 
-                    switch (hv.kind())
+                    if (matchItem.kind() == KIND_VALUE)
                     {
-                    case KIND_VALUE:
-                        final OctetsFW bytes = value.value();
-                        final DirectBuffer valueBuffer = bytes.value();
+                        final KafkaValueFW match = matchItem.value();
+                        final OctetsFW value = match.value();
 
-                        final KafkaHeaderFW header = new KafkaHeaderFW.Builder()
-                                     .wrap(headersBuffer, 0, headersBuffer.capacity())
-                                     .nameLen(nameBuffer.capacity())
-                                     .name(nameBuffer, 0, nameBuffer.capacity())
-                                     .valueLen(valueBuffer.capacity())
-                                     .value(valueBuffer, 0, valueBuffer.capacity())
-                                     .build();
-                        headerConditions.add(new Header(checksum, header));
-                        break;
+                        final MutableDirectBuffer headerCopyBuf =
+                                new UnsafeBuffer(ByteBuffer.allocate(name.sizeof() + value.sizeof() + 8));
+
+                        final KafkaHeaderFW headerCopy = new KafkaHeaderFW.Builder()
+                                .wrap(headerCopyBuf, 0, headerCopyBuf.capacity())
+                                .nameLen(name.sizeof())
+                                .name(name.buffer(), name.offset(), name.sizeof())
+                                .valueLen(value.sizeof())
+                                .value(value.buffer(), value.offset(), value.sizeof())
+                                .build();
+
+                        conditions.add(new Header(checksum, headerCopy));
                     }
-                });
 
-                this.and = new And(headerConditions);
+                    matchItemOffset = matchItem.limit();
+                }
+
+                this.name = headersCopy.name();
+                this.matches = headersCopy.values();
+                this.and = new And(conditions);
+                this.valueMatchRO = valueMatch;
+                this.headersItemRO = headersItem;
             }
 
             @Override
@@ -627,60 +630,50 @@ public final class KafkaCacheCursorFactory
                 KafkaCacheEntryFW cacheEntry)
             {
                 final Array32FW<KafkaHeaderFW> headers = cacheEntry.headers();
-                final Array32FW<KafkaValueMatchFW> values = this.headers.values();
-                final DirectBuffer items = values.items();
-                final int capacity = items.capacity();
+                final DirectBuffer headersItems = headers.items();
+                final DirectBuffer matchItems = matches.items();
+                final int matchesLimit = matchItems.capacity();
 
-                progress.value = 0;
-                matchCandidate.value = false;
+                int matchOffset = 0;
+                boolean matchCandidate = true;
+                boolean skipManyHeaders = false;
 
-                valueMatchRO.wrap(items, progress.value, capacity);
-                progress.value = valueMatchRO.limit();
+                int headerOffset = 0;
+                int headersLimit = headersItems.capacity();
 
-                headers.forEach(header ->
+                while (matchCandidate && headerOffset < headersLimit)
                 {
-                    if (progress.value < capacity)
+                    final KafkaHeaderFW header = headersItemRO.wrap(headersItems, headerOffset, headersLimit);
+                    headerOffset = header.limit();
+
+                    if (header.name().equals(name))
                     {
-                        switch (valueMatchRO.kind())
+                        if (matchOffset < matchesLimit)
                         {
-                        case KIND_VALUE:
-                            final KafkaValueFW value = valueMatchRO.value();
+                            final KafkaValueMatchFW valueMatch = valueMatchRO.wrap(matchItems, matchOffset, matchesLimit);
+                            matchOffset = valueMatch.limit();
 
-                            if (header.name().equals(nameRO) && header.value().equals(value.value()))
+                            switch (valueMatch.kind())
                             {
-                                valueMatchRO.wrap(items, progress.value, capacity);
-                                progress.value = valueMatchRO.limit();
+                            case KIND_VALUE:
+                                final KafkaValueFW value = valueMatch.value();
+                                matchCandidate &= header.value().equals(value.value());
+                                break;
+                            case KIND_SKIP:
+                                skipManyHeaders = valueMatch.skip().get() == SKIP_MANY;
+                                assert !skipManyHeaders || matchOffset == matchesLimit;
+                                break;
                             }
-                            break;
-                        case KIND_SKIP:
-                            if (header.name().equals(nameRO))
-                            {
-                                valueMatchRO.wrap(items, progress.value, capacity);
-                                progress.value = valueMatchRO.limit();
-                            }
-                            break;
+
                         }
-
-                        if (progress.value == capacity)
+                        else
                         {
-                            matchCandidate.value = true;
+                            matchCandidate &= skipManyHeaders;
                         }
                     }
-                    else
-                    {
-                        final int kind = valueMatchRO.kind();
-                        if (matchCandidate.value && (kind == KIND_VALUE ||
-                                                    (kind == KIND_SKIP && valueMatchRO.skip().get() == SKIP)))
-                        {
-                            if (header.name().equals(nameRO))
-                            {
-                                matchCandidate.value = false;
-                            }
-                        }
-                    }
-                });
+                }
 
-                return matchCandidate.value;
+                return matchCandidate && matchOffset == matchesLimit;
             }
         }
 
@@ -1052,7 +1045,7 @@ public final class KafkaCacheCursorFactory
     private KafkaFilterCondition asHeadersCondition(
         KafkaHeadersFW headers)
     {
-        return new KafkaFilterCondition.HeaderSequence(checksum, headers);
+        return new KafkaFilterCondition.HeaderSequence(checksum, valueMatchRO, headerRO, headers);
     }
 
     private static KafkaFilterCondition.Key initNullKeyInfo(
