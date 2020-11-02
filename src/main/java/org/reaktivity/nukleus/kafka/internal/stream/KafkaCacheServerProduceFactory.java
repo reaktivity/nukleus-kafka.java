@@ -366,6 +366,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         private long initialBudgetId;
         private int initialBudget;
         private int initialPadding;
+        private int initialFlags;
 
         private long creditorIndex = NO_CREDITOR_INDEX;
 
@@ -502,6 +503,15 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                 System.out.format("[%d] [%d] [%d] kafka cache server fan [%s] %d - %d => %d\n",
                         currentTimeMillis(), currentThread().getId(),
                         initialId, partition, initialBudget, reserved, initialBudget - reserved);
+            }
+
+            assert (flags & FLAGS_INIT) != (initialFlags & FLAGS_INIT);
+
+            initialFlags |= flags;
+
+            if ((initialFlags & FLAGS_FIN) != 0)
+            {
+                initialFlags = 0;
             }
 
             initialBudget -= reserved;
@@ -820,7 +830,6 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         private final long leaderId;
         private final long authorization;
 
-        private int initialFlags;
         private int state;
 
         private int initialBudget;
@@ -906,14 +915,6 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             final int reserved = data.reserved();
             final OctetsFW payload = data.payload();
 
-            assert (flags & FLAGS_INIT) != (initialFlags & FLAGS_INIT);
-
-            initialFlags |= flags;
-
-            if ((initialFlags & FLAGS_FIN) != 0)
-            {
-                initialFlags = 0;
-            }
 
             final OctetsFW extension = data.extension();
 
