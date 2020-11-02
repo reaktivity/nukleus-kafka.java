@@ -209,6 +209,17 @@ public class CacheProduceIT
         k3po.finish();
     }
 
+    @Test
+    @Specification({
+        "${route}/cache/controller",
+        "${client}/message.overlap.value.100k/client",
+        "${server}/message.overlap.value.100k/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldSendMessageOverlapValue100k() throws Exception
+    {
+        k3po.finish();
+    }
+
     @Ignore("TODO")
     @Test
     @Specification({
