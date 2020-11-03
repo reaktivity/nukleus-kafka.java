@@ -185,7 +185,6 @@ public class ClientProduceIT
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/client/controller",
@@ -197,7 +196,6 @@ public class ClientProduceIT
         k3po.finish();
     }
 
-    @Ignore("TODO")
     @Test
     @Specification({
         "${route}/client/controller",

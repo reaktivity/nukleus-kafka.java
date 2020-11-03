@@ -378,6 +378,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private int initialPadding;
         private int initialSlot = NO_SLOT;
         private int initialSlotOffset;
+        private int initialFlags = 0;
 
         private long partitionIndex = NO_CREDITOR_INDEX;
 
@@ -488,6 +489,17 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             final long budgetId = data.budgetId();
 
             assert budgetId == budget.topicBudgetId;
+
+            final int flags = data.flags();
+
+            assert (flags & FLAGS_INIT) != (initialFlags & FLAGS_INIT);
+
+            initialFlags |= flags;
+
+            if ((initialFlags & FLAGS_FIN) != 0)
+            {
+                initialFlags = 0;
+            }
 
             if (KafkaConfiguration.DEBUG_PRODUCE)
             {
@@ -786,7 +798,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private final long authorization;
 
         private int state;
-        private int initialFlags = 0;
 
         private int initialBudget;
 
@@ -868,17 +879,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         {
             final long traceId = data.traceId();
             final int reserved = data.reserved();
-
-            final int flags = data.flags();
-            assert flags == 0x03;
-            assert (flags & FLAGS_INIT) != (initialFlags & FLAGS_INIT);
-
-            initialFlags |= flags;
-
-            if ((initialFlags & FLAGS_FIN) != 0)
-            {
-                initialFlags = 0;
-            }
 
             if (KafkaConfiguration.DEBUG_PRODUCE)
             {
