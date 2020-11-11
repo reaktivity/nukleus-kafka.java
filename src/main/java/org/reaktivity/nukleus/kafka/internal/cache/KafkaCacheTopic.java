@@ -23,6 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.IntFunction;
 
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities;
 
 public final class KafkaCacheTopic
 {
@@ -32,6 +33,7 @@ public final class KafkaCacheTopic
     private final KafkaCacheTopicConfig config;
     private final int appendCapacity;
     private final Map<Integer, KafkaCachePartition> partitionsById;
+    private final Map<Integer, KafkaCachePartition> partitionsByIndex;
     private IntFunction<long[]> sortSpaceRef;
 
     public KafkaCacheTopic(
@@ -47,6 +49,7 @@ public final class KafkaCacheTopic
         this.cache = cache;
         this.name = name;
         this.partitionsById = new ConcurrentHashMap<>();
+        this.partitionsByIndex = new ConcurrentHashMap<>();
         this.sortSpaceRef = sortSpaceRef;
     }
 
@@ -65,10 +68,17 @@ public final class KafkaCacheTopic
         return config;
     }
 
-    public KafkaCachePartition supplyPartition(
+    public KafkaCachePartition supplyFetchPartition(
         int id)
     {
-        return partitionsById.computeIfAbsent(id, this::newPartition);
+        return partitionsById.computeIfAbsent(id, this::newFetchPartition);
+    }
+
+    public KafkaCachePartition supplyProducePartition(
+        int id,
+        int index)
+    {
+        return partitionsByIndex.computeIfAbsent(index, i -> newProducePartition(id, i));
     }
 
     @Override
@@ -77,9 +87,16 @@ public final class KafkaCacheTopic
         return String.format("[%s] %s", cache, name);
     }
 
-    private KafkaCachePartition newPartition(
+    private KafkaCachePartition newFetchPartition(
         int id)
     {
         return new KafkaCachePartition(location, config, cache, name, id, appendCapacity, sortSpaceRef);
+    }
+
+    private KafkaCachePartition newProducePartition(
+        int id,
+        int index)
+    {
+        return new KafkaCachePartition(location, config, cache, name, id, appendCapacity, sortSpaceRef, index);
     }
 }

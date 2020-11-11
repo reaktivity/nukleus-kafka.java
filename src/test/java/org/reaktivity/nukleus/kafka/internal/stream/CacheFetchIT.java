@@ -76,7 +76,7 @@ public class CacheFetchIT
         final KafkaNukleus nukleus = reaktor.nukleus(KafkaNukleus.class);
         final KafkaCache cache = nukleus.supplyCache("kafka-cache#0");
         final KafkaCacheTopic topic = cache.supplyTopic("test");
-        this.partition = topic.supplyPartition(0);
+        this.partition = topic.supplyFetchPartition(0);
     }
 
     @Test

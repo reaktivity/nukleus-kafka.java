@@ -31,8 +31,8 @@ public class KafkaCacheTopicTest
         Path location = config.cacheDirectory().resolve("cache");
         KafkaCacheTopic topic = new KafkaCacheTopic(location, config, "cache", "test", long[]::new);
 
-        KafkaCachePartition partitionA = topic.supplyPartition(0);
-        KafkaCachePartition partitionB = topic.supplyPartition(0);
+        KafkaCachePartition partitionA = topic.supplyFetchPartition(0);
+        KafkaCachePartition partitionB = topic.supplyFetchPartition(0);
 
         assert partitionA == partitionB;
     }

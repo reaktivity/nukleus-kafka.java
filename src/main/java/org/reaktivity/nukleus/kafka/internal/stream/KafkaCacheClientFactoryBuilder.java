@@ -38,6 +38,7 @@ public final class KafkaCacheClientFactoryBuilder implements KafkaStreamFactoryB
     private final KafkaConfiguration config;
     private final Function<String, KafkaCache> supplyCache;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
+    private final int index;
 
     private RouteManager router;
     private Signaler signaler;
@@ -54,11 +55,13 @@ public final class KafkaCacheClientFactoryBuilder implements KafkaStreamFactoryB
     public KafkaCacheClientFactoryBuilder(
         KafkaConfiguration config,
         Function<String, KafkaCache> supplyCache,
-        LongFunction<KafkaCacheRoute> supplyCacheRoute)
+        LongFunction<KafkaCacheRoute> supplyCacheRoute,
+        int index)
     {
         this.config = config;
         this.supplyCache = supplyCache;
         this.supplyCacheRoute = supplyCacheRoute;
+        this.index = index;
     }
 
     @Override
@@ -168,6 +171,7 @@ public final class KafkaCacheClientFactoryBuilder implements KafkaStreamFactoryB
                 supplyBudgetId,
                 supplyDebitor,
                 supplyCache,
-                supplyCacheRoute);
+                supplyCacheRoute,
+                index);
     }
 }

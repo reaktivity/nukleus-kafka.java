@@ -35,7 +35,9 @@ import org.agrona.IoUtil;
 import org.agrona.LangUtil;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 
 public class KafkaCacheFile implements AutoCloseable
 {
@@ -142,6 +144,13 @@ public class KafkaCacheFile implements AutoCloseable
 
     public void writeBytes(
         int position,
+        Flyweight flyweight)
+    {
+        writeBytes(position, flyweight.buffer(), flyweight.offset(), flyweight.sizeof());
+    }
+
+    public void writeBytes(
+        int position,
         DirectBuffer srcBuffer,
         int srcIndex,
         int length)
@@ -161,6 +170,13 @@ public class KafkaCacheFile implements AutoCloseable
         int value)
     {
         mappedBuf.putInt(position, value);
+    }
+
+    public void advance(
+        int position)
+    {
+        assert position >= capacity;
+        appendBytes(appendBuf, 0, position - capacity);
     }
 
     public boolean appendBytes(

@@ -52,6 +52,7 @@ public final class KafkaCacheClientFactory implements StreamFactory
     private final int kafkaTypeId;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
     private final Int2ObjectHashMap<StreamFactory> streamFactoriesByKind;
+    private int index;
 
     KafkaCacheClientFactory(
         KafkaConfiguration config,
@@ -67,8 +68,10 @@ public final class KafkaCacheClientFactory implements StreamFactory
         LongSupplier supplyBudgetId,
         LongFunction<BudgetDebitor> supplyDebitor,
         Function<String, KafkaCache> supplyCache,
-        LongFunction<KafkaCacheRoute> supplyCacheRoute)
+        LongFunction<KafkaCacheRoute> supplyCacheRoute,
+        int index)
     {
+        this.index = index;
         final Long2ObjectHashMap<MessageConsumer> correlations = new Long2ObjectHashMap<>();
         final KafkaMergedBudgetAccountant accountant = new KafkaMergedBudgetAccountant(supplyDebitor, supplyBudgetId, creditor);
 
@@ -86,7 +89,7 @@ public final class KafkaCacheClientFactory implements StreamFactory
 
         final KafkaCacheClientProduceFactory cacheProduceFactory = new KafkaCacheClientProduceFactory(
                 config, router, writeBuffer, bufferPool, creditor, supplyInitialId, supplyReplyId, supplyTraceId,
-                supplyBudgetId, supplyTypeId, supplyDebitor, supplyCache, supplyCacheRoute, correlations);
+                supplyBudgetId, supplyTypeId, supplyDebitor, supplyCache, supplyCacheRoute, correlations, index);
 
         final KafkaMergedFactory cacheMergedFactory = new KafkaMergedFactory(
                 config, router, writeBuffer, supplyInitialId, supplyReplyId, supplyTraceId, supplyTypeId,

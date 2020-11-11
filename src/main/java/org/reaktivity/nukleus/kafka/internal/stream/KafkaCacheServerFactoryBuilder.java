@@ -24,7 +24,6 @@ import java.util.function.ToIntFunction;
 
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
-import org.reaktivity.nukleus.budget.BudgetCreditor;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
@@ -51,13 +50,13 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
     private LongSupplier supplyBudgetId;
     private Supplier<BufferPool> supplyBufferPool;
     private ToIntFunction<String> supplyTypeId;
-    private BudgetCreditor creditor;
     private Signaler signaler;
 
     public KafkaCacheServerFactoryBuilder(
         KafkaConfiguration config,
         Function<String, KafkaCache> supplyCache,
-        LongFunction<KafkaCacheRoute> supplyCacheRoute)
+        LongFunction<KafkaCacheRoute> supplyCacheRoute,
+        int index)
     {
         this.config = config;
         this.supplyCache = supplyCache;
@@ -77,14 +76,6 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
         RouteManager router)
     {
         this.router = router;
-        return this;
-    }
-
-    @Override
-    public KafkaCacheServerFactoryBuilder setBudgetCreditor(
-        BudgetCreditor creditor)
-    {
-        this.creditor = creditor;
         return this;
     }
 
@@ -162,7 +153,6 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
                 router,
                 writeBuffer,
                 bufferPool,
-                creditor,
                 signaler,
                 supplyInitialId,
                 supplyReplyId,
