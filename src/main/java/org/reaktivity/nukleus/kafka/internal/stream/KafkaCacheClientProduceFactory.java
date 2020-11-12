@@ -534,7 +534,8 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             final OctetsFW valueFragment = data.payload();
 
             KafkaProduceDataExFW kafkaProduceDataExFW = null;
-            if ((flags & (FLAGS_INIT | FLAGS_FIN)) != 0x00)
+
+            if ((flags & FLAGS_INIT) != 0x00)
             {
                 final OctetsFW extension = data.extension();
                 final ExtensionFW dataEx = extension.get(extensionRO::tryWrap);
@@ -542,11 +543,9 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                 final KafkaDataExFW kafkaDataEx = extension.get(kafkaDataExRO::wrap);
                 assert kafkaDataEx.kind() == KafkaDataExFW.KIND_PRODUCE;
                 kafkaProduceDataExFW = kafkaDataEx.produce();
-            }
 
-            if ((flags & FLAGS_INIT) != 0x00)
-            {
                 assert kafkaProduceDataExFW != null;
+
                 final int deferred = kafkaProduceDataExFW.deferred();
                 final Array32FW<KafkaHeaderFW> headers = kafkaProduceDataExFW.headers();
                 final int headersSizeMax = headers.sizeof();
@@ -599,8 +598,8 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             if (incompleteMessages.get() == 0)
             {
-                doFlushClientInitialIfNecessary(traceId);
                 lastOffsetHighWaterMark = currentOffsetHighWaterMark;
+                doFlushClientInitialIfNecessary(traceId);
             }
         }
 
@@ -969,6 +968,8 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             {
                 fan.onClientInitialData(this, data);
             }
+
+            doClientInitialWindow(traceId, reserved);
         }
 
         private void onClientInitialEnd(

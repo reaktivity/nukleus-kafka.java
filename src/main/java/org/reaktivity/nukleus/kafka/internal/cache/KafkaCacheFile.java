@@ -176,7 +176,17 @@ public class KafkaCacheFile implements AutoCloseable
         int position)
     {
         assert position >= capacity;
-        appendBytes(appendBuf, 0, position - capacity);
+        int remaining = position - capacity;
+
+        assert remaining <=maxCapacity;
+
+        while (remaining > 0)
+        {
+            final int length = Math.min(remaining, appendBuf.capacity());
+            appendBytes(appendBuf, 0, length);
+            remaining -= length;
+        }
+
     }
 
     public boolean appendBytes(

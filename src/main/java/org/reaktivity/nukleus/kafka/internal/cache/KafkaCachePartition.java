@@ -476,6 +476,8 @@ public final class KafkaCachePartition
         final KafkaCacheFile keysFile = segment.keysFile();
         final KafkaCacheFile nullsFile = segment.nullsFile();
 
+        logFile.mark();
+
         entryInfo.putLong(0, progress);
         entryInfo.putLong(Long.BYTES, timestamp);
         entryInfo.putLong(2 * Long.BYTES, NO_ANCESTOR_OFFSET);
