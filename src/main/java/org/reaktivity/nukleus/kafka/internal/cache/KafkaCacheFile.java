@@ -35,9 +35,7 @@ import org.agrona.IoUtil;
 import org.agrona.LangUtil;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
-import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
-import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 
 public class KafkaCacheFile implements AutoCloseable
 {
@@ -178,7 +176,7 @@ public class KafkaCacheFile implements AutoCloseable
         assert position >= capacity;
         int remaining = position - capacity;
 
-        assert remaining <=maxCapacity;
+        assert remaining <= maxCapacity;
 
         while (remaining > 0)
         {

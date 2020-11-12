@@ -82,6 +82,8 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
     private static final String TRANSACTION_NONE = null;
 
+    private static final int SIZE_OF_FLUSH_WITH_EXTENSION = 64;
+
     private static final int FLAG_FIN = 0x01;
     private static final int FLAG_INIT = 0x02;
     private static final int FLAG_NONE = 0x00;
@@ -112,12 +114,14 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
     private final BeginFW.Builder beginRW = new BeginFW.Builder();
     private final DataFW.Builder dataRW = new DataFW.Builder();
+    private final FlushFW.Builder flushRW = new FlushFW.Builder();
     private final EndFW.Builder endRW = new EndFW.Builder();
     private final AbortFW.Builder abortRW = new AbortFW.Builder();
     private final ResetFW.Builder resetRW = new ResetFW.Builder();
     private final WindowFW.Builder windowRW = new WindowFW.Builder();
     private final KafkaBeginExFW.Builder kafkaBeginExRW = new KafkaBeginExFW.Builder();
     private final KafkaDataExFW.Builder kafkaDataExRW = new KafkaDataExFW.Builder();
+    private final KafkaFlushExFW.Builder kafkaFlushExRW = new KafkaFlushExFW.Builder();
     private final KafkaResetExFW.Builder kafkaResetExRW = new KafkaResetExFW.Builder();
 
     private final MessageFunction<RouteFW> wrapRoute = (t, b, i, l) -> routeRO.wrap(b, i, i + l);
@@ -197,7 +201,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
         final String16FW beginTopic = kafkaProduceBeginEx.topic();
         final int partitionId = kafkaProduceBeginEx.partitionId();
-        final int coreIndex = kafkaProduceBeginEx.index();
+        final int localIndex = kafkaProduceBeginEx.index();
 
         MessageConsumer newStream = null;
 
@@ -231,7 +235,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             final String cacheName = route.localAddress().asString();
             final KafkaCache cache = supplyCache.apply(cacheName);
             final KafkaCacheTopic topic = cache.supplyTopic(topicName);
-            final KafkaCachePartition partition = topic.supplyProducePartition(partitionId, coreIndex);
+            final KafkaCachePartition partition = topic.supplyProducePartition(partitionId, localIndex);
 
             newStream = new KafkaCacheServerProduceStream(
                     fan,
@@ -292,6 +296,29 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                 .build();
 
         receiver.accept(data.typeId(), data.buffer(), data.offset(), data.sizeof());
+    }
+
+    private void doFlush(
+        MessageConsumer receiver,
+        long routeId,
+        long streamId,
+        long traceId,
+        long authorization,
+        long budgetId,
+        int reserved,
+        Consumer<OctetsFW.Builder> extension)
+    {
+        final FlushFW flush = flushRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                                     .routeId(routeId)
+                                     .streamId(streamId)
+                                     .traceId(traceId)
+                                     .authorization(authorization)
+                                     .budgetId(budgetId)
+                                     .reserved(reserved)
+                                     .extension(extension)
+                                     .build();
+
+        receiver.accept(flush.typeId(), flush.buffer(), flush.offset(), flush.sizeof());
     }
 
     private void doEnd(
@@ -1091,6 +1118,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                             this.messageOffset = 0;
 
                             cursor.advance(partitionOffset + 1);
+                            doFlushServerInitial(traceId);
                         }
                     }
                 }
@@ -1216,6 +1244,18 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
             doWindow(sender, routeId, initialId, traceId, authorization,
                     fan.creditorId, credit, fan.initialPadding);
+        }
+
+        private void doFlushServerInitial(
+            long traceId)
+        {
+            doFlush(sender, routeId, replyId, traceId, authorization, 0L, SIZE_OF_FLUSH_WITH_EXTENSION,
+                ex -> ex.set((b, o, l) -> kafkaFlushExRW.wrap(b, o, l)
+                                                        .typeId(kafkaTypeId)
+                                                        .produce(f -> f.partition(p -> p.partitionId(partition.id())
+                                                                                        .partitionOffset(partitionOffset)))
+                                                        .build()
+                                                        .sizeof()));
         }
 
         private void doServerReplyBeginIfNecessary(

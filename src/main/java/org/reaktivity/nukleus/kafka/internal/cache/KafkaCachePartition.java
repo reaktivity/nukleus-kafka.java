@@ -52,7 +52,6 @@ import org.agrona.io.DirectBufferInputStream;
 import org.agrona.io.ExpandableDirectBufferOutputStream;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
-import org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
@@ -512,6 +511,8 @@ public final class KafkaCachePartition
 
         final long offsetDelta = (int)(progress - segment.baseOffset());
         final long indexEntry = (offsetDelta << 32) | logFile.markValue();
+        assert indexFile.available() >= Long.BYTES;
+        indexFile.appendLong(indexEntry);
 
         if (!headers.isEmpty())
         {
@@ -531,9 +532,6 @@ public final class KafkaCachePartition
             final long hashEntry = keyHash << 32 | logFile.markValue();
             hashFile.appendLong(hashEntry);
         }
-
-        assert indexFile.available() >= Long.BYTES;
-        indexFile.appendLong(indexEntry);
     }
 
     public void writeProduceEntryContinue(
@@ -816,12 +814,36 @@ public final class KafkaCachePartition
             return ancestor;
         }
 
+        public KafkaCacheEntryFW findAndMarkDirty(
+            KafkaCacheEntryFW dirty,
+            long partitionOffset)
+        {
+            final long cursor = segment.indexFile().first((int) partitionOffset);
+            final int position = KafkaCacheCursorRecord.cursorValue(cursor);
+
+            final KafkaCacheFile logFile = segment.logFile();
+            final KafkaCacheEntryFW dirtyEntry = logFile.readBytes(position, dirty::tryWrap);
+            assert dirtyEntry != null;
+
+            markDirty(dirtyEntry);
+
+            return dirtyEntry;
+        }
+
         private void markDescendantAndDirty(
             KafkaCacheEntryFW ancestor,
             long descendantOffset)
         {
             final KafkaCacheFile logFile = segment.logFile();
             logFile.writeLong(ancestor.offset() + FIELD_OFFSET_DESCENDANT, descendantOffset);
+            logFile.writeInt(ancestor.offset() + FIELD_OFFSET_FLAGS, CACHE_ENTRY_FLAGS_DIRTY);
+            segment.markDirtyBytes(ancestor.sizeof());
+        }
+
+        private void markDirty(
+            KafkaCacheEntryFW ancestor)
+        {
+            final KafkaCacheFile logFile = segment.logFile();
             logFile.writeInt(ancestor.offset() + FIELD_OFFSET_FLAGS, CACHE_ENTRY_FLAGS_DIRTY);
             segment.markDirtyBytes(ancestor.sizeof());
         }
