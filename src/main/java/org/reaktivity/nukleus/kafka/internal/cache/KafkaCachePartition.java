@@ -169,6 +169,11 @@ public final class KafkaCachePartition
         return sentinel.previous;
     }
 
+    public int segmentBytes()
+    {
+        return config.maxMessageBytes;
+    }
+
     public long nextOffset(
             KafkaOffsetType defaultOffset)
     {

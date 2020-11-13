@@ -86,6 +86,8 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
 
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
+    private static final int ERROR_RECORD_LIST_TOO_LARGE = 18;
+    private static final int NO_ERROR = -1;
 
     private static final Array32FW<KafkaFilterFW> EMPTY_FILTER =
         new Array32FW.Builder<>(new KafkaFilterFW.Builder(), new KafkaFilterFW())
@@ -554,8 +556,9 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             final int flags = data.flags();
             final OctetsFW valueFragment = data.payload();
 
-            KafkaProduceDataExFW kafkaProduceDataExFW = null;
+            int error = NO_ERROR;
 
+            init:
             if ((flags & FLAGS_INIT) != 0x00)
             {
                 final OctetsFW extension = data.extension();
@@ -563,16 +566,20 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                 assert dataEx != null && dataEx.typeId() == kafkaTypeId;
                 final KafkaDataExFW kafkaDataEx = extension.get(kafkaDataExRO::wrap);
                 assert kafkaDataEx.kind() == KafkaDataExFW.KIND_PRODUCE;
-                kafkaProduceDataExFW = kafkaDataEx.produce();
-
-                assert kafkaProduceDataExFW != null;
-
+                KafkaProduceDataExFW kafkaProduceDataExFW = kafkaDataEx.produce();
                 final int deferred = kafkaProduceDataExFW.deferred();
                 final Array32FW<KafkaHeaderFW> headers = kafkaProduceDataExFW.headers();
                 final int headersSizeMax = headers.sizeof();
                 final long timestamp = kafkaProduceDataExFW.timestamp();
                 final KafkaKeyFW key = kafkaProduceDataExFW.key();
                 final int valueLength = valueFragment != null ? valueFragment.sizeof() + deferred : -1;
+                final int maxValueLength = valueLength + headersSizeMax;
+
+                if (maxValueLength > partition.segmentBytes())
+                {
+                    error = ERROR_RECORD_LIST_TOO_LARGE;
+                    break init;
+                }
 
                 stream.segment = partition.newHeadIfNecessary(partitionOffset, key, valueLength, headersSizeMax);
 
@@ -588,15 +595,21 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                 partitionOffset++;
             }
 
-            if (valueFragment != null)
+            if (valueFragment != null && error == NO_ERROR)
             {
                 partition.writeProduceEntryContinue(stream.segment, stream.position, valueFragment);
             }
 
-            if ((flags & FLAGS_FIN) != 0x00)
+            if ((flags & FLAGS_FIN) != 0x00 && error == NO_ERROR)
             {
                 partition.writeProduceEntryFin(stream.segment, stream.entryMark);
                 flushClientFanInitialIfNecessary(traceId);
+            }
+
+            if (error != NO_ERROR)
+            {
+                stream.cleanupClient(traceId, error);
+                onClientFanMemberClosed(traceId, stream);
             }
         }
 
