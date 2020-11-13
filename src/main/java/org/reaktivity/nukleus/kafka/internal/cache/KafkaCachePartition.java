@@ -70,7 +70,8 @@ public final class KafkaCachePartition
     private static final String FORMAT_FETCH_PARTITION_DIRECTORY = "%s-%d";
     private static final String FORMAT_PRODUCE_PARTITION_DIRECTORY = "%s-%d-%d";
 
-    private static final int CACHE_ENTRY_FLAGS_DIRTY = 0x01;
+    public static final int CACHE_ENTRY_FLAGS_DIRTY = 0x01;
+    public static final int CACHE_ENTRY_FLAGS_COMPLETED = 0x02;
 
     private static final long OFFSET_HISTORICAL = KafkaOffsetType.HISTORICAL.value();
 
@@ -169,7 +170,7 @@ public final class KafkaCachePartition
     }
 
     public long nextOffset(
-        KafkaOffsetType defaultOffset)
+            KafkaOffsetType defaultOffset)
     {
         final Node head = sentinel.previous;
         return head == sentinel ? defaultOffset.value() : head.segment().nextOffset();
@@ -456,6 +457,7 @@ public final class KafkaCachePartition
     public void writeProduceEntryStart(
         long offset,
         Node head,
+        MutableInteger entryMark,
         MutableInteger position,
         long timestamp,
         KafkaKeyFW key,
@@ -475,7 +477,7 @@ public final class KafkaCachePartition
         final KafkaCacheFile keysFile = segment.keysFile();
         final KafkaCacheFile nullsFile = segment.nullsFile();
 
-        logFile.mark();
+        entryMark.value = logFile.capacity();
 
         entryInfo.putLong(0, progress);
         entryInfo.putLong(Long.BYTES, timestamp);
@@ -493,7 +495,7 @@ public final class KafkaCachePartition
         if (valueLength == -1)
         {
             final int timestampDelta = (int)((timestamp - segment.timestamp()) & 0xFFFF_FFFFL);
-            final long nullsEntry = timestampDelta << 32 | logFile.markValue();
+            final long nullsEntry = timestampDelta << 32 | entryMark.value;
             nullsFile.appendLong(nullsEntry);
         }
 
@@ -510,7 +512,7 @@ public final class KafkaCachePartition
         logFile.appendBytes(headers);
 
         final long offsetDelta = (int)(progress - segment.baseOffset());
-        final long indexEntry = (offsetDelta << 32) | logFile.markValue();
+        final long indexEntry = (offsetDelta << 32) | entryMark.value;
         assert indexFile.available() >= Long.BYTES;
         indexFile.appendLong(indexEntry);
 
@@ -523,28 +525,26 @@ public final class KafkaCachePartition
             headers.forEach(h ->
             {
                 final long hash = computeHash(h);
-                final long hashEntry = (hash << 32) | logFile.markValue();
+                final long hashEntry = (hash << 32) | entryMark.value;
                 hashFile.appendLong(hashEntry);
             });
         }
         else
         {
-            final long hashEntry = keyHash << 32 | logFile.markValue();
+            final long hashEntry = keyHash << 32 | entryMark.value;
             hashFile.appendLong(hashEntry);
         }
     }
 
     public void writeProduceEntryContinue(
+        Node head,
         MutableInteger position,
         OctetsFW payload)
     {
-        final Node head = sentinel.previous;
-        assert head != sentinel;
+        final KafkaCacheSegment segment = head.segment;
+        assert segment != null;
 
-        final KafkaCacheSegment headSegment = head.segment;
-        assert headSegment != null;
-
-        final KafkaCacheFile logFile = headSegment.logFile();
+        final KafkaCacheFile logFile = segment.logFile();
 
         final int logAvailable = logFile.available();
         final int payloadLength = payload.sizeof();
@@ -553,6 +553,18 @@ public final class KafkaCachePartition
         logFile.writeBytes(position.value, payload);
 
         position.value += payloadLength;
+    }
+
+    public void writeProduceEntryFin(
+        Node head,
+        MutableInteger entryMark)
+    {
+        final KafkaCacheSegment segment = head.segment;
+        assert segment != null;
+
+        final KafkaCacheFile logFile = segment.logFile();
+
+        logFile.writeInt(entryMark.value + FIELD_OFFSET_FLAGS, CACHE_ENTRY_FLAGS_COMPLETED);
     }
 
     public long retainAt(
@@ -841,11 +853,11 @@ public final class KafkaCachePartition
         }
 
         private void markDirty(
-            KafkaCacheEntryFW ancestor)
+            KafkaCacheEntryFW entry)
         {
             final KafkaCacheFile logFile = segment.logFile();
-            logFile.writeInt(ancestor.offset() + FIELD_OFFSET_FLAGS, CACHE_ENTRY_FLAGS_DIRTY);
-            segment.markDirtyBytes(ancestor.sizeof());
+            logFile.writeInt(entry.offset() + FIELD_OFFSET_FLAGS, CACHE_ENTRY_FLAGS_COMPLETED);
+            segment.markDirtyBytes(entry.sizeof());
         }
 
         @Override

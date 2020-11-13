@@ -19,10 +19,10 @@ import static java.lang.System.currentTimeMillis;
 import static java.lang.Thread.currentThread;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.CACHE_ENTRY_FLAGS_COMPLETED;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongFunction;
@@ -35,7 +35,6 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.collections.MutableInteger;
 import org.agrona.concurrent.UnsafeBuffer;
-import org.reaktivity.nukleus.budget.BudgetCreditor;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
@@ -45,10 +44,14 @@ import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.budget.KafkaCacheClientBudget;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorFactory;
+import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorFactory.KafkaCacheCursor;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopic;
 import org.reaktivity.nukleus.kafka.internal.types.Array32FW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW;
@@ -83,6 +86,10 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
 
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
+
+    private static final Array32FW<KafkaFilterFW> EMPTY_FILTER =
+        new Array32FW.Builder<>(new KafkaFilterFW.Builder(), new KafkaFilterFW())
+            .wrap(new UnsafeBuffer(new byte[64]), 0, 64).build();
 
     private static final int FLAGS_FIN = 0x01;
     private static final int FLAGS_INIT = 0x02;
@@ -120,7 +127,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
     private final KafkaResetExFW.Builder kafkaResetExRW = new KafkaResetExFW.Builder();
     private final KafkaFlushExFW.Builder kafkaFlushExRW = new KafkaFlushExFW.Builder();
 
-    private final KafkaCacheEntryFW dirtyEntryRO = new KafkaCacheEntryFW();
+    private final KafkaCacheEntryFW entryRO = new KafkaCacheEntryFW();
 
     private final MessageFunction<RouteFW> wrapRoute = (t, b, i, l) -> routeRO.wrap(b, i, i + l);
 
@@ -136,8 +143,10 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
     private final Function<String, KafkaCache> supplyCache;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
+    private final KafkaCacheCursorFactory cursorFactory;
+    private final KafkaCacheCursorFactory.KafkaFilterCondition noneCondition;
     private final int initialBudgetMax;
-    private int localIndex;
+    private final int localIndex;
 
     public KafkaCacheClientProduceFactory(
         KafkaConfiguration config,
@@ -169,6 +178,8 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         this.correlations = correlations;
         this.initialBudgetMax = bufferPool.slotCapacity();
         this.localIndex = localIndex;
+        this.cursorFactory = new KafkaCacheCursorFactory(writeBuffer);
+        this.noneCondition = cursorFactory.asCondition(EMPTY_FILTER);
     }
 
     @Override
@@ -293,6 +304,29 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         receiver.accept(data.typeId(), data.buffer(), data.offset(), data.sizeof());
     }
 
+    private void doFlush(
+        MessageConsumer receiver,
+        long routeId,
+        long streamId,
+        long traceId,
+        long authorization,
+        long budgetId,
+        int reserved,
+        Consumer<OctetsFW.Builder> extension)
+    {
+        final FlushFW flush = flushRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                                     .routeId(routeId)
+                                     .streamId(streamId)
+                                     .traceId(traceId)
+                                     .authorization(authorization)
+                                     .budgetId(budgetId)
+                                     .reserved(reserved)
+                                     .extension(extension)
+                                     .build();
+
+        receiver.accept(flush.typeId(), flush.buffer(), flush.offset(), flush.sizeof());
+    }
+
     private void doEnd(
         MessageConsumer receiver,
         long routeId,
@@ -373,39 +407,16 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         sender.accept(reset.typeId(), reset.buffer(), reset.offset(), reset.sizeof());
     }
 
-    private void doFlush(
-        MessageConsumer receiver,
-        long routeId,
-        long streamId,
-        long traceId,
-        long authorization,
-        long budgetId,
-        int reserved,
-        Consumer<OctetsFW.Builder> extension)
-    {
-        final FlushFW flush = flushRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                                     .routeId(routeId)
-                                     .streamId(streamId)
-                                     .traceId(traceId)
-                                     .authorization(authorization)
-                                     .budgetId(budgetId)
-                                     .reserved(reserved)
-                                     .extension(extension)
-                                     .build();
-
-        receiver.accept(flush.typeId(), flush.buffer(), flush.offset(), flush.sizeof());
-    }
-
     final class KafkaCacheClientProduceFan
     {
         private final long routeId;
         private final long authorization;
         private final KafkaCachePartition partition;
+        private final KafkaCacheCursor cursor;
         private final KafkaOffsetType defaultOffset;
         private final int partitionId;
         private final List<KafkaCacheClientProduceStream> members;
 
-        private final AtomicLong incompleteMessages = new AtomicLong(0L);
         private final int localIndex;
 
         private long leaderId;
@@ -419,13 +430,10 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private int initialPadding;
         private int initialSlot = NO_SLOT;
 
-        private int partitionOffset = 0;
+        private long offsetHighWatermark = -1;
+        private int partitionOffset;
         private long compactAt = Long.MAX_VALUE;
         private long compactId = NO_CANCEL_ID;
-        private long deleteId = NO_CANCEL_ID;
-
-        private long lastOffsetHighWaterMark;
-        private long currentOffsetHighWaterMark;
 
         private KafkaCacheClientProduceFan(
             long routeId,
@@ -442,6 +450,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             this.members = new ArrayList<>();
             this.leaderId = leaderId;
             this.defaultOffset = KafkaOffsetType.LIVE;
+            this.cursor = cursorFactory.newCursor(noneCondition, KafkaDeltaType.NONE);
         }
 
         private void onClientFanMemberOpening(
@@ -474,6 +483,14 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             {
                 member.doClientReplyBeginIfNecessary(traceId);
             }
+
+            KafkaCachePartition.Node segmentNode = partition.seekNotBefore(0);
+
+            if (segmentNode.sentinel())
+            {
+                segmentNode = segmentNode.next();
+            }
+            cursor.init(segmentNode, -1L, 0L);
         }
 
         private void onClientFanMemberClosed(
@@ -564,23 +581,21 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                     : String.format("%d >= 0 && %d >= %d", partitionOffset, partitionOffset, nextOffset);
 
                 final long keyHash = partition.computeKeyHash(key);
-                partition.writeProduceEntryStart(partitionOffset, stream.segment, stream.position, timestamp, key, keyHash,
+                partition.writeProduceEntryStart(partitionOffset, stream.segment, stream.entryMark, stream.position, timestamp, key, keyHash,
                     valueLength, headers);
 
                 stream.partitionOffset = partitionOffset;
-                stream.messageCompleted = false;
                 partitionOffset++;
             }
 
             if (valueFragment != null)
             {
-                partition.writeProduceEntryContinue(stream.position, valueFragment);
+                partition.writeProduceEntryContinue(stream.segment, stream.position, valueFragment);
             }
 
             if ((flags & FLAGS_FIN) != 0x00)
             {
-                stream.messageCompleted = true;
-                currentOffsetHighWaterMark = stream.partitionOffset;
+                partition.writeProduceEntryFin(stream.segment, stream.entryMark);
                 flushClientFanInitialIfNecessary(traceId);
             }
         }
@@ -588,21 +603,25 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private void flushClientFanInitialIfNecessary(
             long traceId)
         {
-            incompleteMessages.set(currentOffsetHighWaterMark - lastOffsetHighWaterMark);
+            final long oldOffsetHighWaterMark = offsetHighWatermark;
+            long newOffsetHighWatermark = offsetHighWatermark;
 
-            members.forEach(member ->
-            {
-                if (member.messageCompleted &&
-                    member.partitionOffset >= currentOffsetHighWaterMark &&
-                    incompleteMessages.get() != 0)
+            do {
+                final KafkaCacheEntryFW nextEntry = cursor.next(entryRO);
+
+                newOffsetHighWatermark++;
+                if (nextEntry != null &&
+                    (nextEntry.flags() & CACHE_ENTRY_FLAGS_COMPLETED) == CACHE_ENTRY_FLAGS_COMPLETED)
                 {
-                    incompleteMessages.getAndDecrement();
+                    cursor.advance(newOffsetHighWatermark);
                 }
-            });
 
-            if (incompleteMessages.get() == 0)
+            } while (newOffsetHighWatermark == cursor.offset);
+
+            offsetHighWatermark = cursor.offset;
+
+            if (offsetHighWatermark > oldOffsetHighWaterMark)
             {
-                lastOffsetHighWaterMark = currentOffsetHighWaterMark;
                 doFlushClientInitialIfNecessary(traceId);
             }
         }
@@ -616,7 +635,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                     ex -> ex.set((b, o, l) -> kafkaFlushExRW.wrap(b, o, l)
                                         .typeId(kafkaTypeId)
                                         .produce(f -> f.partition(p -> p.partitionId(partitionId)
-                                                                        .partitionOffset(lastOffsetHighWaterMark)))
+                                                                        .partitionOffset(offsetHighWatermark)))
                                         .build()
                                         .sizeof()));
             }
@@ -800,9 +819,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private void onClientFanReplyFlush(
             FlushFW flush)
         {
-            final long traceId = flush.traceId();
-
-            final int reserved = flush.reserved();
             final OctetsFW extension = flush.extension();
             final KafkaFlushExFW kafkaFlushEx = extension.get(kafkaFlushExRO::wrap);
             final KafkaProduceFlushExFW kafkaProduceFlushEx = kafkaFlushEx.produce();
@@ -810,7 +826,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             final long partitionOffset = partition.partitionOffset();
 
             final KafkaCachePartition.Node node = this.partition.seekNotAfter(partitionOffset);
-            final KafkaCacheEntryFW entry = node.findAndMarkDirty(dirtyEntryRO, partitionOffset);
+            node.findAndMarkDirty(entryRO, partitionOffset);
 
             final long newCompactAt = this.partition.compactAt(node.segment());
 
@@ -828,8 +844,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                     this.compactId = doClientFanoutInitialSignalAt(newCompactAt, SIGNAL_SEGMENT_COMPACT);
                 }
             }
-
-            doClientFanReplyWindow(traceId, reserved);
         }
 
         private void onClientFanReplyEnd(
@@ -893,6 +907,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
         private KafkaCachePartition.Node segment;
 
+        private final MutableInteger entryMark;
         private final MutableInteger position;
         private final KafkaCacheClientProduceFan fan;
         private final MessageConsumer sender;
@@ -907,8 +922,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
         private int initialBudget;
 
-        private int partitionOffset;
-        private boolean messageCompleted;
+        private int partitionOffset = -1;
 
         KafkaCacheClientProduceStream(
             KafkaCacheClientProduceFan fan,
@@ -918,6 +932,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             long leaderId,
             long authorization)
         {
+            this.entryMark = new MutableInteger(0);
             this.position = new MutableInteger(0);
             this.fan = fan;
             this.sender = sender;

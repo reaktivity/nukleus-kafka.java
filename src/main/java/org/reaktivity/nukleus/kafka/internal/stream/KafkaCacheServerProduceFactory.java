@@ -900,6 +900,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
     private final class KafkaCacheServerProduceStream
     {
 
+        private final KafkaCachePartition partition;
         private final KafkaCacheCursor cursor;
         private final KafkaCacheServerProduceFan fan;
         private final MessageConsumer sender;
@@ -914,7 +915,6 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         private int initialBudget;
         private long partitionOffset;
         private int messageOffset;
-        private KafkaCachePartition partition;
 
         KafkaCacheServerProduceStream(
             KafkaCacheServerProduceFan fan,
