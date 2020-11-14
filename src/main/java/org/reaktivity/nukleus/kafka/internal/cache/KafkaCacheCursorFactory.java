@@ -507,7 +507,7 @@ public final class KafkaCacheCursorFactory
                 long latestOffset,
                 int position)
             {
-                long cursor = none.reset(segment, offset, latestOffset, position);
+                long cursor = none.reset(segment, offset, latestOffset, POSITION_UNSET);
 
                 anchor = nested.reset(segment, offset, latestOffset, position);
 

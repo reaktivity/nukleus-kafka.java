@@ -717,20 +717,23 @@ public final class KafkaMergedFactory implements StreamFactory
             protected void set(
                 KafkaConditionFW.Builder condition)
             {
-                condition.key(this::set);
+                condition.not(this::set);
             }
 
             private void set(
-                KafkaKeyFW.Builder key)
+                KafkaNotFW.Builder not)
             {
-                if (value == null)
+                not.condition(c -> c.key(k ->
                 {
-                    key.length(-1).value((OctetsFW) null);
-                }
-                else
-                {
-                    key.length(value.capacity()).value(value, 0, value.capacity());
-                }
+                    if (value == null)
+                    {
+                        k.length(-1).value((OctetsFW) null);
+                    }
+                    else
+                    {
+                        k.length(value.capacity()).value(value, 0, value.capacity());
+                    }
+                }));
             }
 
             @Override
@@ -753,7 +756,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 }
 
                 NotKey that = (NotKey) obj;
-                return !Objects.equals(this.value, that.value);
+                return Objects.equals(this.value, that.value);
             }
         }
 
@@ -774,29 +777,32 @@ public final class KafkaMergedFactory implements StreamFactory
             protected void set(
                 KafkaConditionFW.Builder condition)
             {
-                condition.header(this::set);
+                condition.not(this::set);
             }
 
             private void set(
-                KafkaHeaderFW.Builder header)
+                KafkaNotFW.Builder not)
             {
-                if (name == null)
+                not.condition(c -> c.header(h ->
                 {
-                    header.nameLen(-1).name((OctetsFW) null);
-                }
-                else
-                {
-                    header.nameLen(name.capacity()).name(name, 0, name.capacity());
-                }
+                    if (name == null)
+                    {
+                        h.nameLen(-1).name((OctetsFW) null);
+                    }
+                    else
+                    {
+                        h.nameLen(name.capacity()).name(name, 0, name.capacity());
+                    }
 
-                if (value == null)
-                {
-                    header.valueLen(-1).value((OctetsFW) null);
-                }
-                else
-                {
-                    header.valueLen(value.capacity()).value(value, 0, value.capacity());
-                }
+                    if (value == null)
+                    {
+                        h.valueLen(-1).value((OctetsFW) null);
+                    }
+                    else
+                    {
+                        h.valueLen(value.capacity()).value(value, 0, value.capacity());
+                    }
+                }));
             }
 
             @Override
@@ -821,7 +827,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
                 final NotHeader that = (NotHeader) o;
                 return Objects.equals(this.name, that.name) &&
-                        !Objects.equals(this.value, that.value);
+                        Objects.equals(this.value, that.value);
             }
         }
 
