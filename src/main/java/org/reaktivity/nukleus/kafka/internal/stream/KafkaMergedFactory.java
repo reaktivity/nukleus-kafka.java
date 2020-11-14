@@ -723,15 +723,15 @@ public final class KafkaMergedFactory implements StreamFactory
             private void set(
                 KafkaNotFW.Builder not)
             {
-                not.condition(c -> c.key(key ->
+                not.condition(c -> c.key(k ->
                 {
                     if (value == null)
                     {
-                        key.length(-1).value((OctetsFW) null);
+                        k.length(-1).value((OctetsFW) null);
                     }
                     else
                     {
-                        key.length(value.capacity()).value(value, 0, value.capacity());
+                        k.length(value.capacity()).value(value, 0, value.capacity());
                     }
                 }));
             }
@@ -783,24 +783,24 @@ public final class KafkaMergedFactory implements StreamFactory
             private void set(
                 KafkaNotFW.Builder not)
             {
-                not.condition(c -> c.header(header ->
+                not.condition(c -> c.header(h ->
                 {
                     if (name == null)
                     {
-                        header.nameLen(-1).name((OctetsFW) null);
+                        h.nameLen(-1).name((OctetsFW) null);
                     }
                     else
                     {
-                        header.nameLen(name.capacity()).name(name, 0, name.capacity());
+                        h.nameLen(name.capacity()).name(name, 0, name.capacity());
                     }
 
                     if (value == null)
                     {
-                        header.valueLen(-1).value((OctetsFW) null);
+                        h.valueLen(-1).value((OctetsFW) null);
                     }
                     else
                     {
-                        header.valueLen(value.capacity()).value(value, 0, value.capacity());
+                        h.valueLen(value.capacity()).value(value, 0, value.capacity());
                     }
                 }));
             }
