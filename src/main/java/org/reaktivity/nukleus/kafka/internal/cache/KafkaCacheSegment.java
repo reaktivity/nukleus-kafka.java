@@ -25,7 +25,7 @@ import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType;
 
 public final class KafkaCacheSegment extends KafkaCacheObject<KafkaCacheSegment>
 {
-    private static final long  OFFSET_LIVE = KafkaOffsetType.LIVE.value();
+    private static final long OFFSET_LIVE = KafkaOffsetType.LIVE.value();
 
     private final Path location;
     private final String name;
