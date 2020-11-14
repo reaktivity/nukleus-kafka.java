@@ -181,7 +181,7 @@ public final class KafkaCachePartition
 
     public int segmentBytes()
     {
-        return config.maxMessageBytes;
+        return config.segmentBytes;
     }
 
     public long nextOffset(
