@@ -43,7 +43,7 @@
     <checkstyle.config.location>src/conf/checkstyle/configuration.xml</checkstyle.config.location>
     <checkstyle.suppressions.location>src/conf/checkstyle/suppressions.xml</checkstyle.suppressions.location>
     <jacoco.coverage.ratio>0.77</jacoco.coverage.ratio>
-    <jacoco.missed.count>5</jacoco.missed.count>
+    <jacoco.missed.count>6</jacoco.missed.count>
 
     <junit.version>4.13.1</junit.version>
     <jmh.version>1.17.4</jmh.version>
@@ -54,7 +54,7 @@
 
     <nukleus.plugin.version>0.72</nukleus.plugin.version>
 
-    <nukleus.kafka.spec.version>0.157</nukleus.kafka.spec.version>
+    <nukleus.kafka.spec.version>0.159</nukleus.kafka.spec.version>
     <reaktor.version>0.146</reaktor.version>
 
     <kafka.clients.version>1.0.0</kafka.clients.version>

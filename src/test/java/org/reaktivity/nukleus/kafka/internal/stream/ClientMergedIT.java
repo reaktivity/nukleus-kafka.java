@@ -211,4 +211,88 @@ public class ClientMergedIT
     {
         k3po.finish();
     }
+
+    @Ignore("filtered")
+    @Test
+    @Specification({
+        "${route}/client.merged/controller",
+        "${client}/merged.fetch.filter.headers.one/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedMessagesWithHeadersOneFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("filtered")
+    @Test
+    @Specification({
+        "${route}/client.merged/controller",
+        "${client}/merged.fetch.filter.headers.one.empty/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedMessagesWithHeadersOneEmptyFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("filtered")
+    @Test
+    @Specification({
+        "${route}/client.merged/controller",
+        "${client}/merged.fetch.filter.headers.many/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedMessagesWithHeadersManyFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("filtered")
+    @Test
+    @Specification({
+        "${route}/client.merged/controller",
+        "${client}/merged.fetch.filter.headers.many.empty/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedMessagesWithHeadersManyEmptyFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("filtered")
+    @Test
+    @Specification({
+        "${route}/client.merged/controller",
+        "${client}/merged.fetch.filter.headers.skip.one/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedMessagesWithHeadersSkipOneFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("filtered")
+    @Test
+    @Specification({
+        "${route}/client.merged/controller",
+        "${client}/merged.fetch.filter.headers.skip.two/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedMessagesWithHeadersSkipTwoFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("filtered")
+    @Test
+    @Specification({
+        "${route}/client.merged/controller",
+        "${client}/merged.fetch.filter.headers.skip.many/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedMessagesWithHeadersSkipManyFilter() throws Exception
+    {
+        k3po.finish();
+    }
 }

@@ -55,11 +55,13 @@ import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeadersFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaNotFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaPartitionFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaValueMatchFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
 import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
@@ -300,6 +302,9 @@ public final class KafkaMergedFactory implements StreamFactory
         case KafkaConditionFW.KIND_NOT:
             mergedCondition = asMergedCondition(condition.not());
             break;
+        case KafkaConditionFW.KIND_HEADERS:
+            mergedCondition = asMergedCondition(condition.headers());
+            break;
         }
 
         return mergedCondition;
@@ -338,6 +343,27 @@ public final class KafkaMergedFactory implements StreamFactory
         }
 
         return new KafkaMergedCondition.Header(nameBuffer, valueBuffer);
+    }
+
+    private static KafkaMergedCondition asMergedCondition(
+        KafkaHeadersFW headers)
+    {
+        final OctetsFW name = headers.name();
+        final Array32FW<KafkaValueMatchFW> values = headers.values();
+
+        DirectBuffer nameBuffer = null;
+        if (name != null)
+        {
+            nameBuffer = copyBuffer(name);
+        }
+
+        DirectBuffer valuesBuffer = null;
+        if (values != null)
+        {
+            valuesBuffer = copyBuffer(values);
+        }
+
+        return new KafkaMergedCondition.Headers(nameBuffer, valuesBuffer);
     }
 
     private static KafkaMergedCondition asMergedCondition(
@@ -603,6 +629,77 @@ public final class KafkaMergedFactory implements StreamFactory
                 final Header that = (Header) o;
                 return Objects.equals(this.name, that.name) &&
                         Objects.equals(this.value, that.value);
+            }
+        }
+
+        private static final class Headers extends KafkaMergedCondition
+        {
+            private final DirectBuffer name;
+            private final DirectBuffer values;
+
+            private final Array32FW<KafkaValueMatchFW> valuesRO = new Array32FW<>(new KafkaValueMatchFW());
+
+            private Headers(
+                DirectBuffer name,
+                DirectBuffer values)
+            {
+                this.name = name;
+                this.values = values;
+            }
+
+            @Override
+            protected void set(
+                KafkaConditionFW.Builder condition)
+            {
+                condition.headers(this::set);
+            }
+
+            private void set(
+                KafkaHeadersFW.Builder headers)
+            {
+                if (name == null)
+                {
+                    headers.nameLen(-1).name((OctetsFW) null);
+                }
+                else
+                {
+                    headers.nameLen(name.capacity()).name(name, 0, name.capacity());
+                }
+
+                if (values == null)
+                {
+                    headers.values(v -> {});
+                }
+                else
+                {
+                    Array32FW<KafkaValueMatchFW> values = valuesRO.wrap(this.values, 0, this.values.capacity());
+                    headers.values(values);
+                }
+            }
+
+            @Override
+            public int hashCode()
+            {
+                return Objects.hash(name, values);
+            }
+
+            @Override
+            public boolean equals(
+                Object o)
+            {
+                if (this == o)
+                {
+                    return true;
+                }
+
+                if (!(o instanceof Headers))
+                {
+                    return false;
+                }
+
+                final Headers that = (Headers) o;
+                return Objects.equals(this.name, that.name) &&
+                           Objects.equals(this.values, that.values);
             }
         }
 
@@ -2650,6 +2747,8 @@ public final class KafkaMergedFactory implements StreamFactory
             OctetsFW payload,
             OctetsFW extension)
         {
+            initialBudget -= reserved;
+
             Flyweight newKafkaDataEx = EMPTY_OCTETS;
 
             if (flags != FLAGS_NONE)

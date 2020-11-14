@@ -26,6 +26,9 @@ import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.nextIndex;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.nextValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.previousIndex;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaSkip.SKIP_MANY;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaValueMatchFW.KIND_SKIP;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaValueMatchFW.KIND_VALUE;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -38,14 +41,18 @@ import org.agrona.collections.LongHashSet;
 import org.agrona.collections.MutableBoolean;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.Node;
+import org.reaktivity.nukleus.kafka.internal.types.Array32FW;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaConditionFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaFilterFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaHeadersFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaNotFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaValueFW;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaValueMatchFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheDeltaFW;
 import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
@@ -53,6 +60,8 @@ import org.reaktivity.nukleus.kafka.internal.types.cache.KafkaCacheEntryFW;
 public final class KafkaCacheCursorFactory
 {
     private final KafkaCacheDeltaFW deltaRO = new KafkaCacheDeltaFW();
+    private final KafkaValueMatchFW valueMatchRO = new KafkaValueMatchFW();
+    private final KafkaHeaderFW headerRO = new KafkaHeaderFW();
 
     private final MutableDirectBuffer writeBuffer;
     private final CRC32C checksum;
@@ -541,6 +550,133 @@ public final class KafkaCacheCursorFactory
             }
         }
 
+        private static final class HeaderSequence extends KafkaFilterCondition
+        {
+            private final OctetsFW name;
+            private final Array32FW<KafkaValueMatchFW> matches;
+            private final And and;
+            private final KafkaValueMatchFW valueMatchRO;
+            private final KafkaHeaderFW headersItemRO;
+
+            private HeaderSequence(
+                CRC32C checksum,
+                KafkaValueMatchFW valueMatch,
+                KafkaHeaderFW headersItem,
+                KafkaHeadersFW headers)
+            {
+                final DirectBuffer headersCopyBuf = copyBuffer(headers.buffer(), headers.offset(), headers.limit());
+                final KafkaHeadersFW headersCopy = new KafkaHeadersFW().wrap(headersCopyBuf, 0, headersCopyBuf.capacity());
+
+                final OctetsFW name = headers.name();
+                final Array32FW<KafkaValueMatchFW> matches = headers.values();
+                final List<KafkaFilterCondition> conditions = new ArrayList<>();
+
+                DirectBuffer matchItems = matches.items();
+                int matchItemOffset = 0;
+                int matchItemsCapacity = matchItems.capacity();
+
+                while (matchItemOffset < matchItemsCapacity)
+                {
+                    final KafkaValueMatchFW matchItem = valueMatch.wrap(matchItems, matchItemOffset, matchItemsCapacity);
+
+                    if (matchItem.kind() == KIND_VALUE)
+                    {
+                        final KafkaValueFW match = matchItem.value();
+                        final OctetsFW value = match.value();
+
+                        final MutableDirectBuffer headerCopyBuf =
+                                new UnsafeBuffer(ByteBuffer.allocate(name.sizeof() + value.sizeof() + 8));
+
+                        final KafkaHeaderFW headerCopy = new KafkaHeaderFW.Builder()
+                                .wrap(headerCopyBuf, 0, headerCopyBuf.capacity())
+                                .nameLen(name.sizeof())
+                                .name(name.buffer(), name.offset(), name.sizeof())
+                                .valueLen(value.sizeof())
+                                .value(value.buffer(), value.offset(), value.sizeof())
+                                .build();
+
+                        conditions.add(new Header(checksum, headerCopy));
+                    }
+
+                    matchItemOffset = matchItem.limit();
+                }
+
+                this.name = headersCopy.name();
+                this.matches = headersCopy.values();
+                this.and = new And(conditions);
+                this.valueMatchRO = valueMatch;
+                this.headersItemRO = headersItem;
+            }
+
+            @Override
+            public long reset(
+                KafkaCacheSegment segment,
+                long offset,
+                long latestOffset,
+                int position)
+            {
+                return and.reset(segment, offset, latestOffset, position);
+            }
+
+            @Override
+            public long next(
+                long cursor)
+            {
+                return and.next(cursor);
+            }
+
+            @Override
+            public boolean test(
+                KafkaCacheEntryFW cacheEntry)
+            {
+                final Array32FW<KafkaHeaderFW> headers = cacheEntry.headers();
+                final DirectBuffer headersItems = headers.items();
+                final DirectBuffer matchItems = matches.items();
+                final int matchesLimit = matchItems.capacity();
+
+                int matchOffset = 0;
+                boolean matchCandidate = true;
+                boolean skipManyHeaders = false;
+
+                int headerOffset = 0;
+                int headersLimit = headersItems.capacity();
+
+                while (matchCandidate && headerOffset < headersLimit)
+                {
+                    final KafkaHeaderFW header = headersItemRO.wrap(headersItems, headerOffset, headersLimit);
+                    headerOffset = header.limit();
+
+                    if (header.name().equals(name))
+                    {
+                        if (matchOffset < matchesLimit)
+                        {
+                            final KafkaValueMatchFW valueMatch = valueMatchRO.wrap(matchItems, matchOffset, matchesLimit);
+                            matchOffset = valueMatch.limit();
+
+                            switch (valueMatch.kind())
+                            {
+                            case KIND_VALUE:
+                                final KafkaValueFW value = valueMatch.value();
+                                matchCandidate &= header.value().equals(value.value());
+                                break;
+                            case KIND_SKIP:
+                                skipManyHeaders = valueMatch.skip().get() == SKIP_MANY;
+                                assert !skipManyHeaders || matchOffset == matchesLimit;
+                                break;
+                            }
+
+                        }
+                        else
+                        {
+                            matchCandidate &= skipManyHeaders;
+                        }
+                    }
+                }
+
+                return matchCandidate && matchOffset == matchesLimit;
+            }
+        }
+
         private static final class Key extends Equals
         {
             private Key(
@@ -847,6 +983,9 @@ public final class KafkaCacheCursorFactory
         case KafkaConditionFW.KIND_NOT:
             asCondition = asNotCondition(condition.not());
             break;
+        case KafkaConditionFW.KIND_HEADERS:
+            asCondition = asHeadersCondition(condition.headers());
+            break;
         }
 
         assert asCondition != null;
@@ -901,6 +1040,12 @@ public final class KafkaCacheCursorFactory
             break;
         }
         return filterCondition;
+    }
+
+    private KafkaFilterCondition asHeadersCondition(
+        KafkaHeadersFW headers)
+    {
+        return new KafkaFilterCondition.HeaderSequence(checksum, valueMatchRO, headerRO, headers);
     }
 
     private static KafkaFilterCondition.Key initNullKeyInfo(
