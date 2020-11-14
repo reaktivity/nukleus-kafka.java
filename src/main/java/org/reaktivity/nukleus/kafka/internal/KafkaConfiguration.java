@@ -42,6 +42,7 @@ public class KafkaConfiguration extends Configuration
     public static final IntPropertyDef KAFKA_CLIENT_PRODUCE_MAX_BYTES;
     public static final ShortPropertyDef KAFKA_CLIENT_PRODUCE_ACKS;
     public static final PropertyDef<Path> KAFKA_CACHE_DIRECTORY;
+    public static final LongPropertyDef KAFKA_CACHE_PRODUCE_CAPACITY;
     public static final PropertyDef<KafkaCacheCleanupPolicy> KAFKA_CACHE_CLEANUP_POLICY;
     public static final IntPropertyDef KAFKA_CACHE_MAX_MESSAGE_BYTES;
     public static final LongPropertyDef KAFKA_CACHE_RETENTION_MILLIS;
@@ -75,6 +76,7 @@ public class KafkaConfiguration extends Configuration
         KAFKA_CACHE_DIRECTORY = config.property(Path.class, "cache.directory",
             KafkaConfiguration::cacheDirectory, KafkaNukleus.NAME);
         KAFKA_CACHE_SERVER_BOOTSTRAP = config.property("cache.server.bootstrap", true);
+        KAFKA_CACHE_PRODUCE_CAPACITY = config.property("cache.produce.capacity", Long.MAX_VALUE);
         KAFKA_CACHE_SERVER_RECONNECT_DELAY = config.property("cache.server.reconnect", 5);
         KAFKA_CACHE_CLIENT_RECONNECT_DELAY = config.property("cache.client.reconnect", 0);
         KAFKA_CACHE_CLEANUP_POLICY = config.property(KafkaCacheCleanupPolicy.class, "cache.cleanup.policy",
@@ -156,6 +158,11 @@ public class KafkaConfiguration extends Configuration
     public Path cacheDirectory()
     {
         return KAFKA_CACHE_DIRECTORY.get(this);
+    }
+
+    public long cacheProduceCapacity()
+    {
+        return KAFKA_CACHE_PRODUCE_CAPACITY.get(this);
     }
 
     public KafkaCacheCleanupPolicy cacheCleanupPolicy()

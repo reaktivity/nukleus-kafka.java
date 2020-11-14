@@ -20,6 +20,7 @@ import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CA
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntFunction;
 
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
@@ -28,17 +29,20 @@ public final class KafkaCacheTopic
 {
     private final Path location;
     private final String cache;
+    private final long maxProduceCapacity;
+    private final AtomicLong produceCapacity;
     private final String name;
     private final KafkaCacheTopicConfig config;
     private final int appendCapacity;
     private final Map<Integer, KafkaCachePartition> partitionsById;
-    private final Map<Integer, KafkaCachePartition> partitionsByIndex;
+    private final Map<Long, KafkaCachePartition> partitionsByIndex;
     private IntFunction<long[]> sortSpaceRef;
 
     public KafkaCacheTopic(
         Path location,
         KafkaConfiguration config,
         String cache,
+        AtomicLong produceCapacity,
         String name,
         IntFunction<long[]> sortSpaceRef)
     {
@@ -46,6 +50,8 @@ public final class KafkaCacheTopic
         this.config = new KafkaCacheTopicConfig(config);
         this.appendCapacity = REAKTOR_BUFFER_SLOT_CAPACITY.get(config);
         this.cache = cache;
+        this.produceCapacity = produceCapacity;
+        this.maxProduceCapacity = config.cacheProduceCapacity();
         this.name = name;
         this.partitionsById = new ConcurrentHashMap<>();
         this.partitionsByIndex = new ConcurrentHashMap<>();
@@ -77,7 +83,8 @@ public final class KafkaCacheTopic
         int id,
         int index)
     {
-        return partitionsByIndex.computeIfAbsent(index, i -> newProducePartition(id, i));
+        final long uniqueId = uniqueId(id, index);
+        return partitionsByIndex.computeIfAbsent(uniqueId, i -> newProducePartition(id, index));
     }
 
     @Override
@@ -96,6 +103,15 @@ public final class KafkaCacheTopic
         int id,
         int index)
     {
-        return new KafkaCachePartition(location, config, cache, name, id, appendCapacity, sortSpaceRef, index);
+        return new KafkaCachePartition(location, config, cache, produceCapacity, maxProduceCapacity, name, id, appendCapacity,
+            sortSpaceRef, index);
+    }
+
+    private long uniqueId(int left, int right)
+    {
+        int uniqueId = left;
+        uniqueId = uniqueId << 32;
+        uniqueId += (long) right;
+        return uniqueId;
     }
 }

@@ -31,6 +31,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.function.IntFunction;
 import java.util.zip.CRC32C;
@@ -65,6 +66,7 @@ public final class KafkaCachePartition
     private static final long NO_DIRTY_SINCE = -1L;
     private static final long NO_ANCESTOR_OFFSET = -1L;
     private static final long NO_DESCENDANT_OFFSET = -1L;
+    private static final int NO_SEQUENCE = -1;
     private static final int NO_DELTA_POSITION = -1;
 
     private static final String FORMAT_FETCH_PARTITION_DIRECTORY = "%s-%d";
@@ -79,7 +81,7 @@ public final class KafkaCachePartition
     private final KafkaCacheEntryFW logEntryRO = new KafkaCacheEntryFW();
     private final KafkaCacheDeltaFW deltaEntryRO = new KafkaCacheDeltaFW();
 
-    private final MutableDirectBuffer entryInfo = new UnsafeBuffer(new byte[4 * Long.BYTES + 2 * Integer.BYTES]);
+    private final MutableDirectBuffer entryInfo = new UnsafeBuffer(new byte[4 * Long.BYTES + 3 * Integer.BYTES]);
     private final MutableDirectBuffer valueInfo = new UnsafeBuffer(new byte[Integer.BYTES]);
 
     private final DirectBufferInputStream ancestorIn = new DirectBufferInputStream();
@@ -100,6 +102,8 @@ public final class KafkaCachePartition
     private long progress;
 
     private KafkaCacheEntryFW ancestorEntry;
+    private final AtomicLong produceCapacity;
+    private final long maxProduceCapacity;
 
     public KafkaCachePartition(
         Path location,
@@ -120,12 +124,16 @@ public final class KafkaCachePartition
         this.sentinel = new Node();
         this.checksum = new CRC32C();
         this.progress = OFFSET_HISTORICAL;
+        this.produceCapacity = new AtomicLong(0);
+        this.maxProduceCapacity = 0;
     }
 
     public KafkaCachePartition(
         Path location,
         KafkaCacheTopicConfig config,
         String cache,
+        AtomicLong produceCapacity,
+        long maxProduceCapacity,
         String topic,
         int id,
         int appendCapacity,
@@ -135,6 +143,8 @@ public final class KafkaCachePartition
         this.location = createDirectories(location.resolve(String.format(FORMAT_PRODUCE_PARTITION_DIRECTORY, topic, id, index)));
         this.config = config;
         this.cache = cache;
+        this.produceCapacity = produceCapacity;
+        this.maxProduceCapacity = maxProduceCapacity;
         this.topic = topic;
         this.id = id;
         this.appendBuf = new UnsafeBuffer(allocateDirect(appendCapacity));
@@ -200,6 +210,8 @@ public final class KafkaCachePartition
             final KafkaCacheSegment tail = head.segment.freeze();
             head.segment(tail);
         }
+
+        produceCapacity.getAndAdd(segmentBytes());
 
         return node;
     }
@@ -338,10 +350,11 @@ public final class KafkaCachePartition
 
         entryInfo.putLong(0, progress);
         entryInfo.putLong(Long.BYTES, timestamp);
-        entryInfo.putLong(2 * Long.BYTES, ancestorOffset);
-        entryInfo.putLong(3 * Long.BYTES, NO_DESCENDANT_OFFSET);
-        entryInfo.putInt(4 * Long.BYTES, 0x00);
-        entryInfo.putInt(4 * Long.BYTES + Integer.BYTES, deltaPosition);
+        entryInfo.putInt(2 * Long.BYTES, NO_SEQUENCE);
+        entryInfo.putLong(2 * Long.BYTES + Integer.BYTES, ancestorOffset);
+        entryInfo.putLong(3 * Long.BYTES + Integer.BYTES, NO_DESCENDANT_OFFSET);
+        entryInfo.putInt(4 * Long.BYTES + Integer.BYTES, 0x00);
+        entryInfo.putInt(4 * Long.BYTES + 2 * Integer.BYTES, deltaPosition);
 
         logFile.appendBytes(entryInfo);
         logFile.appendBytes(key);
@@ -465,6 +478,7 @@ public final class KafkaCachePartition
         MutableInteger entryMark,
         MutableInteger position,
         long timestamp,
+        int sequence,
         KafkaKeyFW key,
         long keyHash,
         int valueLength,
@@ -486,10 +500,11 @@ public final class KafkaCachePartition
 
         entryInfo.putLong(0, progress);
         entryInfo.putLong(Long.BYTES, timestamp);
-        entryInfo.putLong(2 * Long.BYTES, NO_ANCESTOR_OFFSET);
-        entryInfo.putLong(3 * Long.BYTES, NO_DESCENDANT_OFFSET);
-        entryInfo.putInt(4 * Long.BYTES, 0x00);
-        entryInfo.putInt(4 * Long.BYTES + Integer.BYTES, NO_DELTA_POSITION);
+        entryInfo.putInt(2 * Long.BYTES, sequence);
+        entryInfo.putLong(2 * Long.BYTES + Integer.BYTES, NO_ANCESTOR_OFFSET);
+        entryInfo.putLong(3 * Long.BYTES + Integer.BYTES, NO_DESCENDANT_OFFSET);
+        entryInfo.putInt(4 * Long.BYTES + Integer.BYTES, 0x00);
+        entryInfo.putInt(4 * Long.BYTES + 2 * Integer.BYTES, NO_DELTA_POSITION);
 
         logFile.appendBytes(entryInfo);
         logFile.appendBytes(key);

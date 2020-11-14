@@ -146,7 +146,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
     private final KafkaCacheCursorFactory cursorFactory;
-    private final KafkaCacheCursorFactory.KafkaFilterCondition noneCondition;
     private final int initialBudgetMax;
     private final int localIndex;
 
@@ -181,7 +180,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         this.initialBudgetMax = bufferPool.slotCapacity();
         this.localIndex = localIndex;
         this.cursorFactory = new KafkaCacheCursorFactory(writeBuffer);
-        this.noneCondition = cursorFactory.asCondition(EMPTY_FILTER);
     }
 
     @Override
@@ -452,7 +450,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             this.members = new ArrayList<>();
             this.leaderId = leaderId;
             this.defaultOffset = KafkaOffsetType.LIVE;
-            this.cursor = cursorFactory.newCursor(noneCondition, KafkaDeltaType.NONE);
+            this.cursor = cursorFactory.newCursor(cursorFactory.asCondition(EMPTY_FILTER), KafkaDeltaType.NONE);
         }
 
         private void onClientFanMemberOpening(
@@ -485,14 +483,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             {
                 member.doClientReplyBeginIfNecessary(traceId);
             }
-
-            KafkaCachePartition.Node segmentNode = partition.seekNotBefore(0);
-
-            if (segmentNode.sentinel())
-            {
-                segmentNode = segmentNode.next();
-            }
-            cursor.init(segmentNode, -1L, 0L);
         }
 
         private void onClientFanMemberClosed(
@@ -519,6 +509,14 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             if (!KafkaState.initialOpening(state))
             {
                 doClientFanInitialBegin(traceId);
+
+                KafkaCachePartition.Node segmentNode = partition.seekNotBefore(0);
+
+                if (segmentNode.sentinel())
+                {
+                    segmentNode = segmentNode.next();
+                }
+                cursor.init(segmentNode, -1L, -1L);
             }
         }
 
@@ -552,7 +550,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             DataFW data)
         {
             final long traceId = data.traceId();
-            final long budgetId = data.budgetId();
             final int flags = data.flags();
             final OctetsFW valueFragment = data.payload();
 
@@ -568,6 +565,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                 assert kafkaDataEx.kind() == KafkaDataExFW.KIND_PRODUCE;
                 KafkaProduceDataExFW kafkaProduceDataExFW = kafkaDataEx.produce();
                 final int deferred = kafkaProduceDataExFW.deferred();
+                final int sequence = kafkaProduceDataExFW.sequence();
                 final Array32FW<KafkaHeaderFW> headers = kafkaProduceDataExFW.headers();
                 final int headersSizeMax = headers.sizeof();
                 final long timestamp = kafkaProduceDataExFW.timestamp();
@@ -583,16 +581,23 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
                 stream.segment = partition.newHeadIfNecessary(partitionOffset, key, valueLength, headersSizeMax);
 
-                final long nextOffset = partition.nextOffset(defaultOffset);
-                assert partitionOffset >= 0 && partitionOffset >= nextOffset
-                    : String.format("%d >= 0 && %d >= %d", partitionOffset, partitionOffset, nextOffset);
+                if (stream.segment != null)
+                {
+                    final long nextOffset = partition.nextOffset(defaultOffset);
+                    assert partitionOffset >= 0 && partitionOffset >= nextOffset
+                        : String.format("%d >= 0 && %d >= %d", partitionOffset, partitionOffset, nextOffset);
 
-                final long keyHash = partition.computeKeyHash(key);
-                partition.writeProduceEntryStart(partitionOffset, stream.segment, stream.entryMark, stream.position, timestamp, key, keyHash,
-                    valueLength, headers);
+                    final long keyHash = partition.computeKeyHash(key);
+                    partition.writeProduceEntryStart(partitionOffset, stream.segment, stream.entryMark, stream.position,
+                        timestamp, sequence, key, keyHash, valueLength, headers);
 
-                stream.partitionOffset = partitionOffset;
-                partitionOffset++;
+                    stream.partitionOffset = partitionOffset;
+                    partitionOffset++;
+                }
+                else
+                {
+                    error = ERROR_RECORD_LIST_TOO_LARGE;
+                }
             }
 
             if (valueFragment != null && error == NO_ERROR)
@@ -619,10 +624,12 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             final long oldOffsetHighWaterMark = offsetHighWatermark;
             long newOffsetHighWatermark = offsetHighWatermark;
 
-            do {
+            do
+            {
+                newOffsetHighWatermark++;
+
                 final KafkaCacheEntryFW nextEntry = cursor.next(entryRO);
 
-                newOffsetHighWatermark++;
                 if (nextEntry != null &&
                     (nextEntry.flags() & CACHE_ENTRY_FLAGS_COMPLETED) == CACHE_ENTRY_FLAGS_COMPLETED)
                 {

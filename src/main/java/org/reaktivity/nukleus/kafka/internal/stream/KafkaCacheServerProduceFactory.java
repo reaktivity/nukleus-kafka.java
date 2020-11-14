@@ -42,7 +42,6 @@ import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorFactory;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorFactory.KafkaCacheCursor;
-import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorFactory.KafkaFilterCondition;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheTopic;
 import org.reaktivity.nukleus.kafka.internal.types.Array32FW;
@@ -144,7 +143,6 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
     private final Long2ObjectHashMap<MessageConsumer> correlations;
     private final int reconnectDelay;
     private final KafkaCacheCursorFactory cursorFactory;
-    private final KafkaFilterCondition noneCondition;
 
     public KafkaCacheServerProduceFactory(
         KafkaConfiguration config,
@@ -174,7 +172,6 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         this.correlations = correlations;
         this.reconnectDelay = config.cacheServerReconnect();
         this.cursorFactory = new KafkaCacheCursorFactory(writeBuffer);
-        this.noneCondition = cursorFactory.asCondition(EMPTY_FILTER);
     }
 
     @Override
@@ -201,7 +198,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
         final String16FW beginTopic = kafkaProduceBeginEx.topic();
         final int partitionId = kafkaProduceBeginEx.partitionId();
-        final int localIndex = kafkaProduceBeginEx.index();
+        final int remoteIndex = kafkaProduceBeginEx.index();
 
         MessageConsumer newStream = null;
 
@@ -235,7 +232,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             final String cacheName = route.localAddress().asString();
             final KafkaCache cache = supplyCache.apply(cacheName);
             final KafkaCacheTopic topic = cache.supplyTopic(topicName);
-            final KafkaCachePartition partition = topic.supplyProducePartition(partitionId, localIndex);
+            final KafkaCachePartition partition = topic.supplyProducePartition(partitionId, remoteIndex);
 
             newStream = new KafkaCacheServerProduceStream(
                     fan,
@@ -926,7 +923,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             KafkaCachePartition partition)
         {
             this.partition = partition;
-            this.cursor = cursorFactory.newCursor(noneCondition, KafkaDeltaType.NONE);
+            this.cursor = cursorFactory.newCursor(cursorFactory.asCondition(EMPTY_FILTER), KafkaDeltaType.NONE);
             this.fan = fan;
             this.sender = sender;
             this.routeId = routeId;
@@ -1055,6 +1052,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                 {
                     final long partitionOffset = nextEntry.offset$();
                     final long timestamp = nextEntry.timestamp();
+                    final int sequence = nextEntry.sequence();
                     final KafkaKeyFW key = nextEntry.key();
                     final ArrayFW<KafkaHeaderFW> headers = nextEntry.headers();
                     final OctetsFW value = nextEntry.value();
@@ -1095,10 +1093,10 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                         switch (flags)
                         {
                         case FLAG_INIT | FLAG_FIN:
-                            doServerInitialDataFull(traceId, timestamp, key, headers, fragment, reserved, flags);
+                            doServerInitialDataFull(traceId, timestamp, sequence, key, headers, fragment, reserved, flags);
                             break;
                         case FLAG_INIT:
-                            doServerInitialDataInit(traceId, deferred, timestamp, key, fragment,
+                            doServerInitialDataInit(traceId, deferred, timestamp, sequence, key, fragment,
                                 reserved, flags);
                             break;
                         case FLAG_NONE:
@@ -1129,6 +1127,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         private void doServerInitialDataFull(
             long traceId,
             long timestamp,
+            int sequence,
             KafkaKeyFW key,
             ArrayFW<KafkaHeaderFW> headers,
             OctetsFW value,
@@ -1139,6 +1138,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                 ex -> ex.set((b, o, l) -> kafkaDataExRW.wrap(b, o, l)
                            .typeId(kafkaTypeId)
                            .produce(f -> f.timestamp(timestamp)
+                                        .sequence(sequence)
                                         .key(k -> k.length(key.length()).value(key.value()))
                                         .headers(hs -> headers.forEach(h -> hs.item(i -> i.nameLen(h.nameLen())
                                                                                           .name(h.name())
@@ -1152,6 +1152,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             long traceId,
             int deferred,
             long timestamp,
+            int sequence,
             KafkaKeyFW key,
             OctetsFW value,
             int reserved,
@@ -1162,6 +1163,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                            .typeId(kafkaTypeId)
                            .produce(f -> f.deferred(deferred)
                                           .timestamp(timestamp)
+                                          .sequence(sequence)
                                           .key(k -> k.length(key.length()).value(key.value())))
                            .build()
                            .sizeof()));
