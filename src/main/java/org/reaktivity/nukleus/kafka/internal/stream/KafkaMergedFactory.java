@@ -753,7 +753,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 }
 
                 NotKey that = (NotKey) obj;
-                return !Objects.equals(this.value, that.value);
+                return Objects.equals(this.value, that.value);
             }
         }
 
@@ -821,7 +821,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
                 final NotHeader that = (NotHeader) o;
                 return Objects.equals(this.name, that.name) &&
-                        !Objects.equals(this.value, that.value);
+                        Objects.equals(this.value, that.value);
             }
         }
 
