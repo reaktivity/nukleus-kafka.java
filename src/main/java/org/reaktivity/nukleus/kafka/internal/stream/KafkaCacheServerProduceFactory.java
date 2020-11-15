@@ -701,9 +701,9 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             if (!KafkaState.initialOpened(state))
             {
                 onServerFanInitialOpened();
-            }
 
-            members.forEach(s -> s.doServerInitialWindowIfNecessary(traceId));
+                members.forEach(s -> s.doServerInitialWindowIfNecessary(traceId));
+            }
 
             doServerFanInitialDataIfNecessary(traceId);
         }

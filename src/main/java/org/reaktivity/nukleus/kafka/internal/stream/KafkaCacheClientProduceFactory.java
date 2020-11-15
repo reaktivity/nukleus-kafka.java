@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.lang.System.currentTimeMillis;
 import static java.lang.Thread.currentThread;
+import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.CACHE_ENTRY_FLAGS_COMPLETED;
@@ -35,6 +36,7 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.collections.MutableInteger;
 import org.agrona.concurrent.UnsafeBuffer;
+import org.reaktivity.nukleus.budget.BudgetCreditor;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
@@ -136,6 +138,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
     private final int kafkaTypeId;
     private final RouteManager router;
     private final BufferPool bufferPool;
+    private final BudgetCreditor creditor;
     private final Signaler signaler;
     private final MutableDirectBuffer writeBuffer;
     private final MutableDirectBuffer extBuffer;
@@ -154,6 +157,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         RouteManager router,
         MutableDirectBuffer writeBuffer,
         BufferPool bufferPool,
+        BudgetCreditor creditor,
         Signaler signaler,
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
@@ -170,6 +174,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         this.writeBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
         this.extBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
         this.bufferPool = bufferPool;
+        this.creditor = creditor;
         this.signaler = signaler;
         this.supplyInitialId = supplyInitialId;
         this.supplyReplyId = supplyReplyId;
@@ -232,12 +237,19 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             {
                 KafkaCacheClientBudget budget = cacheRoute.clientBudgetsByTopic.get(topicKey);
 
+                if (budget == null)
+                {
+                    budget = new KafkaCacheClientBudget(creditor, supplyBudgetId.getAsLong(), bufferPool.slotCapacity());
+                    cacheRoute.clientBudgetsByTopic.put(topicKey, budget);
+                }
+
                 final String cacheName = route.remoteAddress().asString();
                 final KafkaCache cache = supplyCache.apply(cacheName);
                 final KafkaCacheTopic topic = cache.supplyTopic(topicName);
                 final KafkaCachePartition partition = topic.supplyProducePartition(partitionId, localIndex);
                 final KafkaCacheClientProduceFan newFan =
-                        new KafkaCacheClientProduceFan(resolvedId, authorization, affinity, localIndex, partition);
+                        new KafkaCacheClientProduceFan(resolvedId, authorization, affinity, budget,
+                            localIndex, partition);
 
                 cacheRoute.clientProduceFansByTopicPartition.put(partitionKey, newFan);
                 fan = newFan;
@@ -411,6 +423,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
     {
         private final long routeId;
         private final long authorization;
+        private KafkaCacheClientBudget budget;
         private final KafkaCachePartition partition;
         private final KafkaCacheCursor cursor;
         private final KafkaOffsetType defaultOffset;
@@ -435,10 +448,13 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private long compactAt = Long.MAX_VALUE;
         private long compactId = NO_CANCEL_ID;
 
+        private long partitionIndex = NO_CREDITOR_INDEX;
+
         private KafkaCacheClientProduceFan(
             long routeId,
             long authorization,
             long leaderId,
+            KafkaCacheClientBudget budget,
             int localIndex,
             KafkaCachePartition partition)
         {
@@ -446,11 +462,22 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             this.authorization = authorization;
             this.partition = partition;
             this.partitionId = partition.id();
+            this.budget = budget;
             this.localIndex = localIndex;
             this.members = new ArrayList<>();
             this.leaderId = leaderId;
             this.defaultOffset = KafkaOffsetType.LIVE;
             this.cursor = cursorFactory.newCursor(cursorFactory.asCondition(EMPTY_FILTER), KafkaDeltaType.NONE);
+
+            partition.newHeadIfNecessary(0L);
+
+            KafkaCachePartition.Node segmentNode = partition.seekNotBefore(0);
+
+            if (segmentNode.sentinel())
+            {
+                segmentNode = segmentNode.next();
+            }
+            cursor.init(segmentNode, -1L, -1L);
         }
 
         private void onClientFanMemberOpening(
@@ -509,14 +536,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             if (!KafkaState.initialOpening(state))
             {
                 doClientFanInitialBegin(traceId);
-
-                KafkaCachePartition.Node segmentNode = partition.seekNotBefore(0);
-
-                if (segmentNode.sentinel())
-                {
-                    segmentNode = segmentNode.next();
-                }
-                cursor.init(segmentNode, -1L, -1L);
             }
         }
 
@@ -524,7 +543,9 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             long traceId)
         {
             assert state == 0;
+            assert partitionIndex == NO_CREDITOR_INDEX;
 
+            this.partitionIndex = budget.acquire(partitionId);
             this.initialId = supplyInitialId.applyAsLong(routeId);
             this.replyId = supplyReplyId.applyAsLong(initialId);
             this.receiver = router.supplyReceiver(initialId);
@@ -541,8 +562,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                         .build()
                         .sizeof()));
             state = KafkaState.openingInitial(state);
-
-            partition.newHeadIfNecessary(0L);
         }
 
         private void onClientInitialData(
@@ -551,6 +570,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         {
             final long traceId = data.traceId();
             final int flags = data.flags();
+            final int reserved = data.reserved();
             final OctetsFW valueFragment = data.payload();
 
             int error = NO_ERROR;
@@ -590,8 +610,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                     final long keyHash = partition.computeKeyHash(key);
                     partition.writeProduceEntryStart(partitionOffset, stream.segment, stream.entryMark, stream.position,
                         timestamp, sequence, key, keyHash, valueLength, headers);
-
-                    stream.partitionOffset = partitionOffset;
                     partitionOffset++;
                 }
                 else
@@ -616,6 +634,8 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                 stream.cleanupClient(traceId, error);
                 onClientFanMemberClosed(traceId, stream);
             }
+
+            creditor.credit(traceId, partitionIndex, reserved);
         }
 
         private void flushClientFanInitialIfNecessary(
@@ -698,25 +718,19 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             WindowFW window)
         {
             final long traceId = window.traceId();
-            final int credit = window.credit();
             final int padding = window.padding();
 
-            if (KafkaConfiguration.DEBUG_PRODUCE)
-            {
-                System.out.format("[%d] [%d] [%d] kafka cache client fan [%s] %d + %d => %d\n",
-                        currentTimeMillis(), currentThread().getId(),
-                        initialId, partition, initialBudget, credit, initialBudget + credit);
-            }
-
-            initialBudget += credit;
             initialPadding = padding;
 
             if (!KafkaState.initialOpened(state))
             {
                 onClientFanInitialOpened();
-            }
 
-            members.forEach(s -> s.doClientInitialWindowIfNecessary(traceId));
+                initialBudget = initialBudgetMax;
+                budget.credit(traceId, partitionIndex, initialBudget);
+
+                members.forEach(s -> s.doClientInitialWindowIfNecessary(traceId));
+            }
         }
 
         private void onClientFanInitialSignal(
@@ -758,6 +772,12 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         {
             assert !KafkaState.initialClosed(state);
             state = KafkaState.closedInitial(state);
+
+            if (partitionIndex != NO_CREDITOR_INDEX)
+            {
+                budget.release(partitionIndex, initialBudget);
+                partitionIndex = NO_CREDITOR_INDEX;
+            }
 
             initialBudget = 0;
             initialPadding = 0;
@@ -937,12 +957,9 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private final long leaderId;
         private final long authorization;
 
-
         private int state;
 
         private int initialBudget;
-
-        private int partitionOffset = -1;
 
         KafkaCacheClientProduceStream(
             KafkaCacheClientProduceFan fan,

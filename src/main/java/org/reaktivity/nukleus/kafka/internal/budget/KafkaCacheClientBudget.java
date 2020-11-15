@@ -92,7 +92,7 @@ public final class KafkaCacheClientBudget
 
         if (topicCredit != 0L)
         {
-            creditor.credit(0L, topicBudgetIndex, topicCredit);
+            creditor.credit(traceId, topicBudgetIndex, topicCredit);
         }
 
         assert partitionCredit >= topicCredit;

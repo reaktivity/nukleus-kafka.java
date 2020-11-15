@@ -1530,8 +1530,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
             {
                 final int length = value.sizeof();
 
-                final int encodeableBytes = KAFKA_RECORD_FRAMING + (encodeSlotLimit - encodeSlotOffset) + length +
-                                            encodeableRecordHeadersBytes;
+                final int encodeableBytes = KAFKA_RECORD_FRAMING + encodeSlotLimit + length + encodeableRecordHeadersBytes;
                 if (encodeableBytes >= encodePool.slotCapacity())
                 {
                     doEncodeRequestIfNecessary(traceId);
