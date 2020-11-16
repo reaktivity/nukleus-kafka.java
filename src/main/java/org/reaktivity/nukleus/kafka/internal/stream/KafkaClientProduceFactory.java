@@ -1472,7 +1472,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
                     .offsetDelta(encodeableRecordCount)
                     .keyLength(key.length())
                     .key(key.value())
-                    .valueLength(value != null ? value.sizeof() : -1)
+                    .valueLength(value != null ? value.sizeof() + encodeableRecordBytesDeferred : -1)
                     .build();
 
             final int valueSize = value != null ? value.sizeof() : 0;

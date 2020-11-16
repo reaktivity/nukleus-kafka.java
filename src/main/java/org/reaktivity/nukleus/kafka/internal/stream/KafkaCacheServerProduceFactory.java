@@ -910,7 +910,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         private int state;
 
         private int initialBudget;
-        private long partitionOffset;
+        private long partitionOffset = -1;
         private int messageOffset;
 
         KafkaCacheServerProduceStream(
@@ -1024,9 +1024,12 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
             state = KafkaState.closedInitial(state);
 
-            fan.onServerFanMemberClosed(traceId, this);
+            if (messageOffset == 0)
+            {
+                fan.onServerFanMemberClosed(traceId, this);
 
-            doServerReplyEndIfNecessary(traceId);
+                doServerReplyEndIfNecessary(traceId);
+            }
         }
 
         private void onServerInitialAbort(
@@ -1036,9 +1039,12 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
             state = KafkaState.closedInitial(state);
 
-            fan.onServerFanMemberClosed(traceId, this);
+            if (messageOffset == 0)
+            {
+                fan.onServerFanMemberClosed(traceId, this);
 
-            doServerReplyAbortIfNecessary(traceId);
+                doServerReplyAbortIfNecessary(traceId);
+            }
         }
 
         private void doProduceInitialData(
@@ -1115,7 +1121,17 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                         {
                             this.messageOffset = 0;
 
-                            cursor.advance(partitionOffset + 1);
+                            if (KafkaState.initialClosed(state))
+                            {
+                                fan.onServerFanMemberClosed(traceId, this);
+
+                                doServerReplyEndIfNecessary(traceId);
+                            }
+                            else
+                            {
+                                cursor.advance(partitionOffset + 1);
+                            }
+
                             doFlushServerInitial(traceId);
                         }
                     }
@@ -1342,7 +1358,10 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
-            fan.onServerFanMemberClosed(traceId, this);
+            if (messageOffset  == 0)
+            {
+                fan.onServerFanMemberClosed(traceId, this);
+            }
 
             doServerInitialResetIfNecessary(traceId, EMPTY_OCTETS);
         }
