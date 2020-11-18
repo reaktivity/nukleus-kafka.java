@@ -24,6 +24,7 @@ import static org.reaktivity.nukleus.kafka.internal.types.codec.RequestHeaderFW.
 import static org.reaktivity.nukleus.kafka.internal.types.codec.message.RecordBatchFW.FIELD_OFFSET_LENGTH;
 import static org.reaktivity.nukleus.kafka.internal.types.codec.message.RecordBatchFW.FIELD_OFFSET_RECORD_COUNT;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
+import static org.reaktivity.nukleus.kafka.internal.stream.KafkaChecksum.combineCRC32C;
 
 import java.nio.ByteBuffer;
 import java.util.function.Consumer;
@@ -502,10 +503,11 @@ public final class KafkaClientProduceFactory implements StreamFactory
         final KafkaKeyFW key = kafkaProduceDataEx.key();
         final Array32FW<KafkaHeaderFW> headers = kafkaProduceDataEx.headers();
         client.encodeableRecordBytesDeferred = kafkaProduceDataEx.deferred();
+        client.dataValueChecksum = kafkaProduceDataEx.checksum();
         final int valueSize = payload != null ? payload.sizeof() : 0;
+        client.dataValueCompleteSize = valueSize + client.encodeableRecordBytesDeferred;
 
-        final int maxEncodeableBytes = client.encodeSlotLimit + valueSize + KAFKA_RECORD_FRAMING +
-                                       client.encodeableRecordHeadersBytes;
+        final int maxEncodeableBytes = client.encodeSlotLimit + client.dataValueCompleteSize + KAFKA_RECORD_FRAMING;
         if (client.encodeSlot != NO_SLOT &&
             maxEncodeableBytes > encodePool.slotCapacity())
         {
@@ -1062,8 +1064,10 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
         private int state;
         private int dataFlags;
-        private long authorization;
+        private long dataValueChecksum;
+        private int dataValueCompleteSize;
 
+        private long authorization;
         private long initialBudgetId;
         private int initialBudget;
         private int initialPadding;
@@ -1730,9 +1734,56 @@ public final class KafkaClientProduceFactory implements StreamFactory
             final CRC32C crc = crc32c;
             crc.reset();
             crc.update(encodeSlotByteBuffer);
-            encodeSlotBuffer.putInt(encodeSlotOffset + crcOffset, (int) crc.getValue(), BIG_ENDIAN);
 
+            long checksum = crc.getValue();
+            if (dataFlags != FLAGS_FIN)
+            {
+                checksum = getChecksum(encodeBuffer, encodeLimit, encodeProgress, encodeSlotBuffer, checksum);
+            }
+            encodeSlotBuffer.putInt(encodeSlotOffset + crcOffset, (int) checksum, BIG_ENDIAN);
             doNetworkData(traceId, EMPTY_BUFFER, 0, 0);
+        }
+
+        private long getChecksum(
+            MutableDirectBuffer encodeBuffer,
+            int encodeLimit,
+            int encodeProgress,
+            MutableDirectBuffer encodeSlotBuffer,
+            long checksum)
+        {
+            final int oldEncodeProgress = encodeProgress;
+
+            checksum = combineCRC32C(checksum, dataValueChecksum, dataValueCompleteSize);
+
+            Array32FW<KafkaHeaderFW> headers = EMPTY_HEADER;
+            if (encodeableRecordHeadersBytes > 0)
+            {
+                final int encodeSlotMaxLimit = encodePool.slotCapacity();
+                headers = kafkaHeaderRO.wrap(encodeSlotBuffer, encodeSlotMaxLimit - encodeableRecordHeadersBytes,
+                    encodeSlotMaxLimit);
+            }
+            final int headersCount = headers.fieldCount();
+            final RecordTrailerFW recordTrailer = recordTrailerRW.wrap(encodeBuffer, encodeProgress, encodeLimit)
+                                                                 .headerCount(headersCount)
+                                                                 .build();
+
+            encodeProgress = recordTrailer.limit();
+
+            if (headersCount > 0)
+            {
+                final DirectBuffer headerItems = headers.items();
+                final int headerItemsSize = headerItems.capacity();
+
+                encodeBuffer.putBytes(encodeProgress, headerItems, 0, headerItemsSize);
+                encodeProgress += headerItemsSize;
+            }
+
+            final int length = encodeProgress - oldEncodeProgress;
+            final byte[] encodeByteBuf = encodeBuffer.byteArray();
+            crc32c.reset();
+            crc32c.update(encodeByteBuf, oldEncodeProgress, length);
+            checksum = combineCRC32C(checksum, crc32c.getValue(), length);
+            return checksum;
         }
 
         private void encodeNetwork(

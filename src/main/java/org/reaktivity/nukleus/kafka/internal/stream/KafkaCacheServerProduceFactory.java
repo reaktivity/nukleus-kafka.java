@@ -20,6 +20,7 @@ import static java.lang.Thread.currentThread;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
@@ -28,6 +29,7 @@ import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
 import java.util.function.ToIntFunction;
+import java.util.zip.CRC32C;
 
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
@@ -143,6 +145,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
     private final Long2ObjectHashMap<MessageConsumer> correlations;
     private final int reconnectDelay;
     private final KafkaCacheCursorFactory cursorFactory;
+    private final CRC32C crc32c;
 
     public KafkaCacheServerProduceFactory(
         KafkaConfiguration config,
@@ -172,6 +175,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         this.correlations = correlations;
         this.reconnectDelay = config.cacheServerReconnect();
         this.cursorFactory = new KafkaCacheCursorFactory(writeBuffer);
+        this.crc32c = new CRC32C();
     }
 
     @Override
@@ -1096,13 +1100,25 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                             fragment = valueFragmentRO.wrap(value.buffer(), fragmentOffset, fragmentLimit);
                         }
 
+                        long checksum = 0;
+                        if ((flags & FLAG_INIT) == FLAG_INIT && value != null)
+                        {
+                            final ByteBuffer buffer = value.value().byteBuffer();
+                            buffer.limit(value.limit());
+                            buffer.position(value.offset());
+                            crc32c.reset();
+                            crc32c.update(buffer);
+                            checksum = crc32c.getValue();
+                        }
+
                         switch (flags)
                         {
                         case FLAG_INIT | FLAG_FIN:
-                            doServerInitialDataFull(traceId, timestamp, sequence, key, headers, fragment, reserved, flags);
+                            doServerInitialDataFull(traceId, timestamp, sequence, checksum, key, headers,
+                                fragment, reserved, flags);
                             break;
                         case FLAG_INIT:
-                            doServerInitialDataInit(traceId, deferred, timestamp, sequence, key, fragment,
+                            doServerInitialDataInit(traceId, deferred, timestamp, sequence, checksum, key, fragment,
                                 reserved, flags);
                             break;
                         case FLAG_NONE:
@@ -1144,6 +1160,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             long traceId,
             long timestamp,
             int sequence,
+            long checksum,
             KafkaKeyFW key,
             ArrayFW<KafkaHeaderFW> headers,
             OctetsFW value,
@@ -1155,6 +1172,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                            .typeId(kafkaTypeId)
                            .produce(f -> f.timestamp(timestamp)
                                         .sequence(sequence)
+                                        .checksum(checksum)
                                         .key(k -> k.length(key.length()).value(key.value()))
                                         .headers(hs -> headers.forEach(h -> hs.item(i -> i.nameLen(h.nameLen())
                                                                                           .name(h.name())
@@ -1169,6 +1187,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             int deferred,
             long timestamp,
             int sequence,
+            long checksum,
             KafkaKeyFW key,
             OctetsFW value,
             int reserved,
@@ -1180,6 +1199,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                            .produce(f -> f.deferred(deferred)
                                           .timestamp(timestamp)
                                           .sequence(sequence)
+                                          .checksum(checksum)
                                           .key(k -> k.length(key.length()).value(key.value())))
                            .build()
                            .sizeof()));
