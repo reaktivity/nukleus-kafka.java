@@ -587,6 +587,21 @@ public class CacheFetchIT
     @Test
     @Specification({
         "${route}/cache/controller",
+        "${client}/filter.key.and.not.header/client",
+        "${server}/filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithKeyAndNotHeaderFilter() throws Exception
+    {
+        partition.append(1L);
+        k3po.start();
+        k3po.awaitBarrier("RECEIVED_MESSAGE_2");
+        k3po.notifyBarrier("SEND_MESSAGE_3");
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache/controller",
         "${client}/filter.headers.one/client",
         "${server}/filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
