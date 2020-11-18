@@ -15,17 +15,12 @@
  */
 package org.reaktivity.nukleus.kafka.internal.cache;
 
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT_VALUE;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT_VALUE;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursor;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorIndex;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorRetryValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.maxByValue;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.minByValue;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.nextIndex;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.nextValue;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.previousIndex;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaSkip.SKIP_MANY;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaValueMatchFW.KIND_SKIP;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaValueMatchFW.KIND_VALUE;
@@ -68,6 +63,7 @@ public final class KafkaCacheCursorFactory
     private final KafkaFilterCondition nullKeyInfo;
 
     public static final int POSITION_UNSET = -1;
+    public static final int INDEX_UNSET = -1;
 
     public KafkaCacheCursorFactory(
         MutableDirectBuffer writeBuffer)
@@ -94,7 +90,7 @@ public final class KafkaCacheCursorFactory
         private KafkaCacheSegment segment;
         public long offset;
         private long latestOffset;
-        private long cursor;
+        private int position;
 
         KafkaCacheCursor(
             KafkaFilterCondition condition,
@@ -132,8 +128,8 @@ public final class KafkaCacheCursorFactory
             assert this.segmentNode != null;
             assert this.segment != null;
 
-            final long cursor = condition.reset(segment, offset, latestOffset, POSITION_UNSET);
-            this.cursor = cursorRetryValue(cursor) || cursor == NEXT_SEGMENT ? 0L : cursor;
+            final int position = condition.reset(segment, offset, latestOffset, POSITION_UNSET);
+            this.position = position == RETRY_SEGMENT_VALUE || position == NEXT_SEGMENT_VALUE ? 0 : position;
         }
 
         public KafkaCacheEntryFW next(
@@ -144,14 +140,13 @@ public final class KafkaCacheCursorFactory
             next:
             while (nextEntry == null)
             {
-                final long cursorNext = condition.next(cursor);
-                if (cursorRetryValue(cursorNext))
+                final int positionNext = condition.next(position);
+                if (positionNext == RETRY_SEGMENT_VALUE)
                 {
-                    this.cursor = cursorNext;
                     break next;
                 }
 
-                if (cursorNext == NEXT_SEGMENT)
+                if (positionNext == NEXT_SEGMENT_VALUE)
                 {
                     Node segmentNext = segmentNode.next();
                     if (segmentNext.sentinel())
@@ -178,14 +173,12 @@ public final class KafkaCacheCursorFactory
                     assert !segmentNode.sentinel();
                     assert segment != null;
 
-                    final long cursor = condition.reset(segment, offset, latestOffset, POSITION_UNSET);
-                    this.cursor = cursorRetryValue(cursor) || cursor == NEXT_SEGMENT ? 0L : cursor;
+                    final int position = condition.reset(segment, offset, latestOffset, POSITION_UNSET);
+                    this.position = position == RETRY_SEGMENT_VALUE || position == NEXT_SEGMENT_VALUE ? 0 : position;
                     continue;
                 }
 
-                final int index = cursorIndex(cursorNext);
-                assert index >= 0;
-                final int position = cursorValue(cursorNext);
+                final int position = positionNext;
                 assert position >= 0;
 
                 assert segment != null;
@@ -216,11 +209,11 @@ public final class KafkaCacheCursorFactory
                 if (nextEntry == null)
                 {
                     this.offset = Math.max(offset, nextOffset);
-                    this.cursor = nextIndex(nextValue(cursorNext));
+                    this.position = positionNext + 1;
                 }
                 else
                 {
-                    this.cursor = cursorNext;
+                    this.position = positionNext;
                 }
             }
 
@@ -282,7 +275,7 @@ public final class KafkaCacheCursorFactory
         {
             assert offset > this.offset : String.format("%d > %d %s", offset, this.offset, segment);
             this.offset = offset;
-            this.cursor = nextIndex(nextValue(cursor));
+            this.position++;
 
             assert segmentNode != null;
             assert segment != null;
@@ -309,8 +302,8 @@ public final class KafkaCacheCursorFactory
                 assert !segmentNode.sentinel();
                 assert segment != null;
 
-                final long cursor = condition.reset(segment, offset, latestOffset, POSITION_UNSET);
-                this.cursor = cursorRetryValue(cursor) || cursor == NEXT_SEGMENT ? 0L : cursor;
+                final int position = condition.reset(segment, offset, latestOffset, POSITION_UNSET);
+                this.position = position == RETRY_SEGMENT_VALUE || position == NEXT_SEGMENT_VALUE ? 0 : position;
             }
         }
 
@@ -328,21 +321,21 @@ public final class KafkaCacheCursorFactory
         @Override
         public String toString()
         {
-            return String.format("%s[offset %d, cursor %016x, segmentNode %s, condition %s]",
-                    getClass().getSimpleName(), offset, cursor, segmentNode, condition);
+            return String.format("%s[offset %d, position %016x, segmentNode %s, condition %s]",
+                    getClass().getSimpleName(), offset, position, segmentNode, condition);
         }
     }
 
     public abstract static class KafkaFilterCondition
     {
-        public abstract long reset(
+        public abstract int reset(
             KafkaCacheSegment segment,
             long offset,
             long latestOffset,
             int position);
 
-        public abstract long next(
-            long cursor);
+        public abstract int next(
+            int position);
 
         public abstract boolean test(
             KafkaCacheEntryFW cacheEntry);
@@ -350,9 +343,10 @@ public final class KafkaCacheCursorFactory
         private static final class None extends KafkaFilterCondition
         {
             private KafkaCacheIndexFile indexFile;
+            private long cursor;
 
             @Override
-            public long reset(
+            public int reset(
                 KafkaCacheSegment segment,
                 long offset,
                 long latestOffset,
@@ -360,7 +354,7 @@ public final class KafkaCacheCursorFactory
             {
                 assert position == POSITION_UNSET;
 
-                long cursor = NEXT_SEGMENT;
+                int positionNext = NEXT_SEGMENT_VALUE;
 
                 if (segment != null)
                 {
@@ -370,21 +364,32 @@ public final class KafkaCacheCursorFactory
                     this.indexFile = indexFile;
 
                     final int offsetDelta = (int)(offset - segment.baseOffset());
-                    cursor = indexFile.first(offsetDelta);
+                    this.cursor = indexFile.first(offsetDelta);
+                    positionNext = cursorValue(cursor);
                 }
                 else
                 {
                     this.indexFile = null;
                 }
 
-                return cursor;
+                return positionNext;
             }
 
             @Override
-            public long next(
-                long cursor)
+            public int next(
+                int position)
             {
-                return indexFile != null ? indexFile.resolve(cursor) : NEXT_SEGMENT;
+                int positionNext = NEXT_SEGMENT_VALUE;
+                if (indexFile != null)
+                {
+                    if (position > cursorValue(cursor))
+                    {
+                        this.cursor = indexFile.resolve(cursor(cursorIndex(cursor), position));
+                    }
+
+                    positionNext = cursorValue(cursor);
+                }
+                return positionNext;
             }
 
             @Override
@@ -397,7 +402,8 @@ public final class KafkaCacheCursorFactory
             @Override
             public String toString()
             {
-                return String.format("%s[]", getClass().getSimpleName());
+                return String.format("%s[%08x %08x]", getClass().getSimpleName(),
+                        cursorValue(cursor), cursorIndex(cursor));
             }
         }
 
@@ -408,15 +414,16 @@ public final class KafkaCacheCursorFactory
             private final DirectBuffer comparable;
 
             private KafkaCacheIndexFile hashFile;
+            private long cursor;
 
             @Override
-            public final long reset(
+            public final int reset(
                 KafkaCacheSegment segment,
                 long offset,
                 long latestOffset,
                 int position)
             {
-                long cursor = NEXT_SEGMENT;
+                int positionNext = NEXT_SEGMENT_VALUE;
 
                 if (segment != null)
                 {
@@ -433,38 +440,48 @@ public final class KafkaCacheCursorFactory
                         position = cursorValue(indexFile.first(offsetDelta));
                     }
 
-                    cursor = hashFile.first(hash);
-                    if (cursorValue(cursor) != cursorValue(RETRY_SEGMENT))
+                    this.cursor = hashFile.first(hash);
+
+                    if (cursorValue(cursor) != RETRY_SEGMENT_VALUE)
                     {
                         final int cursorIndex = cursorIndex(cursor);
                         final long cursorFirstHashWithPosition = cursor(cursorIndex, position);
-                        cursor = hashFile.ceiling(hash, cursorFirstHashWithPosition);
+                        this.cursor = hashFile.ceiling(hash, cursorFirstHashWithPosition);
                     }
+
+                    final int cursorValue = cursorValue(cursor);
+                    positionNext = !cursorRetryValue(cursorValue) ? cursorValue : position;
                 }
                 else
                 {
                     this.hashFile = null;
                 }
 
-                return cursor;
+                return positionNext;
             }
 
             @Override
-            public final long next(
-                long cursor)
+            public final int next(
+                int position)
             {
-                long cursorNext = NEXT_SEGMENT;
+                int positionNext = NEXT_SEGMENT_VALUE;
                 if (hashFile != null)
                 {
-                    cursorNext = hashFile.ceiling(hash, cursor);
+                    if (position > cursorValue(cursor))
+                    {
+                        this.cursor = hashFile.ceiling(hash, cursor(cursorIndex(cursor), position));
+                    }
+
+                    positionNext = cursorValue(cursor);
                 }
-                return cursorNext;
+                return positionNext;
             }
 
             @Override
             public final String toString()
             {
-                return String.format("%s[%08x]", getClass().getSimpleName(), hash);
+                return String.format("%s[%08x %08x %08x]", getClass().getSimpleName(), hash,
+                        cursorValue(cursor), cursorIndex(cursor));
             }
 
             protected Equals(
@@ -491,7 +508,7 @@ public final class KafkaCacheCursorFactory
             private final None none;
             private final KafkaFilterCondition nested;
 
-            private long anchor;
+            private int positionSkip;
 
             private Not(
                 KafkaFilterCondition nested)
@@ -501,38 +518,39 @@ public final class KafkaCacheCursorFactory
             }
 
             @Override
-            public long reset(
+            public int reset(
                 KafkaCacheSegment segment,
                 long offset,
                 long latestOffset,
                 int position)
             {
-                long cursor = none.reset(segment, offset, latestOffset, position);
+                int positionNext = none.reset(segment, offset, latestOffset, POSITION_UNSET);
 
-                anchor = nested.reset(segment, offset, latestOffset, position);
+                positionSkip = nested.reset(segment, offset, latestOffset, position);
 
-                return cursor;
+                return positionNext;
             }
 
             @Override
-            public long next(
-                long cursor)
+            public int next(
+                int position)
             {
-                long cursorNext = none.next(cursor);
+                int positionNext = none.next(position);
 
-                if (cursorRetryValue(anchor))
+                if (positionSkip == RETRY_SEGMENT_VALUE)
                 {
-                    anchor = nested.next(anchor);
+                    positionSkip = nested.next(position);
                 }
 
-                while (!cursorRetryValue(cursorNext) &&
-                    anchor != NEXT_SEGMENT &&
-                    cursorValue(cursorNext) > cursorValue(anchor))
+                while (positionNext != RETRY_SEGMENT_VALUE &&
+                    positionSkip != NEXT_SEGMENT_VALUE &&
+                    positionSkip != RETRY_SEGMENT_VALUE &&
+                    positionNext > positionSkip)
                 {
-                    anchor = nested.next(nextIndex(nextValue(anchor)));
+                    positionSkip = nested.next(positionSkip + 1);
                 }
 
-                return cursorNext;
+                return positionNext;
             }
 
             @Override
@@ -540,7 +558,7 @@ public final class KafkaCacheCursorFactory
                 KafkaCacheEntryFW cacheEntry)
             {
                 return none.test(cacheEntry) &&
-                    (cacheEntry.offset() < cursorValue(anchor) || !nested.test(cacheEntry));
+                    (cacheEntry.offset() < positionSkip || !nested.test(cacheEntry));
             }
 
             @Override
@@ -609,7 +627,7 @@ public final class KafkaCacheCursorFactory
             }
 
             @Override
-            public long reset(
+            public int reset(
                 KafkaCacheSegment segment,
                 long offset,
                 long latestOffset,
@@ -619,10 +637,10 @@ public final class KafkaCacheCursorFactory
             }
 
             @Override
-            public long next(
-                long cursor)
+            public int next(
+                int position)
             {
-                return and.next(cursor);
+                return and.next(position);
             }
 
             @Override
@@ -728,13 +746,13 @@ public final class KafkaCacheCursorFactory
             }
 
             @Override
-            public long reset(
+            public int reset(
                 KafkaCacheSegment segment,
                 long offset,
                 long latestOffset,
                 int position)
             {
-                long nextCursorMin = NEXT_SEGMENT;
+                int nextPositionMin = NEXT_SEGMENT_VALUE;
 
                 if (segment != null)
                 {
@@ -746,75 +764,81 @@ public final class KafkaCacheCursorFactory
                         position = cursorValue(indexFile.first(offsetDelta));
                     }
 
-                    long nextCursorMax = 0;
+                    int nextPositionMax = 0;
 
                     for (int i = 0; i < conditions.size(); i++)
                     {
                         final KafkaFilterCondition condition = conditions.get(i);
-                        final long nextCursor = condition.reset(segment, offset, latestOffset, position);
+                        final int nextPosition = condition.reset(segment, offset, latestOffset, position);
 
-                        if (i == 0 || nextCursorMin != NEXT_SEGMENT)
+                        if (i == 0 || nextPositionMin != NEXT_SEGMENT_VALUE)
                         {
-                            nextCursorMin = minByValue(nextCursor, nextCursorMin);
-                            nextCursorMax = maxByValue(nextCursor, nextCursorMax);
+                            nextPositionMin = Math.min(nextPosition, nextPositionMin);
+                            nextPositionMax = Math.max(nextPosition, nextPositionMax);
                         }
                     }
 
-                    if (nextCursorMin == NEXT_SEGMENT)
+                    if (nextPositionMin == NEXT_SEGMENT_VALUE)
                     {
-                        nextCursorMax = nextCursorMin;
+                        nextPositionMax = nextPositionMin;
                     }
 
-                    if (cursorRetryValue(nextCursorMax) ||
-                        nextCursorMax == NEXT_SEGMENT)
+                    if (nextPositionMax == RETRY_SEGMENT_VALUE ||
+                        nextPositionMax == NEXT_SEGMENT_VALUE)
                     {
-                        nextCursorMin = nextCursorMax;
+                        nextPositionMin = nextPositionMax;
                     }
                 }
 
-                return nextCursorMin;
+                return nextPositionMin;
             }
 
             @Override
-            public long next(
-                long cursor)
+            public int next(
+                int position)
             {
-                long nextCursor = cursor(cursorIndex(cursor), cursorValue(RETRY_SEGMENT));
-                long nextCursorMin = cursorRetryValue(cursor) ? cursor(cursorIndex(cursor) - 1, 0) : previousIndex(cursor);
-                long nextCursorMax;
+                int nextPosition = RETRY_SEGMENT_VALUE;
+                int nextPositionMin = position == RETRY_SEGMENT_VALUE ? -1 : position - 1;
+                int nextPositionMax;
 
                 do
                 {
-                    nextCursorMax = nextIndex(nextCursorMin);
-                    nextCursorMin = Long.MAX_VALUE;
+                    nextPositionMax = nextPositionMin + 1;
+                    nextPositionMin = Integer.MAX_VALUE;
 
-                    final long nextCursorAnd = nextCursorMax;
+                    final int nextCursorAnd = nextPositionMax;
 
                     for (int i = 0; i < conditions.size(); i++)
                     {
                         final KafkaFilterCondition condition = conditions.get(i);
-                        nextCursor = condition.next(nextCursorAnd);
 
-                        nextCursorMin = minByValue(nextCursor, nextCursorMin);
-                        nextCursorMax = maxByValue(nextCursor, nextCursorMax);
+                        nextPosition = condition.next(nextCursorAnd);
 
-                        if (nextCursorMin == NEXT_SEGMENT)
+                        nextPositionMin = Math.min(nextPosition, nextPositionMin);
+                        nextPositionMax = Math.max(nextPosition, nextPositionMax);
+
+                        if (nextPositionMin == NEXT_SEGMENT_VALUE)
                         {
-                            nextCursorMax = nextCursorMin;
+                            nextPositionMax = nextPositionMin;
                             break;
                         }
                     }
 
-                    if (cursorRetryValue(nextCursorMax) ||
-                        nextCursorMax == NEXT_SEGMENT)
+                    if (nextPositionMin == RETRY_SEGMENT_VALUE)
                     {
-                        nextCursorMin = nextCursorMax;
+                        nextPositionMax = nextPositionMin;
+                        break;
+                    }
+
+                    if (nextPositionMax == NEXT_SEGMENT_VALUE)
+                    {
+                        nextPositionMin = nextPositionMax;
                         break;
                     }
                 }
-                while (cursorValue(nextCursorMin) != cursorValue(nextCursorMax));
+                while (nextPositionMin != nextPositionMax);
 
-                return nextCursorMin;
+                return nextPositionMin;
             }
 
             @Override
@@ -848,13 +872,13 @@ public final class KafkaCacheCursorFactory
             }
 
             @Override
-            public long reset(
+            public int reset(
                 KafkaCacheSegment segment,
                 long offset,
                 long latestOffset,
                 int position)
             {
-                long nextCursorMin = NEXT_SEGMENT;
+                int nextPositionMin = NEXT_SEGMENT_VALUE;
 
                 if (segment != null)
                 {
@@ -866,31 +890,41 @@ public final class KafkaCacheCursorFactory
                         position = cursorValue(indexFile.first(offsetDelta));
                     }
 
-                    nextCursorMin = NEXT_SEGMENT;
+                    nextPositionMin = NEXT_SEGMENT_VALUE;
                     for (int i = 0; i < conditions.size(); i++)
                     {
                         final KafkaFilterCondition condition = conditions.get(i);
-                        final long nextCursor = condition.reset(segment, offset, latestOffset, position);
-                        nextCursorMin = minByValue(nextCursor, nextCursorMin);
+                        final int nextPosition = condition.reset(segment, offset, latestOffset, position);
+                        nextPositionMin = Math.min(nextPosition, nextPositionMin);
                     }
                 }
 
-                return nextCursorMin;
+                return nextPositionMin;
             }
 
             @Override
-            public long next(
-                long cursor)
+            public int next(
+                int position)
             {
-                long nextCursorMin = NEXT_SEGMENT;
+                int nextPositionMin = NEXT_SEGMENT_VALUE;
+                int nextPositionMax = RETRY_SEGMENT_VALUE;
                 for (int i = 0; i < conditions.size(); i++)
                 {
                     final KafkaFilterCondition condition = conditions.get(i);
-                    final long nextCursor = condition.next(cursor);
-                    nextCursorMin = minByValue(nextCursor, nextCursorMin);
+                    final int nextPosition = condition.next(position);
+                    if (nextPosition != RETRY_SEGMENT_VALUE)
+                    {
+                        nextPositionMin = Math.min(nextPosition, nextPositionMin);
+                    }
+                    nextPositionMax = Math.max(nextPosition, nextPositionMax);
                 }
 
-                return nextCursorMin;
+                if (nextPositionMax == RETRY_SEGMENT_VALUE)
+                {
+                    nextPositionMin = RETRY_SEGMENT_VALUE;
+                }
+
+                return nextPositionMin;
             }
 
             @Override
@@ -1015,28 +1049,16 @@ public final class KafkaCacheCursorFactory
         switch (condition.kind())
         {
         case KafkaConditionFW.KIND_KEY:
-        {
-            final KafkaKeyFW key = condition.key();
-            final OctetsFW value = key.value();
-
-            filterCondition = value == null ? nullKeyInfo :
-                                  new KafkaFilterCondition.Not(new KafkaFilterCondition.Key(checksum, key));
+            filterCondition = new KafkaFilterCondition.Not(asKeyCondition(condition.key()));
             break;
-        }
         case KafkaConditionFW.KIND_HEADER:
-            filterCondition = new KafkaFilterCondition.Not(new KafkaFilterCondition.Header(checksum, condition.header()));
+            filterCondition = new KafkaFilterCondition.Not(asHeaderCondition(condition.header()));
             break;
         case KafkaConditionFW.KIND_NOT:
-            final KafkaConditionFW notCondition = condition.not().condition();
-            switch (notCondition.kind())
-            {
-            case KafkaConditionFW.KIND_KEY:
-                filterCondition = asKeyCondition(notCondition.key());
-                break;
-            case KafkaConditionFW.KIND_HEADER:
-                filterCondition = asHeaderCondition(notCondition.header());
-                break;
-            }
+            filterCondition = asCondition(condition.not().condition());
+            break;
+        case KafkaConditionFW.KIND_HEADERS:
+            filterCondition = new KafkaFilterCondition.Not(asHeadersCondition(condition.headers()));
             break;
         }
         return filterCondition;
