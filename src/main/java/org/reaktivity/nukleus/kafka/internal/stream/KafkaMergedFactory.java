@@ -2678,6 +2678,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 switch (flags)
                 {
                 case FLAGS_INIT_AND_FIN:
+                case FLAGS_INIT:
                     newKafkaDataEx = kafkaDataExRW.wrap(extBuffer, 0, extBuffer.capacity())
                             .typeId(kafkaTypeId)
                             .produce(p -> p.deferred(deferred)
@@ -2689,16 +2690,6 @@ public final class KafkaMergedFactory implements StreamFactory
                                                                                              .name(h.name())
                                                                                              .valueLen(h.valueLen())
                                                                                              .value(h.value())))))
-                            .build();
-                    break;
-                case FLAGS_INIT:
-                    newKafkaDataEx = kafkaDataExRW.wrap(extBuffer, 0, extBuffer.capacity())
-                            .typeId(kafkaTypeId)
-                            .produce(p -> p.deferred(deferred)
-                                           .timestamp(timestamp)
-                                           .sequence(sequence)
-                                           .key(k -> k.length(key.length())
-                                                      .value(key.value())))
                             .build();
                     break;
                 case FLAGS_FIN:

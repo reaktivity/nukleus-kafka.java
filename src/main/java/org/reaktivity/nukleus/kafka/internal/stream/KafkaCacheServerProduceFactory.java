@@ -1127,8 +1127,8 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                                 fragment, reserved, flags);
                             break;
                         case FLAG_INIT:
-                            doServerInitialDataInit(traceId, deferred, timestamp, sequence, checksum, key, fragment,
-                                reserved, flags);
+                            doServerInitialDataInit(traceId, deferred, timestamp, sequence, checksum, key,
+                                headers, fragment, reserved, flags);
                             break;
                         case FLAG_NONE:
                             doServerInitialDataNone(traceId, fragment, reserved, length, flags);
@@ -1198,6 +1198,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             int sequence,
             long checksum,
             KafkaKeyFW key,
+            ArrayFW<KafkaHeaderFW> headers,
             OctetsFW value,
             int reserved,
             int flags)
@@ -1209,7 +1210,11 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                                           .timestamp(timestamp)
                                           .sequence(sequence)
                                           .checksum(checksum)
-                                          .key(k -> k.length(key.length()).value(key.value())))
+                                          .key(k -> k.length(key.length()).value(key.value()))
+                                          .headers(hs -> headers.forEach(h -> hs.item(i -> i.nameLen(h.nameLen())
+                                                                                            .name(h.name())
+                                                                                            .valueLen(h.valueLen())
+                                                                                            .value(h.value())))))
                            .build()
                            .sizeof()));
         }
