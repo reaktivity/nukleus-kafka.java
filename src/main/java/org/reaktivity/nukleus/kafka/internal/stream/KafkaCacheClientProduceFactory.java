@@ -21,6 +21,7 @@ import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.CACHE_ENTRY_FLAGS_COMPLETED;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,6 +36,7 @@ import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.collections.MutableInteger;
+import org.agrona.collections.MutableLong;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.reaktivity.nukleus.budget.BudgetCreditor;
 import org.reaktivity.nukleus.buffer.BufferPool;
@@ -612,6 +614,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                     final long keyHash = partition.computeKeyHash(key);
                     partition.writeProduceEntryStart(partitionOffset, stream.segment, stream.entryMark, stream.position,
                         timestamp, sequence, key, keyHash, valueLength, headers);
+                    stream.partitionOffset = partitionOffset;
                     partitionOffset++;
                 }
                 else
@@ -867,6 +870,12 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             final KafkaOffsetFW partition = kafkaProduceFlushEx.partition();
             final long partitionOffset = partition.partitionOffset();
 
+            markEntryDirty(partitionOffset);
+        }
+
+        private void markEntryDirty(
+            long partitionOffset)
+        {
             final KafkaCachePartition.Node node = this.partition.seekNotAfter(partitionOffset);
             node.findAndMarkDirty(entryRO, partitionOffset);
 
@@ -959,6 +968,9 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private final long leaderId;
         private final long authorization;
 
+        private long partitionOffset = DEFAULT_LATEST_OFFSET;
+        private int dataFlags = FLAGS_FIN;
+
         private int state;
 
         private int initialBudget;
@@ -1043,6 +1055,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         {
             final long traceId = data.traceId();
             final int reserved = data.reserved();
+            dataFlags = data.flags();
 
             if (KafkaConfiguration.DEBUG_PRODUCE)
             {
@@ -1089,6 +1102,11 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             fan.onClientFanMemberClosed(traceId, this);
 
             doClientReplyAbortIfNecessary(traceId);
+
+            if (partitionOffset != DEFAULT_LATEST_OFFSET && dataFlags != FLAGS_FIN)
+            {
+                fan.markEntryDirty(partitionOffset);
+            }
         }
 
         private void doClientInitialWindowIfNecessary(

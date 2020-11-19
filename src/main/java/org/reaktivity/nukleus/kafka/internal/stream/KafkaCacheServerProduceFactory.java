@@ -915,7 +915,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         private int state;
 
         private int initialBudget;
-        private long partitionOffset = -1;
+        private long partitionOffset = DEFAULT_LATEST_OFFSET;
         private int messageOffset;
 
         KafkaCacheServerProduceStream(
