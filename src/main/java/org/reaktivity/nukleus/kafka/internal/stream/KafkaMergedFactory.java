@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.FETCH_ONLY;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.PRODUCE_ONLY;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.HISTORICAL;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.LIVE;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
@@ -2637,7 +2638,8 @@ public final class KafkaMergedFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .produce(p -> p.transaction((String) null) // TODO: default in kafka.idl
                                        .topic(merged.topic)
-                                       .partitionId(partitionId))
+                                       .partition(par -> par.partitionId(partitionId).partitionOffset(
+                                           DEFAULT_LATEST_OFFSET)))
                         .build()
                         .sizeof()));
         }

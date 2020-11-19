@@ -20,11 +20,12 @@ import static java.lang.Thread.currentThread;
 import static java.nio.ByteOrder.BIG_ENDIAN;
 import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
+import static org.reaktivity.nukleus.kafka.internal.stream.KafkaChecksum.combineCRC32C;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.codec.RequestHeaderFW.FIELD_OFFSET_API_KEY;
 import static org.reaktivity.nukleus.kafka.internal.types.codec.message.RecordBatchFW.FIELD_OFFSET_LENGTH;
 import static org.reaktivity.nukleus.kafka.internal.types.codec.message.RecordBatchFW.FIELD_OFFSET_RECORD_COUNT;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
-import static org.reaktivity.nukleus.kafka.internal.stream.KafkaChecksum.combineCRC32C;
 
 import java.nio.ByteBuffer;
 import java.util.function.Consumer;
@@ -294,7 +295,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
             {
                 final long resolvedId = route.correlationId();
                 final String topic = beginTopic != null ? beginTopic.asString() : null;
-                final int partitionId = kafkaProduceBeginEx.partitionId();
+                final int partitionId = kafkaProduceBeginEx.partition().partitionId();
 
                 newStream = new KafkaProduceStream(
                         application,
@@ -959,7 +960,8 @@ public final class KafkaClientProduceFactory implements StreamFactory
                                                         .typeId(kafkaTypeId)
                                                         .produce(p -> p.transaction(TRANSACTION_ID_NONE)
                                                                        .topic(topic)
-                                                                       .partitionId(partitionId))
+                                                                       .partition(par -> par.partitionId(partitionId)
+                                                                                    .partitionOffset(DEFAULT_LATEST_OFFSET)))
                                                         .build()
                                                         .sizeof()));
         }

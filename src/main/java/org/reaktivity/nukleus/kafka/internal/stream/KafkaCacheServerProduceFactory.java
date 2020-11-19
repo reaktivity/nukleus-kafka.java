@@ -19,6 +19,7 @@ import static java.lang.System.currentTimeMillis;
 import static java.lang.Thread.currentThread;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -201,7 +202,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         final KafkaProduceBeginExFW kafkaProduceBeginEx = kafkaBeginEx.produce();
 
         final String16FW beginTopic = kafkaProduceBeginEx.topic();
-        final int partitionId = kafkaProduceBeginEx.partitionId();
+        final int partitionId = kafkaProduceBeginEx.partition().partitionId();
         final int remoteIndex = kafkaProduceBeginEx.index();
 
         MessageConsumer newStream = null;
@@ -531,7 +532,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .produce(p -> p.transaction(TRANSACTION_NONE)
                                        .topic(partionTopic)
-                                       .partitionId(partitionId))
+                                       .partition(par -> par.partitionId(partitionId).partitionOffset(DEFAULT_LATEST_OFFSET)))
                         .build()
                         .sizeof()));
             state = KafkaState.openingInitial(state);
@@ -772,7 +773,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             final KafkaBeginExFW kafkaBeginEx = extension.get(kafkaBeginExRO::wrap);
             assert kafkaBeginEx.kind() == KafkaBeginExFW.KIND_PRODUCE;
             final KafkaProduceBeginExFW kafkaProduceBeginEx = kafkaBeginEx.produce();
-            final int partitionId = kafkaProduceBeginEx.partitionId();
+            final int partitionId = kafkaProduceBeginEx.partition().partitionId();
 
             state = KafkaState.openedReply(state);
 
@@ -991,13 +992,21 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                 fan.onServerFanMemberOpening(traceId, this);
             }
 
-            KafkaCachePartition.Node segmentNode = partition.seekNotBefore(0);
+            final OctetsFW extension = begin.extension();
+            final ExtensionFW beginEx = extension.get(extensionRO::tryWrap);
+            assert beginEx != null && beginEx.typeId() == kafkaTypeId;
+            final KafkaBeginExFW kafkaBeginEx = extension.get(kafkaBeginExRO::wrap);
+            assert kafkaBeginEx.kind() == KafkaBeginExFW.KIND_PRODUCE;
+            final KafkaProduceBeginExFW kafkaProduceBeginEx = kafkaBeginEx.produce();
+            final long partitionOffset = kafkaProduceBeginEx.partition().partitionOffset() + 1;
+
+            KafkaCachePartition.Node segmentNode = partition.seekNotBefore(partitionOffset);
 
             if (segmentNode.sentinel())
             {
                 segmentNode = segmentNode.next();
             }
-            cursor.init(segmentNode, 0L, 0L);
+            cursor.init(segmentNode, partitionOffset, DEFAULT_LATEST_OFFSET);
         }
 
 
@@ -1316,7 +1325,8 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .produce(p -> p.transaction(TRANSACTION_NONE)
                                        .topic(fan.partionTopic)
-                                       .partitionId(fan.partitionId))
+                                       .partition(par -> par.partitionId(fan.partitionId).partitionOffset(
+                                           DEFAULT_LATEST_OFFSET)))
                         .build()
                         .sizeof()));
         }

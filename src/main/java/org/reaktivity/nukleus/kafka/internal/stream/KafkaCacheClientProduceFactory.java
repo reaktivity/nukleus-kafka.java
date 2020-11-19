@@ -210,7 +210,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         assert kafkaBeginEx.kind() == KafkaBeginExFW.KIND_PRODUCE;
         final KafkaProduceBeginExFW kafkaProduceBeginEx = kafkaBeginEx.produce();
         final String16FW beginTopic = kafkaProduceBeginEx.topic();
-        final int partitionId = kafkaProduceBeginEx.partitionId();
+        final int partitionId = kafkaProduceBeginEx.partition().partitionId();
 
         MessageConsumer newStream = null;
 
@@ -477,7 +477,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             {
                 segmentNode = segmentNode.next();
             }
-            cursor.init(segmentNode, -1L, -1L);
+            cursor.init(segmentNode, 0, 0);
         }
 
         private void onClientFanMemberOpening(
@@ -557,7 +557,9 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .produce(p -> p.transaction(TRANSACTION_NONE)
                                        .topic(partition.topic())
-                                       .partitionId(partition.id())
+                                       .partition(par -> par
+                                           .partitionId(partitionId)
+                                           .partitionOffset(offsetHighWatermark))
                                        .index(this.localIndex))
                         .build()
                         .sizeof()));
@@ -642,7 +644,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             long traceId)
         {
             final long oldOffsetHighWaterMark = offsetHighWatermark;
-            long newOffsetHighWatermark = offsetHighWatermark;
+            long newOffsetHighWatermark = cursor.offset;
 
             do
             {
@@ -658,7 +660,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             } while (newOffsetHighWatermark == cursor.offset);
 
-            offsetHighWatermark = cursor.offset;
+            offsetHighWatermark = cursor.offset - 1;
 
             if (offsetHighWatermark > oldOffsetHighWaterMark)
             {
@@ -675,7 +677,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                     ex -> ex.set((b, o, l) -> kafkaFlushExRW.wrap(b, o, l)
                                         .typeId(kafkaTypeId)
                                         .produce(f -> f.partition(p -> p.partitionId(partitionId)
-                                                                        .partitionOffset(offsetHighWatermark)))
+                                                              .partitionOffset(offsetHighWatermark)))
                                         .build()
                                         .sizeof()));
             }
@@ -845,7 +847,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             final KafkaBeginExFW kafkaBeginEx = extension.get(kafkaBeginExRO::wrap);
             assert kafkaBeginEx.kind() == KafkaBeginExFW.KIND_PRODUCE;
             final KafkaProduceBeginExFW kafkaProduceBeginEx = kafkaBeginEx.produce();
-            final int partitionId = kafkaProduceBeginEx.partitionId();
+            final int partitionId = kafkaProduceBeginEx.partition().partitionId();
 
             state = KafkaState.openedReply(state);
 
@@ -1160,7 +1162,9 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .produce(p -> p.transaction(TRANSACTION_NONE)
                                        .topic(fan.partition.topic())
-                                       .partitionId(fan.partition.id()))
+                                       .partition(par -> par
+                                           .partitionId(fan.partition.id())
+                                           .partitionOffset(fan.offsetHighWatermark)))
                         .build()
                         .sizeof()));
         }
