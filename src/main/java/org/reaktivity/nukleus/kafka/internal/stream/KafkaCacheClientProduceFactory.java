@@ -23,8 +23,6 @@ import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.CACHE_ENTRY_FLAGS_COMPLETED;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongFunction;
@@ -422,14 +420,13 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
     final class KafkaCacheClientProduceFan
     {
-        private final long routeId;
-        private final long authorization;
-        private KafkaCacheClientBudget budget;
         private final KafkaCachePartition partition;
         private final KafkaCacheCursor cursor;
         private final KafkaOffsetType defaultOffset;
+        private final Long2ObjectHashMap<KafkaCacheClientProduceStream> members;
+        private final long routeId;
+        private final long authorization;
         private final int partitionId;
-        private final List<KafkaCacheClientProduceStream> members;
 
         private final int localIndex;
 
@@ -437,6 +434,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private long initialId;
         private long replyId;
         private MessageConsumer receiver;
+        private KafkaCacheClientBudget budget;
 
         private int state;
 
@@ -444,7 +442,8 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private int initialPadding;
         private int initialSlot = NO_SLOT;
 
-        private long offsetHighWatermark = -1;
+        private long lastAckOffsetHighWatermark;
+        private long offsetHighWatermark = DEFAULT_LATEST_OFFSET;
         private int partitionOffset;
         private long compactAt = Long.MAX_VALUE;
         private long compactId = NO_CANCEL_ID;
@@ -465,7 +464,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             this.partitionId = partition.id();
             this.budget = budget;
             this.localIndex = localIndex;
-            this.members = new ArrayList<>();
+            this.members = new Long2ObjectHashMap<>();
             this.leaderId = leaderId;
             this.defaultOffset = KafkaOffsetType.LIVE;
             this.cursor = cursorFactory.newCursor(cursorFactory.asCondition(EMPTY_FILTER), KafkaDeltaType.NONE);
@@ -492,11 +491,11 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                 correlations.remove(replyId);
                 leaderId = member.leaderId;
 
-                members.forEach(m -> m.cleanupClient(traceId, ERROR_NOT_LEADER_FOR_PARTITION));
+                members.forEach((s, m) -> m.cleanupClient(traceId, ERROR_NOT_LEADER_FOR_PARTITION));
                 members.clear();
             }
 
-            members.add(member);
+            members.put(member.initialId, member);
 
             assert !members.isEmpty();
 
@@ -517,7 +516,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             long traceId,
             KafkaCacheClientProduceStream member)
         {
-            members.remove(member);
+            members.remove(member.initialId);
 
             if (members.isEmpty())
             {
@@ -612,7 +611,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
                     final long keyHash = partition.computeKeyHash(key);
                     partition.writeProduceEntryStart(partitionOffset, stream.segment, stream.entryMark, stream.position,
-                        timestamp, stream.replyId, sequence, key, keyHash, valueLength, headers);
+                        timestamp, stream.initialId, sequence, key, keyHash, valueLength, headers);
                     stream.partitionOffset = partitionOffset;
                     partitionOffset++;
                 }
@@ -708,7 +707,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             final long traceId = reset.traceId();
             final OctetsFW extension = reset.extension();
 
-            members.forEach(s -> s.doClientInitialResetIfNecessary(traceId, extension));
+            members.forEach((s, m) -> m.doClientInitialResetIfNecessary(traceId, extension));
 
             if (!KafkaState.initialClosed(state))
             {
@@ -733,7 +732,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                 initialBudget = initialBudgetMax;
                 budget.credit(traceId, partitionIndex, initialBudget);
 
-                members.forEach(s -> s.doClientInitialWindowIfNecessary(traceId));
+                members.forEach((s, m) -> m.doClientInitialWindowIfNecessary(traceId));
             }
         }
 
@@ -855,7 +854,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             assert partitionId == this.partition.id();
 
-            members.forEach(s -> s.doClientReplyBeginIfNecessary(traceId));
+            members.forEach((s, m) -> m.doClientReplyBeginIfNecessary(traceId));
 
             doClientFanReplyWindow(traceId, 0);
         }
@@ -863,20 +862,30 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private void onClientFanReplyFlush(
             FlushFW flush)
         {
+            final long traceId = flush.traceId();
             final OctetsFW extension = flush.extension();
             final KafkaFlushExFW kafkaFlushEx = extension.get(kafkaFlushExRO::wrap);
             final KafkaProduceFlushExFW kafkaProduceFlushEx = kafkaFlushEx.produce();
             final KafkaOffsetFW partition = kafkaProduceFlushEx.partition();
             final long partitionOffset = partition.partitionOffset();
 
-            markEntryDirty(partitionOffset);
+            while (lastAckOffsetHighWatermark <= partitionOffset)
+            {
+                final KafkaCacheEntryFW entry = markEntryDirty(lastAckOffsetHighWatermark);
+                final long memberStreamId = entry.ownerId();
+                final KafkaCacheClientProduceStream member = members.get(memberStreamId);
+                member.onMessageAck(traceId, partitionOffset);
+                lastAckOffsetHighWatermark++;
+            }
+
+            lastAckOffsetHighWatermark = partitionOffset;
         }
 
-        private void markEntryDirty(
+        private KafkaCacheEntryFW markEntryDirty(
             long partitionOffset)
         {
             final KafkaCachePartition.Node node = this.partition.seekNotAfter(partitionOffset);
-            node.findAndMarkDirty(entryRO, partitionOffset);
+            final KafkaCacheEntryFW dirtyEntry = node.findAndMarkDirty(entryRO, partitionOffset);
 
             final long newCompactAt = this.partition.compactAt(node.segment());
 
@@ -894,6 +903,8 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                     this.compactId = doClientFanoutInitialSignalAt(newCompactAt, SIGNAL_SEGMENT_COMPACT);
                 }
             }
+
+            return dirtyEntry;
         }
 
         private void onClientFanReplyEnd(
@@ -901,7 +912,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         {
             final long traceId = end.traceId();
 
-            members.forEach(s -> s.doClientReplyEndIfNecessary(traceId));
+            members.forEach((s, m) -> m.doClientReplyEndIfNecessary(traceId));
 
             state = KafkaState.closedReply(state);
         }
@@ -911,7 +922,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         {
             final long traceId = abort.traceId();
 
-            members.forEach(s -> s.doClientReplyAbortIfNecessary(traceId));
+            members.forEach((s, m) -> m.doClientReplyAbortIfNecessary(traceId));
 
             state = KafkaState.closedReply(state);
         }
@@ -1082,25 +1093,13 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private void onClientInitialEnd(
             EndFW end)
         {
-            final long traceId = end.traceId();
-
             state = KafkaState.closedInitial(state);
-
-            fan.onClientFanMemberClosed(traceId, this);
-
-            doClientReplyEndIfNecessary(traceId);
         }
 
         private void onClientInitialAbort(
             AbortFW abort)
         {
-            final long traceId = abort.traceId();
-
             state = KafkaState.closedInitial(state);
-
-            fan.onClientFanMemberClosed(traceId, this);
-
-            doClientReplyAbortIfNecessary(traceId);
 
             if (partitionOffset != DEFAULT_LATEST_OFFSET && dataFlags != FLAGS_FIN)
             {
@@ -1258,6 +1257,18 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         {
             doClientInitialResetIfNecessary(traceId, extension);
             doClientReplyAbortIfNecessary(traceId);
+        }
+
+        private void onMessageAck(
+            long traceId,
+            long partitionOffset)
+        {
+            if (KafkaState.initialClosed(state) && partitionOffset == this.partitionOffset)
+            {
+                fan.onClientFanMemberClosed(traceId, this);
+
+                doClientReplyEndIfNecessary(traceId);
+            }
         }
     }
 }
