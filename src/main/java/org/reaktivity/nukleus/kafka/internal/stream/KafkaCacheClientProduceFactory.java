@@ -715,6 +715,8 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             }
 
             doClientFanReplyResetIfNecessary(traceId);
+
+            ackOffsetHighWatermark(traceId, offsetHighWatermark);
         }
 
         private void onClientFanInitialWindow(
@@ -869,6 +871,13 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             final KafkaOffsetFW partition = kafkaProduceFlushEx.partition();
             final long partitionOffset = partition.partitionOffset();
 
+            ackOffsetHighWatermark(traceId, partitionOffset);
+        }
+
+        private void ackOffsetHighWatermark(
+            long traceId,
+            long partitionOffset)
+        {
             while (lastAckOffsetHighWatermark <= partitionOffset)
             {
                 final KafkaCacheEntryFW entry = markEntryDirty(lastAckOffsetHighWatermark);
@@ -1099,12 +1108,18 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private void onClientInitialAbort(
             AbortFW abort)
         {
+            final long traceId = abort.traceId();
+
             state = KafkaState.closedInitial(state);
 
             if (partitionOffset != DEFAULT_LATEST_OFFSET && dataFlags != FLAGS_FIN)
             {
                 fan.markEntryDirty(partitionOffset);
             }
+
+            fan.onClientFanMemberClosed(traceId, this);
+
+            doClientReplyAbortIfNecessary(traceId);
         }
 
         private void doClientInitialWindowIfNecessary(
