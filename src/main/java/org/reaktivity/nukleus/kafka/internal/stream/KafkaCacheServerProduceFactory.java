@@ -1157,7 +1157,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                                 cursor.advance(partitionOffset + 1);
                             }
 
-                            doFlushServerInitial(traceId);
+                            doFlushServerReply(traceId);
                         }
                     }
                 }
@@ -1298,7 +1298,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                     fan.creditorId, credit, fan.initialPadding);
         }
 
-        private void doFlushServerInitial(
+        private void doFlushServerReply(
             long traceId)
         {
             doFlush(sender, routeId, replyId, traceId, authorization, 0L, SIZE_OF_FLUSH_WITH_EXTENSION,
