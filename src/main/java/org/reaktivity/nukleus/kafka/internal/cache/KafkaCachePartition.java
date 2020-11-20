@@ -81,7 +81,7 @@ public final class KafkaCachePartition
     private final KafkaCacheEntryFW logEntryRO = new KafkaCacheEntryFW();
     private final KafkaCacheDeltaFW deltaEntryRO = new KafkaCacheDeltaFW();
 
-    private final MutableDirectBuffer entryInfo = new UnsafeBuffer(new byte[4 * Long.BYTES + 3 * Integer.BYTES]);
+    private final MutableDirectBuffer entryInfo = new UnsafeBuffer(new byte[5 * Long.BYTES + 3 * Integer.BYTES]);
     private final MutableDirectBuffer valueInfo = new UnsafeBuffer(new byte[Integer.BYTES]);
 
     private final DirectBufferInputStream ancestorIn = new DirectBufferInputStream();
@@ -350,11 +350,12 @@ public final class KafkaCachePartition
 
         entryInfo.putLong(0, progress);
         entryInfo.putLong(Long.BYTES, timestamp);
-        entryInfo.putInt(2 * Long.BYTES, NO_SEQUENCE);
-        entryInfo.putLong(2 * Long.BYTES + Integer.BYTES, ancestorOffset);
-        entryInfo.putLong(3 * Long.BYTES + Integer.BYTES, NO_DESCENDANT_OFFSET);
-        entryInfo.putInt(4 * Long.BYTES + Integer.BYTES, 0x00);
-        entryInfo.putInt(4 * Long.BYTES + 2 * Integer.BYTES, deltaPosition);
+        entryInfo.putLong(2 * Long.BYTES, 0x00L);
+        entryInfo.putInt(3 * Long.BYTES, NO_SEQUENCE);
+        entryInfo.putLong(3 * Long.BYTES + Integer.BYTES, ancestorOffset);
+        entryInfo.putLong(4 * Long.BYTES + Integer.BYTES, NO_DESCENDANT_OFFSET);
+        entryInfo.putInt(5 * Long.BYTES + Integer.BYTES, 0x00);
+        entryInfo.putInt(5 * Long.BYTES + 2 * Integer.BYTES, deltaPosition);
 
         logFile.appendBytes(entryInfo);
         logFile.appendBytes(key);
@@ -478,6 +479,7 @@ public final class KafkaCachePartition
         MutableInteger entryMark,
         MutableInteger position,
         long timestamp,
+        long ownerId,
         int sequence,
         KafkaKeyFW key,
         long keyHash,
@@ -500,11 +502,12 @@ public final class KafkaCachePartition
 
         entryInfo.putLong(0, progress);
         entryInfo.putLong(Long.BYTES, timestamp);
-        entryInfo.putInt(2 * Long.BYTES, sequence);
-        entryInfo.putLong(2 * Long.BYTES + Integer.BYTES, NO_ANCESTOR_OFFSET);
-        entryInfo.putLong(3 * Long.BYTES + Integer.BYTES, NO_DESCENDANT_OFFSET);
-        entryInfo.putInt(4 * Long.BYTES + Integer.BYTES, 0x00);
-        entryInfo.putInt(4 * Long.BYTES + 2 * Integer.BYTES, NO_DELTA_POSITION);
+        entryInfo.putLong(2 * Long.BYTES, ownerId);
+        entryInfo.putInt(3 * Long.BYTES, sequence);
+        entryInfo.putLong(3 * Long.BYTES + Integer.BYTES, NO_ANCESTOR_OFFSET);
+        entryInfo.putLong(4 * Long.BYTES + Integer.BYTES, NO_DESCENDANT_OFFSET);
+        entryInfo.putInt(5 * Long.BYTES + Integer.BYTES, 0x00);
+        entryInfo.putInt(5 * Long.BYTES + 2 * Integer.BYTES, NO_DELTA_POSITION);
 
         logFile.appendBytes(entryInfo);
         logFile.appendBytes(key);

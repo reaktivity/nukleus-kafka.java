@@ -612,7 +612,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
                     final long keyHash = partition.computeKeyHash(key);
                     partition.writeProduceEntryStart(partitionOffset, stream.segment, stream.entryMark, stream.position,
-                        timestamp, sequence, key, keyHash, valueLength, headers);
+                        timestamp, stream.replyId, sequence, key, keyHash, valueLength, headers);
                     stream.partitionOffset = partitionOffset;
                     partitionOffset++;
                 }
