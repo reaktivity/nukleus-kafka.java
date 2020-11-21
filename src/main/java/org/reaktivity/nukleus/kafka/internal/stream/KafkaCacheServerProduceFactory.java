@@ -726,6 +726,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             assert !KafkaState.initialClosed(state);
             state = KafkaState.closedInitial(state);
 
+            initialFlags = 0;
             initialBudget = 0;
             initialPadding = 0;
         }
