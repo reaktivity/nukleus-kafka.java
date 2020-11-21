@@ -103,7 +103,6 @@ public final class KafkaCachePartition
 
     private KafkaCacheEntryFW ancestorEntry;
     private final AtomicLong produceCapacity;
-    private final long maxProduceCapacity;
 
     public KafkaCachePartition(
         Path location,
@@ -125,7 +124,6 @@ public final class KafkaCachePartition
         this.checksum = new CRC32C();
         this.progress = OFFSET_HISTORICAL;
         this.produceCapacity = new AtomicLong(0);
-        this.maxProduceCapacity = 0;
     }
 
     public KafkaCachePartition(
@@ -144,7 +142,6 @@ public final class KafkaCachePartition
         this.config = config;
         this.cache = cache;
         this.produceCapacity = produceCapacity;
-        this.maxProduceCapacity = maxProduceCapacity;
         this.topic = topic;
         this.id = id;
         this.appendBuf = new UnsafeBuffer(allocateDirect(appendCapacity));
@@ -569,9 +566,7 @@ public final class KafkaCachePartition
 
         final KafkaCacheFile logFile = segment.logFile();
 
-        final int logAvailable = logFile.available();
         final int payloadLength = payload.sizeof();
-        assert logAvailable >= payloadLength;
 
         logFile.writeBytes(position.value, payload);
 
