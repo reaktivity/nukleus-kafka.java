@@ -22,8 +22,8 @@ import static java.nio.file.StandardOpenOption.CREATE;
 import static java.nio.file.StandardOpenOption.READ;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT_VALUE;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT_VALUE;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursor;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorIndex;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
@@ -82,8 +82,8 @@ public class KafkaCacheIndexFileTest
         {
             long first = indexFile.first(key);
 
-            assertNotEquals(NEXT_SEGMENT, first);
-            assertNotEquals(cursorValue(RETRY_SEGMENT), cursorValue(first));
+            assertNotEquals(NEXT_SEGMENT_VALUE, cursorValue(first));
+            assertNotEquals(RETRY_SEGMENT_VALUE, cursorValue(first));
             assertEquals(key << 1, cursorIndex(first));
             assertEquals(0, cursorValue(first));
         }
@@ -93,8 +93,8 @@ public class KafkaCacheIndexFileTest
         {
             long last = indexFile.last(key);
 
-            assertNotEquals(NEXT_SEGMENT, last);
-            assertNotEquals(cursorValue(RETRY_SEGMENT), cursorValue(last));
+            assertNotEquals(NEXT_SEGMENT_VALUE, cursorValue(last));
+            assertNotEquals(RETRY_SEGMENT_VALUE, cursorValue(last));
             assertEquals((key << 1) + 1, cursorIndex(last));
             assertEquals(1, cursorValue(last));
         }
@@ -105,8 +105,8 @@ public class KafkaCacheIndexFileTest
             long cursor = cursor(key << 1, 0);
             long resolved = indexFile.resolve(cursor);
 
-            assertNotEquals(NEXT_SEGMENT, resolved);
-            assertNotEquals(cursorValue(RETRY_SEGMENT), cursorValue(resolved));
+            assertNotEquals(NEXT_SEGMENT_VALUE, cursorValue(resolved));
+            assertNotEquals(RETRY_SEGMENT_VALUE, cursorValue(resolved));
             assertEquals(key << 1, cursorIndex(resolved));
             assertEquals(0, cursorValue(resolved));
         }
@@ -117,8 +117,8 @@ public class KafkaCacheIndexFileTest
             long cursor = cursor(key << 1, 0);
             long higher = indexFile.higher(key, cursor);
 
-            assertNotEquals(NEXT_SEGMENT, higher);
-            assertNotEquals(cursorValue(RETRY_SEGMENT), cursorValue(higher));
+            assertNotEquals(NEXT_SEGMENT_VALUE, cursorValue(higher));
+            assertNotEquals(RETRY_SEGMENT_VALUE, cursorValue(higher));
             assertEquals((key << 1) + 1, cursorIndex(higher));
         }
 
@@ -128,8 +128,8 @@ public class KafkaCacheIndexFileTest
             long cursor = cursor(key << 1, 0);
             long ceiling = indexFile.ceiling(key, cursor);
 
-            assertNotEquals(NEXT_SEGMENT, ceiling);
-            assertNotEquals(cursorValue(RETRY_SEGMENT), cursorValue(ceiling));
+            assertNotEquals(NEXT_SEGMENT_VALUE, cursorValue(ceiling));
+            assertNotEquals(RETRY_SEGMENT_VALUE, cursorValue(ceiling));
             assertEquals(key << 1, cursorIndex(ceiling));
         }
 
@@ -139,8 +139,8 @@ public class KafkaCacheIndexFileTest
             long cursor = cursor((key << 1) + 1, 1);
             long floor = indexFile.floor(key, cursor);
 
-            assertNotEquals(NEXT_SEGMENT, floor);
-            assertNotEquals(cursorValue(RETRY_SEGMENT), cursorValue(floor));
+            assertNotEquals(NEXT_SEGMENT_VALUE, cursorValue(floor));
+            assertNotEquals(RETRY_SEGMENT_VALUE, cursorValue(floor));
             assertEquals((key << 1) + 1, cursorIndex(floor));
         }
 
@@ -150,8 +150,8 @@ public class KafkaCacheIndexFileTest
             long cursor = cursor((key << 1) + 1, 1);
             long lower = indexFile.lower(key, cursor);
 
-            assertNotEquals(NEXT_SEGMENT, lower);
-            assertNotEquals(cursorValue(RETRY_SEGMENT), cursorValue(lower));
+            assertNotEquals(NEXT_SEGMENT_VALUE, cursorValue(lower));
+            assertNotEquals(RETRY_SEGMENT_VALUE, cursorValue(lower));
             assertEquals(key << 1, cursorIndex(lower));
         }
     }
@@ -194,8 +194,8 @@ public class KafkaCacheIndexFileTest
         {
             long first = indexFile.first(key);
 
-            assertNotEquals(NEXT_SEGMENT, first);
-            assertNotEquals(cursorValue(RETRY_SEGMENT), cursorValue(first));
+            assertNotEquals(NEXT_SEGMENT_VALUE, cursorValue(first));
+            assertNotEquals(RETRY_SEGMENT_VALUE, cursorValue(first));
             assertEquals(entries - 1 - ((key << 1) + 1), cursorIndex(first));
             assertEquals((entries - 1 - ((key << 1) + 1)) >> 1, cursorValue(first));
         }
@@ -205,8 +205,8 @@ public class KafkaCacheIndexFileTest
         {
             long last = indexFile.last(key);
 
-            assertNotEquals(NEXT_SEGMENT, last);
-            assertNotEquals(cursorValue(RETRY_SEGMENT), cursorValue(last));
+            assertNotEquals(NEXT_SEGMENT_VALUE, cursorValue(last));
+            assertNotEquals(RETRY_SEGMENT_VALUE, cursorValue(last));
             assertEquals(entries - 1 - (key << 1), cursorIndex(last));
             assertEquals(((entries - 1 - ((key << 1) + 1)) >> 1) + 1, cursorValue(last));
         }
@@ -217,8 +217,8 @@ public class KafkaCacheIndexFileTest
             long cursor = cursor(key << 1, 0);
             long resolved = indexFile.resolve(cursor);
 
-            assertNotEquals(NEXT_SEGMENT, resolved);
-            assertNotEquals(cursorValue(RETRY_SEGMENT), cursorValue(resolved));
+            assertNotEquals(NEXT_SEGMENT_VALUE, cursorValue(resolved));
+            assertNotEquals(RETRY_SEGMENT_VALUE, cursorValue(resolved));
             assertEquals(cursorIndex(cursor), cursorIndex(resolved));
             assertEquals(key, cursorValue(resolved));
         }
@@ -229,8 +229,8 @@ public class KafkaCacheIndexFileTest
             long cursor = cursor(entries - 1 - ((key << 1) + 1), (entries - 1 - ((key << 1) + 1)) >> 1);
             long higher = indexFile.higher(key, cursor);
 
-            assertNotEquals(NEXT_SEGMENT, higher);
-            assertNotEquals(cursorValue(RETRY_SEGMENT), cursorValue(higher));
+            assertNotEquals(NEXT_SEGMENT_VALUE, cursorValue(higher));
+            assertNotEquals(RETRY_SEGMENT_VALUE, cursorValue(higher));
             assertEquals(cursorIndex(cursor) + 1, cursorIndex(higher));
             assertEquals(cursorValue(cursor) + 1, cursorValue(higher));
         }
@@ -241,8 +241,8 @@ public class KafkaCacheIndexFileTest
             long cursor = cursor(entries - 1 - ((key << 1) + 1), (entries - 1 - ((key << 1) + 1)) >> 1);
             long ceiling = indexFile.ceiling(key, cursor);
 
-            assertNotEquals(NEXT_SEGMENT, ceiling);
-            assertNotEquals(cursorValue(RETRY_SEGMENT), cursorValue(ceiling));
+            assertNotEquals(NEXT_SEGMENT_VALUE, cursorValue(ceiling));
+            assertNotEquals(RETRY_SEGMENT_VALUE, cursorValue(ceiling));
             assertEquals(cursorIndex(cursor), cursorIndex(ceiling));
             assertEquals(cursorValue(cursor), cursorValue(ceiling));
         }
@@ -253,8 +253,8 @@ public class KafkaCacheIndexFileTest
             long cursor = cursor(entries - 1 - (key << 1), ((entries - 1 - ((key << 1) + 1)) >> 1) + 1);
             long floor = indexFile.floor(key, cursor);
 
-            assertNotEquals(NEXT_SEGMENT, floor);
-            assertNotEquals(cursorValue(RETRY_SEGMENT), cursorValue(floor));
+            assertNotEquals(NEXT_SEGMENT_VALUE, cursorValue(floor));
+            assertNotEquals(RETRY_SEGMENT_VALUE, cursorValue(floor));
             assertEquals(cursorIndex(cursor), cursorIndex(floor));
             assertEquals(cursorValue(cursor), cursorValue(floor));
         }
@@ -265,8 +265,8 @@ public class KafkaCacheIndexFileTest
             long cursor = cursor(entries - 1 - (key << 1), ((entries - 1 - ((key << 1) + 1)) >> 1) + 1);
             long lower = indexFile.lower(key, cursor);
 
-            assertNotEquals(NEXT_SEGMENT, lower);
-            assertNotEquals(cursorValue(RETRY_SEGMENT), cursorValue(lower));
+            assertNotEquals(NEXT_SEGMENT_VALUE, cursorValue(lower));
+            assertNotEquals(RETRY_SEGMENT_VALUE, cursorValue(lower));
             assertEquals(cursorIndex(cursor) - 1, cursorIndex(lower));
             assertEquals(cursorValue(cursor) - 1, cursorValue(lower));
         }

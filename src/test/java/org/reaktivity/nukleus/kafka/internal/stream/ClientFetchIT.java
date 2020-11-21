@@ -424,6 +424,42 @@ public class ClientFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
+        "${client}/filter.not.header/client",
+        "${server}/filter.not.header/server"})
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithNotHeaderFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("TODO")
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/filter.not.key/client",
+        "${server}/filter.not.key/server"})
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithNotKeyFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("TODO")
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/filter.key.and.not.header/client",
+        "${server}/filter.key.and.not.header/server"})
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithKeyAndNotHeaderFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("TODO")
+    @Test
+    @Specification({
+        "${route}/client/controller",
         "${client}/filter.headers.one/client",
         "${server}/filter.headers.one/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")

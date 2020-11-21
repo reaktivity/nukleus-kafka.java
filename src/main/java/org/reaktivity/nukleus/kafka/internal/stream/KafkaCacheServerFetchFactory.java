@@ -18,8 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.lang.System.currentTimeMillis;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorNextValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorRetryValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
@@ -763,7 +762,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                     final KafkaCacheIndexFile previousKeys = previousSegment.keysFile();
 
                     long keyCursor = previousKeys.last(keyHash);
-                    while (keyCursor != NEXT_SEGMENT && cursorValue(keyCursor) != cursorValue(RETRY_SEGMENT))
+                    while (!cursorNextValue(keyCursor) && !cursorRetryValue(keyCursor))
                     {
                         final int keyBaseOffsetDelta = cursorValue(keyCursor);
                         assert keyBaseOffsetDelta <= 0;
@@ -800,7 +799,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                         }
 
                         final long nextKeyCursor = previousKeys.lower(keyHash, keyCursor);
-                        if (nextKeyCursor == NEXT_SEGMENT || cursorRetryValue(nextKeyCursor))
+                        if (cursorNextValue(nextKeyCursor) || cursorRetryValue(nextKeyCursor))
                         {
                             break;
                         }

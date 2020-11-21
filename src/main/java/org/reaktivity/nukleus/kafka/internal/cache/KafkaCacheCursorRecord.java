@@ -20,13 +20,19 @@ import static java.lang.Integer.toUnsignedLong;
 
 public final class KafkaCacheCursorRecord
 {
-    public static final long NEXT_SEGMENT = Long.MAX_VALUE - 1;
-    public static final long RETRY_SEGMENT = Integer.MAX_VALUE - 1;
+    public static final int NEXT_SEGMENT_VALUE = Integer.MAX_VALUE - 1;
+    public static final int RETRY_SEGMENT_VALUE = -1;
+
+    public static boolean cursorNextValue(
+        long cursor)
+    {
+        return cursorValue(cursor) == NEXT_SEGMENT_VALUE;
+    }
 
     public static boolean cursorRetryValue(
         long cursor)
     {
-        return cursorValue(cursor) == cursorValue(RETRY_SEGMENT);
+        return cursorValue(cursor) == RETRY_SEGMENT_VALUE;
     }
 
     public static int cursorIndex(
