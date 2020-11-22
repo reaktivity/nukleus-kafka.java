@@ -847,7 +847,8 @@ public final class KafkaCachePartition
             KafkaCacheEntryFW dirty,
             long partitionOffset)
         {
-            final long cursor = segment.indexFile().first((int) partitionOffset);
+            final int offsetDelta = (int)(partitionOffset - segment.baseOffset());
+            final long cursor = segment.indexFile().first((int) offsetDelta);
             final int position = KafkaCacheCursorRecord.cursorValue(cursor);
 
             final KafkaCacheFile logFile = segment.logFile();
