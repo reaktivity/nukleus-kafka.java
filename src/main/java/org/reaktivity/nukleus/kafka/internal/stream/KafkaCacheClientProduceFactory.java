@@ -883,11 +883,9 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                 final KafkaCacheEntryFW entry = markEntryDirty(lastAckOffsetHighWatermark);
                 final long memberStreamId = entry.ownerId();
                 final KafkaCacheClientProduceStream member = members.get(memberStreamId);
-                member.onMessageAck(traceId, partitionOffset);
+                member.onMessageAck(traceId, entry.offset$());
                 lastAckOffsetHighWatermark++;
             }
-
-            lastAckOffsetHighWatermark = partitionOffset;
         }
 
         private KafkaCacheEntryFW markEntryDirty(
@@ -987,6 +985,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private final long leaderId;
         private final long authorization;
 
+        private long lastAckPartitionOffset = DEFAULT_LATEST_OFFSET;
         private long partitionOffset = DEFAULT_LATEST_OFFSET;
         private int dataFlags = FLAGS_FIN;
 
@@ -1102,7 +1101,16 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private void onClientInitialEnd(
             EndFW end)
         {
+            final long traceId = end.traceId();
+
             state = KafkaState.closedInitial(state);
+
+            if (lastAckPartitionOffset == partitionOffset)
+            {
+                fan.onClientFanMemberClosed(traceId, this);
+
+                doClientReplyEndIfNecessary(traceId);
+            }
         }
 
         private void onClientInitialAbort(
@@ -1249,9 +1257,12 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
-            fan.onClientFanMemberClosed(traceId, this);
+            if (lastAckPartitionOffset == partitionOffset)
+            {
+                fan.onClientFanMemberClosed(traceId, this);
 
-            doClientInitialResetIfNecessary(traceId, EMPTY_OCTETS);
+                doClientInitialResetIfNecessary(traceId, EMPTY_OCTETS);
+            }
         }
 
         private void cleanupClient(
@@ -1284,6 +1295,8 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
                 doClientReplyEndIfNecessary(traceId);
             }
+
+            lastAckPartitionOffset = partitionOffset;
         }
     }
 }
