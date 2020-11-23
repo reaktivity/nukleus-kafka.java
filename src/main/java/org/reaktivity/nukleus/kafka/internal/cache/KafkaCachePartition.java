@@ -874,7 +874,7 @@ public final class KafkaCachePartition
             KafkaCacheEntryFW entry)
         {
             final KafkaCacheFile logFile = segment.logFile();
-            logFile.writeInt(entry.offset() + FIELD_OFFSET_FLAGS, CACHE_ENTRY_FLAGS_COMPLETED);
+            logFile.writeInt(entry.offset() + FIELD_OFFSET_FLAGS, CACHE_ENTRY_FLAGS_DIRTY);
             segment.markDirtyBytes(entry.sizeof());
         }
 

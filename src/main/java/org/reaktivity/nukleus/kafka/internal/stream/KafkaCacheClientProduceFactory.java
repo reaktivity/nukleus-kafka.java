@@ -17,6 +17,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.lang.System.currentTimeMillis;
 import static java.lang.Thread.currentThread;
+import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
@@ -102,6 +103,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
     private static final String TRANSACTION_NONE = null;
 
     private static final int SIGNAL_SEGMENT_COMPACT = 1;
+    private static final int SIGNAL_GROUP_CLEANUP = 2;
 
     private final RouteFW routeRO = new RouteFW();
     private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
@@ -150,6 +152,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
     private final KafkaCacheCursorFactory cursorFactory;
     private final int initialBudgetMax;
     private final int localIndex;
+    private final int cleanupDelay;
 
     public KafkaCacheClientProduceFactory(
         KafkaConfiguration config,
@@ -183,6 +186,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         this.correlations = correlations;
         this.initialBudgetMax = bufferPool.slotCapacity();
         this.localIndex = localIndex;
+        this.cleanupDelay = config.cacheClientCleanupDelay();
         this.cursorFactory = new KafkaCacheCursorFactory(writeBuffer);
     }
 
@@ -447,6 +451,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private int partitionOffset;
         private long compactAt = Long.MAX_VALUE;
         private long compactId = NO_CANCEL_ID;
+        private long groupCleanupId = NO_CANCEL_ID;
 
         private long partitionIndex = NO_CREDITOR_INDEX;
 
@@ -495,6 +500,13 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                 members.clear();
             }
 
+            if (groupCleanupId != NO_CANCEL_ID)
+            {
+                signaler.cancel(groupCleanupId);
+
+                groupCleanupId = NO_CANCEL_ID;
+            }
+
             members.put(member.initialId, member);
 
             assert !members.isEmpty();
@@ -520,8 +532,8 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             if (members.isEmpty())
             {
-                doClientFanInitialAbortIfNecessary(traceId);
-                doClientFanReplyResetIfNecessary(traceId);
+                this.groupCleanupId = doClientFanoutInitialSignalAt(currentTimeMillis() + SECONDS.toMillis(cleanupDelay),
+                    SIGNAL_GROUP_CLEANUP);
             }
         }
 
@@ -746,12 +758,15 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             switch (signalId)
             {
             case SIGNAL_SEGMENT_COMPACT:
-                onClientFanoutInitialSignalSegmentCompact(signal);
+                onClientFanInitialSignalSegmentCompact(signal);
+                break;
+            case SIGNAL_GROUP_CLEANUP:
+                onClientFanInitialSignalCleanup(signal);
                 break;
             }
         }
 
-        private void onClientFanoutInitialSignalSegmentCompact(
+        private void onClientFanInitialSignalSegmentCompact(
             SignalFW signal)
         {
             final long now = currentTimeMillis();
@@ -765,6 +780,18 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             this.compactAt = Long.MAX_VALUE;
             this.compactId = NO_CANCEL_ID;
+        }
+
+        private void onClientFanInitialSignalCleanup(
+            SignalFW signal)
+        {
+            final long traceId = signal.traceId();
+
+            if (members.isEmpty())
+            {
+                doClientFanInitialAbortIfNecessary(traceId);
+                doClientFanReplyResetIfNecessary(traceId);
+            }
         }
 
         private void onClientFanInitialOpened()
@@ -918,6 +945,8 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             EndFW end)
         {
             final long traceId = end.traceId();
+
+            doClientFanInitialAbortIfNecessary(traceId);
 
             members.forEach((s, m) -> m.doClientReplyEndIfNecessary(traceId));
 

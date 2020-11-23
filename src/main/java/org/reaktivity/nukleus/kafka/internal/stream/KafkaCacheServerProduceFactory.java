@@ -17,7 +17,6 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 
 import static java.lang.System.currentTimeMillis;
 import static java.lang.Thread.currentThread;
-import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 
@@ -646,34 +645,12 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             final KafkaResetExFW kafkaResetEx = extension.get(kafkaResetExRO::tryWrap);
             final int error = kafkaResetEx != null ? kafkaResetEx.error() : -1;
 
-            if (reconnectDelay != 0 && !members.isEmpty() &&
-                error != ERROR_NOT_LEADER_FOR_PARTITION)
+            if (KafkaConfiguration.DEBUG)
             {
-                if (KafkaConfiguration.DEBUG)
-                {
-                    System.out.format("%d %s PRODUCE reconnect in %ds, error %d\n", partitionId, partionTopic,
-                        reconnectDelay, error);
-                }
-
-                if (reconnectAt != NO_CANCEL_ID)
-                {
-                    signaler.cancel(reconnectAt);
-                }
-
-                this.reconnectAt = signaler.signalAt(
-                    currentTimeMillis() + Math.min(50 << reconnectAttempt++, SECONDS.toMillis(reconnectDelay)),
-                    SIGNAL_RECONNECT,
-                    this::onServerFanSignal);
+                System.out.format("%d %s PRODUCE disconnect, error %d\n", partitionId, partionTopic, error);
             }
-            else
-            {
-                if (KafkaConfiguration.DEBUG)
-                {
-                    System.out.format("%d %s PRODUCE disconnect, error %d\n", partitionId, partionTopic, error);
-                }
 
-                members.forEach(s -> s.doServerInitialResetIfNecessary(traceId, extension));
-            }
+            members.forEach(s -> s.doServerInitialResetIfNecessary(traceId, extension));
         }
 
         private void onServerFanInitialWindow(
@@ -794,32 +771,12 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
             doServerFanInitialEndIfNecessary(traceId);
 
-            if (reconnectDelay != 0 && !members.isEmpty())
+            if (KafkaConfiguration.DEBUG)
             {
-                if (KafkaConfiguration.DEBUG)
-                {
-                    System.out.format("%d %s PRODUCE reconnect in %ds\n", partitionId, partionTopic, reconnectDelay);
-                }
-
-                if (reconnectAt != NO_CANCEL_ID)
-                {
-                    signaler.cancel(reconnectAt);
-                }
-
-                this.reconnectAt = signaler.signalAt(
-                    currentTimeMillis() + Math.min(50 << reconnectAttempt++, SECONDS.toMillis(reconnectDelay)),
-                    SIGNAL_RECONNECT,
-                    this::onServerFanSignal);
+                System.out.format("%d %s PRODUCE disconnect\n", partitionId, partionTopic);
             }
-            else
-            {
-                if (KafkaConfiguration.DEBUG)
-                {
-                    System.out.format("%d %s PRODUCE disconnect\n", partitionId, partionTopic);
-                }
 
-                members.forEach(s -> s.doServerReplyEndIfNecessary(traceId));
-            }
+            members.forEach(s -> s.doServerReplyEndIfNecessary(traceId));
         }
 
         private void onServerFanReplyAbort(
@@ -831,32 +788,12 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
             doServerFanInitialAbortIfNecessary(traceId);
 
-            if (reconnectDelay != 0 && !members.isEmpty())
+            if (KafkaConfiguration.DEBUG)
             {
-                if (KafkaConfiguration.DEBUG)
-                {
-                    System.out.format("%d %s PRODUCE reconnect in %ds\n", partitionId, partionTopic, reconnectDelay);
-                }
-
-                if (reconnectAt != NO_CANCEL_ID)
-                {
-                    signaler.cancel(reconnectAt);
-                }
-
-                this.reconnectAt = signaler.signalAt(
-                    currentTimeMillis() + Math.min(50 << reconnectAttempt++, SECONDS.toMillis(reconnectDelay)),
-                    SIGNAL_RECONNECT,
-                    this::onServerFanSignal);
+                System.out.format("%d %s PRODUCE disconnect\n", partitionId, partionTopic);
             }
-            else
-            {
-                if (KafkaConfiguration.DEBUG)
-                {
-                    System.out.format("%d %s PRODUCE disconnect\n", partitionId, partionTopic);
-                }
 
-                members.forEach(s -> s.doServerReplyAbortIfNecessary(traceId));
-            }
+            members.forEach(s -> s.doServerReplyAbortIfNecessary(traceId));
         }
 
         private void onServerFanSignal(
