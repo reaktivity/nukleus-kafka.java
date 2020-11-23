@@ -23,7 +23,7 @@ public final class KafkaChecksum
     }
 
     /**
-     * The code below comes from zlib and JCraft's CRC32C implementation
+     * The code below comes from zlib and JCraft's CRC32 implementation
      * (https://github.com/ymnk/jzlib). The most significant change in the zlib code was to use
      * the CRC-32c polynomial (0x82f63b78L), instead of the CRC-32 one (0xedb88320UL).
      *

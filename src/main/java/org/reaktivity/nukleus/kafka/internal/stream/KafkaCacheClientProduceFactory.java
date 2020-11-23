@@ -571,8 +571,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                                        .topic(partition.topic())
                                        .partition(par -> par
                                            .partitionId(partitionId)
-                                           .partitionOffset(offsetHighWatermark))
-                                       .index(this.localIndex))
+                                           .partitionOffset(offsetHighWatermark)))
                         .build()
                         .sizeof()));
             state = KafkaState.openingInitial(state);

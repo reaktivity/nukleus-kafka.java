@@ -2620,10 +2620,10 @@ public final class KafkaMergedFactory implements StreamFactory
             doBegin(receiver, merged.resolvedId, initialId, traceId, merged.authorization, leaderId,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
-                        .produce(p -> p.transaction((String) null) // TODO: default in kafka.idl
+                        .produce(pr -> pr.transaction((String) null) // TODO: default in kafka.idl
                                        .topic(merged.topic)
-                                       .partition(par -> par.partitionId(partitionId).partitionOffset(
-                                           DEFAULT_LATEST_OFFSET)))
+                                       .partition(part -> part.partitionId(partitionId).
+                                           partitionOffset(DEFAULT_LATEST_OFFSET)))
                         .build()
                         .sizeof()));
         }
@@ -2665,7 +2665,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 case FLAGS_INIT:
                     newKafkaDataEx = kafkaDataExRW.wrap(extBuffer, 0, extBuffer.capacity())
                             .typeId(kafkaTypeId)
-                            .produce(p -> p.deferred(deferred)
+                            .produce(pr -> pr.deferred(deferred)
                                            .timestamp(timestamp)
                                            .sequence(sequence)
                                            .key(k -> k.length(key.length())
@@ -2679,7 +2679,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 case FLAGS_FIN:
                     newKafkaDataEx = kafkaDataExRW.wrap(extBuffer, 0, extBuffer.capacity())
                             .typeId(kafkaTypeId)
-                            .produce(p -> p.headers(hs -> headers.forEach(h -> hs.item(i -> i.nameLen(h.nameLen())
+                            .produce(pr -> pr.headers(hs -> headers.forEach(h -> hs.item(i -> i.nameLen(h.nameLen())
                                                                                              .name(h.name())
                                                                                              .valueLen(h.valueLen())
                                                                                              .value(h.value())))))

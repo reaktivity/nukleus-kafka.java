@@ -27,6 +27,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
+import java.util.function.LongToIntFunction;
 import java.util.function.LongUnaryOperator;
 import java.util.function.ToIntFunction;
 import java.util.zip.CRC32C;
@@ -143,7 +144,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
     private final Function<String, KafkaCache> supplyCache;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
     private final Long2ObjectHashMap<MessageConsumer> correlations;
-    private final int reconnectDelay;
+    private final LongToIntFunction supplyRemoteIndex;
     private final KafkaCacheCursorFactory cursorFactory;
     private final CRC32C crc32c;
 
@@ -159,7 +160,8 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         ToIntFunction<String> supplyTypeId,
         Function<String, KafkaCache> supplyCache,
         LongFunction<KafkaCacheRoute> supplyCacheRoute,
-        Long2ObjectHashMap<MessageConsumer> correlations)
+        Long2ObjectHashMap<MessageConsumer> correlations,
+        LongToIntFunction supplyRemoteIndex)
     {
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.router = router;
@@ -173,8 +175,8 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         this.supplyCache = supplyCache;
         this.supplyCacheRoute = supplyCacheRoute;
         this.correlations = correlations;
-        this.reconnectDelay = config.cacheServerReconnect();
         this.cursorFactory = new KafkaCacheCursorFactory(writeBuffer);
+        this.supplyRemoteIndex = supplyRemoteIndex;
         this.crc32c = new CRC32C();
     }
 
@@ -202,7 +204,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
         final String16FW beginTopic = kafkaProduceBeginEx.topic();
         final int partitionId = kafkaProduceBeginEx.partition().partitionId();
-        final int remoteIndex = kafkaProduceBeginEx.index();
+        final int remoteIndex = supplyRemoteIndex.applyAsInt(initialId);
 
         MessageConsumer newStream = null;
 
@@ -529,9 +531,9 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             doBegin(receiver, routeId, initialId, traceId, authorization, leaderId,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
-                        .produce(p -> p.transaction(TRANSACTION_NONE)
+                        .produce(pr -> pr.transaction(TRANSACTION_NONE)
                                        .topic(partionTopic)
-                                       .partition(par -> par.partitionId(partitionId).partitionOffset(DEFAULT_LATEST_OFFSET)))
+                                       .partition(part -> part.partitionId(partitionId).partitionOffset(DEFAULT_LATEST_OFFSET)))
                         .build()
                         .sizeof()));
             state = KafkaState.openingInitial(state);

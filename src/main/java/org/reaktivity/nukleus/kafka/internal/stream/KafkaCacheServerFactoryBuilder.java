@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import java.util.function.Function;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
+import java.util.function.LongToIntFunction;
 import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
@@ -51,12 +52,12 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
     private Supplier<BufferPool> supplyBufferPool;
     private ToIntFunction<String> supplyTypeId;
     private Signaler signaler;
+    private LongToIntFunction supplyRemoteIndex;
 
     public KafkaCacheServerFactoryBuilder(
         KafkaConfiguration config,
         Function<String, KafkaCache> supplyCache,
-        LongFunction<KafkaCacheRoute> supplyCacheRoute,
-        int index)
+        LongFunction<KafkaCacheRoute> supplyCacheRoute)
     {
         this.config = config;
         this.supplyCache = supplyCache;
@@ -144,6 +145,14 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
     }
 
     @Override
+    public StreamFactoryBuilder setRemoteIndexSupplier(
+        LongToIntFunction supplyRemoteIndex)
+    {
+        this.supplyRemoteIndex = supplyRemoteIndex;
+        return this;
+    }
+
+    @Override
     public StreamFactory build()
     {
         final BufferPool bufferPool = supplyBufferPool.get();
@@ -161,6 +170,7 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
                 supplyTypeId,
                 supplyCache,
                 supplyCacheRoute,
-                correlations);
+                correlations,
+                supplyRemoteIndex);
     }
 }

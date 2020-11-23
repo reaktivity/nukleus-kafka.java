@@ -54,7 +54,7 @@ final class KafkaElektron implements Elektron
         Map<RouteKind, KafkaStreamFactoryBuilder> streamFactoryBuilders = new EnumMap<>(RouteKind.class);
         streamFactoryBuilders.put(CLIENT, new KafkaClientFactoryBuilder(config, this::supplyClientRoute));
         streamFactoryBuilders.put(CACHE_SERVER, new KafkaCacheServerFactoryBuilder(config, supplyCache,
-            this::supplyCacheRoute, index));
+            this::supplyCacheRoute));
         streamFactoryBuilders.put(CACHE_CLIENT, new KafkaCacheClientFactoryBuilder(config, supplyCache,
             this::supplyCacheRoute, index));
         this.streamFactoryBuilders = streamFactoryBuilders;

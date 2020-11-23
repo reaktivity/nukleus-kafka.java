@@ -476,7 +476,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
         int progress,
         int limit)
     {
-        if (client.dataFlags == FLAGS_INIT)
+        if (client.encodeFlags == FLAGS_INIT)
         {
             client.encoder = this::encodeRecordInit;
         }
@@ -504,11 +504,11 @@ public final class KafkaClientProduceFactory implements StreamFactory
         final KafkaKeyFW key = kafkaProduceDataEx.key();
         final Array32FW<KafkaHeaderFW> headers = kafkaProduceDataEx.headers();
         client.encodeableRecordBytesDeferred = kafkaProduceDataEx.deferred();
-        client.dataValueChecksum = kafkaProduceDataEx.checksum();
+        client.valueChecksum = kafkaProduceDataEx.checksum();
         final int valueSize = payload != null ? payload.sizeof() : 0;
-        client.dataValueCompleteSize = valueSize + client.encodeableRecordBytesDeferred;
+        client.valueCompleteSize = valueSize + client.encodeableRecordBytesDeferred;
 
-        final int maxEncodeableBytes = client.encodeSlotLimit + client.dataValueCompleteSize + KAFKA_RECORD_FRAMING;
+        final int maxEncodeableBytes = client.encodeSlotLimit + client.valueCompleteSize + KAFKA_RECORD_FRAMING;
         if (client.encodeSlot != NO_SLOT &&
             maxEncodeableBytes > encodePool.slotCapacity())
         {
@@ -517,7 +517,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
         client.doEncodeRecordInit(traceId, timestamp, key, payload, headers);
         client.encoder = this::encodeRecordContFin;
-        client.dataFlags = FLAGS_INIT;
+        client.encodeFlags = FLAGS_INIT;
 
         return progress;
     }
@@ -536,7 +536,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
     {
         final int length = payload != null ? payload.sizeof() : 0;
         client.doEncodeRecordCont(traceId, payload);
-        client.dataFlags = FLAGS_CON;
+        client.encodeFlags = FLAGS_CON;
 
         progress += length;
 
@@ -545,7 +545,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
             client.doEncodeRecordFin(traceId);
             assert progress == limit;
             client.encoder = this::encodeRecord;
-            client.dataFlags = FLAGS_FIN;
+            client.encodeFlags = FLAGS_FIN;
         }
 
         return progress;
@@ -1065,9 +1065,9 @@ public final class KafkaClientProduceFactory implements StreamFactory
         private final KafkaClientRoute clientRoute;
 
         private int state;
-        private int dataFlags;
-        private long dataValueChecksum;
-        private int dataValueCompleteSize;
+        private int encodeFlags;
+        private int valueCompleteSize;
+        private long valueChecksum;
 
         private long authorization;
         private long initialBudgetId;
@@ -1430,7 +1430,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
             }
 
             KafkaProduceClientEncoder previous = null;
-            dataFlags = flags & FLAGS_INIT;
+            encodeFlags = flags & FLAGS_INIT;
             final int offset = progress;
 
             while (progress <= limit && previous != encoder)
@@ -1720,7 +1720,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
             encodeableRecordBytes = 0;
             encodeableRecordBatchTimestamp = TIMESTAMP_NONE;
 
-
             assert encodeSlot != NO_SLOT;
             final MutableDirectBuffer encodeSlotBuffer = encodePool.buffer(encodeSlot);
 
@@ -1738,15 +1737,15 @@ public final class KafkaClientProduceFactory implements StreamFactory
             crc.update(encodeSlotByteBuffer);
 
             long checksum = crc.getValue();
-            if (dataFlags != FLAGS_FIN)
+            if (encodeFlags != FLAGS_FIN)
             {
-                checksum = getChecksum(encodeBuffer, encodeLimit, encodeProgress, encodeSlotBuffer, checksum);
+                checksum = computeChecksum(encodeBuffer, encodeLimit, encodeProgress, encodeSlotBuffer, checksum);
             }
             encodeSlotBuffer.putInt(encodeSlotOffset + crcOffset, (int) checksum, BIG_ENDIAN);
             doNetworkData(traceId, EMPTY_BUFFER, 0, 0);
         }
 
-        private long getChecksum(
+        private long computeChecksum(
             MutableDirectBuffer encodeBuffer,
             int encodeLimit,
             int encodeProgress,
@@ -1755,7 +1754,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
         {
             final int oldEncodeProgress = encodeProgress;
 
-            checksum = combineCRC32C(checksum, dataValueChecksum, dataValueCompleteSize);
+            checksum = combineCRC32C(checksum, valueChecksum, valueCompleteSize);
 
             Array32FW<KafkaHeaderFW> headers = EMPTY_HEADER;
             if (encodeableRecordHeadersBytes > 0)

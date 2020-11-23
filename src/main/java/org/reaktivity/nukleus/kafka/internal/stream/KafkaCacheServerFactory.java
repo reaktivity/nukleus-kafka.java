@@ -20,6 +20,7 @@ import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CAC
 import java.util.function.Function;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
+import java.util.function.LongToIntFunction;
 import java.util.function.LongUnaryOperator;
 import java.util.function.ToIntFunction;
 
@@ -63,7 +64,8 @@ public final class KafkaCacheServerFactory implements StreamFactory
         ToIntFunction<String> supplyTypeId,
         Function<String, KafkaCache> supplyCache,
         LongFunction<KafkaCacheRoute> supplyCacheRoute,
-        Long2ObjectHashMap<MessageConsumer> correlations)
+        Long2ObjectHashMap<MessageConsumer> correlations,
+        LongToIntFunction supplyRemoteIndex)
     {
         final Int2ObjectHashMap<StreamFactory> streamFactoriesByKind = new Int2ObjectHashMap<>();
 
@@ -85,7 +87,7 @@ public final class KafkaCacheServerFactory implements StreamFactory
 
         streamFactoriesByKind.put(KafkaBeginExFW.KIND_PRODUCE, new KafkaCacheServerProduceFactory(
                 config, router, writeBuffer, signaler, supplyInitialId, supplyReplyId,
-                supplyTraceId, supplyBudgetId, supplyTypeId, supplyCache, supplyCacheRoute, correlations));
+                supplyTraceId, supplyBudgetId, supplyTypeId, supplyCache, supplyCacheRoute, correlations, supplyRemoteIndex));
 
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
         this.correlations = correlations;

@@ -181,7 +181,7 @@ public final class KafkaCachePartition
     }
 
     public long nextOffset(
-            KafkaOffsetType defaultOffset)
+        KafkaOffsetType defaultOffset)
     {
         final Node head = sentinel.previous;
         return head == sentinel ? defaultOffset.value() : head.segment().nextOffset();

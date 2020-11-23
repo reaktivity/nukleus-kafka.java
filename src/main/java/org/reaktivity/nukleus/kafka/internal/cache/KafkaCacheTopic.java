@@ -83,7 +83,7 @@ public final class KafkaCacheTopic
         int id,
         int index)
     {
-        final long uniqueId = uniqueId(id, index);
+        final long uniqueId = (((long) id) << Integer.SIZE) | index;
         return partitionsByIndex.computeIfAbsent(uniqueId, i -> newProducePartition(id, index));
     }
 
@@ -107,11 +107,4 @@ public final class KafkaCacheTopic
             sortSpaceRef, index);
     }
 
-    private long uniqueId(int left, int right)
-    {
-        int uniqueId = left;
-        uniqueId = uniqueId << 32;
-        uniqueId += (long) right;
-        return uniqueId;
-    }
 }
