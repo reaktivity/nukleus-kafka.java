@@ -843,21 +843,6 @@ public final class KafkaCachePartition
             return ancestor;
         }
 
-        public KafkaCacheEntryFW findEntry(
-            KafkaCacheEntryFW entry,
-            long partitionOffset)
-        {
-            final int offsetDelta = (int)(partitionOffset - segment.baseOffset());
-            final long cursor = segment.indexFile().first(offsetDelta);
-            final int position = KafkaCacheCursorRecord.cursorValue(cursor);
-
-            final KafkaCacheFile logFile = segment.logFile();
-            final KafkaCacheEntryFW newEntry = logFile.readBytes(position, entry::tryWrap);
-            assert newEntry != null;
-
-            return newEntry;
-        }
-
         public KafkaCacheEntryFW findAndMarkDirty(
             KafkaCacheEntryFW dirty,
             long partitionOffset)
