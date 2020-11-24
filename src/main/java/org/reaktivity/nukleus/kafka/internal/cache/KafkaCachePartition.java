@@ -870,7 +870,7 @@ public final class KafkaCachePartition
             segment.markDirtyBytes(ancestor.sizeof());
         }
 
-        private void markDirty(
+        public void markDirty(
             KafkaCacheEntryFW entry)
         {
             final KafkaCacheFile logFile = segment.logFile();
