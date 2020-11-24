@@ -251,8 +251,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                 final KafkaCacheTopic topic = cache.supplyTopic(topicName);
                 final KafkaCachePartition partition = topic.supplyProducePartition(partitionId, localIndex);
                 final KafkaCacheClientProduceFan newFan =
-                        new KafkaCacheClientProduceFan(resolvedId, authorization, affinity, budget,
-                            localIndex, partition);
+                        new KafkaCacheClientProduceFan(resolvedId, authorization, affinity, budget, partition);
 
                 cacheRoute.clientProduceFansByTopicPartition.put(partitionKey, newFan);
                 fan = newFan;
@@ -432,8 +431,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
         private final long authorization;
         private final int partitionId;
 
-        private final int localIndex;
-
         private long leaderId;
         private long initialId;
         private long replyId;
@@ -460,7 +457,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             long authorization,
             long leaderId,
             KafkaCacheClientBudget budget,
-            int localIndex,
             KafkaCachePartition partition)
         {
             this.routeId = routeId;
@@ -468,7 +464,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             this.partition = partition;
             this.partitionId = partition.id();
             this.budget = budget;
-            this.localIndex = localIndex;
             this.members = new Long2ObjectHashMap<>();
             this.leaderId = leaderId;
             this.defaultOffset = KafkaOffsetType.LIVE;
@@ -529,6 +524,35 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             KafkaCacheClientProduceStream member)
         {
             members.remove(member.initialId);
+
+            while (member.lastAckPartitionOffset <= member.partitionOffset)
+            {
+                member.lastAckPartitionOffset++;
+                final KafkaCachePartition.Node node = this.partition.seekNotAfter(member.lastAckPartitionOffset);
+                final KafkaCacheEntryFW dirtyEntry = node.findEntry(entryRO, member.lastAckPartitionOffset);
+
+                if (dirtyEntry.ownerId() == member.initialId)
+                {
+                    node.markDirty(dirtyEntry);
+
+                    final long newCompactAt = this.partition.compactAt(node.segment());
+
+                    if (newCompactAt != Long.MAX_VALUE)
+                    {
+                        if (compactId != NO_CANCEL_ID && newCompactAt < compactAt)
+                        {
+                            signaler.cancel(compactId);
+                            this.compactId = NO_CANCEL_ID;
+                        }
+
+                        if (compactId == NO_CANCEL_ID)
+                        {
+                            this.compactAt = newCompactAt;
+                            this.compactId = doClientFanoutInitialSignalAt(newCompactAt, SIGNAL_SEGMENT_COMPACT);
+                        }
+                    }
+                }
+            }
 
             if (members.isEmpty())
             {
