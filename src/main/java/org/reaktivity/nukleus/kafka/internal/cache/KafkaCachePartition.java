@@ -862,7 +862,13 @@ public final class KafkaCachePartition
             KafkaCacheEntryFW dirty,
             long partitionOffset)
         {
-            final KafkaCacheEntryFW dirtyEntry = findEntry(dirty, partitionOffset);
+            final int offsetDelta = (int)(partitionOffset - segment.baseOffset());
+            final long cursor = segment.indexFile().first((int) offsetDelta);
+            final int position = KafkaCacheCursorRecord.cursorValue(cursor);
+
+            final KafkaCacheFile logFile = segment.logFile();
+            final KafkaCacheEntryFW dirtyEntry = logFile.readBytes(position, dirty::tryWrap);
+            assert dirtyEntry != null;
 
             markDirty(dirtyEntry);
 
@@ -879,7 +885,7 @@ public final class KafkaCachePartition
             segment.markDirtyBytes(ancestor.sizeof());
         }
 
-        public void markDirty(
+        private void markDirty(
             KafkaCacheEntryFW entry)
         {
             final KafkaCacheFile logFile = segment.logFile();
