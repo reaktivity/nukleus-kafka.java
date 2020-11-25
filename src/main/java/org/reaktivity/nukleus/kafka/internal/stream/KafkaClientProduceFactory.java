@@ -535,7 +535,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
         int limit)
     {
         final int length = payload != null ? payload.sizeof() : 0;
-        client.doEncodeRecordCont(traceId, payload);
+        client.doEncodeRecordCont(traceId, payload, flags);
         client.encodeFlags = FLAGS_CON;
 
         progress += length;
@@ -1431,19 +1431,12 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
             KafkaProduceClientEncoder previous = null;
             encodeFlags = flags & FLAGS_INIT;
-            final int offset = progress;
 
             while (progress <= limit && previous != encoder)
             {
                 previous = encoder;
                 progress = encoder.encode(this, traceId, authorization, budgetId, reserved, flags, payload, extension,
                     progress, limit);
-            }
-
-            final int encodedBytes = progress - offset;
-            if (encodedBytes > 0)
-            {
-                stream.doApplicationWindow(traceId, 0L, encodedBytes);
             }
         }
 
@@ -1530,7 +1523,8 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
         private void doEncodeRecordCont(
             long traceId,
-            OctetsFW value)
+            OctetsFW value,
+            int flags)
         {
             if (value != null)
             {
@@ -1547,6 +1541,11 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
                 encodeSlotBuffer.putBytes(encodeSlotLimit,  value.buffer(), value.offset(), length);
                 encodeSlotLimit += length;
+
+                if ((flags & FLAGS_FIN) == 0)
+                {
+                    doNetworkData(traceId, EMPTY_BUFFER, 0, 0);
+                }
             }
         }
 
@@ -1852,6 +1851,10 @@ public final class KafkaClientProduceFactory implements StreamFactory
             if (produceAcks == ProduceAck.NONE && length > 0 && encodeableRequestBytes == 0)
             {
                 onDecodeResponse(traceId);
+            }
+            else
+            {
+                stream.doApplicationWindowIfNecessary(traceId, encodeMaxBytes - encodeSlotLimit - encodeableRecordHeadersBytes);
             }
         }
 
