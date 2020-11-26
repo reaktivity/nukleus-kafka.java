@@ -142,6 +142,13 @@ public class KafkaCacheFile implements AutoCloseable
 
     public void writeBytes(
         int position,
+        Flyweight flyweight)
+    {
+        writeBytes(position, flyweight.buffer(), flyweight.offset(), flyweight.sizeof());
+    }
+
+    public void writeBytes(
+        int position,
         DirectBuffer srcBuffer,
         int srcIndex,
         int length)
@@ -161,6 +168,23 @@ public class KafkaCacheFile implements AutoCloseable
         int value)
     {
         mappedBuf.putInt(position, value);
+    }
+
+    public void advance(
+        int position)
+    {
+        assert position >= capacity;
+        int remaining = position - capacity;
+
+        assert remaining <= maxCapacity;
+
+        while (remaining > 0)
+        {
+            final int length = Math.min(remaining, appendBuf.capacity());
+            appendBytes(appendBuf, 0, length);
+            remaining -= length;
+        }
+
     }
 
     public boolean appendBytes(

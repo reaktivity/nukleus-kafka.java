@@ -18,13 +18,13 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import java.util.function.Function;
 import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
+import java.util.function.LongToIntFunction;
 import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
 
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
-import org.reaktivity.nukleus.budget.BudgetCreditor;
 import org.reaktivity.nukleus.buffer.BufferPool;
 import org.reaktivity.nukleus.concurrent.Signaler;
 import org.reaktivity.nukleus.function.MessageConsumer;
@@ -51,8 +51,8 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
     private LongSupplier supplyBudgetId;
     private Supplier<BufferPool> supplyBufferPool;
     private ToIntFunction<String> supplyTypeId;
-    private BudgetCreditor creditor;
     private Signaler signaler;
+    private LongToIntFunction supplyRemoteIndex;
 
     public KafkaCacheServerFactoryBuilder(
         KafkaConfiguration config,
@@ -77,14 +77,6 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
         RouteManager router)
     {
         this.router = router;
-        return this;
-    }
-
-    @Override
-    public KafkaCacheServerFactoryBuilder setBudgetCreditor(
-        BudgetCreditor creditor)
-    {
-        this.creditor = creditor;
         return this;
     }
 
@@ -153,6 +145,14 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
     }
 
     @Override
+    public StreamFactoryBuilder setRemoteIndexSupplier(
+        LongToIntFunction supplyRemoteIndex)
+    {
+        this.supplyRemoteIndex = supplyRemoteIndex;
+        return this;
+    }
+
+    @Override
     public StreamFactory build()
     {
         final BufferPool bufferPool = supplyBufferPool.get();
@@ -162,7 +162,6 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
                 router,
                 writeBuffer,
                 bufferPool,
-                creditor,
                 signaler,
                 supplyInitialId,
                 supplyReplyId,
@@ -171,6 +170,7 @@ public final class KafkaCacheServerFactoryBuilder implements KafkaStreamFactoryB
                 supplyTypeId,
                 supplyCache,
                 supplyCacheRoute,
-                correlations);
+                correlations,
+                supplyRemoteIndex);
     }
 }

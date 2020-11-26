@@ -307,6 +307,12 @@ public final class KafkaCacheCursorFactory
             }
         }
 
+        public void markEntryDirty(
+            KafkaCacheEntryFW entry)
+        {
+            segmentNode.markDirty(entry);
+        }
+
         @Override
         public void close()
         {
