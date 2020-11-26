@@ -504,7 +504,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
         final KafkaKeyFW key = kafkaProduceDataEx.key();
         final Array32FW<KafkaHeaderFW> headers = kafkaProduceDataEx.headers();
         client.encodeableRecordBytesDeferred = kafkaProduceDataEx.deferred();
-        client.valueChecksum = kafkaProduceDataEx.checksum();
+        client.valueChecksum = kafkaProduceDataEx.crc32c();
         final int valueSize = payload != null ? payload.sizeof() : 0;
         client.valueCompleteSize = valueSize + client.encodeableRecordBytesDeferred;
 
