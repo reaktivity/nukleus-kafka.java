@@ -483,6 +483,8 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         {
             members.remove(member);
 
+            member.cursor.close();
+
             if (members.isEmpty())
             {
                 if (reconnectAt != NO_CANCEL_ID)
