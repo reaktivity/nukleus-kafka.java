@@ -20,6 +20,7 @@ import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CA
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntFunction;
 
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
@@ -28,16 +29,20 @@ public final class KafkaCacheTopic
 {
     private final Path location;
     private final String cache;
+    private final long maxProduceCapacity;
+    private final AtomicLong produceCapacity;
     private final String name;
     private final KafkaCacheTopicConfig config;
     private final int appendCapacity;
     private final Map<Integer, KafkaCachePartition> partitionsById;
+    private final Map<Long, KafkaCachePartition> partitionsByIndex;
     private IntFunction<long[]> sortSpaceRef;
 
     public KafkaCacheTopic(
         Path location,
         KafkaConfiguration config,
         String cache,
+        AtomicLong produceCapacity,
         String name,
         IntFunction<long[]> sortSpaceRef)
     {
@@ -45,8 +50,11 @@ public final class KafkaCacheTopic
         this.config = new KafkaCacheTopicConfig(config);
         this.appendCapacity = REAKTOR_BUFFER_SLOT_CAPACITY.get(config);
         this.cache = cache;
+        this.produceCapacity = produceCapacity;
+        this.maxProduceCapacity = config.cacheProduceCapacity();
         this.name = name;
         this.partitionsById = new ConcurrentHashMap<>();
+        this.partitionsByIndex = new ConcurrentHashMap<>();
         this.sortSpaceRef = sortSpaceRef;
     }
 
@@ -65,10 +73,18 @@ public final class KafkaCacheTopic
         return config;
     }
 
-    public KafkaCachePartition supplyPartition(
+    public KafkaCachePartition supplyFetchPartition(
         int id)
     {
-        return partitionsById.computeIfAbsent(id, this::newPartition);
+        return partitionsById.computeIfAbsent(id, this::newFetchPartition);
+    }
+
+    public KafkaCachePartition supplyProducePartition(
+        int id,
+        int index)
+    {
+        final long uniqueId = (((long) id) << Integer.SIZE) | index;
+        return partitionsByIndex.computeIfAbsent(uniqueId, i -> newProducePartition(id, index));
     }
 
     @Override
@@ -77,9 +93,18 @@ public final class KafkaCacheTopic
         return String.format("[%s] %s", cache, name);
     }
 
-    private KafkaCachePartition newPartition(
+    private KafkaCachePartition newFetchPartition(
         int id)
     {
         return new KafkaCachePartition(location, config, cache, name, id, appendCapacity, sortSpaceRef);
     }
+
+    private KafkaCachePartition newProducePartition(
+        int id,
+        int index)
+    {
+        return new KafkaCachePartition(location, config, cache, produceCapacity, maxProduceCapacity, name, id, appendCapacity,
+            sortSpaceRef, index);
+    }
+
 }

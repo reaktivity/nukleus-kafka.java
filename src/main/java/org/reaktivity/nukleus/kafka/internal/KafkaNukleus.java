@@ -48,9 +48,10 @@ public final class KafkaNukleus implements Nukleus
     }
 
     @Override
-    public KafkaElektron supplyElektron()
+    public KafkaElektron supplyElektron(
+        int index)
     {
-        return new KafkaElektron(config, this::supplyCache);
+        return new KafkaElektron(index, config, this::supplyCache);
     }
 
     public KafkaCache supplyCache(
