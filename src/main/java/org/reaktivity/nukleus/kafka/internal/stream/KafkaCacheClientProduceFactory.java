@@ -528,6 +528,8 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             member.markEntriesDirty(traceId);
 
+            member.cursor.close();
+
             if (members.isEmpty())
             {
                 this.groupCleanupId = doClientFanoutInitialSignalAt(currentTimeMillis() + SECONDS.toMillis(cleanupDelay),
