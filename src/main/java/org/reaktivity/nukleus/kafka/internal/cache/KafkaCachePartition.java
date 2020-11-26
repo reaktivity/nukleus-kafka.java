@@ -823,7 +823,7 @@ public final class KafkaCachePartition
                 final KafkaCacheIndexFile hashFile = segment.hashFile();
                 final KafkaCacheFile logFile = segment.logFile();
                 long hashCursor = hashFile.last((int) hash);
-                final int position = cursorValue(hashCursor);
+                int position = cursorValue(hashCursor);
                 while (position != NEXT_SEGMENT_VALUE && position != RETRY_SEGMENT_VALUE)
                 {
                     final KafkaCacheEntryFW cacheEntry = logFile.readBytes(position, ancestorEntry::wrap);
@@ -834,8 +834,8 @@ public final class KafkaCachePartition
                         markDescendantAndDirty(ancestor, descendantOffset);
                         break ancestor;
                     }
-
                     hashCursor = hashFile.lower((int) hash, hashCursor);
+                    position = cursorValue(hashCursor);
                 }
                 assert position == NEXT_SEGMENT_VALUE || position == RETRY_SEGMENT_VALUE;
             }
