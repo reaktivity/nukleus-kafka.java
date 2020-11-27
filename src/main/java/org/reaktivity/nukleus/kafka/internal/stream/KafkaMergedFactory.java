@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.FETCH_ONLY;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.PRODUCE_ONLY;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.HISTORICAL;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.LIVE;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
@@ -2619,9 +2620,10 @@ public final class KafkaMergedFactory implements StreamFactory
             doBegin(receiver, merged.resolvedId, initialId, traceId, merged.authorization, leaderId,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
-                        .produce(p -> p.transaction((String) null) // TODO: default in kafka.idl
+                        .produce(pr -> pr.transaction((String) null) // TODO: default in kafka.idl
                                        .topic(merged.topic)
-                                       .partitionId(partitionId))
+                                       .partition(part -> part.partitionId(partitionId).
+                                           partitionOffset(DEFAULT_LATEST_OFFSET)))
                         .build()
                         .sizeof()));
         }
@@ -2660,9 +2662,10 @@ public final class KafkaMergedFactory implements StreamFactory
                 switch (flags)
                 {
                 case FLAGS_INIT_AND_FIN:
+                case FLAGS_INIT:
                     newKafkaDataEx = kafkaDataExRW.wrap(extBuffer, 0, extBuffer.capacity())
                             .typeId(kafkaTypeId)
-                            .produce(p -> p.deferred(deferred)
+                            .produce(pr -> pr.deferred(deferred)
                                            .timestamp(timestamp)
                                            .sequence(sequence)
                                            .key(k -> k.length(key.length())
@@ -2673,20 +2676,10 @@ public final class KafkaMergedFactory implements StreamFactory
                                                                                              .value(h.value())))))
                             .build();
                     break;
-                case FLAGS_INIT:
-                    newKafkaDataEx = kafkaDataExRW.wrap(extBuffer, 0, extBuffer.capacity())
-                            .typeId(kafkaTypeId)
-                            .produce(p -> p.deferred(deferred)
-                                           .timestamp(timestamp)
-                                           .sequence(sequence)
-                                           .key(k -> k.length(key.length())
-                                                      .value(key.value())))
-                            .build();
-                    break;
                 case FLAGS_FIN:
                     newKafkaDataEx = kafkaDataExRW.wrap(extBuffer, 0, extBuffer.capacity())
                             .typeId(kafkaTypeId)
-                            .produce(p -> p.headers(hs -> headers.forEach(h -> hs.item(i -> i.nameLen(h.nameLen())
+                            .produce(pr -> pr.headers(hs -> headers.forEach(h -> hs.item(i -> i.nameLen(h.nameLen())
                                                                                              .name(h.name())
                                                                                              .valueLen(h.valueLen())
                                                                                              .value(h.value())))))

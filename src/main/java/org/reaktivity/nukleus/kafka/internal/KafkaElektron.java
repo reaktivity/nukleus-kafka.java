@@ -44,6 +44,7 @@ final class KafkaElektron implements Elektron
     private final Map<RouteKind, AddressFactoryBuilder> addressFactoryBuilders;
 
     KafkaElektron(
+        int index,
         KafkaConfiguration config,
         Function<String, KafkaCache> supplyCache)
     {
@@ -52,8 +53,10 @@ final class KafkaElektron implements Elektron
 
         Map<RouteKind, KafkaStreamFactoryBuilder> streamFactoryBuilders = new EnumMap<>(RouteKind.class);
         streamFactoryBuilders.put(CLIENT, new KafkaClientFactoryBuilder(config, this::supplyClientRoute));
-        streamFactoryBuilders.put(CACHE_SERVER, new KafkaCacheServerFactoryBuilder(config, supplyCache, this::supplyCacheRoute));
-        streamFactoryBuilders.put(CACHE_CLIENT, new KafkaCacheClientFactoryBuilder(config, supplyCache, this::supplyCacheRoute));
+        streamFactoryBuilders.put(CACHE_SERVER, new KafkaCacheServerFactoryBuilder(config, supplyCache,
+            this::supplyCacheRoute));
+        streamFactoryBuilders.put(CACHE_CLIENT, new KafkaCacheClientFactoryBuilder(config, supplyCache,
+            this::supplyCacheRoute, index));
         this.streamFactoryBuilders = streamFactoryBuilders;
 
         Map<RouteKind, AddressFactoryBuilder> addressFactoryBuilders = new EnumMap<>(RouteKind.class);
