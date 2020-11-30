@@ -1277,8 +1277,6 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             state = KafkaState.closedReply(state);
             onClientReplyClosed(traceId);
 
-            group.onClientFanoutMemberClosed(traceId, this);
-
             doClientInitialResetIfNecessary(traceId, EMPTY_OCTETS);
         }
 
