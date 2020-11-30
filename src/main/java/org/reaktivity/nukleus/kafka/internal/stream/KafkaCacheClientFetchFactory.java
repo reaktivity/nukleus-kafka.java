@@ -231,7 +231,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     routeEx.defaultOffset().get().value() : DEFAULT_DEFAULT_OFFSET.value();
                 final KafkaCache cache = supplyCache.apply(cacheName);
                 final KafkaCacheTopic topic = cache.supplyTopic(topicName);
-                final KafkaCachePartition partition = topic.supplyPartition(partitionId);
+                final KafkaCachePartition partition = topic.supplyFetchPartition(partitionId);
                 final KafkaCacheClientFetchFanout newFanout =
                         new KafkaCacheClientFetchFanout(
                             resolvedId,

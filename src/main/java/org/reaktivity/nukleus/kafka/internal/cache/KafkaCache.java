@@ -18,12 +18,15 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.agrona.BitUtil;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 
 public final class KafkaCache
 {
+    private final AtomicLong produceCapacity = new AtomicLong(0L);
+
     private static final long[] EMPTY_SORT_SPACE = new long[0];
 
     private final KafkaConfiguration config;
@@ -41,6 +44,11 @@ public final class KafkaCache
         this.location = config.cacheDirectory().resolve(name);
         this.topicsByName = new ConcurrentHashMap<>();
         this.sortSpaceRef = ThreadLocal.withInitial(() -> EMPTY_SORT_SPACE);
+    }
+
+    public boolean hasAvailableProduceCapacity()
+    {
+        return produceCapacity.longValue() < config.cacheProduceCapacity();
     }
 
     public String name()
@@ -63,7 +71,7 @@ public final class KafkaCache
     private KafkaCacheTopic newTopic(
         String topic)
     {
-        return new KafkaCacheTopic(location, config, name, topic, this::supplySortSpace);
+        return new KafkaCacheTopic(location, config, name, produceCapacity, topic, this::supplySortSpace);
     }
 
     private long[] supplySortSpace(

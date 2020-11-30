@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.cache;
 import static org.junit.Assert.assertEquals;
 
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.Test;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
@@ -29,10 +30,10 @@ public class KafkaCacheTopicTest
     {
         KafkaConfiguration config = new KafkaConfiguration();
         Path location = config.cacheDirectory().resolve("cache");
-        KafkaCacheTopic topic = new KafkaCacheTopic(location, config, "cache", "test", long[]::new);
+        KafkaCacheTopic topic = new KafkaCacheTopic(location, config, "cache", new AtomicLong(0L), "test", long[]::new);
 
-        KafkaCachePartition partitionA = topic.supplyPartition(0);
-        KafkaCachePartition partitionB = topic.supplyPartition(0);
+        KafkaCachePartition partitionA = topic.supplyFetchPartition(0);
+        KafkaCachePartition partitionB = topic.supplyFetchPartition(0);
 
         assert partitionA == partitionB;
     }
@@ -43,7 +44,7 @@ public class KafkaCacheTopicTest
         KafkaConfiguration config = new KafkaConfiguration();
         Path location = config.cacheDirectory().resolve("cache");
 
-        KafkaCacheTopic topic = new KafkaCacheTopic(location, config, "cache", "test", long[]::new);
+        KafkaCacheTopic topic = new KafkaCacheTopic(location, config, "cache", new AtomicLong(0L), "test", long[]::new);
 
         assertEquals("cache", topic.cache());
         assertEquals("test", topic.name());

@@ -21,9 +21,11 @@ scope internal
         {
           int64 offset;
           int64 timestamp;
+          int64 ownerId;
+          int32 sequence = -1;
           int64 ancestor;
           int64 descendant;
-          int32 flags = 0;  // 0x01 = DIRTY
+          int32 flags = 0;  // 0x01 = DIRTY, 0x02 = COMPLETED
           int32 deltaPosition = -1;
           kafka::KafkaKey key;
           int32 valueLen;
