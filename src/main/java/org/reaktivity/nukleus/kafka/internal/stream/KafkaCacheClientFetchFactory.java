@@ -24,7 +24,6 @@ import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -637,13 +636,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             final long traceId = end.traceId();
 
-            Iterator membersIterator = members.iterator();
-            while (membersIterator.hasNext())
-            {
-                final KafkaCacheClientFetchStream member = (KafkaCacheClientFetchStream) membersIterator.next();
-                membersIterator.remove();
-                member.doClientReplyEndIfNecessary(traceId);
-            }
+            members.forEach(s -> s.doClientReplyEndIfNecessary(traceId));
 
             state = KafkaState.closedReply(state);
         }
@@ -653,13 +646,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             final long traceId = abort.traceId();
 
-            Iterator membersIterator = members.iterator();
-            while (membersIterator.hasNext())
-            {
-                final KafkaCacheClientFetchStream member = (KafkaCacheClientFetchStream) membersIterator.next();
-                membersIterator.remove();
-                member.doClientReplyAbortIfNecessary(traceId);
-            }
+            members.forEach(s -> s.doClientReplyAbortIfNecessary(traceId));
 
             state = KafkaState.closedReply(state);
         }
@@ -671,14 +658,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final OctetsFW extension = reset.extension();
 
             members.forEach(s -> s.doClientInitialResetIfNecessary(traceId, extension));
-
-            Iterator membersIterator = members.iterator();
-            while (membersIterator.hasNext())
-            {
-                final KafkaCacheClientFetchStream member = (KafkaCacheClientFetchStream) membersIterator.next();
-                membersIterator.remove();
-                member.doClientReplyAbortIfNecessary(traceId);
-            }
+            members.forEach(s -> s.doClientReplyAbortIfNecessary(traceId));
 
             state = KafkaState.closedInitial(state);
 
