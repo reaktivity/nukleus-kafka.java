@@ -636,8 +636,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             final long traceId = end.traceId();
 
-            members.forEach(s -> s.doClientInitialResetIfNecessary(traceId, EMPTY_OCTETS));
             members.forEach(s -> s.doClientReplyEndIfNecessary(traceId));
+            members.forEach(s -> s.doClientInitialResetIfNecessary(traceId, EMPTY_OCTETS));
             members.clear();
 
             state = KafkaState.closedReply(state);
@@ -650,8 +650,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             final long traceId = abort.traceId();
 
-            members.forEach(s -> s.doClientInitialResetIfNecessary(traceId, EMPTY_OCTETS));
             members.forEach(s -> s.doClientReplyAbortIfNecessary(traceId));
+            members.forEach(s -> s.doClientInitialResetIfNecessary(traceId, EMPTY_OCTETS));
             members.clear();
 
             state = KafkaState.closedReply(state);
