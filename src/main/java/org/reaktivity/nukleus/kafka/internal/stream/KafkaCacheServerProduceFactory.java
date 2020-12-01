@@ -759,7 +759,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
             state = KafkaState.openedReply(state);
 
-            assert partitionId == partitionId;
+            assert partitionId == this.partitionId;
 
             members.forEach(s -> s.doServerReplyBeginIfNecessary(traceId));
 
