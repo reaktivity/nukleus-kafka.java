@@ -636,9 +636,13 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             final long traceId = end.traceId();
 
+            members.forEach(s -> s.doClientInitialResetIfNecessary(traceId, EMPTY_OCTETS));
             members.forEach(s -> s.doClientReplyEndIfNecessary(traceId));
+            members.clear();
 
             state = KafkaState.closedReply(state);
+
+            doClientFanoutReplyEndIfNecessary(traceId);
         }
 
         private void onClientFanoutReplyAbort(
@@ -646,9 +650,13 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             final long traceId = abort.traceId();
 
+            members.forEach(s -> s.doClientInitialResetIfNecessary(traceId, EMPTY_OCTETS));
             members.forEach(s -> s.doClientReplyAbortIfNecessary(traceId));
+            members.clear();
 
             state = KafkaState.closedReply(state);
+
+            doClientFanoutReplyResetIfNecessary(traceId);
         }
 
         private void onClientFanoutInitialReset(
@@ -659,10 +667,28 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
             members.forEach(s -> s.doClientInitialResetIfNecessary(traceId, extension));
             members.forEach(s -> s.doClientReplyAbortIfNecessary(traceId));
+            members.clear();
 
             state = KafkaState.closedInitial(state);
 
             doClientFanoutReplyResetIfNecessary(traceId);
+        }
+
+        private void doClientFanoutReplyEndIfNecessary(
+            long traceId)
+        {
+            if (!KafkaState.initialClosed(state))
+            {
+                doClientFanoutReplyReset(traceId);
+            }
+        }
+
+        private void doClientFanoutReplyEnd(
+            long traceId)
+        {
+            state = KafkaState.closedInitial(state);
+
+            doReset(receiver, routeId, replyId, traceId, authorization, EMPTY_OCTETS);
         }
 
         private void onClientFanoutInitialWindow(
@@ -1291,8 +1317,6 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
 
             cursor.close();
-
-            group.onClientFanoutMemberClosed(traceId, this);
         }
 
         private void cleanupClient(
