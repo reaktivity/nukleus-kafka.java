@@ -642,7 +642,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
-            doClientFanoutReplyEndIfNecessary(traceId);
+            doClientFanoutInitialEndIfNecessary(traceId);
         }
 
         private void onClientFanoutReplyAbort(
@@ -656,7 +656,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
-            doClientFanoutReplyResetIfNecessary(traceId);
+            doClientFanoutInitialAbortIfNecessary(traceId);
         }
 
         private void onClientFanoutInitialReset(
@@ -674,21 +674,21 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             doClientFanoutReplyResetIfNecessary(traceId);
         }
 
-        private void doClientFanoutReplyEndIfNecessary(
+        private void doClientFanoutInitialEndIfNecessary(
             long traceId)
         {
             if (!KafkaState.initialClosed(state))
             {
-                doClientFanoutReplyReset(traceId);
+                doClientFanoutInitialEnd(traceId);
             }
         }
 
-        private void doClientFanoutReplyEnd(
+        private void doClientFanoutInitialEnd(
             long traceId)
         {
             state = KafkaState.closedInitial(state);
 
-            doReset(receiver, routeId, replyId, traceId, authorization, EMPTY_OCTETS);
+            doEnd(receiver, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
         }
 
         private void onClientFanoutInitialWindow(
