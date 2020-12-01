@@ -6,7 +6,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.reaktivity</groupId>
   <artifactId>nukleus-kafka</artifactId>
-  <version>0.279</version>
+  <version>0.280</version>
   <name>Kafka Nukleus Implementation</name>
   <description>Kafka Nukleus Implementation</description>
   <url>https://github.com/reaktivity/nukleus-kafka.java</url>
@@ -54,7 +54,7 @@
 
     <nukleus.plugin.version>0.72</nukleus.plugin.version>
 
-    <nukleus.kafka.spec.version>0.163</nukleus.kafka.spec.version>
+    <nukleus.kafka.spec.version>0.164</nukleus.kafka.spec.version>
     <reaktor.version>0.151</reaktor.version>
 
 
