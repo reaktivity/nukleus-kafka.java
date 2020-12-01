@@ -42,6 +42,7 @@ public class KafkaConfiguration extends Configuration
     public static final IntPropertyDef KAFKA_CLIENT_PRODUCE_MAX_BYTES;
     public static final ShortPropertyDef KAFKA_CLIENT_PRODUCE_ACKS;
     public static final PropertyDef<Path> KAFKA_CACHE_DIRECTORY;
+    public static final LongPropertyDef KAFKA_CACHE_PRODUCE_CAPACITY;
     public static final PropertyDef<KafkaCacheCleanupPolicy> KAFKA_CACHE_CLEANUP_POLICY;
     public static final IntPropertyDef KAFKA_CACHE_MAX_MESSAGE_BYTES;
     public static final LongPropertyDef KAFKA_CACHE_RETENTION_MILLIS;
@@ -55,6 +56,7 @@ public class KafkaConfiguration extends Configuration
     public static final IntPropertyDef KAFKA_CACHE_SEGMENT_INDEX_BYTES;
     public static final BooleanPropertyDef KAFKA_CACHE_SERVER_BOOTSTRAP;
     public static final IntPropertyDef KAFKA_CACHE_CLIENT_RECONNECT_DELAY;
+    public static final IntPropertyDef KAFKA_CACHE_CLIENT_CLEANUP_DELAY;
     public static final IntPropertyDef KAFKA_CACHE_SERVER_RECONNECT_DELAY;
 
     private static final ConfigurationDef KAFKA_CONFIG;
@@ -65,7 +67,7 @@ public class KafkaConfiguration extends Configuration
         KAFKA_CLIENT_MAX_IDLE_MILLIS = config.property("client.max.idle.ms", 1 * 60 * 1000);
         KAFKA_CLIENT_META_MAX_AGE_MILLIS = config.property("client.meta.max.age.ms", 5 * 60 * 1000);
         KAFKA_CLIENT_DESCRIBE_MAX_AGE_MILLIS = config.property("client.describe.max.age.ms", 5 * 60 * 1000);
-        KAFKA_CLIENT_FETCH_MAX_WAIT_MILLIS = config.property("client.fetch.max.wait.millis", 500);
+        KAFKA_CLIENT_FETCH_MAX_WAIT_MILLIS = config.property("client.fetch.max.wait.millis", 1 * 60 * 1000);
         KAFKA_CLIENT_FETCH_MAX_BYTES = config.property("client.fetch.max.bytes", 50 * 1024 * 1024);
         KAFKA_CLIENT_FETCH_PARTITION_MAX_BYTES = config.property("client.fetch.partition.max.bytes", 50 * 1024 * 1024);
         KAFKA_CLIENT_PRODUCE_MAX_REQUEST_MILLIS = config.property("client.produce.max.request.millis", 0);
@@ -75,8 +77,10 @@ public class KafkaConfiguration extends Configuration
         KAFKA_CACHE_DIRECTORY = config.property(Path.class, "cache.directory",
             KafkaConfiguration::cacheDirectory, KafkaNukleus.NAME);
         KAFKA_CACHE_SERVER_BOOTSTRAP = config.property("cache.server.bootstrap", true);
+        KAFKA_CACHE_PRODUCE_CAPACITY = config.property("cache.produce.capacity", Long.MAX_VALUE);
         KAFKA_CACHE_SERVER_RECONNECT_DELAY = config.property("cache.server.reconnect", 5);
         KAFKA_CACHE_CLIENT_RECONNECT_DELAY = config.property("cache.client.reconnect", 0);
+        KAFKA_CACHE_CLIENT_CLEANUP_DELAY = config.property("cache.client.cleanup.delay", 30);
         KAFKA_CACHE_CLEANUP_POLICY = config.property(KafkaCacheCleanupPolicy.class, "cache.cleanup.policy",
                 KafkaConfiguration::cleanupPolicy, "delete");
         KAFKA_CACHE_MAX_MESSAGE_BYTES = config.property("cache.max.message.bytes", 1000012);
@@ -158,6 +162,11 @@ public class KafkaConfiguration extends Configuration
         return KAFKA_CACHE_DIRECTORY.get(this);
     }
 
+    public long cacheProduceCapacity()
+    {
+        return KAFKA_CACHE_PRODUCE_CAPACITY.get(this);
+    }
+
     public KafkaCacheCleanupPolicy cacheCleanupPolicy()
     {
         return KAFKA_CACHE_CLEANUP_POLICY.get(this);
@@ -221,6 +230,10 @@ public class KafkaConfiguration extends Configuration
     public int cacheClientReconnect()
     {
         return KAFKA_CACHE_CLIENT_RECONNECT_DELAY.getAsInt(this);
+    }
+    public int cacheClientCleanupDelay()
+    {
+        return KAFKA_CACHE_CLIENT_CLEANUP_DELAY.getAsInt(this);
     }
 
     public int cacheServerReconnect()

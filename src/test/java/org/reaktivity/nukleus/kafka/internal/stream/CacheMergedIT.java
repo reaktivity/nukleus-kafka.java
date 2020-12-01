@@ -79,6 +79,42 @@ public class CacheMergedIT
     @Test
     @Specification({
         "${route}/cache.merged/controller",
+        "${client}/merged.fetch.filter.not.key/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedMessagesWithNotKeyFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("requires k3po parallel reads")
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
+        "${client}/merged.fetch.filter.not.header/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedMessagesWithNotHeaderFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("requires k3po parallel reads")
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
+        "${client}/merged.fetch.filter.key.and.not.header/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedMessagesWithKeyAndNotHeaderFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("requires k3po parallel reads")
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
         "${client}/merged.fetch.filter.header.and.header/client",
         "${server}/unmerged.fetch.filter.none/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
@@ -132,36 +168,6 @@ public class CacheMergedIT
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     public void shouldFetchMergedMessagesWithKeyOrHeaderFilter() throws Exception
     {
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/cache.merged/controller",
-        "${client}/merged.fetch.filter.age.live/client",
-        "${server}/unmerged.fetch.filter.none/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
-    public void shouldFetchMergedMessagesWithLiveAgeFilter() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("FILTERED_MESSAGE_B2");
-        k3po.notifyBarrier("SEND_MESSAGE_A3");
-        k3po.notifyBarrier("SEND_MESSAGE_B3");
-        k3po.finish();
-    }
-
-    @Test
-    @Specification({
-        "${route}/cache.merged/controller",
-        "${client}/merged.fetch.filter.age.historical/client",
-        "${server}/unmerged.fetch.filter.none/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
-    public void shouldFetchMergedMessagesWithHistoricalAgeFilter() throws Exception
-    {
-        k3po.start();
-        k3po.awaitBarrier("RECEIVED_MESSAGE_B2");
-        k3po.notifyBarrier("SEND_MESSAGE_A3");
-        k3po.notifyBarrier("SEND_MESSAGE_B3");
         k3po.finish();
     }
 
@@ -318,7 +324,7 @@ public class CacheMergedIT
     @Test
     @Specification({
         "${route}/cache.merged/controller",
-        "${client}/merged.fetch.server.sent.close.with.message/client",
+        "${client}/merged.fetch.server.sent.abort.with.message/client",
         "${server}/unmerged.fetch.server.sent.abort.with.message/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     @Configure(name = KAFKA_CACHE_SERVER_RECONNECT_DELAY_NAME, value = "0")
@@ -345,7 +351,7 @@ public class CacheMergedIT
     @Test
     @Specification({
         "${route}/cache.merged/controller",
-        "${client}/merged.fetch.server.sent.close.with.message/client",
+        "${client}/merged.fetch.server.sent.abort.with.message/client",
         "${server}/unmerged.fetch.server.sent.reset.and.abort.with.message/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
     @Configure(name = KAFKA_CACHE_SERVER_RECONNECT_DELAY_NAME, value = "0")
@@ -354,6 +360,90 @@ public class CacheMergedIT
         k3po.start();
         k3po.awaitBarrier("RECEIVED_MESSAGE");
         k3po.notifyBarrier("RESET_UNMERGED_FETCH_INITIAL");
+        k3po.finish();
+    }
+
+    @Ignore("requires k3po parallel reads")
+    @Test
+    @Specification({
+        "${route}/cache/controller",
+        "${client}/merged.fetch.filter.headers.one/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithHeadersOneFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("requires k3po parallel reads")
+    @Test
+    @Specification({
+        "${route}/cache/controller",
+        "${client}/merged.fetch.filter.headers.one.empty/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithHeadersOneEmptyFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("requires k3po parallel reads")
+    @Test
+    @Specification({
+        "${route}/cache/controller",
+        "${client}/merged.fetch.filter.headers.many/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithHeadersManyFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("requires k3po parallel reads")
+    @Test
+    @Specification({
+        "${route}/cache/controller",
+        "${client}/merged.fetch.filter.headers.many.empty/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithHeadersManyEmptyFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("requires k3po parallel reads")
+    @Test
+    @Specification({
+        "${route}/cache/controller",
+        "${client}/merged.fetch.filter.headers.skip.one/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithHeadersSkipOneFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("requires k3po parallel reads")
+    @Test
+    @Specification({
+        "${route}/cache/controller",
+        "${client}/merged.fetch.filter.headers.skip.two/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithHeadersSkipTwoFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("requires k3po parallel reads")
+    @Test
+    @Specification({
+        "${route}/cache/controller",
+        "${client}/merged.fetch.filter.headers.skip.many/client",
+        "${server}/unmerged.fetch.filter.none/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithHeadersSkipManyFilter() throws Exception
+    {
         k3po.finish();
     }
 }

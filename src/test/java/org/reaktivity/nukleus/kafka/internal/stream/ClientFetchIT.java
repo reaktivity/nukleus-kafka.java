@@ -424,10 +424,118 @@ public class ClientFetchIT
     @Test
     @Specification({
         "${route}/client/controller",
-        "${client}/fetch.filter.age.live/client",
-        "${server}/fetch.filter.age.live/server"})
+        "${client}/filter.not.header/client",
+        "${server}/filter.not.header/server"})
     @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
-    public void shouldReceiveMessagesWithAgeFilter() throws Exception
+    public void shouldReceiveMessagesWithNotHeaderFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("TODO")
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/filter.not.key/client",
+        "${server}/filter.not.key/server"})
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithNotKeyFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("TODO")
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/filter.key.and.not.header/client",
+        "${server}/filter.key.and.not.header/server"})
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithKeyAndNotHeaderFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("TODO")
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/filter.headers.one/client",
+        "${server}/filter.headers.one/server"})
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithHeadersOneFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("TODO")
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/filter.headers.one.empty/client",
+        "${server}/filter.headers.one.empty/server"})
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithHeadersOneEmptyFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("TODO")
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/filter.headers.many/client",
+        "${server}/filter.headers.many/server"})
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithHeadersManyFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("TODO")
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/filter.headers.many.empty/client",
+        "${server}/filter.headers.many.empty/server"})
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithHeadersManyEmptyFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("TODO")
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/filter.headers.skip.one/client",
+        "${server}/filter.headers.skip.one/server"})
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithHeadersSkipOneFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("TODO")
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/filter.headers.skip.two/client",
+        "${server}/filter.headers.skip.two/server"})
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithHeadersSkipTwoFilter() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Ignore("TODO")
+    @Test
+    @Specification({
+        "${route}/client/controller",
+        "${client}/filter.headers.skip.many/client",
+        "${server}/filter.headers.skip.many/server"})
+    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+    public void shouldReceiveMessagesWithHeadersSkipManyFilter() throws Exception
     {
         k3po.finish();
     }

@@ -100,8 +100,8 @@ public final class KafkaClientFetchFactory implements StreamFactory
     private static final int FLAG_FIN = 0x01;
     private static final int FLAG_INIT = 0x02;
 
-    private static final long OFFSET_LATEST = KafkaOffsetType.LATEST.value();
-    private static final long OFFSET_EARLIEST = KafkaOffsetType.EARLIEST.value();
+    private static final long OFFSET_LIVE = KafkaOffsetType.LIVE.value();
+    private static final long OFFSET_HISTORICAL = KafkaOffsetType.HISTORICAL.value();
 
     private static final int SIGNAL_NEXT_REQUEST = 1;
 
@@ -1670,14 +1670,14 @@ public final class KafkaClientFetchFactory implements StreamFactory
             final long traceId = begin.traceId();
             final long authorization = begin.authorization();
 
+            state = KafkaState.openingInitial(state);
+
             if (clientRoute.partitions.get(client.partitionId) != leaderId)
             {
                 cleanupApplication(traceId, ERROR_NOT_LEADER_FOR_PARTITION);
             }
             else
             {
-                state = KafkaState.openingInitial(state);
-
                 client.doNetworkBegin(traceId, authorization, leaderId);
             }
         }
@@ -1853,7 +1853,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
             long traceId,
             Flyweight extension)
         {
-            if (KafkaState.initialOpening(state) && !KafkaState.initialClosed(state))
+            if (!KafkaState.initialClosed(state))
             {
                 doApplicationReset(traceId, extension);
             }
@@ -2156,7 +2156,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 state = KafkaState.openingInitial(state);
                 correlations.put(replyId, this::onNetwork);
 
-                if (nextOffset == OFFSET_LATEST || nextOffset == OFFSET_EARLIEST)
+                if (nextOffset == OFFSET_LIVE || nextOffset == OFFSET_HISTORICAL)
                 {
                     client.encoder = client.encodeOffsetsRequest;
                     client.decoder = decodeOffsetsResponse;
@@ -2565,7 +2565,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 case ERROR_OFFSET_OUT_OF_RANGE:
                     assert partitionId == this.partitionId;
                     // TODO: recover at EARLIEST or LATEST ?
-                    nextOffset = OFFSET_EARLIEST;
+                    nextOffset = OFFSET_HISTORICAL;
                     client.encoder = client.encodeOffsetsRequest;
                     client.decoder = decodeOffsetsResponse;
                     doEncodeRequestIfNecessary(traceId, initialBudgetId);

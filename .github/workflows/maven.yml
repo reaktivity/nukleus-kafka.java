@@ -1,0 +1,55 @@
+name: Java CI with Maven
+
+on:
+  push:
+    branches: [ develop ]
+  pull_request:
+    branches: [ develop ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java: [ 9, 11, 14 ]
+
+    steps:
+    - name: Checkout GitHub sources
+      uses: actions/checkout@v2
+    - name: Setup JDK ${{ matrix.java }}
+      uses: actions/setup-java@v1
+      with:
+        java-version: ${{ matrix.java }}
+    - name: Cache Maven packages
+      uses: actions/cache@v2
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+    - name: Build with Maven
+      run: ./mvnw -B -nsu verify jacoco:report
+    - name: Notify via Slack
+      uses: 8398a7/action-slack@v3
+      with:
+        status: custom
+        job_name: Build
+        fields: job,repo,author,took
+        custom_payload: |
+          {
+            attachments: [{
+              color: '${{ job.status }}' === 'success' ? 'good' : '${{ job.status }}' === 'failure' ? 'danger' : 'warning',
+              text: `${process.env.AS_JOB} of ${process.env.AS_REPO} by ${process.env.AS_AUTHOR.replace(/\<.*\>/, '')} completed in ${process.env.AS_TOOK}`,
+            }]
+          }
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        MATRIX_CONTEXT: ${{ toJson(matrix) }}
+      if: ${{ env.SLACK_WEBHOOK_URL != null }}
+    - name: Upload to Codecov
+      uses: codecov/codecov-action@v1
+      with:
+        file: ./target/site/jacoco/jacoco.xml
+      if: ${{ github.event_name != 'pull_request' }}

@@ -18,6 +18,8 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_BUDGET_ID;
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.HISTORICAL;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.LIVE;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DEFAULT_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 
@@ -88,8 +90,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
     private static final int ERROR_NOT_LEADER_FOR_PARTITION = 6;
 
-    private static final long OFFSET_LATEST = KafkaOffsetType.LATEST.value();
-    private static final long OFFSET_EARLIEST = KafkaOffsetType.EARLIEST.value();
+    private static final long OFFSET_LIVE = LIVE.value();
+    private static final long OFFSET_HISTORICAL = HISTORICAL.value();
 
     private static final int FLAG_FIN = 0x01;
     private static final int FLAG_INIT = 0x02;
@@ -229,7 +231,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     routeEx.defaultOffset().get().value() : DEFAULT_DEFAULT_OFFSET.value();
                 final KafkaCache cache = supplyCache.apply(cacheName);
                 final KafkaCacheTopic topic = cache.supplyTopic(topicName);
-                final KafkaCachePartition partition = topic.supplyPartition(partitionId);
+                final KafkaCachePartition partition = topic.supplyFetchPartition(partitionId);
                 final KafkaCacheClientFetchFanout newFanout =
                         new KafkaCacheClientFetchFanout(
                             resolvedId,
@@ -243,6 +245,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
 
             final KafkaFilterCondition condition = cursorFactory.asCondition(filters);
+            final long latestOffset = kafkaFetchBeginEx.partition().latestOffset();
+            final KafkaOffsetType maximumOffset = KafkaOffsetType.valueOf((byte) latestOffset);
             final int leaderId = cacheRoute.leadersByPartitionId.get(partitionId);
 
             newStream = new KafkaCacheClientFetchStream(
@@ -254,6 +258,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     authorization,
                     partitionOffset,
                     condition,
+                    maximumOffset,
                     deltaType)::onClientMessage;
         }
 
@@ -511,7 +516,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void doClientFanoutInitialAbortIfNecessary(
             long traceId)
         {
-            if (KafkaState.initialOpened(state) && !KafkaState.initialClosed(state))
+            if (KafkaState.initialOpening(state) && !KafkaState.initialClosed(state))
             {
                 doClientFanoutInitialAbort(traceId);
             }
@@ -594,7 +599,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             state = KafkaState.openedReply(state);
 
             assert partitionId == this.partition.id();
-                assert partitionOffset >= 0 && partitionOffset >= this.partitionOffset;
+            assert partitionOffset >= 0 && partitionOffset >= this.partitionOffset;
             this.partitionOffset = partitionOffset;
             this.latestOffset = partition.latestOffset();
 
@@ -632,8 +637,12 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final long traceId = end.traceId();
 
             members.forEach(s -> s.doClientReplyEndIfNecessary(traceId));
+            members.forEach(s -> s.doClientInitialResetIfNecessary(traceId, EMPTY_OCTETS));
+            members.clear();
 
             state = KafkaState.closedReply(state);
+
+            doClientFanoutInitialEndIfNecessary(traceId);
         }
 
         private void onClientFanoutReplyAbort(
@@ -642,8 +651,12 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final long traceId = abort.traceId();
 
             members.forEach(s -> s.doClientReplyAbortIfNecessary(traceId));
+            members.forEach(s -> s.doClientInitialResetIfNecessary(traceId, EMPTY_OCTETS));
+            members.clear();
 
             state = KafkaState.closedReply(state);
+
+            doClientFanoutInitialAbortIfNecessary(traceId);
         }
 
         private void onClientFanoutInitialReset(
@@ -653,10 +666,29 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final OctetsFW extension = reset.extension();
 
             members.forEach(s -> s.doClientInitialResetIfNecessary(traceId, extension));
+            members.forEach(s -> s.doClientReplyAbortIfNecessary(traceId));
+            members.clear();
 
             state = KafkaState.closedInitial(state);
 
             doClientFanoutReplyResetIfNecessary(traceId);
+        }
+
+        private void doClientFanoutInitialEndIfNecessary(
+            long traceId)
+        {
+            if (!KafkaState.initialClosed(state))
+            {
+                doClientFanoutInitialEnd(traceId);
+            }
+        }
+
+        private void doClientFanoutInitialEnd(
+            long traceId)
+        {
+            state = KafkaState.closedInitial(state);
+
+            doEnd(receiver, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
         }
 
         private void onClientFanoutInitialWindow(
@@ -712,6 +744,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private final long authorization;
         private final KafkaCacheCursor cursor;
         private final KafkaDeltaType deltaType;
+        private final KafkaOffsetType maximumOffset;
 
         private int state;
 
@@ -723,7 +756,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private int replyPadding;
         private int replyMinimum;
 
-        private long partitionOffset;
+        private long initialOffset;
         private int messageOffset;
         private long initialGroupPartitionOffset;
         private long initialGroupLatestOffset;
@@ -735,8 +768,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             long initialId,
             long leaderId,
             long authorization,
-            long partitionOffset,
+            long initialOffset,
             KafkaFilterCondition condition,
+            KafkaOffsetType maximumOffset,
             KafkaDeltaType deltaType)
         {
             this.group = group;
@@ -746,8 +780,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.replyId = supplyReplyId.applyAsLong(initialId);
             this.leaderId = leaderId;
             this.authorization = authorization;
-            this.partitionOffset = partitionOffset;
+            this.initialOffset = initialOffset;
             this.cursor = cursorFactory.newCursor(condition, deltaType);
+            this.maximumOffset = maximumOffset;
             this.deltaType = deltaType;
         }
 
@@ -889,24 +924,24 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             this.initialGroupPartitionOffset = group.partitionOffset;
             this.initialGroupLatestOffset = group.latestOffset;
 
-            if (partitionOffset == OFFSET_LATEST)
+            if (initialOffset == OFFSET_LIVE)
             {
-                this.partitionOffset = group.partitionOffset;
+                this.initialOffset = group.latestOffset + 1;
             }
-            else if (partitionOffset == OFFSET_EARLIEST)
+            else if (initialOffset == OFFSET_HISTORICAL)
             {
                 final Node segmentNode = group.partition.seekNotBefore(0L);
                 assert !segmentNode.sentinel();
-                this.partitionOffset = segmentNode.segment().baseOffset();
+                this.initialOffset = segmentNode.segment().baseOffset();
             }
-            assert partitionOffset >= 0;
+            assert initialOffset >= 0;
 
-            Node segmentNode = group.partition.seekNotAfter(partitionOffset);
+            Node segmentNode = group.partition.seekNotAfter(initialOffset);
             if (segmentNode.sentinel())
             {
                 segmentNode = segmentNode.next();
             }
-            cursor.init(segmentNode, partitionOffset, initialGroupLatestOffset);
+            cursor.init(segmentNode, initialOffset, initialGroupLatestOffset);
 
             router.setThrottle(replyId, this::onClientMessage);
             doBegin(sender, routeId, replyId, traceId, authorization, leaderId,
@@ -914,7 +949,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(group.partition.topic())
                                      .partition(p -> p.partitionId(group.partition.id())
-                                                      .partitionOffset(partitionOffset)
+                                                      .partitionOffset(cursor.offset)
                                                       .latestOffset(initialGroupLatestOffset))
                                      .deltaType(t -> t.set(deltaType)))
                         .build()
@@ -924,30 +959,32 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         private void doClientReplyDataIfNecessary(
             long traceId)
         {
-            assert !KafkaState.replyClosing(state) :
+            assert !KafkaState.closing(state) :
                 String.format("!replyClosing(%08x) [%016x] [%016x] [%016x] %s",
                         state, replyBudgetId, replyId, replyDebitorIndex, replyDebitor);
 
             while (KafkaState.replyOpened(state) &&
+                !KafkaState.replyClosing(state) &&
                 replyBudget >= replyPadding &&
-                partitionOffset <= group.partitionOffset)
+                cursor.offset <= group.partitionOffset)
             {
                 final KafkaCacheEntryFW nextEntry = cursor.next(entryRO);
 
                 if (nextEntry == null || nextEntry.offset$() > group.latestOffset)
                 {
+                    if (maximumOffset == HISTORICAL)
+                    {
+                        cursor.advance(group.partitionOffset + 1);
+                    }
                     break;
                 }
 
                 final long descendantOffset = nextEntry.descendant();
                 if (descendantOffset != -1L && descendantOffset <= initialGroupPartitionOffset)
                 {
-                    final long nextPartitionOffset = partitionOffset + 1;
-
-                    this.partitionOffset = nextPartitionOffset;
                     this.messageOffset = 0;
 
-                    cursor.advance(nextPartitionOffset);
+                    cursor.advance(cursor.offset + 1);
                     continue;
                 }
 
@@ -955,10 +992,16 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
 
                 doClientReplyData(traceId, nextEntry);
 
-                if (replyBudget == replyBudgetSnapshot)
+                if (replyBudget == replyBudgetSnapshot ||
+                    (maximumOffset == HISTORICAL && cursor.offset > initialGroupLatestOffset))
                 {
                     break;
                 }
+            }
+
+            if (maximumOffset == HISTORICAL && cursor.offset > initialGroupLatestOffset)
+            {
+                doClientReplyEndIfNecessary(traceId);
             }
         }
 
@@ -975,22 +1018,23 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final long ancestor = nextEntry.ancestor();
             final OctetsFW value = nextEntry.value();
             final int remaining = value != null ? value.sizeof() - messageOffset : 0;
+            assert remaining >= 0;
             final int lengthMin = Math.min(remaining, 1024);
-            final int reservedMax = Math.min(remaining + replyPadding, replyBudget);
+            final int reservedMax = Math.max(Math.min(remaining + replyPadding, replyBudget), replyMinimum);
             final int reservedMin = Math.max(Math.min(lengthMin + replyPadding, reservedMax), replyMinimum);
             final long latestOffset = group.latestOffset;
 
-            assert partitionOffset >= this.partitionOffset : String.format("%d >= %d", partitionOffset, this.partitionOffset);
+            assert partitionOffset >= cursor.offset : String.format("%d >= %d", partitionOffset, cursor.offset);
 
             flush:
             if (replyBudget >= reservedMin &&
-                (reservedMin > replyPadding || (reservedMin == replyPadding && value == null)))
+                (reservedMin > replyPadding || (reservedMin == replyPadding && remaining == 0)))
             {
                 int reserved = reservedMax;
                 boolean claimed = false;
                 if (replyDebitorIndex != NO_DEBITOR_INDEX)
                 {
-                    final int lengthMax = reservedMax - replyPadding;
+                    final int lengthMax = Math.min(reservedMax - replyPadding, remaining);
                     final int deferredMax = remaining - lengthMax;
                     reserved = replyDebitor.claim(traceId, replyDebitorIndex, replyId, reservedMin, reservedMax, deferredMax);
                     claimed = reserved > 0;
@@ -1004,7 +1048,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                     break flush;
                 }
 
-                final int length = reserved - replyPadding;
+                final int length = Math.min(reserved - replyPadding, remaining);
                 assert length >= 0 : String.format("%d >= 0", length);
 
                 final int deferred = remaining - length;
@@ -1054,12 +1098,9 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 }
                 else
                 {
-                    final long nextPartitionOffset = partitionOffset + 1;
-
-                    this.partitionOffset = nextPartitionOffset;
                     this.messageOffset = 0;
 
-                    cursor.advance(nextPartitionOffset);
+                    cursor.advance(partitionOffset + 1);
                 }
             }
         }
@@ -1184,7 +1225,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             state = KafkaState.closedReply(state);
             doEnd(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
-            onClientReplyClosed();
+            cleanupDebitorIfNecessary();
+            cursor.close();
         }
 
         private void doClientReplyAbort(
@@ -1192,7 +1234,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             state = KafkaState.closedReply(state);
             doAbort(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
-            onClientReplyClosed();
+            cleanupDebitorIfNecessary();
+            cursor.close();
         }
 
         private void doClientReplyEndIfNecessary(
@@ -1204,7 +1247,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
 
             state = KafkaState.closedReply(state);
-            onClientReplyClosed();
+            cleanupDebitorIfNecessary();
+            cursor.close();
         }
 
         private void doClientReplyAbortIfNecessary(
@@ -1216,7 +1260,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
 
             state = KafkaState.closedReply(state);
-            onClientReplyClosed();
+            cleanupDebitorIfNecessary();
+            cursor.close();
         }
 
         private void onClientReplyWindow(
@@ -1260,22 +1305,21 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final long traceId = reset.traceId();
 
             state = KafkaState.closedReply(state);
-            onClientReplyClosed();
+            cleanupDebitorIfNecessary();
+            cursor.close();
 
             group.onClientFanoutMemberClosed(traceId, this);
 
             doClientInitialResetIfNecessary(traceId, EMPTY_OCTETS);
         }
 
-        private void onClientReplyClosed()
+        private void cleanupDebitorIfNecessary()
         {
             if (replyDebitor != null && replyDebitorIndex != NO_DEBITOR_INDEX)
             {
                 replyDebitor.release(replyBudgetId, replyId);
                 replyDebitorIndex = NO_DEBITOR_INDEX;
             }
-
-            cursor.close();
         }
 
         private void cleanupClient(

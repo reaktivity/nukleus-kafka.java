@@ -18,12 +18,11 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.lang.System.currentTimeMillis;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.NEXT_SEGMENT;
-import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.RETRY_SEGMENT;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorNextValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorRetryValue;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCursorRecord.cursorValue;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
-import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.LATEST;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.LIVE;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DEFAULT_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 
@@ -232,7 +231,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                 final String cacheName = route.localAddress().asString();
                 final KafkaCache cache = supplyCache.apply(cacheName);
                 final KafkaCacheTopic topic = cache.supplyTopic(topicName);
-                final KafkaCachePartition partition = topic.supplyPartition(partitionId);
+                final KafkaCachePartition partition = topic.supplyFetchPartition(partitionId);
                 final KafkaCacheServerFetchFanout newFanout = new KafkaCacheServerFetchFanout(resolvedId, authorization,
                         affinity, partition, routeDeltaType, defaultOffset);
 
@@ -418,7 +417,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             this.partition = partition;
             this.deltaType = deltaType;
             this.defaultOffset = defaultOffset;
-            this.retentionMillisMax = defaultOffset == LATEST ? SECONDS.toMillis(30) : Long.MAX_VALUE;
+            this.retentionMillisMax = defaultOffset == LIVE ? SECONDS.toMillis(30) : Long.MAX_VALUE;
             this.members = new ArrayList<>();
             this.leaderId = leaderId;
         }
@@ -763,7 +762,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                     final KafkaCacheIndexFile previousKeys = previousSegment.keysFile();
 
                     long keyCursor = previousKeys.last(keyHash);
-                    while (keyCursor != NEXT_SEGMENT && cursorValue(keyCursor) != cursorValue(RETRY_SEGMENT))
+                    while (!cursorNextValue(keyCursor) && !cursorRetryValue(keyCursor))
                     {
                         final int keyBaseOffsetDelta = cursorValue(keyCursor);
                         assert keyBaseOffsetDelta <= 0;
@@ -800,7 +799,7 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
                         }
 
                         final long nextKeyCursor = previousKeys.lower(keyHash, keyCursor);
-                        if (nextKeyCursor == NEXT_SEGMENT || cursorRetryValue(nextKeyCursor))
+                        if (cursorNextValue(nextKeyCursor) || cursorRetryValue(nextKeyCursor))
                         {
                             break;
                         }
