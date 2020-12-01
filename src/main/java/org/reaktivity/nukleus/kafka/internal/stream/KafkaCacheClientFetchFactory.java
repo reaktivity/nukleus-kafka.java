@@ -1225,7 +1225,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             state = KafkaState.closedReply(state);
             doEnd(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
-            onClientReplyClosed();
+            cleanupDebitorIfNecessary();
+            cursor.close();
         }
 
         private void doClientReplyAbort(
@@ -1233,7 +1234,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             state = KafkaState.closedReply(state);
             doAbort(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
-            onClientReplyClosed();
+            cleanupDebitorIfNecessary();
+            cursor.close();
         }
 
         private void doClientReplyEndIfNecessary(
@@ -1245,7 +1247,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
 
             state = KafkaState.closedReply(state);
-            onClientReplyClosed();
+            cleanupDebitorIfNecessary();
+            cursor.close();
         }
 
         private void doClientReplyAbortIfNecessary(
@@ -1257,7 +1260,8 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             }
 
             state = KafkaState.closedReply(state);
-            onClientReplyClosed();
+            cleanupDebitorIfNecessary();
+            cursor.close();
         }
 
         private void onClientReplyWindow(
@@ -1301,22 +1305,21 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
             final long traceId = reset.traceId();
 
             state = KafkaState.closedReply(state);
-            onClientReplyClosed();
+            cleanupDebitorIfNecessary();
+            cursor.close();
 
             group.onClientFanoutMemberClosed(traceId, this);
 
             doClientInitialResetIfNecessary(traceId, EMPTY_OCTETS);
         }
 
-        private void onClientReplyClosed()
+        private void cleanupDebitorIfNecessary()
         {
             if (replyDebitor != null && replyDebitorIndex != NO_DEBITOR_INDEX)
             {
                 replyDebitor.release(replyBudgetId, replyId);
                 replyDebitorIndex = NO_DEBITOR_INDEX;
             }
-
-            cursor.close();
         }
 
         private void cleanupClient(
