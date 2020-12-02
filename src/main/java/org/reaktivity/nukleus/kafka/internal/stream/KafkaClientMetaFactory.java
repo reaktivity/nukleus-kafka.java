@@ -1260,6 +1260,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
                 }
 
                 cleanupDecodeSlotIfNecessary();
+                correlations.remove(replyId);
             }
 
             private void doNetworkWindow(

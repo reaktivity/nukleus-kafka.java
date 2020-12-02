@@ -1069,6 +1069,7 @@ public final class KafkaClientDescribeFactory implements StreamFactory
                 }
 
                 cleanupDecodeSlotIfNecessary();
+                correlations.remove(replyId);
             }
 
             private void doNetworkWindow(

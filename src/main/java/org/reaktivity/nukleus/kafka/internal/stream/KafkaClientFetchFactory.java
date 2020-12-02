@@ -2248,6 +2248,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 }
 
                 cleanupDecodeSlotIfNecessary();
+                correlations.remove(replyId);
             }
 
             private void doNetworkWindow(
