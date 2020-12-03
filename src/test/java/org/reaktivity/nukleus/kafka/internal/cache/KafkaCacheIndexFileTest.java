@@ -78,7 +78,7 @@ public class KafkaCacheIndexFileTest
         }
 
         @Test
-        public void shouldSeekFirst()
+        public void shouldSeekFirstKey()
         {
             long first = indexFile.first(key);
 
@@ -89,7 +89,7 @@ public class KafkaCacheIndexFileTest
         }
 
         @Test
-        public void shouldSeekLast()
+        public void shouldSeekLastKey()
         {
             long last = indexFile.last(key);
 
@@ -97,6 +97,17 @@ public class KafkaCacheIndexFileTest
             assertNotEquals(RETRY_SEGMENT_VALUE, cursorValue(last));
             assertEquals((key << 1) + 1, cursorIndex(last));
             assertEquals(1, cursorValue(last));
+        }
+
+        @Test
+        public void shouldSeekFloorKey()
+        {
+            long floor = indexFile.floor(key);
+
+            assertNotEquals(NEXT_SEGMENT_VALUE, cursorValue(floor));
+            assertNotEquals(RETRY_SEGMENT_VALUE, cursorValue(floor));
+            assertEquals(key << 1, cursorIndex(floor));
+            assertEquals(0, cursorValue(floor));
         }
 
         @Test
@@ -190,7 +201,7 @@ public class KafkaCacheIndexFileTest
         }
 
         @Test
-        public void shouldSeekFirst()
+        public void shouldSeekFirstKey()
         {
             long first = indexFile.first(key);
 
@@ -201,7 +212,7 @@ public class KafkaCacheIndexFileTest
         }
 
         @Test
-        public void shouldSeekLast()
+        public void shouldSeekLastKey()
         {
             long last = indexFile.last(key);
 
@@ -209,6 +220,17 @@ public class KafkaCacheIndexFileTest
             assertNotEquals(RETRY_SEGMENT_VALUE, cursorValue(last));
             assertEquals(entries - 1 - (key << 1), cursorIndex(last));
             assertEquals(((entries - 1 - ((key << 1) + 1)) >> 1) + 1, cursorValue(last));
+        }
+
+        @Test
+        public void shouldSeekFloorKey()
+        {
+            long floor = indexFile.floor(key);
+
+            assertNotEquals(NEXT_SEGMENT_VALUE, cursorValue(floor));
+            assertNotEquals(RETRY_SEGMENT_VALUE, cursorValue(floor));
+            assertEquals(entries - 1 - ((key << 1) + 1), cursorIndex(floor));
+            assertEquals((entries - 1 - ((key << 1) + 1)) >> 1, cursorValue(floor));
         }
 
         @Test
