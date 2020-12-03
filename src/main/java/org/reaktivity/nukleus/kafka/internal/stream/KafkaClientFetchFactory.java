@@ -2359,7 +2359,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 encodeProgress = requestHeader.limit();
 
                 final FetchRequestFW fetchRequest = fetchRequestRW.wrap(encodeBuffer, encodeProgress, encodeLimit)
-                        .maxWaitTimeMillis(fetchMaxWaitMillis)
+                        .maxWaitTimeMillis(!KafkaState.replyOpened(stream.state) ? 0 : fetchMaxWaitMillis)
                         .minBytes(1)
                         .maxBytes(fetchMaxBytes)
                         .isolationLevel((byte) 0)
