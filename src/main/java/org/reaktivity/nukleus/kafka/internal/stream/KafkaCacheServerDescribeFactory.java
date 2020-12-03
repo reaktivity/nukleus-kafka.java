@@ -429,7 +429,7 @@ public final class KafkaCacheServerDescribeFactory implements StreamFactory
                 state = 0;
             }
 
-            if (!KafkaState.initialOpening(state))
+            if (state == 0)
             {
                 if (KafkaConfiguration.DEBUG)
                 {

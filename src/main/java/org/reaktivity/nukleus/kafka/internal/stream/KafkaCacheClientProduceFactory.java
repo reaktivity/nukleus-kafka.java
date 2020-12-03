@@ -545,7 +545,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                 state = 0;
             }
 
-            if (!KafkaState.initialOpening(state))
+            if (state == 0)
             {
                 doClientFanInitialBegin(traceId);
             }

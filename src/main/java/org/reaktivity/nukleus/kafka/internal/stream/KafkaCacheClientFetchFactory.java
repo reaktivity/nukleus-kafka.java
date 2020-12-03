@@ -484,7 +484,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 state = 0;
             }
 
-            if (!KafkaState.initialOpening(state))
+            if (state == 0)
             {
                 doClientFanoutInitialBegin(traceId);
             }
