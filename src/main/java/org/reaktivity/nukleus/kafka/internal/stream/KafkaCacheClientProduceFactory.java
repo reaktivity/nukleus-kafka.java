@@ -97,6 +97,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
     private static final int FLAGS_FIN = 0x01;
     private static final int FLAGS_INIT = 0x02;
+    private static final int FLAGS_INCOMPLETE = 0x04;
 
     private static final int SIZE_OF_FLUSH_WITH_EXTENSION = 64;
 
@@ -641,6 +642,11 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             {
                 partition.writeProduceEntryFin(stream.segment, stream.entryMark);
                 flushClientFanInitialIfNecessary(traceId);
+            }
+
+            if ((flags & FLAGS_INCOMPLETE) != 0x00)
+            {
+                markEntryDirty(stream.partitionOffset);
             }
 
             if (error != NO_ERROR)

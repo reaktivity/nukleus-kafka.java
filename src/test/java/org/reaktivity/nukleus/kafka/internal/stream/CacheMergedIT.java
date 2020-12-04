@@ -285,6 +285,17 @@ public class CacheMergedIT
     @Test
     @Specification({
         "${route}/cache.merged/controller",
+        "${client}/merged.produce.message.flags.incomplete/client",
+        "${server}/unmerged.produce.message.flags.incomplete/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldProduceMergedMessageFlagsIncomplete() throws Exception
+    {
+        k3po.finish();
+    }
+
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
         "${client}/merged.fetch.server.sent.close/client",
         "${server}/unmerged.fetch.server.sent.close/server"})
     @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
