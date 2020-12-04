@@ -1055,7 +1055,18 @@ public final class KafkaCacheServerFetchFactory implements StreamFactory
             long timeMillis,
             int signalId)
         {
-            return signaler.signalAt(timeMillis, routeId, initialId, signalId);
+            long timerId = NO_CANCEL_ID;
+
+            if (timeMillis <= System.currentTimeMillis())
+            {
+                signaler.signalNow(routeId, initialId, signalId);
+            }
+            else
+            {
+                timerId = signaler.signalAt(timeMillis, routeId, initialId, signalId);
+            }
+
+            return timerId;
         }
     }
 
