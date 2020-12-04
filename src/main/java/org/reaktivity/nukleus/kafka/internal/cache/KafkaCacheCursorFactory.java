@@ -443,7 +443,7 @@ public final class KafkaCacheCursorFactory
                         final KafkaCacheIndexFile indexFile = segment.indexFile();
                         assert indexFile != null;
                         final int offsetDelta = (int)(offset - segment.baseOffset());
-                        position = cursorValue(indexFile.first(offsetDelta));
+                        position = cursorValue(indexFile.floor(offsetDelta));
                     }
 
                     this.cursor = hashFile.first(hash);
