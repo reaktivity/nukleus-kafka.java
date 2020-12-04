@@ -484,21 +484,27 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
         {
             final int lastIndex = (capacity() >> 3) - 1;
 
-            long first = cursor(lastIndex + 1, available() != 0 ? RETRY_SEGMENT_VALUE : NEXT_SEGMENT_VALUE);
+            long floor = cursor(lastIndex + 1, available() != 0 ? RETRY_SEGMENT_VALUE : NEXT_SEGMENT_VALUE);
 
+            int floorKey = 0xffff_ffff;
             for (int currentIndex = 0; currentIndex <= lastIndex; currentIndex++)
             {
                 final long indexEntry = readLong(currentIndex << 3);
                 final int indexKey = indexKey(indexEntry);
 
-                if (indexKey >= key)
+                if (compareUnsigned(indexKey, key) >= 0 && compareUnsigned(indexKey, floorKey) < 0)
                 {
-                    first = cursor(currentIndex, indexValue(indexEntry));
-                    break;
+                    floorKey = indexKey;
+                    floor = cursor(currentIndex, indexValue(indexEntry));
+
+                    if (indexKey == key)
+                    {
+                        break;
+                    }
                 }
             }
 
-            return first;
+            return floor;
         }
 
         @Override
