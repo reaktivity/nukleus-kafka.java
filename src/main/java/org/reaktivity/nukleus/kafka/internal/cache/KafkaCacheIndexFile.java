@@ -236,7 +236,7 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
         {
             final int lastIndex = (capacity() >> 3) - 1;
 
-            long first = cursor(lastIndex + 1, available() != 0 ? RETRY_SEGMENT_VALUE : NEXT_SEGMENT_VALUE);
+            long floor = cursor(lastIndex + 1, available() != 0 ? RETRY_SEGMENT_VALUE : NEXT_SEGMENT_VALUE);
 
             int lowIndex = 0;
             int highIndex = lastIndex;
@@ -248,7 +248,7 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
                 final int midKey = indexKey(midEntry);
                 final int compareKey = compareUnsigned(midKey, key);
 
-                if (compareKey == 0 || lowIndex == highIndex - 1)
+                if (compareKey == 0 || lowIndex == midIndex)
                 {
                     long lowEntry;
 
@@ -274,7 +274,7 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
 
                     assert 0 <= lowIndex && lowIndex <= midIndex;
 
-                    first = cursor(lowIndex, indexValue(lowEntry));
+                    floor = cursor(lowIndex, indexValue(lowEntry));
                     break;
                 }
                 else if (compareKey < 0)
@@ -287,7 +287,7 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
                 }
             }
 
-            return first;
+            return floor;
         }
 
         @Override
