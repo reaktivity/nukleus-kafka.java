@@ -984,7 +984,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
                 {
                     this.messageOffset = 0;
 
-                    cursor.advance(cursor.offset + 1);
+                    cursor.advance(nextEntry.offset$() + 1);
                     continue;
                 }
 

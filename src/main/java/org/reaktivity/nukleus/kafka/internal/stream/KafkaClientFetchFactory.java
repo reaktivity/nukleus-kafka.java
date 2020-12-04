@@ -2243,6 +2243,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
             {
                 if (!KafkaState.replyClosed(state))
                 {
+                    correlations.remove(replyId);
                     doReset(network, routeId, replyId, traceId, authorization, EMPTY_OCTETS);
                     state = KafkaState.closedReply(state);
                 }
@@ -2359,7 +2360,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 encodeProgress = requestHeader.limit();
 
                 final FetchRequestFW fetchRequest = fetchRequestRW.wrap(encodeBuffer, encodeProgress, encodeLimit)
-                        .maxWaitTimeMillis(fetchMaxWaitMillis)
+                        .maxWaitTimeMillis(!KafkaState.replyOpened(stream.state) ? 0 : fetchMaxWaitMillis)
                         .minBytes(1)
                         .maxBytes(fetchMaxBytes)
                         .isolationLevel((byte) 0)
