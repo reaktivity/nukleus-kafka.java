@@ -121,7 +121,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
     private final KafkaFlushExFW kafkaFlushExRO = new KafkaFlushExFW();
 
     private final BeginFW.Builder beginRW = new BeginFW.Builder();
-    private final DataFW.Builder dataRW = new DataFW.Builder();
     private final EndFW.Builder endRW = new EndFW.Builder();
     private final AbortFW.Builder abortRW = new AbortFW.Builder();
     private final ResetFW.Builder resetRW = new ResetFW.Builder();
@@ -290,33 +289,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
                 .build();
 
         receiver.accept(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
-    }
-
-    private void doData(
-        MessageConsumer receiver,
-        long routeId,
-        long streamId,
-        long traceId,
-        long authorization,
-        int flags,
-        long budgetId,
-        int reserved,
-        OctetsFW payload,
-        OctetsFW extension)
-    {
-        final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
-                .routeId(routeId)
-                .streamId(streamId)
-                .traceId(traceId)
-                .authorization(authorization)
-                .flags(flags)
-                .budgetId(budgetId)
-                .reserved(reserved)
-                .payload(payload)
-                .extension(extension)
-                .build();
-
-        receiver.accept(data.typeId(), data.buffer(), data.offset(), data.sizeof());
     }
 
     private void doFlush(
