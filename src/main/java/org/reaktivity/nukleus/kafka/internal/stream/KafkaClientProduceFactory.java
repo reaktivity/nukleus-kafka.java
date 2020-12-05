@@ -159,7 +159,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
     private final RecordHeaderFW.Builder recordHeaderRW = new RecordHeaderFW.Builder();
     private final RecordTrailerFW.Builder recordTrailerRW = new RecordTrailerFW.Builder();
 
-    private final RecordHeaderFW recordHeaderRO = new RecordHeaderFW();
     private final ResponseHeaderFW responseHeaderRO = new ResponseHeaderFW();
     private final ProduceResponseFW produceResponseRO = new ProduceResponseFW();
     private final ProduceTopicResponseFW produceTopicResponseRO = new ProduceTopicResponseFW();
@@ -478,7 +477,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
     {
         if (client.encodeFlags == FLAGS_INIT)
         {
-            client.encoder = this::encodeRecordInit;
+            client.encoder = encodeRecordInit;
         }
 
         return progress;
@@ -516,7 +515,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
         }
 
         client.doEncodeRecordInit(traceId, timestamp, key, payload, headers);
-        client.encoder = this::encodeRecordContFin;
+        client.encoder = encodeRecordContFin;
         client.encodeFlags = FLAGS_INIT;
 
         return progress;
