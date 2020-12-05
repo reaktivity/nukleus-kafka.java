@@ -52,11 +52,10 @@
 
     <k3po.version>3.1.0</k3po.version>
 
-    <nukleus.plugin.version>0.72</nukleus.plugin.version>
+    <nukleus.plugin.version>0.77</nukleus.plugin.version>
 
-    <nukleus.kafka.spec.version>0.165</nukleus.kafka.spec.version>
-    <reaktor.version>0.151</reaktor.version>
-
+    <nukleus.kafka.spec.version>develop-SNAPSHOT</nukleus.kafka.spec.version>
+    <reaktor.version>0.152</reaktor.version>
 
     <kafka.clients.version>1.0.0</kafka.clients.version>
   </properties>
@@ -154,7 +153,7 @@
         <artifactId>nukleus-maven-plugin</artifactId>
         <version>${nukleus.plugin.version}</version>
         <configuration>
-          <scopeNames>core kafka tcp protocol internal</scopeNames>
+          <scopeNames>core kafka proxy protocol internal</scopeNames>
           <packageName>org.reaktivity.nukleus.kafka.internal.types</packageName>
         </configuration>
         <executions>

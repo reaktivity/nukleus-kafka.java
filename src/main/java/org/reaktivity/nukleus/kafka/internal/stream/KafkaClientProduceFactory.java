@@ -22,6 +22,7 @@ import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaChecksum.combineCRC32C;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
+import static org.reaktivity.nukleus.kafka.internal.types.ProxyAddressProtocol.STREAM;
 import static org.reaktivity.nukleus.kafka.internal.types.codec.RequestHeaderFW.FIELD_OFFSET_API_KEY;
 import static org.reaktivity.nukleus.kafka.internal.types.codec.message.RecordBatchFW.FIELD_OFFSET_LENGTH;
 import static org.reaktivity.nukleus.kafka.internal.types.codec.message.RecordBatchFW.FIELD_OFFSET_RECORD_COUNT;
@@ -79,9 +80,9 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaProduceBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaProduceDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaResetExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.ProxyBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.SignalFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.TcpBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
@@ -118,7 +119,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
     private static final DirectBuffer EMPTY_BUFFER = new UnsafeBuffer();
     private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(EMPTY_BUFFER, 0, 0);
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
-    private static final byte[] ANY_IP_ADDR = new byte[4];
     private static final Array32FW<KafkaHeaderFW> EMPTY_HEADER =
         new Array32FW.Builder<>(new KafkaHeaderFW.Builder(), new KafkaHeaderFW())
         .wrap(new UnsafeBuffer(new byte[64]), 0, 64).build();
@@ -149,7 +149,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
     private final WindowFW.Builder windowRW = new WindowFW.Builder();
     private final KafkaBeginExFW.Builder kafkaBeginExRW = new KafkaBeginExFW.Builder();
     private final KafkaResetExFW.Builder kafkaResetExRW = new KafkaResetExFW.Builder();
-    private final TcpBeginExFW.Builder tcpBeginExRW = new TcpBeginExFW.Builder();
+    private final ProxyBeginExFW.Builder proxyBeginExRW = new ProxyBeginExFW.Builder();
 
     private final RequestHeaderFW.Builder requestHeaderRW = new RequestHeaderFW.Builder();
     private final ProduceRequestFW.Builder produceRequestRW = new ProduceRequestFW.Builder();
@@ -159,7 +159,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
     private final RecordHeaderFW.Builder recordHeaderRW = new RecordHeaderFW.Builder();
     private final RecordTrailerFW.Builder recordTrailerRW = new RecordTrailerFW.Builder();
 
-    private final RecordHeaderFW recordHeaderRO = new RecordHeaderFW();
     private final ResponseHeaderFW responseHeaderRO = new ResponseHeaderFW();
     private final ProduceResponseFW produceResponseRO = new ProduceResponseFW();
     private final ProduceTopicResponseFW produceTopicResponseRO = new ProduceTopicResponseFW();
@@ -184,7 +183,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
     private final long produceRequestMaxDelay;
     private final ProduceAck produceAcks;
     private final int kafkaTypeId;
-    private final int tcpTypeId;
+    private final int proxyTypeId;
     private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
     private final MutableDirectBuffer extBuffer;
@@ -216,7 +215,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
         this.produceRequestMaxDelay = config.clientProduceMaxRequestMillis();
         this.produceAcks = ProduceAck.valueOf(config.clientProduceAcks());
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
-        this.tcpTypeId = supplyTypeId.applyAsInt("tcp");
+        this.proxyTypeId = supplyTypeId.applyAsInt("proxy");
         this.router = router;
         this.signaler = signaler;
         this.writeBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
@@ -478,7 +477,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
     {
         if (client.encodeFlags == FLAGS_INIT)
         {
-            client.encoder = this::encodeRecordInit;
+            client.encoder = encodeRecordInit;
         }
 
         return progress;
@@ -516,7 +515,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
         }
 
         client.doEncodeRecordInit(traceId, timestamp, key, payload, headers);
-        client.encoder = this::encodeRecordContFin;
+        client.encoder = encodeRecordContFin;
         client.encodeFlags = FLAGS_INIT;
 
         return progress;
@@ -1316,12 +1315,13 @@ public final class KafkaClientProduceFactory implements StreamFactory
             final KafkaBrokerInfo broker = clientRoute.brokers.get(affinity);
             if (broker != null)
             {
-                extension = e -> e.set((b, o, l) -> tcpBeginExRW.wrap(b, o, l)
-                                                                .typeId(tcpTypeId)
-                                                                .localAddress(a -> a.ipv4Address(ip -> ip.put(ANY_IP_ADDR)))
-                                                                .localPort(0)
-                                                                .remoteAddress(a -> a.host(broker.host))
-                                                                .remotePort(broker.port)
+                extension = e -> e.set((b, o, l) -> proxyBeginExRW.wrap(b, o, l)
+                                                                .typeId(proxyTypeId)
+                                                                .address(a -> a.inet(i -> i.protocol(p -> p.set(STREAM))
+                                                                        .source("0.0.0.0")
+                                                                        .destination(broker.host)
+                                                                        .sourcePort(0)
+                                                                        .destinationPort(broker.port)))
                                                                 .build()
                                                                 .sizeof());
             }
