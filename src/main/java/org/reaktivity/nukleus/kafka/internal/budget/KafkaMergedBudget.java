@@ -200,7 +200,7 @@ final class KafkaMergedBudget
                 watcherIndex = 0;
             }
 
-            for (int index = 0; index < watcherIndex; index++)
+            for (int index = 0; index < Math.min(watcherIndex, watchers.size()); index++)
             {
                 final long watcherId = watchers.getLong(index);
                 final LongConsumer flusher = flushers.get(watcherId);

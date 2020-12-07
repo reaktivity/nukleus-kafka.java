@@ -75,6 +75,17 @@ public class CacheMergedIT
         k3po.finish();
     }
 
+    @Test
+    @Specification({
+        "${route}/cache.merged/controller",
+        "${client}/merged.fetch.filter.header.with.compaction/client",
+        "${server}/unmerged.fetch.filter.none.with.compaction/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    public void shouldFetchMergedMessagesWithHeaderFilterAfterCompaction() throws Exception
+    {
+        k3po.finish();
+    }
+
     @Ignore("requires k3po parallel reads")
     @Test
     @Specification({

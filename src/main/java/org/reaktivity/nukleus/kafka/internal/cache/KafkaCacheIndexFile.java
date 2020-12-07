@@ -61,6 +61,7 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
 
     public abstract long first(int key);
     public abstract long last(int key);
+    public abstract long floor(int key);
 
     public long resolve(
         long cursor)
@@ -227,6 +228,66 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
             }
 
             return last;
+        }
+
+        @Override
+        public long floor(
+            int key)
+        {
+            final int lastIndex = (capacity() >> 3) - 1;
+
+            long floor = cursor(lastIndex + 1, available() != 0 ? RETRY_SEGMENT_VALUE : NEXT_SEGMENT_VALUE);
+
+            int lowIndex = 0;
+            int highIndex = lastIndex;
+
+            while (lowIndex <= highIndex)
+            {
+                final int midIndex = (lowIndex + highIndex) >>> 1;
+                final long midEntry = readLong(midIndex << 3);
+                final int midKey = indexKey(midEntry);
+                final int compareKey = compareUnsigned(midKey, key);
+
+                if (compareKey == 0 || lowIndex == midIndex)
+                {
+                    long lowEntry;
+
+                    lowIndex = midIndex;
+                    lowEntry = midEntry;
+
+                    while (lowIndex > 0)
+                    {
+                        final int candidateIndex = lowIndex - 1;
+                        assert candidateIndex <= lastIndex;
+
+                        final long candidateEntry = readLong(candidateIndex << 3);
+                        final int candidateKey = indexKey(candidateEntry);
+
+                        if (candidateKey < key)
+                        {
+                            break;
+                        }
+
+                        lowIndex = candidateIndex;
+                        lowEntry = candidateEntry;
+                    }
+
+                    assert 0 <= lowIndex && lowIndex <= midIndex;
+
+                    floor = cursor(lowIndex, indexValue(lowEntry));
+                    break;
+                }
+                else if (compareKey < 0)
+                {
+                    lowIndex = midIndex + 1;
+                }
+                else if (compareKey > 0)
+                {
+                    highIndex = midIndex - 1;
+                }
+            }
+
+            return floor;
         }
 
         @Override
@@ -415,6 +476,35 @@ public abstract class KafkaCacheIndexFile extends KafkaCacheFile
             }
 
             return last;
+        }
+
+        @Override
+        public long floor(
+            int key)
+        {
+            final int lastIndex = (capacity() >> 3) - 1;
+
+            long floor = cursor(lastIndex + 1, available() != 0 ? RETRY_SEGMENT_VALUE : NEXT_SEGMENT_VALUE);
+
+            int floorKey = 0xffff_ffff;
+            for (int currentIndex = 0; currentIndex <= lastIndex; currentIndex++)
+            {
+                final long indexEntry = readLong(currentIndex << 3);
+                final int indexKey = indexKey(indexEntry);
+
+                if (compareUnsigned(indexKey, key) >= 0 && compareUnsigned(indexKey, floorKey) < 0)
+                {
+                    floorKey = indexKey;
+                    floor = cursor(currentIndex, indexValue(indexEntry));
+
+                    if (indexKey == key)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            return floor;
         }
 
         @Override

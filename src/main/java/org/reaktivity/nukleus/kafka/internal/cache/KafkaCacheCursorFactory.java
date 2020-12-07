@@ -370,7 +370,7 @@ public final class KafkaCacheCursorFactory
                     this.indexFile = indexFile;
 
                     final int offsetDelta = (int)(offset - segment.baseOffset());
-                    this.cursor = indexFile.first(offsetDelta);
+                    this.cursor = indexFile.floor(offsetDelta);
                     positionNext = cursorValue(cursor);
                 }
                 else
@@ -443,7 +443,7 @@ public final class KafkaCacheCursorFactory
                         final KafkaCacheIndexFile indexFile = segment.indexFile();
                         assert indexFile != null;
                         final int offsetDelta = (int)(offset - segment.baseOffset());
-                        position = cursorValue(indexFile.first(offsetDelta));
+                        position = cursorValue(indexFile.floor(offsetDelta));
                     }
 
                     this.cursor = hashFile.first(hash);
@@ -767,7 +767,7 @@ public final class KafkaCacheCursorFactory
                         final KafkaCacheIndexFile indexFile = segment.indexFile();
                         assert indexFile != null;
                         final int offsetDelta = (int)(offset - segment.baseOffset());
-                        position = cursorValue(indexFile.first(offsetDelta));
+                        position = cursorValue(indexFile.floor(offsetDelta));
                     }
 
                     int nextPositionMax = 0;
@@ -893,7 +893,7 @@ public final class KafkaCacheCursorFactory
                         final KafkaCacheIndexFile indexFile = segment.indexFile();
                         assert indexFile != null;
                         final int offsetDelta = (int)(offset - segment.baseOffset());
-                        position = cursorValue(indexFile.first(offsetDelta));
+                        position = cursorValue(indexFile.floor(offsetDelta));
                     }
 
                     nextPositionMin = NEXT_SEGMENT_VALUE;

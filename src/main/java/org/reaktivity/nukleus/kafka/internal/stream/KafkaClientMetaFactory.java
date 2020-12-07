@@ -1255,6 +1255,7 @@ public final class KafkaClientMetaFactory implements StreamFactory
             {
                 if (!KafkaState.replyClosed(state))
                 {
+                    correlations.remove(replyId);
                     doReset(network, routeId, replyId, traceId, authorization, EMPTY_OCTETS);
                     state = KafkaState.closedReply(state);
                 }
