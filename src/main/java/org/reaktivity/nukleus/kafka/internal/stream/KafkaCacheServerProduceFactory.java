@@ -97,13 +97,10 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         new Array32FW.Builder<>(new KafkaFilterFW.Builder(), new KafkaFilterFW())
             .wrap(new UnsafeBuffer(new byte[64]), 0, 64).build();
 
-    private static final int SIGNAL_RECONNECT = 1;
-
     private final RouteFW routeRO = new RouteFW();
     private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
 
     private final BeginFW beginRO = new BeginFW();
-    private final DataFW dataRO = new DataFW();
     private final FlushFW flushRO = new FlushFW();
     private final EndFW endRO = new EndFW();
     private final AbortFW abortRO = new AbortFW();
@@ -139,7 +136,6 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
     private final Signaler signaler;
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
-    private final LongSupplier supplyTraceId;
     private final LongSupplier supplyBudgetId;
     private final Function<String, KafkaCache> supplyCache;
     private final LongFunction<KafkaCacheRoute> supplyCacheRoute;
@@ -155,7 +151,6 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         Signaler signaler,
         LongUnaryOperator supplyInitialId,
         LongUnaryOperator supplyReplyId,
-        LongSupplier supplyTraceId,
         LongSupplier supplyBudgetId,
         ToIntFunction<String> supplyTypeId,
         Function<String, KafkaCache> supplyCache,
@@ -170,7 +165,6 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         this.signaler = signaler;
         this.supplyInitialId = supplyInitialId;
         this.supplyReplyId = supplyReplyId;
-        this.supplyTraceId = supplyTraceId;
         this.supplyBudgetId = supplyBudgetId;
         this.supplyCache = supplyCache;
         this.supplyCacheRoute = supplyCacheRoute;
@@ -426,7 +420,6 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         private int initialFlags;
 
         private long reconnectAt = NO_CANCEL_ID;
-        private int reconnectAttempt;
         private int memberIndex;
 
         private KafkaCacheServerProduceFan(
@@ -698,8 +691,6 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         {
             assert !KafkaState.initialOpened(state);
             state = KafkaState.openedInitial(state);
-
-            this.reconnectAttempt = 0;
         }
 
         private void onServerFanInitialClosed()
@@ -798,18 +789,6 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             }
 
             members.forEach(s -> s.doServerReplyAbortIfNecessary(traceId));
-        }
-
-        private void onServerFanSignal(
-            int signalId)
-        {
-            assert signalId == SIGNAL_RECONNECT;
-
-            this.reconnectAt = NO_CANCEL_ID;
-
-            final long traceId = supplyTraceId.getAsLong();
-
-            doServerFanInitialBeginIfNecessary(traceId);
         }
 
         private void doServerFanReplyResetIfNecessary(
@@ -1341,11 +1320,6 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             }
 
             doServerInitialResetIfNecessary(traceId, EMPTY_OCTETS);
-        }
-
-        private boolean isLive()
-        {
-            return cursor.offset == partitionOffset;
         }
 
         private void cleanupServer(
