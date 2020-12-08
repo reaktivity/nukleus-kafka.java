@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.util.Objects.requireNonNull;
 import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
+import static org.reaktivity.nukleus.kafka.internal.types.ProxyAddressProtocol.STREAM;
 import static org.reaktivity.nukleus.kafka.internal.types.codec.offsets.IsolationLevel.READ_UNCOMMITTED;
 import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 
@@ -81,9 +82,9 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaFetchBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaResetExFW;
+import org.reaktivity.nukleus.kafka.internal.types.stream.ProxyBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.SignalFW;
-import org.reaktivity.nukleus.kafka.internal.types.stream.TcpBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
 import org.reaktivity.nukleus.route.RouteManager;
 import org.reaktivity.nukleus.stream.StreamFactory;
@@ -108,7 +109,6 @@ public final class KafkaClientFetchFactory implements StreamFactory
     private static final DirectBuffer EMPTY_BUFFER = new UnsafeBuffer();
     private static final OctetsFW EMPTY_OCTETS = new OctetsFW().wrap(EMPTY_BUFFER, 0, 0);
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
-    private static final byte[] ANY_IP_ADDR = new byte[4];
 
     private static final short OFFSETS_API_KEY = 2;
     private static final short OFFSETS_API_VERSION = 2;
@@ -139,7 +139,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
     private final KafkaBeginExFW.Builder kafkaBeginExRW = new KafkaBeginExFW.Builder();
     private final KafkaDataExFW.Builder kafkaDataExRW = new KafkaDataExFW.Builder();
     private final KafkaResetExFW.Builder kafkaResetExRW = new KafkaResetExFW.Builder();
-    private final TcpBeginExFW.Builder tcpBeginExRW = new TcpBeginExFW.Builder();
+    private final ProxyBeginExFW.Builder proxyBeginExRW = new ProxyBeginExFW.Builder();
 
     private final RequestHeaderFW.Builder requestHeaderRW = new RequestHeaderFW.Builder();
     private final OffsetsRequestFW.Builder offsetsRequestRW = new OffsetsRequestFW.Builder();
@@ -194,7 +194,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
     private final int fetchMaxWaitMillis;
     private final int partitionMaxBytes;
     private final int kafkaTypeId;
-    private final int tcpTypeId;
+    private final int proxyTypeId;
     private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
     private final MutableDirectBuffer extBuffer;
@@ -226,7 +226,7 @@ public final class KafkaClientFetchFactory implements StreamFactory
         this.fetchMaxWaitMillis = config.clientFetchMaxWaitMillis();
         this.partitionMaxBytes = config.clientFetchPartitionMaxBytes();
         this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
-        this.tcpTypeId = supplyTypeId.applyAsInt("tcp");
+        this.proxyTypeId = supplyTypeId.applyAsInt("proxy");
         this.router = router;
         this.signaler = signaler;
         this.writeBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
@@ -2168,14 +2168,15 @@ public final class KafkaClientFetchFactory implements StreamFactory
                 final KafkaBrokerInfo broker = clientRoute.brokers.get(affinity);
                 if (broker != null)
                 {
-                    extension = e -> e.set((b, o, l) -> tcpBeginExRW.wrap(b, o, l)
-                                                                    .typeId(tcpTypeId)
-                                                                    .localAddress(a -> a.ipv4Address(ip -> ip.put(ANY_IP_ADDR)))
-                                                                    .localPort(0)
-                                                                    .remoteAddress(a -> a.host(broker.host))
-                                                                    .remotePort(broker.port)
-                                                                    .build()
-                                                                    .sizeof());
+                    extension = e -> e.set((b, o, l) -> proxyBeginExRW.wrap(b, o, l)
+                                                                      .typeId(proxyTypeId)
+                                                                      .address(a -> a.inet(i -> i.protocol(p -> p.set(STREAM))
+                                                                                                 .source("0.0.0.0")
+                                                                                                 .destination(broker.host)
+                                                                                                 .sourcePort(0)
+                                                                                                 .destinationPort(broker.port)))
+                                                                      .build()
+                                                                      .sizeof());
                 }
 
                 router.setThrottle(initialId, this::onNetwork);
