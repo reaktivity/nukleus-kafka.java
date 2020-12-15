@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.lang.System.currentTimeMillis;
 import static java.lang.Thread.currentThread;
 import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.CACHE_ENTRY_FLAGS_DIRTY;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 
 import java.nio.ByteBuffer;
@@ -568,7 +569,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
                 if (member.cursor.offset > cursorOffset)
                 {
-                    membersNotProgressing = 0;
+                    membersNotProgressing = -1;
                     continue;
                 }
             }
@@ -1001,11 +1002,20 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                     final int initialPadding = fan.initialPadding;
                     final int initialBudget = fan.initialBudget;
                     final int reserved = Math.min(remaining + initialPadding, initialBudget);
+                    final int entryFlags = nextEntry.flags();
 
                     assert partitionOffset >= cursor.offset : String.format("%d >= %d", partitionOffset, cursor.offset);
 
+                    produce:
                     if (reserved >= initialPadding)
                     {
+                        if ((entryFlags & CACHE_ENTRY_FLAGS_DIRTY) != 0)
+                        {
+                            cursor.advance(partitionOffset + 1);
+                            doFlushServerReply(traceId);
+                            break produce;
+                        }
+
                         final int length = Math.min(reserved - initialPadding, remaining);
                         assert length >= 0 : String.format("%d >= 0", length);
 

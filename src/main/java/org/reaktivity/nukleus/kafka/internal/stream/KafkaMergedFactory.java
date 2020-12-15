@@ -108,6 +108,7 @@ public final class KafkaMergedFactory implements StreamFactory
     private static final int FLAGS_NONE = 0x00;
     private static final int FLAGS_FIN = 0x01;
     private static final int FLAGS_INIT = 0x02;
+    private static final int FLAGS_INCOMPLETE = 0x04;
     private static final int FLAGS_INIT_AND_FIN = FLAGS_INIT | FLAGS_FIN;
 
     private static final int DYNAMIC_PARTITION = -1;
@@ -2640,7 +2641,7 @@ public final class KafkaMergedFactory implements StreamFactory
 
             Flyweight newKafkaDataEx = EMPTY_OCTETS;
 
-            if (flags != FLAGS_NONE)
+            if (flags != FLAGS_NONE && flags != FLAGS_INCOMPLETE)
             {
                 final ExtensionFW dataEx = extension.get(extensionRO::tryWrap);
                 final KafkaDataExFW kafkaDataEx = dataEx != null && dataEx.typeId() == kafkaTypeId ?
