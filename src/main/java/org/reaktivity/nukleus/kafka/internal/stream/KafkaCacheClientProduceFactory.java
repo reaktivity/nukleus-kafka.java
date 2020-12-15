@@ -21,6 +21,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
 import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.CACHE_ENTRY_FLAGS_ADVANCE;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 
 import java.util.function.Consumer;
@@ -642,7 +643,7 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
                 final KafkaCacheEntryFW nextEntry = cursor.next(entryRO);
 
-                if (nextEntry != null)
+                if (nextEntry != null && (nextEntry.flags() & CACHE_ENTRY_FLAGS_ADVANCE) != 0)
                 {
                     cursor.advance(newOffsetHighWatermark);
                 }

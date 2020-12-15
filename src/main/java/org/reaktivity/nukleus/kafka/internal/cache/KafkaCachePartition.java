@@ -71,8 +71,9 @@ public final class KafkaCachePartition
     private static final String FORMAT_FETCH_PARTITION_DIRECTORY = "%s-%d";
     private static final String FORMAT_PRODUCE_PARTITION_DIRECTORY = "%s-%d-%d";
 
-    private static final int CACHE_ENTRY_FLAGS_DIRTY = 0x01;
+    public static final int CACHE_ENTRY_FLAGS_DIRTY = 0x01;
     public static final int CACHE_ENTRY_FLAGS_COMPLETED = 0x02;
+    public static final int CACHE_ENTRY_FLAGS_ADVANCE = CACHE_ENTRY_FLAGS_COMPLETED | CACHE_ENTRY_FLAGS_DIRTY;
 
     private static final long OFFSET_HISTORICAL = KafkaOffsetType.HISTORICAL.value();
 
