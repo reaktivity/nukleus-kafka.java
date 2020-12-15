@@ -619,7 +619,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
             if ((flags & FLAGS_INCOMPLETE) != 0x00)
             {
                 markEntryDirty(stream.partitionOffset);
-                flushClientFanInitialIfNecessary(traceId);
             }
 
             if (error != NO_ERROR)

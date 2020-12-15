@@ -548,8 +548,8 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             long traceId)
         {
             final int membersCount = members.size();
-
-            for (int membersNotProgressing = 0; membersNotProgressing < membersCount; membersNotProgressing++)
+            int membersNotProgressing = 0;
+            while (membersNotProgressing < membersCount)
             {
                 memberIndex = memberIndex >= membersCount ? 0 : memberIndex;
 
@@ -570,7 +570,10 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                 if (member.cursor.offset > cursorOffset)
                 {
                     membersNotProgressing = 0;
-                    continue;
+                }
+                else
+                {
+                    membersNotProgressing++;
                 }
             }
         }
