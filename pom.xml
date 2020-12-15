@@ -42,7 +42,7 @@
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <checkstyle.config.location>src/conf/checkstyle/configuration.xml</checkstyle.config.location>
     <checkstyle.suppressions.location>src/conf/checkstyle/suppressions.xml</checkstyle.suppressions.location>
-    <jacoco.coverage.ratio>0.80</jacoco.coverage.ratio>
+    <jacoco.coverage.ratio>0.79</jacoco.coverage.ratio>
     <jacoco.missed.count>3</jacoco.missed.count>
 
     <junit.version>4.13.1</junit.version>
@@ -153,7 +153,7 @@
         <artifactId>nukleus-maven-plugin</artifactId>
         <version>${nukleus.plugin.version}</version>
         <configuration>
-          <scopeNames>core kafka tcp protocol internal</scopeNames>
+          <scopeNames>core kafka proxy protocol internal</scopeNames>
           <packageName>org.reaktivity.nukleus.kafka.internal.types</packageName>
         </configuration>
         <executions>
@@ -198,10 +198,7 @@
         <artifactId>maven-checkstyle-plugin</artifactId>
         <version>3.1.0</version>
         <configuration>
-          <sourceDirectories>
-            <sourceDirectory>${project.build.sourceDirectory}</sourceDirectory>
-            <sourceDirectory>${project.build.testSourceDirectory}</sourceDirectory>
-          </sourceDirectories>
+          <includeTestSourceDirectory>true</includeTestSourceDirectory>
         </configuration>
         <executions>
           <execution>
@@ -227,7 +224,7 @@
       <plugin>
         <groupId>org.jacoco</groupId>
         <artifactId>jacoco-maven-plugin</artifactId>
-        <version>0.8.5</version>
+        <version>0.8.6</version>
         <configuration>
           <excludes>
             <exclude>org/reaktivity/nukleus/kafka/internal/types/**/*.class</exclude>
