@@ -19,7 +19,6 @@ import static java.lang.System.currentTimeMillis;
 import static java.lang.Thread.currentThread;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
-import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
 import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.CACHE_ENTRY_FLAGS_ADVANCE;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
@@ -415,7 +414,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
         private int initialBudget;
         private int initialPadding;
-        private int initialSlot = NO_SLOT;
 
         private long lastAckOffsetHighWatermark;
         private long offsetHighWatermark = DEFAULT_LATEST_OFFSET;
@@ -789,17 +787,6 @@ public final class KafkaCacheClientProduceFactory implements StreamFactory
 
             initialBudget = 0;
             initialPadding = 0;
-
-            cleanupInitialSlotIfNecessary();
-        }
-
-        private void cleanupInitialSlotIfNecessary()
-        {
-            if (initialSlot != NO_SLOT)
-            {
-                bufferPool.release(initialSlot);
-                initialSlot = NO_SLOT;
-            }
         }
 
         private void onClientFanMessage(

@@ -688,7 +688,7 @@ public final class KafkaCacheClientFetchFactory implements StreamFactory
         {
             state = KafkaState.closedInitial(state);
 
-            doEnd(receiver, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
+            doEnd(receiver, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
         }
 
         private void onClientFanoutInitialWindow(
