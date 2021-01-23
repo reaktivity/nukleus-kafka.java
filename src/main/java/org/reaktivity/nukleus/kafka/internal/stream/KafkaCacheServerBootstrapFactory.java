@@ -196,6 +196,9 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         MessageConsumer receiver,
         long routeId,
         long streamId,
+        long sequence,
+        long acknowledge,
+        int maximum,
         long traceId,
         long authorization,
         long affinity,
@@ -204,6 +207,9 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
+                .sequence(sequence)
+                .acknowledge(acknowledge)
+                .maximum(maximum)
                 .traceId(traceId)
                 .authorization(authorization)
                 .affinity(affinity)
@@ -217,6 +223,9 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         MessageConsumer receiver,
         long routeId,
         long streamId,
+        long sequence,
+        long acknowledge,
+        int maximum,
         long traceId,
         long authorization,
         Consumer<OctetsFW.Builder> extension)
@@ -224,6 +233,9 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         final EndFW end = endRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                .routeId(routeId)
                                .streamId(streamId)
+                               .sequence(sequence)
+                               .acknowledge(acknowledge)
+                               .maximum(maximum)
                                .traceId(traceId)
                                .authorization(authorization)
                                .extension(extension)
@@ -236,6 +248,9 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         MessageConsumer receiver,
         long routeId,
         long streamId,
+        long sequence,
+        long acknowledge,
+        int maximum,
         long traceId,
         long authorization,
         Consumer<OctetsFW.Builder> extension)
@@ -243,6 +258,9 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         final AbortFW abort = abortRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
+                .sequence(sequence)
+                .acknowledge(acknowledge)
+                .maximum(maximum)
                 .traceId(traceId)
                 .authorization(authorization)
                 .extension(extension)
@@ -255,19 +273,23 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         MessageConsumer sender,
         long routeId,
         long streamId,
+        long sequence,
+        long acknowledge,
+        int maximum,
         long traceId,
         long authorization,
         long budgetId,
-        int credit,
         int padding)
     {
         final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
+                .sequence(sequence)
+                .acknowledge(acknowledge)
+                .maximum(maximum)
                 .traceId(traceId)
                 .authorization(authorization)
                 .budgetId(budgetId)
-                .credit(credit)
                 .padding(padding)
                 .build();
 
@@ -278,12 +300,18 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         MessageConsumer sender,
         long routeId,
         long streamId,
+        long sequence,
+        long acknowledge,
+        int maximum,
         long traceId,
         long authorization)
     {
         final ResetFW reset = resetRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                .routeId(routeId)
                .streamId(streamId)
+               .sequence(sequence)
+               .acknowledge(acknowledge)
+               .maximum(maximum)
                .traceId(traceId)
                .authorization(authorization)
                .build();
@@ -309,8 +337,16 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
         private int state;
 
+        private long initialSeq;
+        private long initialAck;
+        private int initialMax;
+
+        private long replySeq;
+        private long replyAck;
+        private int replyMax;
+        private int replyPad;
+
         private long replyBudgetId;
-        private int replyPadding;
 
         KafkaBootstrapStream(
             MessageConsumer sender,
@@ -414,13 +450,25 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         private void onBootstrapReplyWindow(
             WindowFW window)
         {
+            final long sequence = window.sequence();
+            final long acknowledge = window.acknowledge();
+            final int maximum = window.maximum();
             final long budgetId = window.budgetId();
             final int padding = window.padding();
 
-            replyBudgetId = budgetId;
-            replyPadding = padding;
-
             state = KafkaState.openedReply(state);
+
+            assert acknowledge <= sequence;
+            assert sequence <= replySeq;
+            assert acknowledge >= replyAck;
+            assert maximum >= replyMax;
+
+            this.replyAck = acknowledge;
+            this.replyMax = maximum;
+            this.replyPad = padding;
+            this.replyBudgetId = budgetId;
+
+            assert replyAck <= replySeq;
         }
 
         private void onBootstrapReplyReset(
@@ -453,7 +501,8 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             state = KafkaState.openingReply(state);
 
             router.setThrottle(replyId, this::onBootstrapInitial);
-            doBegin(sender, routeId, replyId, traceId, authorization, affinity, EMPTY_EXTENSION);
+            doBegin(sender, routeId, replyId, replySeq, replyAck, replyMax,
+                    traceId, authorization, affinity, EMPTY_EXTENSION);
         }
 
         private void doBootstrapReplyEnd(
@@ -461,7 +510,8 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         {
             assert !KafkaState.replyClosed(state);
             state = KafkaState.closedReply(state);
-            doEnd(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
+            doEnd(sender, routeId, replyId, replySeq, replyAck, replyMax,
+                    traceId, authorization, EMPTY_EXTENSION);
         }
 
         private void doBootstrapReplyAbort(
@@ -469,31 +519,31 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         {
             assert !KafkaState.replyClosed(state);
             state = KafkaState.closedReply(state);
-            doAbort(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
-        }
-
-        private void doBootstrapInitialWindowIfNecessary(
-            long traceId,
-            long budgetId,
-            int credit,
-            int padding)
-        {
-            if (!KafkaState.initialOpened(state) || credit > 0)
-            {
-                doBootstrapInitialWindow(traceId, budgetId, credit, padding);
-            }
+            doAbort(sender, routeId, replyId, replySeq, replyAck, replyMax,
+                    traceId, authorization, EMPTY_EXTENSION);
         }
 
         private void doBootstrapInitialWindow(
             long traceId,
             long budgetId,
-            int credit,
-            int padding)
+            int minInitialNoAck,
+            int minInitialPad,
+            int minInitialMax)
         {
-            state = KafkaState.openedInitial(state);
+            final long newInitialAck = Math.max(initialSeq - minInitialNoAck, initialAck);
 
-            doWindow(sender, routeId, initialId, traceId, authorization,
-                    budgetId, credit, padding);
+            if (newInitialAck > initialAck || minInitialMax > initialMax || !KafkaState.initialOpened(state))
+            {
+                initialAck = newInitialAck;
+                assert initialAck <= initialSeq;
+
+                initialMax = Math.max(initialMax, minInitialMax);
+
+                state = KafkaState.openedInitial(state);
+
+                doWindow(sender, routeId, initialId, initialSeq, initialAck, initialMax,
+                        traceId, authorization, budgetId, minInitialPad);
+            }
         }
 
         private void doBootstrapInitialReset(
@@ -502,7 +552,8 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
             assert !KafkaState.initialClosed(state);
             state = KafkaState.closedInitial(state);
 
-            doReset(sender, routeId, initialId, traceId, authorization);
+            doReset(sender, routeId, initialId, initialSeq, initialAck, initialMax,
+                    traceId, authorization);
         }
 
         private void doBootstrapReplyEndIfNecessary(
@@ -675,7 +726,13 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
         private int state;
 
-        private int replyBudget;
+        private long initialSeq;
+        private long initialAck;
+        private int initialMax;
+
+        private long replySeq;
+        private long replyAck;
+        private int replyMax;
 
         private KafkaBootstrapDescribeStream(
             KafkaBootstrapStream bootstrap)
@@ -696,7 +753,8 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
             correlations.put(replyId, this::onDescribeReply);
             router.setThrottle(initialId, this::onDescribeReply);
-            doBegin(receiver, bootstrap.resolvedId, initialId, traceId, bootstrap.authorization, 0L,
+            doBegin(receiver, bootstrap.resolvedId, initialId, initialSeq, initialAck, initialMax,
+                    traceId, bootstrap.authorization, 0L,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .describe(m -> m.topic(bootstrap.topic)
@@ -729,7 +787,8 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         {
             state = KafkaState.closedInitial(state);
 
-            doEnd(receiver, bootstrap.resolvedId, initialId, traceId, bootstrap.authorization, EMPTY_EXTENSION);
+            doEnd(receiver, bootstrap.resolvedId, initialId, initialSeq, initialAck, initialMax,
+                    traceId, bootstrap.authorization, EMPTY_EXTENSION);
         }
 
         private void doDescribeInitialAbortIfNecessary(
@@ -746,7 +805,8 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         {
             state = KafkaState.closedInitial(state);
 
-            doAbort(receiver, bootstrap.resolvedId, initialId, traceId, bootstrap.authorization, EMPTY_EXTENSION);
+            doAbort(receiver, bootstrap.resolvedId, initialId, initialSeq, initialAck, initialMax,
+                    traceId, bootstrap.authorization, EMPTY_EXTENSION);
         }
 
         private void onDescribeReply(
@@ -793,19 +853,26 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
             state = KafkaState.openedReply(state);
 
-            doDescribeReplyWindow(traceId, 8192);
+            doDescribeReplyWindow(traceId, 0, 8192);
         }
 
         private void onDescribeReplyData(
             DataFW data)
         {
+            final long sequence = data.sequence();
+            final long acknowledge = data.acknowledge();
             final long traceId = data.traceId();
             final int reserved = data.reserved();
             final OctetsFW extension = data.extension();
 
-            replyBudget -= reserved;
+            assert acknowledge <= sequence;
+            assert sequence >= replySeq;
 
-            if (replyBudget < 0)
+            replySeq = sequence + reserved;
+
+            assert replyAck <= replySeq;
+
+            if (replySeq > replyAck + replyMax)
             {
                 bootstrap.doBootstrapCleanup(traceId);
             }
@@ -817,7 +884,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
                 bootstrap.onTopicConfigChanged(traceId, changedConfigs);
 
-                doDescribeReplyWindow(traceId, reserved);
+                doDescribeReplyWindow(traceId, 0, replyMax);
             }
         }
 
@@ -867,20 +934,29 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
                 state = KafkaState.openedInitial(state);
 
-                bootstrap.doBootstrapInitialWindowIfNecessary(traceId, 0L, 0, 0);
+                bootstrap.doBootstrapInitialWindow(traceId, 0L, 0, 0, 0);
             }
         }
 
         private void doDescribeReplyWindow(
             long traceId,
-            int credit)
+            int minReplyNoAck,
+            int minReplyMax)
         {
-            state = KafkaState.openedReply(state);
+            final long newReplyAck = Math.max(replySeq - minReplyNoAck, replyAck);
 
-            replyBudget += credit;
+            if (newReplyAck > replyAck || minReplyMax > replyMax || !KafkaState.replyOpened(state))
+            {
+                replyAck = newReplyAck;
+                assert replyAck <= replySeq;
 
-            doWindow(receiver, bootstrap.resolvedId, replyId, traceId, bootstrap.authorization,
-                0L, credit, bootstrap.replyPadding);
+                replyMax = minReplyMax;
+
+                state = KafkaState.openedReply(state);
+
+                doWindow(receiver, bootstrap.resolvedId, replyId, replySeq, replyAck, replyMax,
+                        traceId, bootstrap.authorization, 0, bootstrap.replyPad);
+            }
         }
 
         private void doDescribeReplyResetIfNecessary(
@@ -897,7 +973,8 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         {
             state = KafkaState.closedReply(state);
 
-            doReset(receiver, bootstrap.resolvedId, replyId, traceId, bootstrap.authorization);
+            doReset(receiver, bootstrap.resolvedId, replyId, replySeq, replyAck, replyMax,
+                    traceId, bootstrap.authorization);
         }
     }
 
@@ -911,12 +988,18 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
         private int state;
 
-        private int replyBudget;
+        private long initialSeq;
+        private long initialAck;
+        private int initialMax;
+
+        private long replySeq;
+        private long replyAck;
+        private int replyMax;
 
         private KafkaBootstrapMetaStream(
-            KafkaBootstrapStream mergedFetch)
+            KafkaBootstrapStream bootstrap)
         {
-            this.bootstrap = mergedFetch;
+            this.bootstrap = bootstrap;
         }
 
         private void doMetaInitialBeginIfNecessary(
@@ -941,7 +1024,8 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
             correlations.put(replyId, this::onMetaReply);
             router.setThrottle(initialId, this::onMetaReply);
-            doBegin(receiver, bootstrap.resolvedId, initialId, traceId, bootstrap.authorization, 0L,
+            doBegin(receiver, bootstrap.resolvedId, initialId, initialSeq, initialAck, initialMax,
+                    traceId, bootstrap.authorization, 0L,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .meta(m -> m.topic(bootstrap.topic))
@@ -963,7 +1047,8 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         {
             state = KafkaState.closedInitial(state);
 
-            doEnd(receiver, bootstrap.resolvedId, initialId, traceId, bootstrap.authorization, EMPTY_EXTENSION);
+            doEnd(receiver, bootstrap.resolvedId, initialId, initialSeq, initialAck, initialMax,
+                    traceId, bootstrap.authorization, EMPTY_EXTENSION);
         }
 
         private void doMetaInitialAbortIfNecessary(
@@ -980,7 +1065,8 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         {
             state = KafkaState.closedInitial(state);
 
-            doAbort(receiver, bootstrap.resolvedId, initialId, traceId, bootstrap.authorization, EMPTY_EXTENSION);
+            doAbort(receiver, bootstrap.resolvedId, initialId, initialSeq, initialAck, initialMax,
+                    traceId, bootstrap.authorization, EMPTY_EXTENSION);
         }
 
         private void onMetaReply(
@@ -1027,19 +1113,26 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
             state = KafkaState.openedReply(state);
 
-            doMetaReplyWindow(traceId, 8192);
+            doMetaReplyWindow(traceId, 0, 8192);
         }
 
         private void onMetaReplyData(
             DataFW data)
         {
+            final long sequence = data.sequence();
+            final long acknowledge = data.acknowledge();
             final long traceId = data.traceId();
             final int reserved = data.reserved();
             final OctetsFW extension = data.extension();
 
-            replyBudget -= reserved;
+            assert acknowledge <= sequence;
+            assert sequence >= replySeq;
 
-            if (replyBudget < 0)
+            replySeq = sequence + reserved;
+
+            assert replyAck <= replySeq;
+
+            if (replySeq > replyAck + replyMax)
             {
                 bootstrap.doBootstrapCleanup(traceId);
             }
@@ -1051,7 +1144,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
                 bootstrap.onTopicMetaDataChanged(traceId, partitions);
 
-                doMetaReplyWindow(traceId, reserved);
+                doMetaReplyWindow(traceId, 0, replyMax);
             }
         }
 
@@ -1101,20 +1194,29 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
                 state = KafkaState.openedInitial(state);
 
-                bootstrap.doBootstrapInitialWindowIfNecessary(traceId, 0L, 0, 0);
+                bootstrap.doBootstrapInitialWindow(traceId, 0L, 0, 0, 0);
             }
         }
 
         private void doMetaReplyWindow(
             long traceId,
-            int credit)
+            int minReplyNoAck,
+            int minReplyMax)
         {
-            state = KafkaState.openedReply(state);
+            final long newReplyAck = Math.max(replySeq - minReplyNoAck, replyAck);
 
-            replyBudget += credit;
+            if (newReplyAck > replyAck || minReplyMax > replyMax || !KafkaState.replyOpened(state))
+            {
+                replyAck = newReplyAck;
+                assert replyAck <= replySeq;
 
-            doWindow(receiver, bootstrap.resolvedId, replyId, traceId, bootstrap.authorization,
-                0L, credit, bootstrap.replyPadding);
+                replyMax = minReplyMax;
+
+                state = KafkaState.openedReply(state);
+
+                doWindow(receiver, bootstrap.resolvedId, replyId, replySeq, replyAck, replyMax,
+                        traceId, bootstrap.authorization, 0, bootstrap.replyPad);
+            }
         }
 
         private void doMetaReplyResetIfNecessary(
@@ -1131,7 +1233,8 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         {
             state = KafkaState.closedReply(state);
 
-            doReset(receiver, bootstrap.resolvedId, replyId, traceId, bootstrap.authorization);
+            doReset(receiver, bootstrap.resolvedId, replyId, replySeq, replyAck, replyMax,
+                    traceId, bootstrap.authorization);
         }
     }
 
@@ -1148,7 +1251,13 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
         private int state;
 
-        private int replyBudget;
+        private long initialSeq;
+        private long initialAck;
+        private int initialMax;
+
+        private long replySeq;
+        private long replyAck;
+        private int replyMax;
 
         @SuppressWarnings("unused")
         private long partitionOffset;
@@ -1192,7 +1301,8 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
             correlations.put(replyId, this::onFetchReply);
             router.setThrottle(initialId, this::onFetchReply);
-            doBegin(receiver, bootstrap.resolvedId, initialId, traceId, bootstrap.authorization, leaderId,
+            doBegin(receiver, bootstrap.resolvedId, initialId, initialSeq, initialAck, initialMax,
+                    traceId, bootstrap.authorization, leaderId,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(bootstrap.topic)
@@ -1215,7 +1325,8 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         {
             state = KafkaState.closedInitial(state);
 
-            doEnd(receiver, bootstrap.resolvedId, initialId, traceId, bootstrap.authorization, EMPTY_EXTENSION);
+            doEnd(receiver, bootstrap.resolvedId, initialId, initialSeq, initialAck, initialMax,
+                    traceId, bootstrap.authorization, EMPTY_EXTENSION);
         }
 
         private void doFetchInitialAbortIfNecessary(
@@ -1232,7 +1343,8 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         {
             state = KafkaState.closedInitial(state);
 
-            doAbort(receiver, bootstrap.resolvedId, initialId, traceId, bootstrap.authorization, EMPTY_EXTENSION);
+            doAbort(receiver, bootstrap.resolvedId, initialId, initialSeq, initialAck, initialMax,
+                    traceId, bootstrap.authorization, EMPTY_EXTENSION);
         }
 
         private void onFetchInitialReset(
@@ -1262,7 +1374,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
                 state = KafkaState.openedInitial(state);
 
-                bootstrap.doBootstrapInitialWindowIfNecessary(traceId, 0L, 0, 0);
+                bootstrap.doBootstrapInitialWindow(traceId, 0L, 0, 0, 0);
             }
         }
 
@@ -1312,18 +1424,25 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
             bootstrap.onPartitionLeaderReady(traceId, partitionId);
 
-            doFetchReplyWindow(traceId, 8192); // TODO: consider 0 to avoid receiving FLUSH frames
+            doFetchReplyWindow(traceId, 0, 8192); // TODO: consider 0 to avoid receiving FLUSH frames
         }
 
         private void onFetchReplyFlush(
             FlushFW flush)
         {
+            final long sequence = flush.sequence();
+            final long acknowledge = flush.acknowledge();
             final long traceId = flush.traceId();
             final int reserved = flush.reserved();
 
-            replyBudget -= reserved;
+            assert acknowledge <= sequence;
+            assert sequence >= replySeq;
 
-            if (replyBudget < 0)
+            replySeq = sequence + reserved;
+
+            assert replyAck <= replySeq;
+
+            if (replySeq > replyAck + replyMax)
             {
                 bootstrap.doBootstrapCleanup(traceId);
             }
@@ -1336,7 +1455,7 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
                 this.partitionOffset = partition.partitionOffset();
 
-                doFetchReplyWindow(traceId, reserved);
+                doFetchReplyWindow(traceId, 0, replyMax);
             }
         }
 
@@ -1366,16 +1485,22 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
 
         private void doFetchReplyWindow(
             long traceId,
-            int credit)
+            int minReplyNoAck,
+            int minReplyMax)
         {
-            if (!KafkaState.replyOpened(state) || credit > 0)
+            final long newReplyAck = Math.max(replySeq - minReplyNoAck, replyAck);
+
+            if (newReplyAck > replyAck || minReplyMax > replyMax || !KafkaState.replyOpened(state))
             {
+                replyAck = newReplyAck;
+                assert replyAck <= replySeq;
+
+                replyMax = minReplyMax;
+
                 state = KafkaState.openedReply(state);
 
-                replyBudget += credit;
-
-                doWindow(receiver, bootstrap.resolvedId, replyId, traceId, bootstrap.authorization,
-                    bootstrap.replyBudgetId, credit, 0);
+                doWindow(receiver, bootstrap.resolvedId, replyId, replySeq, replyAck, replyMax,
+                        traceId, bootstrap.authorization, bootstrap.replyBudgetId, 0);
             }
         }
 
@@ -1393,7 +1518,8 @@ public final class KafkaCacheServerBootstrapFactory implements StreamFactory
         {
             state = KafkaState.closedReply(state);
 
-            doReset(receiver, bootstrap.resolvedId, replyId, traceId, bootstrap.authorization);
+            doReset(receiver, bootstrap.resolvedId, replyId, replySeq, replyAck, replyMax,
+                    traceId, bootstrap.authorization);
             correlations.remove(replyId);
         }
     }

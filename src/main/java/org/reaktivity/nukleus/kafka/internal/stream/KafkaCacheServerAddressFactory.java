@@ -162,6 +162,14 @@ public class KafkaCacheServerAddressFactory implements AddressFactory
 
         private int state;
 
+        private long initialSeq;
+        private long initialAck;
+        private int initialMax;
+
+        private long replySeq;
+        private long replyAck;
+        private int replyMax;
+
         private KafkaAddressStream(
             long routeId,
             long authorization,
@@ -183,7 +191,8 @@ public class KafkaCacheServerAddressFactory implements AddressFactory
 
             correlations.put(replyId, this::onKafkaReply);
             router.setThrottle(initialId, this::onKafkaReply);
-            doBegin(receiver, routeId, initialId, traceId, authorization, 0,
+            doBegin(receiver, routeId, initialId, initialSeq, initialAck, initialMax,
+                    traceId, authorization, 0,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .bootstrap(bs -> bs.topic(topic))
@@ -198,7 +207,8 @@ public class KafkaCacheServerAddressFactory implements AddressFactory
             state = KafkaState.closedInitial(state);
 
             correlations.remove(replyId);
-            doEnd(receiver, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
+            doEnd(receiver, routeId, initialId, initialSeq, initialAck, initialMax,
+                    traceId, authorization, EMPTY_EXTENSION);
         }
 
         private void onKafkaReply(
@@ -213,7 +223,7 @@ public class KafkaCacheServerAddressFactory implements AddressFactory
             {
             case BeginFW.TYPE_ID:
                 state = KafkaState.openedReply(state);
-                doKafkaReplyWindow(traceId, 0, 0);
+                doKafkaReplyWindow(traceId, 0);
                 break;
             case EndFW.TYPE_ID:
             case AbortFW.TYPE_ID:
@@ -235,15 +245,16 @@ public class KafkaCacheServerAddressFactory implements AddressFactory
         private void doKafkaReplyReset(
             long traceId)
         {
-            doReset(receiver, routeId, replyId, traceId, authorization);
+            doReset(receiver, routeId, replyId, replySeq, replyAck, replyMax,
+                    traceId, authorization);
         }
 
         private void doKafkaReplyWindow(
             long traceId,
-            int credit,
             int padding)
         {
-            doWindow(receiver, routeId, replyId, traceId, authorization, 0L, credit, padding);
+            doWindow(receiver, routeId, replyId, replySeq, replyAck, replyMax,
+                    traceId, authorization, 0L, padding);
         }
     }
 
@@ -280,6 +291,9 @@ public class KafkaCacheServerAddressFactory implements AddressFactory
         MessageConsumer receiver,
         long routeId,
         long streamId,
+        long sequence,
+        long acknowledge,
+        int maximum,
         long traceId,
         long authorization,
         long affinity,
@@ -288,6 +302,9 @@ public class KafkaCacheServerAddressFactory implements AddressFactory
         final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
+                .sequence(sequence)
+                .acknowledge(acknowledge)
+                .maximum(maximum)
                 .traceId(traceId)
                 .authorization(authorization)
                 .affinity(affinity)
@@ -301,6 +318,9 @@ public class KafkaCacheServerAddressFactory implements AddressFactory
         MessageConsumer receiver,
         long routeId,
         long streamId,
+        long sequence,
+        long acknowledge,
+        int maximum,
         long traceId,
         long authorization,
         Consumer<OctetsFW.Builder> extension)
@@ -308,6 +328,9 @@ public class KafkaCacheServerAddressFactory implements AddressFactory
         final EndFW end = endRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                .routeId(routeId)
                                .streamId(streamId)
+                               .sequence(sequence)
+                               .acknowledge(acknowledge)
+                               .maximum(maximum)
                                .traceId(traceId)
                                .authorization(authorization)
                                .extension(extension)
@@ -320,12 +343,18 @@ public class KafkaCacheServerAddressFactory implements AddressFactory
         MessageConsumer sender,
         long routeId,
         long streamId,
+        long sequence,
+        long acknowledge,
+        int maximum,
         long traceId,
         long authorization)
     {
         final ResetFW reset = resetRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                .routeId(routeId)
                .streamId(streamId)
+               .sequence(sequence)
+               .acknowledge(acknowledge)
+               .maximum(maximum)
                .traceId(traceId)
                .authorization(authorization)
                .build();
@@ -337,19 +366,23 @@ public class KafkaCacheServerAddressFactory implements AddressFactory
         MessageConsumer sender,
         long routeId,
         long streamId,
+        long sequence,
+        long acknowledge,
+        int maximum,
         long traceId,
         long authorization,
         long budgetId,
-        int credit,
         int padding)
     {
         final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
+                .sequence(sequence)
+                .acknowledge(acknowledge)
+                .maximum(maximum)
                 .traceId(traceId)
                 .authorization(authorization)
                 .budgetId(budgetId)
-                .credit(credit)
                 .padding(padding)
                 .build();
 
