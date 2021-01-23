@@ -18,6 +18,7 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.lang.System.currentTimeMillis;
 import static java.lang.Thread.currentThread;
 import static org.reaktivity.nukleus.concurrent.Signaler.NO_CANCEL_ID;
+import static org.reaktivity.nukleus.kafka.internal.cache.KafkaCachePartition.CACHE_ENTRY_FLAGS_DIRTY;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 
 import java.nio.ByteBuffer;
@@ -251,6 +252,9 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         MessageConsumer receiver,
         long routeId,
         long streamId,
+        long sequence,
+        long acknowledge,
+        int maximum,
         long traceId,
         long authorization,
         long affinity,
@@ -259,6 +263,9 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
+                .sequence(sequence)
+                .acknowledge(acknowledge)
+                .maximum(maximum)
                 .traceId(traceId)
                 .authorization(authorization)
                 .affinity(affinity)
@@ -272,6 +279,9 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         MessageConsumer receiver,
         long routeId,
         long streamId,
+        long sequence,
+        long acknowledge,
+        int maximum,
         long traceId,
         long authorization,
         int flags,
@@ -283,6 +293,9 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         final DataFW data = dataRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
+                .sequence(sequence)
+                .acknowledge(acknowledge)
+                .maximum(maximum)
                 .traceId(traceId)
                 .authorization(authorization)
                 .flags(flags)
@@ -299,6 +312,9 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         MessageConsumer receiver,
         long routeId,
         long streamId,
+        long sequence,
+        long acknowledge,
+        int maximum,
         long traceId,
         long authorization,
         long budgetId,
@@ -308,6 +324,9 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         final FlushFW flush = flushRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                      .routeId(routeId)
                                      .streamId(streamId)
+                                     .sequence(sequence)
+                                     .acknowledge(acknowledge)
+                                     .maximum(maximum)
                                      .traceId(traceId)
                                      .authorization(authorization)
                                      .budgetId(budgetId)
@@ -322,6 +341,9 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         MessageConsumer receiver,
         long routeId,
         long streamId,
+        long sequence,
+        long acknowledge,
+        int maximum,
         long traceId,
         long authorization,
         Consumer<OctetsFW.Builder> extension)
@@ -329,6 +351,9 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         final EndFW end = endRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                                .routeId(routeId)
                                .streamId(streamId)
+                               .sequence(sequence)
+                               .acknowledge(acknowledge)
+                               .maximum(maximum)
                                .traceId(traceId)
                                .authorization(authorization)
                                .extension(extension)
@@ -341,6 +366,9 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         MessageConsumer receiver,
         long routeId,
         long streamId,
+        long sequence,
+        long acknowledge,
+        int maximum,
         long traceId,
         long authorization,
         Consumer<OctetsFW.Builder> extension)
@@ -348,6 +376,9 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         final AbortFW abort = abortRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
+                .sequence(sequence)
+                .acknowledge(acknowledge)
+                .maximum(maximum)
                 .traceId(traceId)
                 .authorization(authorization)
                 .extension(extension)
@@ -360,19 +391,23 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         MessageConsumer sender,
         long routeId,
         long streamId,
+        long sequence,
+        long acknowledge,
+        int maximum,
         long traceId,
         long authorization,
         long budgetId,
-        int credit,
         int padding)
     {
         final WindowFW window = windowRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                 .routeId(routeId)
                 .streamId(streamId)
+                .sequence(sequence)
+                .acknowledge(acknowledge)
+                .maximum(maximum)
                 .traceId(traceId)
                 .authorization(authorization)
                 .budgetId(budgetId)
-                .credit(credit)
                 .padding(padding)
                 .build();
 
@@ -383,6 +418,9 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         MessageConsumer sender,
         long routeId,
         long streamId,
+        long sequence,
+        long acknowledge,
+        int maximum,
         long traceId,
         long authorization,
         Flyweight extension)
@@ -390,6 +428,9 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         final ResetFW reset = resetRW.wrap(writeBuffer, 0, writeBuffer.capacity())
                .routeId(routeId)
                .streamId(streamId)
+               .sequence(sequence)
+               .acknowledge(acknowledge)
+               .maximum(maximum)
                .traceId(traceId)
                .authorization(authorization)
                .extension(extension.buffer(), extension.offset(), extension.sizeof())
@@ -414,10 +455,16 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
         private int state;
 
+        private long initialSeq;
+        private long initialAck;
+        private int initialPad;
+        private int initialMax;
         private long initialBudgetId;
-        private int initialBudget;
-        private int initialPadding;
         private int initialFlags;
+
+        private long replySeq;
+        private long replyAck;
+        private int replyMax;
 
         private long reconnectAt = NO_CANCEL_ID;
         private int memberIndex;
@@ -461,7 +508,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
             if (KafkaState.initialOpened(state))
             {
-                member.doServerInitialWindowIfNecessary(traceId);
+                member.doServerInitialWindow(traceId);
             }
 
             if (KafkaState.replyOpened(state))
@@ -523,7 +570,8 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
             correlations.put(replyId, this::onServerFanMessage);
             router.setThrottle(initialId, this::onServerFanMessage);
-            doBegin(receiver, routeId, initialId, traceId, authorization, leaderId,
+            doBegin(receiver, routeId, initialId, initialSeq, initialAck, initialMax,
+                    traceId, authorization, leaderId,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .produce(pr -> pr.transaction(TRANSACTION_NONE)
@@ -568,7 +616,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
                 if (member.cursor.offset > cursorOffset)
                 {
-                    membersNotProgressing = 0;
+                    membersNotProgressing = -1;
                     continue;
                 }
             }
@@ -584,6 +632,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         {
             if (KafkaConfiguration.DEBUG_PRODUCE)
             {
+                final long initialBudget = initialMax - (initialSeq - initialAck);
                 System.out.format("[%d] [%d] [%d] kafka cache server fan [%d %s] %d - %d => %d\n",
                         currentTimeMillis(), currentThread().getId(),
                         initialId, partitionId, partionTopic, initialBudget, reserved, initialBudget - reserved);
@@ -598,16 +647,19 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                 initialFlags = 0;
             }
 
-            initialBudget -= reserved;
-            assert initialBudget >= 0;
+            doData(receiver, routeId, initialId, initialSeq, initialAck, initialMax,
+                    traceId, authorization, flags, initialBudgetId, reserved, payload, extension);
 
-            doData(receiver, routeId, initialId, traceId, authorization, flags, initialBudgetId, reserved, payload, extension);
+            initialSeq += reserved;
+
+            assert initialAck <= initialSeq;
         }
 
         private void doServerFanInitialEnd(
             long traceId)
         {
-            doEnd(receiver, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
+            doEnd(receiver, routeId, initialId, initialSeq, initialAck, initialMax,
+                    traceId, authorization, EMPTY_EXTENSION);
 
             onServerFanInitialClosed();
         }
@@ -624,7 +676,8 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         private void doServerFanInitialAbort(
             long traceId)
         {
-            doAbort(receiver, routeId, initialId, traceId, authorization, EMPTY_EXTENSION);
+            doAbort(receiver, routeId, initialId, initialSeq, initialAck, initialMax,
+                    traceId, authorization, EMPTY_EXTENSION);
 
             onServerFanInitialClosed();
         }
@@ -653,13 +706,18 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         private void onServerFanInitialWindow(
             WindowFW window)
         {
+            final long sequence = window.sequence();
+            final long acknowledge = window.acknowledge();
+            final int maximum = window.maximum();
             final long traceId = window.traceId();
             final long budgetId = window.budgetId();
-            final int credit = window.credit();
             final int padding = window.padding();
 
             if (KafkaConfiguration.DEBUG_PRODUCE)
             {
+                final long initialBudget = initialMax - (initialSeq - initialAck);
+                final long newInitialBudget = maximum - (sequence - acknowledge);
+                final long credit = newInitialBudget - initialBudget;
                 System.out.format("[%d] [%d] [%d] kafka cache server fan [%d %s] %d + %d => %d\n",
                         currentTimeMillis(), currentThread().getId(),
                         initialId, partitionId, partionTopic, initialBudget, credit, initialBudget + credit);
@@ -667,21 +725,32 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
             if (ReaktorConfiguration.DEBUG_BUDGETS)
             {
+                final long initialBudget = initialMax - (initialSeq - initialAck);
+                final long newInitialBudget = maximum - (sequence - acknowledge);
+                final long credit = newInitialBudget - initialBudget;
                 System.out.format("[%d] [0x%016x] [0x%016x] cache server credit %d @ %d => %d\n",
                         System.nanoTime(), traceId, budgetId, credit, initialBudget, initialBudget + credit);
             }
 
             assert budgetId == 0L;
 
-            initialBudgetId = budgetId;
-            initialBudget += credit;
-            initialPadding = padding;
+            assert acknowledge <= sequence;
+            assert sequence <= initialSeq;
+            assert acknowledge >= initialAck;
+            assert maximum >= initialMax;
+
+            this.initialAck = acknowledge;
+            this.initialMax = maximum;
+            this.initialPad = padding;
+            this.initialBudgetId = budgetId;
+
+            assert initialAck <= initialSeq;
 
             if (!KafkaState.initialOpened(state))
             {
                 onServerFanInitialOpened();
 
-                members.forEach(s -> s.doServerInitialWindowIfNecessary(traceId));
+                members.forEach(s -> s.doServerInitialWindow(traceId));
             }
 
             doServerFanInitialDataIfNecessary(traceId);
@@ -699,8 +768,10 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             state = KafkaState.closedInitial(state);
 
             initialFlags = 0;
-            initialBudget = 0;
-            initialPadding = 0;
+            initialSeq = 0;
+            initialAck = 0;
+            initialMax = 0;
+            initialPad = 0;
         }
 
         private void onServerFanMessage(
@@ -754,7 +825,7 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
             members.forEach(s -> s.doServerReplyBeginIfNecessary(traceId));
 
-            doServerFanReplyWindow(traceId, 0);
+            doServerFanReplyWindow(traceId, 0, 0, 0);
         }
 
         private void onServerFanReplyEnd(
@@ -807,22 +878,35 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
             state = KafkaState.closedReply(state);
 
-            doReset(receiver, routeId, replyId, traceId, authorization, EMPTY_OCTETS);
+            doReset(receiver, routeId, replyId, replySeq, replyAck, replyMax,
+                    traceId, authorization, EMPTY_OCTETS);
         }
 
         private void doServerFanReplyWindow(
             long traceId,
-            int credit)
+            int minReplyNoAck,
+            int minReplyPad,
+            int minReplyMax)
         {
-            state = KafkaState.openedReply(state);
+            final long newReplyAck = Math.max(replySeq - minReplyNoAck, replyAck);
 
-            doWindow(receiver, routeId, replyId, traceId, authorization, 0L, credit, 0);
+            if (newReplyAck > replyAck || minReplyMax > replyMax || !KafkaState.replyOpened(state))
+            {
+                replyAck = newReplyAck;
+                assert replyAck <= replySeq;
+
+                replyMax = minReplyMax;
+
+                state = KafkaState.openedReply(state);
+
+                doWindow(receiver, routeId, replyId, replySeq, replyAck, replyMax,
+                        traceId, authorization, 0L, minReplyPad);
+            }
         }
     }
 
     private final class KafkaCacheServerProduceStream
     {
-
         private final KafkaCachePartition partition;
         private final KafkaCacheCursor cursor;
         private final KafkaCacheServerProduceFan fan;
@@ -835,7 +919,14 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
 
         private int state;
 
-        private int initialBudget;
+        private long initialSeq;
+        private long initialAck;
+        private int initialMax;
+
+        private long replySeq;
+        private long replyAck;
+        private int replyMax;
+
         private long partitionOffset = DEFAULT_LATEST_OFFSET;
         private int messageOffset;
 
@@ -998,15 +1089,24 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                     final OctetsFW value = nextEntry.value();
                     final int remaining = value != null ? value.sizeof() - messageOffset : 0;
                     assert remaining >= 0;
-                    final int initialPadding = fan.initialPadding;
-                    final int initialBudget = fan.initialBudget;
-                    final int reserved = Math.min(remaining + initialPadding, initialBudget);
+                    final int initialPad = fan.initialPad;
+                    final int initialBudget = fan.initialMax - (int)(fan.initialSeq - fan.initialAck);
+                    final int reserved = Math.min(remaining + initialPad, initialBudget);
+                    final int entryFlags = nextEntry.flags();
 
                     assert partitionOffset >= cursor.offset : String.format("%d >= %d", partitionOffset, cursor.offset);
 
-                    if (reserved >= initialPadding)
+                    produce:
+                    if (reserved >= initialPad)
                     {
-                        final int length = Math.min(reserved - initialPadding, remaining);
+                        if ((entryFlags & CACHE_ENTRY_FLAGS_DIRTY) != 0)
+                        {
+                            cursor.advance(partitionOffset + 1);
+                            doFlushServerReply(traceId);
+                            break produce;
+                        }
+
+                        final int length = Math.min(reserved - initialPad, remaining);
                         assert length >= 0 : String.format("%d >= 0", length);
 
                         final int deferred = remaining - length;
@@ -1186,43 +1286,46 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
         {
             state = KafkaState.closedInitial(state);
 
-            doReset(sender, routeId, initialId, traceId, authorization, extension);
-        }
-
-        private void doServerInitialWindowIfNecessary(
-            long traceId)
-        {
-            final int credit = Math.max(fan.initialBudget - initialBudget, 0);
-
-            if (!KafkaState.initialOpened(state) || credit > 0)
-            {
-                doServerInitialWindow(traceId, credit);
-            }
+            doReset(sender, routeId, initialId, initialSeq, initialAck, initialMax,
+                    traceId, authorization, extension);
         }
 
         private void doServerInitialWindow(
-            long traceId,
-            int credit)
+            long traceId)
         {
-            state = KafkaState.openedInitial(state);
+            final int minInitialMax = fan.initialMax;
+            final int minInitialNoAck = (int)(fan.initialSeq - fan.initialAck);
+            final long newInitialAck = Math.max(initialSeq - minInitialNoAck, initialAck);
 
-            if (KafkaConfiguration.DEBUG_PRODUCE)
+            if (newInitialAck > initialAck || minInitialMax > initialMax || !KafkaState.initialOpened(state))
             {
-                System.out.format("[%d] [%d] [%d] kafka cache server [%s] %d + %d => %d\n",
-                        currentTimeMillis(), currentThread().getId(),
-                        initialId, partition, initialBudget, credit, initialBudget + credit);
+                if (KafkaConfiguration.DEBUG_PRODUCE)
+                {
+                    final int initialBudget = initialMax - (int)(initialSeq - initialAck);
+                    final int newInitialBudget = initialMax - (int)(initialSeq - initialAck);
+                    final int credit = newInitialBudget - initialBudget;
+                    System.out.format("[%d] [%d] [%d] kafka cache server [%s] %d + %d => %d\n",
+                            currentTimeMillis(), currentThread().getId(),
+                            initialId, partition, initialBudget, credit, initialBudget + credit);
+                }
+
+                initialAck = newInitialAck;
+                assert initialAck <= initialSeq;
+
+                initialMax = minInitialMax;
+
+                state = KafkaState.openedInitial(state);
+
+                doWindow(sender, routeId, initialId, initialSeq, initialAck, initialMax,
+                        traceId, authorization, fan.creditorId, fan.initialPad);
             }
-
-            initialBudget += credit;
-
-            doWindow(sender, routeId, initialId, traceId, authorization,
-                    fan.creditorId, credit, fan.initialPadding);
         }
 
         private void doFlushServerReply(
             long traceId)
         {
-            doFlush(sender, routeId, replyId, traceId, authorization, 0L, SIZE_OF_FLUSH_WITH_EXTENSION,
+            doFlush(sender, routeId, replyId, replySeq, replyAck, replyMax,
+                    traceId, authorization, 0L, SIZE_OF_FLUSH_WITH_EXTENSION,
                 ex -> ex.set((b, o, l) -> kafkaFlushExRW.wrap(b, o, l)
                                                         .typeId(kafkaTypeId)
                                                         .produce(f -> f.partition(p -> p.partitionId(partition.id())
@@ -1246,7 +1349,8 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
             state = KafkaState.openingReply(state);
 
             router.setThrottle(replyId, this::onServerMessage);
-            doBegin(sender, routeId, replyId, traceId, authorization, leaderId,
+            doBegin(sender, routeId, replyId, replySeq, replyAck, replyMax,
+                    traceId, authorization, leaderId,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .produce(p -> p.transaction(TRANSACTION_NONE)
@@ -1272,7 +1376,8 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                 long traceId)
         {
             state = KafkaState.closedReply(state);
-            doEnd(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
+            doEnd(sender, routeId, replyId, replySeq, replyAck, replyMax,
+                    traceId, authorization, EMPTY_EXTENSION);
         }
 
         private void doServerReplyAbortIfNecessary(
@@ -1290,18 +1395,20 @@ public final class KafkaCacheServerProduceFactory implements StreamFactory
                 long traceId)
         {
             state = KafkaState.closedReply(state);
-            doAbort(sender, routeId, replyId, traceId, authorization, EMPTY_EXTENSION);
+            doAbort(sender, routeId, replyId, replySeq, replyAck, replyMax,
+                    traceId, authorization, EMPTY_EXTENSION);
         }
 
         private void onServerReplyWindow(
             WindowFW window)
         {
+            final long sequence = window.sequence();
+            final long acknowledge = window.acknowledge();
             final long budgetId = window.budgetId();
-            final int credit = window.credit();
             final int padding = window.padding();
 
+            assert sequence == acknowledge;
             assert budgetId == 0L;
-            assert credit == 0;
             assert padding == 0;
 
             state = KafkaState.openedReply(state);
