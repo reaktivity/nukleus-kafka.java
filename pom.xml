@@ -59,10 +59,10 @@
 
     <k3po.version>3.1.0</k3po.version>
 
-    <nukleus.plugin.version>0.84</nukleus.plugin.version>
+    <nukleus.plugin.version>0.85</nukleus.plugin.version>
 
-    <nukleus.kafka.spec.version>0.170</nukleus.kafka.spec.version>
-    <reaktor.version>0.161</reaktor.version>
+    <nukleus.kafka.spec.version>0.171</nukleus.kafka.spec.version>
+    <reaktor.version>0.163</reaktor.version>
 
     <kafka.clients.version>1.0.0</kafka.clients.version>
   </properties>
@@ -79,11 +79,6 @@
       <artifactId>reaktor</artifactId>
       <version>${reaktor.version}</version>
       <scope>provided</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.glassfish</groupId>
-      <artifactId>javax.json</artifactId>
-      <version>1.1.4</version>
     </dependency>
     <dependency>
       <groupId>com.google.code.gson</groupId>
