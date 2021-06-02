@@ -15,37 +15,32 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
-import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.FETCH_ONLY;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaCapabilities.PRODUCE_ONLY;
-import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.HISTORICAL;
 import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.LIVE;
-import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
 import static org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW.Builder.DEFAULT_MINIMUM;
+import static org.reaktivity.reaktor.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
-import java.util.function.LongSupplier;
+import java.util.function.LongConsumer;
+import java.util.function.LongFunction;
 import java.util.function.LongUnaryOperator;
-import java.util.function.ToIntFunction;
 
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Int2IntHashMap;
 import org.agrona.collections.Long2LongHashMap;
-import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.collections.MutableInteger;
 import org.agrona.concurrent.UnsafeBuffer;
-import org.reaktivity.nukleus.function.MessageConsumer;
-import org.reaktivity.nukleus.function.MessageFunction;
-import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.budget.MergedBudgetCreditor;
+import org.reaktivity.nukleus.kafka.internal.config.KafkaBinding;
 import org.reaktivity.nukleus.kafka.internal.types.Array32FW;
 import org.reaktivity.nukleus.kafka.internal.types.ArrayFW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
@@ -65,8 +60,6 @@ import org.reaktivity.nukleus.kafka.internal.types.KafkaPartitionFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaValueMatchFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.String16FW;
-import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
-import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.AbortFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.DataFW;
@@ -85,8 +78,9 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaMetaDataExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaResetExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
-import org.reaktivity.nukleus.route.RouteManager;
-import org.reaktivity.nukleus.stream.StreamFactory;
+import org.reaktivity.reaktor.nukleus.ElektronContext;
+import org.reaktivity.reaktor.nukleus.function.MessageConsumer;
+import org.reaktivity.reaktor.nukleus.stream.StreamFactory;
 
 public final class KafkaMergedFactory implements StreamFactory
 {
@@ -120,9 +114,6 @@ public final class KafkaMergedFactory implements StreamFactory
 
     private static final List<KafkaMergedFilter> EMPTY_MERGED_FILTERS = Collections.emptyList();
 
-    private final RouteFW routeRO = new RouteFW();
-    private final KafkaRouteExFW routeExRO = new KafkaRouteExFW();
-
     private final BeginFW beginRO = new BeginFW();
     private final DataFW dataRO = new DataFW();
     private final EndFW endRO = new EndFW();
@@ -145,40 +136,35 @@ public final class KafkaMergedFactory implements StreamFactory
     private final KafkaBeginExFW.Builder kafkaBeginExRW = new KafkaBeginExFW.Builder();
     private final KafkaDataExFW.Builder kafkaDataExRW = new KafkaDataExFW.Builder();
 
-    private final MessageFunction<RouteFW> wrapRoute = (t, b, i, l) -> routeRO.wrap(b, i, i + l);
-
     private final MutableInteger partitionCount = new MutableInteger();
     private final MutableInteger initialNoAckRW = new MutableInteger();
     private final MutableInteger initialPadRW = new MutableInteger();
     private final MutableInteger initialMaxRW = new MutableInteger();
 
     private final int kafkaTypeId;
-    private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
     private final MutableDirectBuffer extBuffer;
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
-    private final Long2ObjectHashMap<MessageConsumer> correlations;
+    private final LongConsumer detachSender;
+    private final StreamFactory streamFactory;
+    private final LongFunction<KafkaBinding> supplyBinding;
     private final MergedBudgetCreditor creditor;
 
     public KafkaMergedFactory(
         KafkaConfiguration config,
-        RouteManager router,
-        MutableDirectBuffer writeBuffer,
-        LongUnaryOperator supplyInitialId,
-        LongUnaryOperator supplyReplyId,
-        LongSupplier supplyTraceId,
-        ToIntFunction<String> supplyTypeId,
-        Long2ObjectHashMap<MessageConsumer> correlations,
+        ElektronContext context,
+        LongFunction<KafkaBinding> supplyBinding,
         MergedBudgetCreditor creditor)
     {
-        this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
-        this.router = router;
-        this.writeBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
-        this.extBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
-        this.supplyInitialId = supplyInitialId;
-        this.supplyReplyId = supplyReplyId;
-        this.correlations = correlations;
+        this.kafkaTypeId = context.supplyTypeId(KafkaNukleus.NAME);
+        this.writeBuffer = new UnsafeBuffer(new byte[context.writeBuffer().capacity()]);
+        this.extBuffer = new UnsafeBuffer(new byte[context.writeBuffer().capacity()]);
+        this.supplyInitialId = context::supplyInitialId;
+        this.supplyReplyId = context::supplyReplyId;
+        this.detachSender = context::detachSender;
+        this.streamFactory = context.streamFactory();
+        this.supplyBinding = supplyBinding;
         this.creditor = creditor;
     }
 
@@ -208,26 +194,16 @@ public final class KafkaMergedFactory implements StreamFactory
         final KafkaMergedBeginExFW kafkaMergedBeginEx = kafkaBeginEx.merged();
         final KafkaCapabilities capabilities = kafkaMergedBeginEx.capabilities().get();
         final String16FW beginTopic = kafkaMergedBeginEx.topic();
-        final String topic = beginTopic != null ? beginTopic.asString() : null;
+        final String topicName = beginTopic.asString();
         final KafkaDeltaType deltaType = kafkaMergedBeginEx.deltaType().get();
-
-        final MessagePredicate filter = (t, b, i, l) ->
-        {
-            final RouteFW route = wrapRoute.apply(t, b, i, l);
-            final KafkaRouteExFW routeEx = route.extension().get(routeExRO::tryWrap);
-            final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
-            final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : DEFAULT_DELTA_TYPE;
-            return route.localAddress().equals(route.remoteAddress()) &&
-                    ((routeTopic == null && beginTopic != null) || Objects.equals(routeTopic, beginTopic)) &&
-                    (routeDeltaType == deltaType || deltaType == KafkaDeltaType.NONE);
-        };
 
         MessageConsumer newStream = null;
 
-        final RouteFW route = router.resolve(routeId, authorization, filter, wrapRoute);
-        if (route != null)
+        final KafkaBinding binding = supplyBinding.apply(routeId);
+
+        if (binding != null && binding.merged(topicName))
         {
-            final long resolvedId = route.correlationId();
+            final long resolvedId = routeId;
             final ArrayFW<KafkaOffsetFW> partitions = kafkaMergedBeginEx.partitions();
 
             final KafkaOffsetFW partition = partitions.matchFirst(p -> p.partitionId() == -1L);
@@ -250,7 +226,7 @@ public final class KafkaMergedFactory implements StreamFactory
                     initialId,
                     affinity,
                     authorization,
-                    topic,
+                    topicName,
                     resolvedId,
                     capabilities,
                     initialOffsetsById,
@@ -718,6 +694,38 @@ public final class KafkaMergedFactory implements StreamFactory
         protected abstract void set(KafkaConditionFW.Builder builder);
     }
 
+    private MessageConsumer newStream(
+        MessageConsumer sender,
+        long routeId,
+        long streamId,
+        long sequence,
+        long acknowledge,
+        int maximum,
+        long traceId,
+        long authorization,
+        long affinity,
+        Consumer<OctetsFW.Builder> extension)
+    {
+        final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                .routeId(routeId)
+                .streamId(streamId)
+                .sequence(sequence)
+                .acknowledge(acknowledge)
+                .maximum(maximum)
+                .traceId(traceId)
+                .authorization(authorization)
+                .affinity(affinity)
+                .extension(extension)
+                .build();
+
+        final MessageConsumer receiver =
+                streamFactory.newStream(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof(), sender);
+
+        receiver.accept(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
+
+        return receiver;
+    }
+
     private void doBegin(
         MessageConsumer receiver,
         long routeId,
@@ -1043,8 +1051,6 @@ public final class KafkaMergedFactory implements StreamFactory
 
             assert state == 0;
             state = KafkaState.openingInitial(state);
-
-            router.setThrottle(replyId, this::onMergedMessage);
 
             final OctetsFW extension = begin.extension();
             final DirectBuffer buffer = extension.buffer();
@@ -1536,7 +1542,7 @@ public final class KafkaMergedFactory implements StreamFactory
                 }
                 else
                 {
-                    router.clearThrottle(replyId);
+                    detachSender.accept(replyId);
                 }
             }
         }
@@ -1872,12 +1878,8 @@ public final class KafkaMergedFactory implements StreamFactory
 
             this.initialId = supplyInitialId.applyAsLong(merged.resolvedId);
             this.replyId = supplyReplyId.applyAsLong(initialId);
-            this.receiver = router.supplyReceiver(initialId);
-
-            correlations.put(replyId, this::onDescribeReply);
-            router.setThrottle(initialId, this::onDescribeReply);
-            doBegin(receiver, merged.resolvedId, initialId, initialSeq, initialAck, initialMax,
-                    traceId, merged.authorization, 0L,
+            this.receiver = newStream(this::onDescribeReply, merged.resolvedId, initialId, initialSeq, initialAck, initialMax,
+                traceId, merged.authorization, 0L,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .describe(m -> m.topic(merged.topic)
@@ -2094,7 +2096,6 @@ public final class KafkaMergedFactory implements StreamFactory
             long traceId)
         {
             state = KafkaState.closedReply(state);
-            correlations.remove(replyId);
 
             doReset(receiver, merged.resolvedId, replyId, replySeq, replyAck, replyMax,
                     traceId, merged.authorization);
@@ -2143,12 +2144,8 @@ public final class KafkaMergedFactory implements StreamFactory
 
             this.initialId = supplyInitialId.applyAsLong(mergedFetch.resolvedId);
             this.replyId = supplyReplyId.applyAsLong(initialId);
-            this.receiver = router.supplyReceiver(initialId);
-
-            correlations.put(replyId, this::onMetaReply);
-            router.setThrottle(initialId, this::onMetaReply);
-            doBegin(receiver, mergedFetch.resolvedId, initialId, initialSeq, initialAck, initialMax,
-                    traceId, mergedFetch.authorization, 0L,
+            this.receiver = newStream(this::onMetaReply, mergedFetch.resolvedId, initialId, initialSeq, initialAck, initialMax,
+                traceId, mergedFetch.authorization, 0L,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .meta(m -> m.topic(mergedFetch.topic))
@@ -2354,7 +2351,6 @@ public final class KafkaMergedFactory implements StreamFactory
             long traceId)
         {
             state = KafkaState.closedReply(state);
-            correlations.remove(replyId);
 
             doReset(receiver, mergedFetch.resolvedId, replyId, replySeq, replyAck, replyMax,
                     traceId, mergedFetch.authorization);
@@ -2417,12 +2413,8 @@ public final class KafkaMergedFactory implements StreamFactory
 
             this.initialId = supplyInitialId.applyAsLong(merged.resolvedId);
             this.replyId = supplyReplyId.applyAsLong(initialId);
-            this.receiver = router.supplyReceiver(initialId);
-
-            correlations.put(replyId, this::onFetchReply);
-            router.setThrottle(initialId, this::onFetchReply);
-            doBegin(receiver, merged.resolvedId, initialId, initialSeq, initialAck, initialMax,
-                    traceId, merged.authorization, leaderId,
+            this.receiver = newStream(this::onFetchReply, merged.resolvedId, initialId, initialSeq, initialAck, initialMax,
+                traceId, merged.authorization, leaderId,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .fetch(f -> f.topic(merged.topic)
@@ -2694,7 +2686,6 @@ public final class KafkaMergedFactory implements StreamFactory
             long traceId)
         {
             state = KafkaState.closedReply(state);
-            correlations.remove(replyId);
 
             doReset(receiver, merged.resolvedId, replyId, replySeq, replyAck, replyMax,
                     traceId, merged.authorization);
@@ -2769,18 +2760,14 @@ public final class KafkaMergedFactory implements StreamFactory
 
             this.initialId = supplyInitialId.applyAsLong(merged.resolvedId);
             this.replyId = supplyReplyId.applyAsLong(initialId);
-            this.receiver = router.supplyReceiver(initialId);
-
-            correlations.put(replyId, this::onProduceReply);
-            router.setThrottle(initialId, this::onProduceReply);
-            doBegin(receiver, merged.resolvedId, initialId, initialSeq, initialAck, initialMax,
-                    traceId, merged.authorization, leaderId,
+            this.receiver = newStream(this::onProduceReply, merged.resolvedId, initialId, initialSeq, initialAck, initialMax,
+                traceId, merged.authorization, leaderId,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .produce(pr -> pr.transaction((String) null) // TODO: default in kafka.idl
                                        .topic(merged.topic)
                                        .partition(part -> part.partitionId(partitionId).
-                                           partitionOffset(DEFAULT_LATEST_OFFSET)))
+                                           partitionOffset(HISTORICAL.value())))
                         .build()
                         .sizeof()));
         }
@@ -3077,7 +3064,6 @@ public final class KafkaMergedFactory implements StreamFactory
             long traceId)
         {
             state = KafkaState.closedReply(state);
-            correlations.remove(replyId);
 
             doReset(receiver, merged.resolvedId, replyId, replySeq, replyAck, replyMax,
                     traceId, merged.authorization);

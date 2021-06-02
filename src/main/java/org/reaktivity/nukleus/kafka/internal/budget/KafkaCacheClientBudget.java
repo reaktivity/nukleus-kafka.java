@@ -15,10 +15,10 @@
  */
 package org.reaktivity.nukleus.kafka.internal.budget;
 
-import static org.reaktivity.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
+import static org.reaktivity.reaktor.nukleus.budget.BudgetCreditor.NO_CREDITOR_INDEX;
 
 import org.agrona.collections.LongHashSet;
-import org.reaktivity.nukleus.budget.BudgetCreditor;
+import org.reaktivity.reaktor.nukleus.budget.BudgetCreditor;
 
 public final class KafkaCacheClientBudget
 {

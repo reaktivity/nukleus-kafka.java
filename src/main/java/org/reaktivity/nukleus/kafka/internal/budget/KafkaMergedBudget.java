@@ -15,14 +15,14 @@
  */
 package org.reaktivity.nukleus.kafka.internal.budget;
 
-import static org.reaktivity.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
+import static org.reaktivity.reaktor.nukleus.budget.BudgetDebitor.NO_DEBITOR_INDEX;
 
 import java.util.function.LongConsumer;
 import java.util.function.LongFunction;
 
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.collections.LongArrayList;
-import org.reaktivity.nukleus.budget.BudgetDebitor;
+import org.reaktivity.reaktor.nukleus.budget.BudgetDebitor;
 
 final class KafkaMergedBudget
 {

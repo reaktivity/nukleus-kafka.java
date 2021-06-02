@@ -17,9 +17,12 @@ module org.reaktivity.nukleus.kafka
 {
     requires org.reaktivity.reaktor;
 
-    provides org.reaktivity.nukleus.NukleusFactorySpi
+    provides org.reaktivity.reaktor.nukleus.NukleusFactorySpi
         with org.reaktivity.nukleus.kafka.internal.KafkaNukleusFactorySpi;
 
-    provides org.reaktivity.nukleus.ControllerFactorySpi
-        with org.reaktivity.nukleus.kafka.internal.KafkaControllerFactorySpi;
+    provides org.reaktivity.reaktor.config.OptionsAdapterSpi
+        with org.reaktivity.nukleus.kafka.internal.config.KafkaOptionsAdapter;
+
+    provides org.reaktivity.reaktor.config.ConditionAdapterSpi
+        with org.reaktivity.nukleus.kafka.internal.config.KafkaConditionAdapter;
 }

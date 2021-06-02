@@ -15,39 +15,34 @@
  */
 package org.reaktivity.nukleus.kafka.internal.stream;
 
+import static java.util.stream.Collectors.toList;
+
+import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.LongFunction;
 import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
-import java.util.function.ToIntFunction;
 
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Long2ObjectHashMap;
-import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
+import org.reaktivity.nukleus.kafka.internal.config.KafkaBinding;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
-import org.reaktivity.nukleus.kafka.internal.types.StringFW;
-import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
-import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
-import org.reaktivity.nukleus.kafka.internal.types.control.UnrouteFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.AbortFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.EndFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
-import org.reaktivity.nukleus.route.Address;
-import org.reaktivity.nukleus.route.AddressFactory;
-import org.reaktivity.nukleus.route.RouteManager;
+import org.reaktivity.reaktor.nukleus.ElektronContext;
+import org.reaktivity.reaktor.nukleus.function.MessageConsumer;
+import org.reaktivity.reaktor.nukleus.stream.StreamFactory;
 
-public class KafkaCacheServerAddressFactory implements AddressFactory
+public class KafkaCacheServerAddressFactory
 {
     private static final Consumer<OctetsFW.Builder> EMPTY_EXTENSION = ex -> {};
-
-    private final RouteFW routeRO = new RouteFW();
-    private final UnrouteFW unrouteRO = new UnrouteFW();
-    private final KafkaRouteExFW kafkaRouteExRO = new KafkaRouteExFW();
 
     private final BeginFW.Builder beginRW = new BeginFW.Builder();
     private final ResetFW.Builder resetRW = new ResetFW.Builder();
@@ -57,107 +52,66 @@ public class KafkaCacheServerAddressFactory implements AddressFactory
     private final KafkaBeginExFW.Builder kafkaBeginExRW = new KafkaBeginExFW.Builder();
 
     private final int kafkaTypeId;
-    private final RouteManager router;
     private final LongSupplier supplyTraceId;
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
     private final MutableDirectBuffer writeBuffer;
-    private final Long2ObjectHashMap<MessageConsumer> correlations;
+    private final StreamFactory streamFactory;
+    private final LongFunction<KafkaBinding> supplyBinding;
 
-    private final Long2ObjectHashMap<KafkaAddressStream> streamsByRouteId;
+    private final Long2ObjectHashMap<List<KafkaAddressStream>> streams;
 
     public KafkaCacheServerAddressFactory(
         KafkaConfiguration config,
-        RouteManager router,
-        MutableDirectBuffer writeBuffer,
-        ToIntFunction<String> supplyTypeId,
-        LongSupplier supplyTraceId,
-        LongUnaryOperator supplyInitialId,
-        LongUnaryOperator supplyReplyId,
-        Long2ObjectHashMap<MessageConsumer> correlations)
+        ElektronContext context,
+        LongFunction<KafkaBinding> supplyBinding)
     {
-        this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
-        this.router = router;
-        this.writeBuffer = writeBuffer;
-        this.supplyTraceId = supplyTraceId;
-        this.supplyInitialId = supplyInitialId;
-        this.supplyReplyId = supplyReplyId;
-        this.correlations = correlations;
-        this.streamsByRouteId = new Long2ObjectHashMap<>();
+        this.kafkaTypeId = context.supplyTypeId(KafkaNukleus.NAME);
+        this.writeBuffer = context.writeBuffer();
+        this.streamFactory = context.streamFactory();
+        this.supplyTraceId = context::supplyTraceId;
+        this.supplyInitialId = context::supplyInitialId;
+        this.supplyReplyId = context::supplyReplyId;
+        this.supplyBinding = supplyBinding;
+        this.streams = new Long2ObjectHashMap<>();
     }
 
-    @Override
-    public KafkaCacheServerAddress newAddress(
-        String localName)
+    void onAttached(
+        long bindingId)
     {
-        return new KafkaCacheServerAddress(localName);
-    }
+        final KafkaBinding binding = supplyBinding.apply(bindingId);
+        final List<String> bootstrap = binding.options != null ? binding.options.bootstrap : null;
 
-    private void onCacheServerMessage(
-        int msgTypeId,
-        DirectBuffer buffer,
-        int index,
-        int length)
-    {
-        switch (msgTypeId)
+        if (bootstrap != null)
         {
-        case RouteFW.TYPE_ID:
-            final RouteFW route = routeRO.wrap(buffer, index, index + length);
-            onCacheServerRouted(route);
-            break;
-        case UnrouteFW.TYPE_ID:
-            final UnrouteFW unroute = unrouteRO.wrap(buffer, index, index + length);
-            onCacheServerUnrouted(unroute);
-            break;
+            List<KafkaAddressStream> bootstraps = bootstrap.stream()
+                .map(t -> new KafkaAddressStream(bindingId, 0, t))
+                .collect(toList());
+
+            streams.put(bindingId, bootstraps);
+
+            bootstraps.forEach(KafkaAddressStream::doKafkaInitialBegin);
         }
     }
 
-    private void onCacheServerRouted(
-        RouteFW route)
+    void onDetached(
+        long bindingId)
     {
-        final StringFW localAddress = route.localAddress();
-        final StringFW remoteAddress = route.remoteAddress();
-        final long authorization = route.authorization();
-        final OctetsFW extension = route.extension();
-        final KafkaRouteExFW kafkaRouteEx = extension.get(kafkaRouteExRO::tryWrap);
+        List<KafkaAddressStream> bootstraps = streams.remove(bindingId);
 
-        if (remoteAddress.equals(localAddress) &&
-            kafkaRouteEx != null)
+        if (bootstraps != null)
         {
-            final String topic = kafkaRouteEx.topic().asString();
-
-            if (topic != null)
-            {
-                final long routeId = route.correlationId();
-                assert !streamsByRouteId.containsKey(routeId);
-
-                final KafkaAddressStream stream = new KafkaAddressStream(routeId, authorization, topic);
-                streamsByRouteId.put(routeId, stream);
-
-                stream.doKafkaInitialBegin();
-            }
-        }
-    }
-
-    private void onCacheServerUnrouted(
-        UnrouteFW unroute)
-    {
-        final long routeId = unroute.correlationId();
-        final KafkaAddressStream stream = streamsByRouteId.remove(routeId);
-
-        if (stream != null)
-        {
-            stream.doKafkaInitialEnd();
+            bootstraps.forEach(KafkaAddressStream::doKafkaInitialEnd);
         }
     }
 
     private final class KafkaAddressStream
     {
+        private MessageConsumer receiver;
         private final long routeId;
         private final long authorization;
         private final long initialId;
         private final long replyId;
-        private final MessageConsumer receiver;
         private final String topic;
 
         private int state;
@@ -179,7 +133,6 @@ public class KafkaCacheServerAddressFactory implements AddressFactory
             this.authorization = authorization;
             this.initialId = supplyInitialId.applyAsLong(routeId);
             this.replyId = supplyReplyId.applyAsLong(initialId);
-            this.receiver = router.supplyReceiver(initialId);
             this.topic = topic;
         }
 
@@ -189,10 +142,8 @@ public class KafkaCacheServerAddressFactory implements AddressFactory
 
             state = KafkaState.openingInitial(state);
 
-            correlations.put(replyId, this::onKafkaReply);
-            router.setThrottle(initialId, this::onKafkaReply);
-            doBegin(receiver, routeId, initialId, initialSeq, initialAck, initialMax,
-                    traceId, authorization, 0,
+            receiver = newStream(this::onKafkaReply, routeId, initialId, initialSeq, initialAck, initialMax,
+                traceId, authorization, 0,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
                         .typeId(kafkaTypeId)
                         .bootstrap(bs -> bs.topic(topic))
@@ -206,7 +157,6 @@ public class KafkaCacheServerAddressFactory implements AddressFactory
 
             state = KafkaState.closedInitial(state);
 
-            correlations.remove(replyId);
             doEnd(receiver, routeId, initialId, initialSeq, initialAck, initialMax,
                     traceId, authorization, EMPTY_EXTENSION);
         }
@@ -231,7 +181,6 @@ public class KafkaCacheServerAddressFactory implements AddressFactory
                 state = KafkaState.closedReply(state);
                 break;
             case ResetFW.TYPE_ID:
-                correlations.remove(replyId);
                 assert KafkaState.replyClosing(state) : "initial closed unexpectedly";
                 state = KafkaState.closedInitial(state);
                 doKafkaReplyReset(traceId);
@@ -258,37 +207,8 @@ public class KafkaCacheServerAddressFactory implements AddressFactory
         }
     }
 
-    public final class KafkaCacheServerAddress implements Address
-    {
-        private final String name;
-
-        private KafkaCacheServerAddress(
-            String name)
-        {
-            this.name = name;
-        }
-
-        @Override
-        public String name()
-        {
-            return name;
-        }
-
-        @Override
-        public String nukleus()
-        {
-            return KafkaNukleus.NAME;
-        }
-
-        @Override
-        public MessageConsumer routeHandler()
-        {
-            return KafkaCacheServerAddressFactory.this::onCacheServerMessage;
-        }
-    }
-
-    private void doBegin(
-        MessageConsumer receiver,
+    private MessageConsumer newStream(
+        MessageConsumer sender,
         long routeId,
         long streamId,
         long sequence,
@@ -311,7 +231,12 @@ public class KafkaCacheServerAddressFactory implements AddressFactory
                 .extension(extension)
                 .build();
 
+        MessageConsumer receiver =
+                streamFactory.newStream(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof(), sender);
+
         receiver.accept(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
+
+        return receiver;
     }
 
     private void doEnd(

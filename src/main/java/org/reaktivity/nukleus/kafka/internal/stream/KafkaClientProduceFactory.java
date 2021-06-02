@@ -19,38 +19,30 @@ import static java.lang.System.currentTimeMillis;
 import static java.lang.Thread.currentThread;
 import static java.nio.ByteOrder.BIG_ENDIAN;
 import static java.util.Objects.requireNonNull;
-import static org.reaktivity.nukleus.buffer.BufferPool.NO_SLOT;
 import static org.reaktivity.nukleus.kafka.internal.stream.KafkaChecksum.combineCRC32C;
-import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetFW.Builder.DEFAULT_LATEST_OFFSET;
+import static org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType.LIVE;
 import static org.reaktivity.nukleus.kafka.internal.types.ProxyAddressProtocol.STREAM;
 import static org.reaktivity.nukleus.kafka.internal.types.codec.RequestHeaderFW.FIELD_OFFSET_API_KEY;
 import static org.reaktivity.nukleus.kafka.internal.types.codec.message.RecordBatchFW.FIELD_OFFSET_LENGTH;
 import static org.reaktivity.nukleus.kafka.internal.types.codec.message.RecordBatchFW.FIELD_OFFSET_RECORD_COUNT;
-import static org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW.Builder.DEFAULT_DELTA_TYPE;
+import static org.reaktivity.reaktor.nukleus.buffer.BufferPool.NO_SLOT;
 
 import java.nio.ByteBuffer;
 import java.util.function.Consumer;
 import java.util.function.LongFunction;
-import java.util.function.LongSupplier;
 import java.util.function.LongUnaryOperator;
-import java.util.function.ToIntFunction;
 import java.util.zip.CRC32C;
 
 import org.agrona.BitUtil;
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
-import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
-import org.reaktivity.nukleus.buffer.BufferPool;
-import org.reaktivity.nukleus.concurrent.Signaler;
-import org.reaktivity.nukleus.function.MessageConsumer;
-import org.reaktivity.nukleus.function.MessageFunction;
-import org.reaktivity.nukleus.function.MessagePredicate;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
+import org.reaktivity.nukleus.kafka.internal.config.KafkaBinding;
+import org.reaktivity.nukleus.kafka.internal.config.KafkaRoute;
 import org.reaktivity.nukleus.kafka.internal.types.Array32FW;
 import org.reaktivity.nukleus.kafka.internal.types.Flyweight;
-import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaHeaderFW;
 import org.reaktivity.nukleus.kafka.internal.types.KafkaKeyFW;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
@@ -68,8 +60,6 @@ import org.reaktivity.nukleus.kafka.internal.types.codec.produce.ProduceResponse
 import org.reaktivity.nukleus.kafka.internal.types.codec.produce.ProduceResponseTrailerFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.produce.ProduceTopicRequestFW;
 import org.reaktivity.nukleus.kafka.internal.types.codec.produce.ProduceTopicResponseFW;
-import org.reaktivity.nukleus.kafka.internal.types.control.KafkaRouteExFW;
-import org.reaktivity.nukleus.kafka.internal.types.control.RouteFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.AbortFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.DataFW;
@@ -84,8 +74,11 @@ import org.reaktivity.nukleus.kafka.internal.types.stream.ProxyBeginExFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ResetFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.SignalFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.WindowFW;
-import org.reaktivity.nukleus.route.RouteManager;
-import org.reaktivity.nukleus.stream.StreamFactory;
+import org.reaktivity.reaktor.nukleus.ElektronContext;
+import org.reaktivity.reaktor.nukleus.buffer.BufferPool;
+import org.reaktivity.reaktor.nukleus.concurrent.Signaler;
+import org.reaktivity.reaktor.nukleus.function.MessageConsumer;
+import org.reaktivity.reaktor.nukleus.stream.StreamFactory;
 
 public final class KafkaClientProduceFactory implements StreamFactory
 {
@@ -125,9 +118,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
     private static final short PRODUCE_API_KEY = 0;
     private static final short PRODUCE_API_VERSION = 3;
-
-    private final RouteFW routeRO = new RouteFW();
-    private final KafkaRouteExFW kafkaRouteExRO = new KafkaRouteExFW();
 
     private final BeginFW beginRO = new BeginFW();
     private final DataFW dataRO = new DataFW();
@@ -177,22 +167,20 @@ public final class KafkaClientProduceFactory implements StreamFactory
     private final KafkaProduceClientDecoder decodeProducePartition = this::decodeProducePartition;
     private final KafkaProduceClientDecoder decodeProduceResponseTrailer = this::decodeProduceResponseTrailer;
 
-    private final MessageFunction<RouteFW> wrapRoute = (t, b, i, l) -> routeRO.wrap(b, i, i + l);
-
     private final int produceMaxWaitMillis;
     private final long produceRequestMaxDelay;
     private final ProduceAck produceAcks;
     private final int kafkaTypeId;
     private final int proxyTypeId;
-    private final RouteManager router;
     private final MutableDirectBuffer writeBuffer;
     private final MutableDirectBuffer extBuffer;
     private final BufferPool decodePool;
     private final BufferPool encodePool;
     private final Signaler signaler;
+    private final StreamFactory streamFactory;
     private final LongUnaryOperator supplyInitialId;
     private final LongUnaryOperator supplyReplyId;
-    private final Long2ObjectHashMap<MessageConsumer> correlations;
+    private final LongFunction<KafkaBinding> supplyBinding;
     private final LongFunction<KafkaClientRoute> supplyClientRoute;
     private final int decodeMaxBytes;
     private final int encodeMaxBytes;
@@ -200,31 +188,24 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
     public KafkaClientProduceFactory(
         KafkaConfiguration config,
-        RouteManager router,
-        Signaler signaler,
-        MutableDirectBuffer writeBuffer,
-        BufferPool bufferPool,
-        LongUnaryOperator supplyInitialId,
-        LongUnaryOperator supplyReplyId,
-        LongSupplier supplyTraceId,
-        ToIntFunction<String> supplyTypeId,
-        Long2ObjectHashMap<MessageConsumer> correlations,
+        ElektronContext context,
+        LongFunction<KafkaBinding> supplyBinding,
         LongFunction<KafkaClientRoute> supplyClientRoute)
     {
         this.produceMaxWaitMillis = config.clientProduceMaxResponseMillis();
         this.produceRequestMaxDelay = config.clientProduceMaxRequestMillis();
         this.produceAcks = ProduceAck.valueOf(config.clientProduceAcks());
-        this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
-        this.proxyTypeId = supplyTypeId.applyAsInt("proxy");
-        this.router = router;
-        this.signaler = signaler;
-        this.writeBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
-        this.extBuffer = new UnsafeBuffer(new byte[writeBuffer.capacity()]);
-        this.decodePool = bufferPool;
-        this.encodePool = bufferPool;
-        this.supplyInitialId = supplyInitialId;
-        this.supplyReplyId = supplyReplyId;
-        this.correlations = correlations;
+        this.kafkaTypeId = context.supplyTypeId(KafkaNukleus.NAME);
+        this.proxyTypeId = context.supplyTypeId("proxy");
+        this.signaler = context.signaler();
+        this.streamFactory = context.streamFactory();
+        this.writeBuffer = new UnsafeBuffer(new byte[context.writeBuffer().capacity()]);
+        this.extBuffer = new UnsafeBuffer(new byte[context.writeBuffer().capacity()]);
+        this.decodePool = context.bufferPool();
+        this.encodePool = context.bufferPool();
+        this.supplyInitialId = context::supplyInitialId;
+        this.supplyReplyId = context::supplyReplyId;
+        this.supplyBinding = supplyBinding;
         this.supplyClientRoute = supplyClientRoute;
         this.decodeMaxBytes = decodePool.slotCapacity();
         this.encodeMaxBytes = Math.min(config.clientProduceMaxBytes(),
@@ -238,29 +219,9 @@ public final class KafkaClientProduceFactory implements StreamFactory
         DirectBuffer buffer,
         int index,
         int length,
-        MessageConsumer sender)
-    {
-        final BeginFW begin = beginRO.wrap(buffer, index, index + length);
-        final long streamId = begin.streamId();
-
-        MessageConsumer newStream = null;
-
-        if ((streamId & 0x0000_0000_0000_0001L) != 0L)
-        {
-            newStream = newApplicationStream(begin, sender);
-        }
-        else
-        {
-            newStream = newNetworkStream(begin, sender);
-        }
-
-        return newStream;
-    }
-
-    private MessageConsumer newApplicationStream(
-        BeginFW begin,
         MessageConsumer application)
     {
+        final BeginFW begin = beginRO.wrap(buffer, index, index + length);
         final long routeId = begin.routeId();
         final long initialId = begin.streamId();
         final long affinity = begin.affinity();
@@ -276,24 +237,14 @@ public final class KafkaClientProduceFactory implements StreamFactory
         if (kafkaProduceBeginEx != null)
         {
             final String16FW beginTopic = kafkaProduceBeginEx.topic();
+            final String topicName = beginTopic.asString();
 
-            final MessagePredicate filter = (t, b, i, l) ->
+            final KafkaBinding binding = supplyBinding.apply(routeId);
+            final KafkaRoute resolved = binding != null ? binding.resolve(authorization, topicName) : null;
+
+            if (resolved != null && kafkaBeginEx != null)
             {
-                final RouteFW route = wrapRoute.apply(t, b, i, l);
-                final KafkaRouteExFW routeEx = route.extension().get(kafkaRouteExRO::tryWrap);
-                final String16FW routeTopic = routeEx != null ? routeEx.topic() : null;
-                final KafkaDeltaType routeDeltaType = routeEx != null ? routeEx.deltaType().get() : DEFAULT_DELTA_TYPE;
-                return !route.localAddress().equals(route.remoteAddress()) &&
-                        (beginTopic != null && (routeTopic == null || routeTopic.equals(beginTopic))) &&
-                        routeDeltaType == KafkaDeltaType.NONE;
-            };
-
-            final RouteFW route = router.resolve(routeId, authorization, filter, wrapRoute);
-
-            if (route != null)
-            {
-                final long resolvedId = route.correlationId();
-                final String topic = beginTopic != null ? beginTopic.asString() : null;
+                final long resolvedId = resolved.id;
                 final int partitionId = kafkaProduceBeginEx.partition().partitionId();
 
                 newStream = new KafkaProduceStream(
@@ -302,7 +253,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
                         initialId,
                         affinity,
                         resolvedId,
-                        topic,
+                        topicName,
                         partitionId)::onApplication;
             }
         }
@@ -310,13 +261,36 @@ public final class KafkaClientProduceFactory implements StreamFactory
         return newStream;
     }
 
-    private MessageConsumer newNetworkStream(
-        BeginFW begin,
-        MessageConsumer network)
+    private MessageConsumer newStream(
+        MessageConsumer sender,
+        long routeId,
+        long streamId,
+        long sequence,
+        long acknowledge,
+        int maximum,
+        long traceId,
+        long authorization,
+        long affinity,
+        Consumer<OctetsFW.Builder> extension)
     {
-        final long streamId = begin.streamId();
+        final BeginFW begin = beginRW.wrap(writeBuffer, 0, writeBuffer.capacity())
+                .routeId(routeId)
+                .streamId(streamId)
+                .sequence(sequence)
+                .acknowledge(acknowledge)
+                .maximum(maximum)
+                .traceId(traceId)
+                .authorization(authorization)
+                .affinity(affinity)
+                .extension(extension)
+                .build();
 
-        return correlations.remove(streamId);
+        final MessageConsumer receiver =
+                streamFactory.newStream(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof(), sender);
+
+        receiver.accept(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof());
+
+        return receiver;
     }
 
     private void doBegin(
@@ -1001,7 +975,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
         {
             state = KafkaState.openingReply(state);
 
-            router.setThrottle(replyId, this::onApplication);
             doBegin(application, routeId, replyId, replySeq, replyAck, replyMax,
                     traceId, authorization, affinity,
                 ex -> ex.set((b, o, l) -> kafkaBeginExRW.wrap(b, o, l)
@@ -1009,7 +982,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
                                                         .produce(p -> p.transaction(TRANSACTION_ID_NONE)
                                                                        .topic(topic)
                                                                        .partition(par -> par.partitionId(partitionId)
-                                                                                    .partitionOffset(DEFAULT_LATEST_OFFSET)))
+                                                                                    .partitionOffset(LIVE.value())))
                                                         .build()
                                                         .sizeof()));
         }
@@ -1104,11 +1077,11 @@ public final class KafkaClientProduceFactory implements StreamFactory
 
     private final class KafkaProduceClient
     {
+        private MessageConsumer network;
         private final KafkaProduceStream stream;
         private final long routeId;
         private final long initialId;
         private final long replyId;
-        private final MessageConsumer network;
         private final String topic;
         private final int partitionId;
         private final KafkaClientRoute clientRoute;
@@ -1168,7 +1141,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
             this.routeId = routeId;
             this.initialId = supplyInitialId.applyAsLong(routeId);
             this.replyId = supplyReplyId.applyAsLong(initialId);
-            this.network = router.supplyReceiver(initialId);
             this.topic = requireNonNull(topic);
             this.partitionId = partitionId;
             this.decoder = decodeProduceResponse;
@@ -1380,7 +1352,6 @@ public final class KafkaClientProduceFactory implements StreamFactory
             long affinity)
         {
             state = KafkaState.openingInitial(state);
-            correlations.put(replyId, this::onNetwork);
 
             Consumer<OctetsFW.Builder> extension = EMPTY_EXTENSION;
 
@@ -1398,8 +1369,7 @@ public final class KafkaClientProduceFactory implements StreamFactory
                                                                 .sizeof());
             }
 
-            router.setThrottle(initialId, this::onNetwork);
-            doBegin(network, routeId, initialId, initialSeq, initialAck, initialMax,
+            network = newStream(this::onNetwork, routeId, initialId, initialSeq, initialAck, initialMax,
                     traceId, authorization, affinity, extension);
         }
 

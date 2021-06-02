@@ -15,7 +15,7 @@
  */
 package org.reaktivity.nukleus.kafka.internal.budget;
 
-import org.reaktivity.nukleus.budget.BudgetCreditor;
+import org.reaktivity.reaktor.nukleus.budget.BudgetCreditor;
 
 public interface MergedBudgetCreditor extends BudgetCreditor
 {
