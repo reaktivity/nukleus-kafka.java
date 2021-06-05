@@ -18,8 +18,9 @@ package org.reaktivity.nukleus.kafka.internal;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.reaktivity.nukleus.Nukleus;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
+import org.reaktivity.reaktor.nukleus.ElektronContext;
+import org.reaktivity.reaktor.nukleus.Nukleus;
 
 public final class KafkaNukleus implements Nukleus
 {
@@ -49,9 +50,9 @@ public final class KafkaNukleus implements Nukleus
 
     @Override
     public KafkaElektron supplyElektron(
-        int index)
+        ElektronContext context)
     {
-        return new KafkaElektron(index, config, this::supplyCache);
+        return new KafkaElektron(config, context, this::supplyCache);
     }
 
     public KafkaCache supplyCache(

@@ -15,82 +15,81 @@
  */
 package org.reaktivity.nukleus.kafka.internal;
 
-import static org.reaktivity.nukleus.route.RouteKind.CACHE_CLIENT;
-import static org.reaktivity.nukleus.route.RouteKind.CACHE_SERVER;
-import static org.reaktivity.nukleus.route.RouteKind.CLIENT;
+import static org.reaktivity.reaktor.config.Role.CACHE_CLIENT;
+import static org.reaktivity.reaktor.config.Role.CACHE_SERVER;
+import static org.reaktivity.reaktor.config.Role.CLIENT;
 
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.function.Function;
 
 import org.agrona.collections.Long2ObjectHashMap;
-import org.reaktivity.nukleus.Elektron;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
-import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheClientFactoryBuilder;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheClientFactory;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheRoute;
-import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheServerFactoryBuilder;
-import org.reaktivity.nukleus.kafka.internal.stream.KafkaClientFactoryBuilder;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaCacheServerFactory;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaClientFactory;
 import org.reaktivity.nukleus.kafka.internal.stream.KafkaClientRoute;
-import org.reaktivity.nukleus.kafka.internal.stream.KafkaStreamFactoryBuilder;
-import org.reaktivity.nukleus.route.AddressFactoryBuilder;
-import org.reaktivity.nukleus.route.RouteKind;
-import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
+import org.reaktivity.nukleus.kafka.internal.stream.KafkaStreamFactory;
+import org.reaktivity.reaktor.config.Binding;
+import org.reaktivity.reaktor.config.Role;
+import org.reaktivity.reaktor.nukleus.Elektron;
+import org.reaktivity.reaktor.nukleus.ElektronContext;
+import org.reaktivity.reaktor.nukleus.stream.StreamFactory;
 
 final class KafkaElektron implements Elektron
 {
     private final Long2ObjectHashMap<KafkaClientRoute> clientRoutesById;
     private final Long2ObjectHashMap<KafkaCacheRoute> cacheRoutesById;
-    private final Map<RouteKind, KafkaStreamFactoryBuilder> streamFactoryBuilders;
-    private final Map<RouteKind, AddressFactoryBuilder> addressFactoryBuilders;
+    private final Map<Role, KafkaStreamFactory> factories;
 
     KafkaElektron(
-        int index,
         KafkaConfiguration config,
+        ElektronContext context,
         Function<String, KafkaCache> supplyCache)
     {
         this.clientRoutesById = new Long2ObjectHashMap<>();
         this.cacheRoutesById = new Long2ObjectHashMap<>();
 
-        Map<RouteKind, KafkaStreamFactoryBuilder> streamFactoryBuilders = new EnumMap<>(RouteKind.class);
-        streamFactoryBuilders.put(CLIENT, new KafkaClientFactoryBuilder(config, this::supplyClientRoute));
-        streamFactoryBuilders.put(CACHE_SERVER, new KafkaCacheServerFactoryBuilder(config, supplyCache,
+        Map<Role, KafkaStreamFactory> factories = new EnumMap<>(Role.class);
+        factories.put(CLIENT, new KafkaClientFactory(config, context, this::supplyClientRoute));
+        factories.put(CACHE_SERVER, new KafkaCacheServerFactory(config, context, supplyCache,
             this::supplyCacheRoute));
-        streamFactoryBuilders.put(CACHE_CLIENT, new KafkaCacheClientFactoryBuilder(config, supplyCache,
-            this::supplyCacheRoute, index));
-        this.streamFactoryBuilders = streamFactoryBuilders;
+        factories.put(CACHE_CLIENT, new KafkaCacheClientFactory(config, context, supplyCache,
+            this::supplyCacheRoute));
+        this.factories = factories;
+    }
 
-        Map<RouteKind, AddressFactoryBuilder> addressFactoryBuilders = new EnumMap<>(RouteKind.class);
-        for (Map.Entry<RouteKind, KafkaStreamFactoryBuilder> entry : streamFactoryBuilders.entrySet())
+    @Override
+    public StreamFactory attach(
+        Binding binding)
+    {
+        final KafkaStreamFactory factory = factories.get(binding.kind);
+
+        if (factory != null)
         {
-            final RouteKind routeKind = entry.getKey();
-            final KafkaStreamFactoryBuilder streamFactoryBuilder = entry.getValue();
-            final AddressFactoryBuilder addressFactoryBuilder = streamFactoryBuilder.addressFactoryBuilder();
-            if (routeKind == CACHE_SERVER && config.cacheServerBootstrap())
-            {
-                addressFactoryBuilders.put(routeKind, addressFactoryBuilder);
-            }
+            factory.attach(binding);
         }
-        this.addressFactoryBuilders = addressFactoryBuilders;
+
+        return factory;
     }
 
     @Override
-    public StreamFactoryBuilder streamFactoryBuilder(
-        RouteKind kind)
+    public void detach(
+        Binding binding)
     {
-        return streamFactoryBuilders.get(kind);
-    }
+        final KafkaStreamFactory factory = factories.get(binding.kind);
 
-    @Override
-    public AddressFactoryBuilder addressFactoryBuilder(
-        RouteKind kind)
-    {
-        return addressFactoryBuilders.get(kind);
+        if (factory != null)
+        {
+            factory.detach(binding.id);
+        }
     }
 
     @Override
     public String toString()
     {
-        return String.format("%s %s", getClass().getSimpleName(), streamFactoryBuilders);
+        return String.format("%s %s", getClass().getSimpleName(), factories);
     }
 
     private KafkaCacheRoute supplyCacheRoute(

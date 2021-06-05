@@ -19,79 +19,89 @@ import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CAC
 
 import java.util.function.Function;
 import java.util.function.LongFunction;
-import java.util.function.LongSupplier;
-import java.util.function.LongToIntFunction;
-import java.util.function.LongUnaryOperator;
-import java.util.function.ToIntFunction;
 
 import org.agrona.DirectBuffer;
-import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
-import org.reaktivity.nukleus.buffer.BufferPool;
-import org.reaktivity.nukleus.concurrent.Signaler;
-import org.reaktivity.nukleus.function.MessageConsumer;
 import org.reaktivity.nukleus.kafka.internal.KafkaConfiguration;
 import org.reaktivity.nukleus.kafka.internal.KafkaNukleus;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCache;
+import org.reaktivity.nukleus.kafka.internal.config.KafkaBinding;
 import org.reaktivity.nukleus.kafka.internal.types.OctetsFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.BeginFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.ExtensionFW;
 import org.reaktivity.nukleus.kafka.internal.types.stream.KafkaBeginExFW;
-import org.reaktivity.nukleus.route.RouteManager;
-import org.reaktivity.nukleus.stream.StreamFactory;
+import org.reaktivity.reaktor.config.Binding;
+import org.reaktivity.reaktor.nukleus.ElektronContext;
+import org.reaktivity.reaktor.nukleus.function.MessageConsumer;
+import org.reaktivity.reaktor.nukleus.stream.StreamFactory;
 
-public final class KafkaCacheServerFactory implements StreamFactory
+public final class KafkaCacheServerFactory implements KafkaStreamFactory
 {
     private final BeginFW beginRO = new BeginFW();
     private final ExtensionFW extensionRO = new ExtensionFW();
     private final KafkaBeginExFW kafkaBeginExRO = new KafkaBeginExFW();
 
     private final int kafkaTypeId;
-    private final Long2ObjectHashMap<MessageConsumer> correlations;
-    private final Int2ObjectHashMap<StreamFactory> streamFactoriesByKind;
+    private final Int2ObjectHashMap<StreamFactory> factories;
+    private final Long2ObjectHashMap<KafkaBinding> bindings;
+    private final KafkaCacheServerAddressFactory cacheAddressFactory;
 
-    KafkaCacheServerFactory(
+    public KafkaCacheServerFactory(
         KafkaConfiguration config,
-        RouteManager router,
-        MutableDirectBuffer writeBuffer,
-        BufferPool bufferPool,
-        Signaler signaler,
-        LongUnaryOperator supplyInitialId,
-        LongUnaryOperator supplyReplyId,
-        LongSupplier supplyTraceId,
-        LongSupplier supplyBudgetId,
-        ToIntFunction<String> supplyTypeId,
+        ElektronContext context,
         Function<String, KafkaCache> supplyCache,
-        LongFunction<KafkaCacheRoute> supplyCacheRoute,
-        Long2ObjectHashMap<MessageConsumer> correlations,
-        LongToIntFunction supplyRemoteIndex)
+        LongFunction<KafkaCacheRoute> supplyCacheRoute)
     {
-        final Int2ObjectHashMap<StreamFactory> streamFactoriesByKind = new Int2ObjectHashMap<>();
+        final Long2ObjectHashMap<KafkaBinding> bindings = new Long2ObjectHashMap<>();
+        final Int2ObjectHashMap<StreamFactory> factories = new Int2ObjectHashMap<>();
 
-        streamFactoriesByKind.put(KafkaBeginExFW.KIND_BOOTSTRAP, new KafkaCacheServerBootstrapFactory(
-                config, router, writeBuffer, supplyInitialId, supplyReplyId,
-                supplyTraceId, supplyTypeId, correlations));
+        final KafkaCacheServerBootstrapFactory cacheBootstrapFactory = new KafkaCacheServerBootstrapFactory(
+                config, context, bindings::get);
 
-        streamFactoriesByKind.put(KafkaBeginExFW.KIND_META, new KafkaCacheMetaFactory(
-                config, router, writeBuffer, bufferPool, signaler, supplyInitialId, supplyReplyId,
-                supplyTraceId, supplyTypeId, supplyCache, supplyCacheRoute, correlations, KAFKA_CACHE_SERVER_RECONNECT_DELAY));
+        final KafkaCacheMetaFactory cacheMetaFactory = new KafkaCacheMetaFactory(
+                config, context, bindings::get, supplyCache, supplyCacheRoute, (routeId, resolvedId) -> routeId,
+                KAFKA_CACHE_SERVER_RECONNECT_DELAY);
 
-        streamFactoriesByKind.put(KafkaBeginExFW.KIND_DESCRIBE, new KafkaCacheServerDescribeFactory(
-                config, router, writeBuffer, bufferPool, signaler, supplyInitialId, supplyReplyId,
-                supplyTraceId, supplyTypeId, supplyCache, supplyCacheRoute, correlations));
+        final KafkaCacheServerDescribeFactory cacheDescribeFactory = new KafkaCacheServerDescribeFactory(
+                config, context, bindings::get, supplyCache, supplyCacheRoute);
 
-        streamFactoriesByKind.put(KafkaBeginExFW.KIND_FETCH, new KafkaCacheServerFetchFactory(
-                config, router, writeBuffer, bufferPool, signaler, supplyInitialId, supplyReplyId,
-                supplyTraceId, supplyTypeId, supplyCache, supplyCacheRoute, correlations));
+        final KafkaCacheServerFetchFactory cacheFetchFactory = new KafkaCacheServerFetchFactory(
+                config, context, bindings::get, supplyCache, supplyCacheRoute);
 
-        streamFactoriesByKind.put(KafkaBeginExFW.KIND_PRODUCE, new KafkaCacheServerProduceFactory(
-                config, router, writeBuffer, signaler, supplyInitialId, supplyReplyId,
-                supplyBudgetId, supplyTypeId, supplyCache, supplyCacheRoute, correlations, supplyRemoteIndex));
+        final KafkaCacheServerProduceFactory cacheProduceFactory = new KafkaCacheServerProduceFactory(
+                config, context, bindings::get, supplyCache, supplyCacheRoute);
 
-        this.kafkaTypeId = supplyTypeId.applyAsInt(KafkaNukleus.NAME);
-        this.correlations = correlations;
-        this.streamFactoriesByKind = streamFactoriesByKind;
+        factories.put(KafkaBeginExFW.KIND_BOOTSTRAP, cacheBootstrapFactory);
+        factories.put(KafkaBeginExFW.KIND_META, cacheMetaFactory);
+        factories.put(KafkaBeginExFW.KIND_DESCRIBE, cacheDescribeFactory);
+        factories.put(KafkaBeginExFW.KIND_FETCH, cacheFetchFactory);
+        factories.put(KafkaBeginExFW.KIND_PRODUCE, cacheProduceFactory);
+
+        this.kafkaTypeId = context.supplyTypeId(KafkaNukleus.NAME);
+        this.factories = factories;
+        this.bindings = bindings;
+
+        this.cacheAddressFactory = new KafkaCacheServerAddressFactory(config, context, bindings::get);
+    }
+
+    @Override
+    public void attach(
+        Binding binding)
+    {
+        KafkaBinding kafkaBinding = new KafkaBinding(binding);
+        bindings.put(binding.id, kafkaBinding);
+
+        cacheAddressFactory.onAttached(binding.id);
+    }
+
+    @Override
+    public void detach(
+        long bindingId)
+    {
+        cacheAddressFactory.onDetached(bindingId);
+
+        bindings.remove(bindingId);
     }
 
     @Override
@@ -103,26 +113,6 @@ public final class KafkaCacheServerFactory implements StreamFactory
         MessageConsumer sender)
     {
         final BeginFW begin = beginRO.wrap(buffer, index, index + length);
-        final long streamId = begin.streamId();
-
-        MessageConsumer newStream = null;
-
-        if ((streamId & 0x0000_0000_0000_0001L) != 0L)
-        {
-            newStream = newInitialStream(begin, sender);
-        }
-        else
-        {
-            newStream = newReplyStream(begin, sender);
-        }
-
-        return newStream;
-    }
-
-    private MessageConsumer newInitialStream(
-        BeginFW begin,
-        MessageConsumer sender)
-    {
         final OctetsFW extension = begin.extension();
         final ExtensionFW beginEx = extension.get(extensionRO::tryWrap);
         assert beginEx != null;
@@ -134,7 +124,7 @@ public final class KafkaCacheServerFactory implements StreamFactory
         final KafkaBeginExFW kafkaBeginEx = extension.get(kafkaBeginExRO::tryWrap);
         if (kafkaBeginEx != null)
         {
-            final StreamFactory streamFactory = streamFactoriesByKind.get(kafkaBeginEx.kind());
+            final StreamFactory streamFactory = factories.get(kafkaBeginEx.kind());
             if (streamFactory != null)
             {
                 newStream = streamFactory.newStream(begin.typeId(), begin.buffer(), begin.offset(), begin.sizeof(), sender);
@@ -142,14 +132,5 @@ public final class KafkaCacheServerFactory implements StreamFactory
         }
 
         return newStream;
-    }
-
-    private MessageConsumer newReplyStream(
-        BeginFW begin,
-        MessageConsumer sender)
-    {
-        final long streamId = begin.streamId();
-
-        return correlations.remove(streamId);
     }
 }

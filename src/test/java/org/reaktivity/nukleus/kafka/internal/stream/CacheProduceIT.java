@@ -21,7 +21,6 @@ import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CAC
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_RECONNECT_DELAY;
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE;
-import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Ignore;
 import org.junit.Rule;
@@ -33,18 +32,16 @@ import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.reaktor.test.ReaktorRule;
+import org.reaktivity.reaktor.test.annotation.Configuration;
 
 public class CacheProduceIT
 {
     private final K3poRule k3po = new K3poRule()
-            .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
-            .addScriptRoot("server", "org/reaktivity/specification/nukleus/kafka/streams/produce")
-            .addScriptRoot("client", "org/reaktivity/specification/nukleus/kafka/streams/produce");
+        .addScriptRoot("app", "org/reaktivity/specification/nukleus/kafka/streams/application/produce");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(10, SECONDS));
 
     private final ReaktorRule reaktor = new ReaktorRule()
-        .nukleus("kafka"::equals)
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
@@ -53,157 +50,158 @@ public class CacheProduceIT
         .configure(KAFKA_CACHE_SERVER_BOOTSTRAP, false)
         .configure(KAFKA_CACHE_SERVER_RECONNECT_DELAY, 0)
         .configure(REAKTOR_DRAIN_ON_CLOSE, false)
-        .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
+        .configurationRoot("org/reaktivity/specification/nukleus/kafka/config")
+        .external("app#1")
         .clean();
 
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/topic.missing/client"})
+        "${app}/topic.missing/client"})
     public void shouldRejectWhenTopicMissing() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.when.topic.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/topic.not.routed/client"})
+        "${app}/topic.not.routed/client"})
     public void shouldRejectWhenTopicNotRouted() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/partition.unknown/client",
-        "${server}/partition.unknown/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/partition.unknown/client",
+        "${app}/partition.unknown/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldRejectWhenPartitionUnknown() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/partition.not.leader/client",
-        "${server}/partition.not.leader/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/partition.not.leader/client",
+        "${app}/partition.not.leader/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldRejectPartitionNotLeader() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/message.key/client",
-        "${server}/message.key/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/message.key/client",
+        "${app}/message.key/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldSendMessageKey() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/message.key.null/client",
-        "${server}/message.key.null/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/message.key.null/client",
+        "${app}/message.key.null/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldSendMessageKeyNull() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/message.key.with.value.null/client",
-        "${server}/message.key.with.value.null/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/message.key.with.value.null/client",
+        "${app}/message.key.with.value.null/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldSendMessageKeyWithValueNull() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/message.key.with.value.distinct/client",
-        "${server}/message.key.with.value.distinct/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/message.key.with.value.distinct/client",
+        "${app}/message.key.with.value.distinct/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldSendMessageKeyWithValueDistinct() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/message.key.with.header/client",
-        "${server}/message.key.with.header/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/message.key.with.header/client",
+        "${app}/message.key.with.header/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldSendMessageKeyWithHeader() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/message.key.distinct/client",
-        "${server}/message.key.distinct/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/message.key.distinct/client",
+        "${app}/message.key.distinct/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldSendMessageKeyDistinct() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/message.value/client",
-        "${server}/message.value/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/message.value/client",
+        "${app}/message.value/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldSendMessageValue() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/message.value.null/client",
-        "${server}/message.value.null/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/message.value.null/client",
+        "${app}/message.value.null/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldSendMessageValueNull() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/message.value.10k/client",
-        "${server}/message.value.10k/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/message.value.10k/client",
+        "${app}/message.value.10k/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldSendMessageValue10k() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/message.value.100k/client",
-        "${server}/message.value.100k/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/message.value.100k/client",
+        "${app}/message.value.100k/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldSendMessageValue100k() throws Exception
     {
         k3po.finish();
@@ -211,11 +209,11 @@ public class CacheProduceIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/message.value.gzip/client",
-        "${server}/message.value.gzip/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/message.value.gzip/client",
+        "${app}/message.value.gzip/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldSendMessageValueGzip() throws Exception
     {
         k3po.finish();
@@ -223,11 +221,11 @@ public class CacheProduceIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/message.value.snappy/client",
-        "${server}/message.value.snappy/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/message.value.snappy/client",
+        "${app}/message.value.snappy/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldSendMessageValueSnappy() throws Exception
     {
         k3po.finish();
@@ -235,77 +233,77 @@ public class CacheProduceIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/message.value.lz4/client",
-        "${server}/message.value.lz4/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/message.value.lz4/client",
+        "${app}/message.value.lz4/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldSendMessageValueLz4() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/message.value.distinct/client",
-        "${server}/message.value.distinct/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/message.value.distinct/client",
+        "${app}/message.value.distinct/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldSendMessageValueDistinct() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/message.header/client",
-        "${server}/message.header/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/message.header/client",
+        "${app}/message.header/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldSendMessageHeader() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/message.header.null/client",
-        "${server}/message.header.null/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/message.header.null/client",
+        "${app}/message.header.null/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldSendMessageHeaderNull() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/message.headers.distinct/client",
-        "${server}/message.headers.distinct/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/message.headers.distinct/client",
+        "${app}/message.headers.distinct/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldSendMessageHeadersDistinct() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/message.headers.repeated/client",
-        "${server}/message.headers.repeated/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/message.headers.repeated/client",
+        "${app}/message.headers.repeated/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldSendMessageHeadersRepeated() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/message.value.repeated/client",
-        "${server}/message.value.repeated/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/message.value.repeated/client",
+        "${app}/message.value.repeated/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldSendMessageValueRepeated() throws Exception
     {
         k3po.finish();

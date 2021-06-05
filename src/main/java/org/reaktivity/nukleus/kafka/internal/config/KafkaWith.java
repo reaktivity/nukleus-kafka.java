@@ -13,23 +13,22 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.kafka.internal;
+package org.reaktivity.nukleus.kafka.internal.config;
 
-import org.reaktivity.reaktor.nukleus.Configuration;
-import org.reaktivity.reaktor.nukleus.NukleusFactorySpi;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaDeltaType;
+import org.reaktivity.nukleus.kafka.internal.types.KafkaOffsetType;
+import org.reaktivity.reaktor.config.With;
 
-public final class KafkaNukleusFactorySpi implements NukleusFactorySpi
+public final class KafkaWith extends With
 {
-    @Override
-    public String name()
-    {
-        return KafkaNukleus.NAME;
-    }
+    public final KafkaOffsetType defaultOffset;
+    public final KafkaDeltaType deltaType;
 
-    @Override
-    public KafkaNukleus create(
-        Configuration config)
+    public KafkaWith(
+        KafkaOffsetType defaultOffset,
+        KafkaDeltaType deltaType)
     {
-        return new KafkaNukleus(new KafkaConfiguration(config));
+        this.defaultOffset = defaultOffset;
+        this.deltaType = deltaType;
     }
 }

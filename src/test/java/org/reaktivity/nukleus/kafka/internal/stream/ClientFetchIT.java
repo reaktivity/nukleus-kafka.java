@@ -19,7 +19,6 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_BUFFER_SLOT_CAPACITY;
 import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_DRAIN_ON_CLOSE;
-import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Ignore;
 import org.junit.Rule;
@@ -27,10 +26,10 @@ import org.junit.Test;
 import org.junit.rules.DisableOnDebug;
 import org.junit.rules.TestRule;
 import org.junit.rules.Timeout;
-import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.reaktor.test.ReaktorRule;
+import org.reaktivity.reaktor.test.annotation.Configuration;
 import org.reaktivity.reaktor.test.annotation.Configure;
 
 public class ClientFetchIT
@@ -42,204 +41,188 @@ public class ClientFetchIT
     }
 
     private final K3poRule k3po = new K3poRule()
-            .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
-            .addScriptRoot("server", "org/reaktivity/specification/kafka/fetch.v5")
-            .addScriptRoot("client", "org/reaktivity/specification/nukleus/kafka/streams/fetch");
+        .addScriptRoot("net", "org/reaktivity/specification/nukleus/kafka/streams/network/fetch.v5")
+        .addScriptRoot("app", "org/reaktivity/specification/nukleus/kafka/streams/application/fetch");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(10, SECONDS));
 
     private final ReaktorRule reaktor = new ReaktorRule()
-        .nukleus("kafka"::equals)
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(8192)
         .configure(REAKTOR_BUFFER_SLOT_CAPACITY, 8192)
         .configure(REAKTOR_DRAIN_ON_CLOSE, false)
-        .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
+        .configurationRoot("org/reaktivity/specification/nukleus/kafka/config")
+        .external("net#0")
         .clean();
 
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/topic.missing/client"})
+        "${app}/topic.missing/client"})
     public void shouldRejectWhenTopicMissing() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/topic.not.routed/client"})
+        "${app}/topic.not.routed/client"})
     public void shouldRejectWhenTopicNotRouted() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/partition.unknown/client",
-        "${server}/partition.unknown/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/partition.unknown/client",
+        "${net}/partition.unknown/server"})
     public void shouldRejectWhenPartitionUnknown() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/partition.not.leader/client",
-        "${server}/partition.not.leader/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/partition.not.leader/client",
+        "${net}/partition.not.leader/server"})
     public void shouldRejectPartitionNotLeader() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/partition.offset/client",
-        "${server}/partition.offset/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/partition.offset/client",
+        "${net}/partition.offset/server"})
     public void shouldRequestPartitionOffset() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/partition.offset.earliest/client",
-        "${server}/partition.offset.earliest/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/partition.offset.earliest/client",
+        "${net}/partition.offset.earliest/server"})
     public void shouldRequestPartitionOffsetEarliest() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/partition.offset.latest/client",
-        "${server}/partition.offset.latest/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/partition.offset.latest/client",
+        "${net}/partition.offset.latest/server"})
     public void shouldRequestPartitionOffsetLatest() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/message.key/client",
-        "${server}/message.key/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/message.key/client",
+        "${net}/message.key/server"})
     public void shouldReceiveMessageKey() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/message.key.null/client",
-        "${server}/message.key.null/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/message.key.null/client",
+        "${net}/message.key.null/server"})
     public void shouldReceiveMessageKeyNull() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/message.key.with.value.null/client",
-        "${server}/message.key.with.value.null/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/message.key.with.value.null/client",
+        "${net}/message.key.with.value.null/server"})
     public void shouldReceiveMessageKeyWithValueNull() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/message.key.with.value.distinct/client",
-        "${server}/message.key.with.value.distinct/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/message.key.with.value.distinct/client",
+        "${net}/message.key.with.value.distinct/server"})
     public void shouldReceiveMessageKeyWithValueDistinct() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/message.key.with.header/client",
-        "${server}/message.key.with.header/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/message.key.with.header/client",
+        "${net}/message.key.with.header/server"})
     public void shouldReceiveMessageKeyWithHeader() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/message.key.distinct/client",
-        "${server}/message.key.distinct/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/message.key.distinct/client",
+        "${net}/message.key.distinct/server"})
     public void shouldReceiveMessageKeyDistinct() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/message.value/client",
-        "${server}/message.value/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/message.value/client",
+        "${net}/message.value/server"})
     public void shouldReceiveMessageValue() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/message.value.null/client",
-        "${server}/message.value.null/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/message.value.null/client",
+        "${net}/message.value.null/server"})
     public void shouldReceiveMessageValueNull() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/message.value.10k/client",
-        "${server}/message.value.10k/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/message.value.10k/client",
+        "${net}/message.value.10k/server"})
     public void shouldReceiveMessageValue10k() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/message.value.100k/client",
-        "${server}/message.value.100k/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/message.value.100k/client",
+        "${net}/message.value.100k/server"})
     @Configure(name = REAKTOR_BUFFER_SLOT_CAPACITY_NAME, value = "65536")
     public void shouldReceiveMessageValue100k() throws Exception
     {
@@ -248,11 +231,10 @@ public class ClientFetchIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/message.value.gzip/client",
-        "${server}/message.value.gzip/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/message.value.gzip/client",
+        "${net}/message.value.gzip/server"})
     public void shouldReceiveMessageValueGzip() throws Exception
     {
         k3po.finish();
@@ -260,11 +242,10 @@ public class ClientFetchIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/message.value.snappy/client",
-        "${server}/message.value.snappy/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/message.value.snappy/client",
+        "${net}/message.value.snappy/server"})
     public void shouldReceiveMessageValueSnappy() throws Exception
     {
         k3po.finish();
@@ -272,77 +253,70 @@ public class ClientFetchIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/message.value.lz4/client",
-        "${server}/message.value.lz4/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/message.value.lz4/client",
+        "${net}/message.value.lz4/server"})
     public void shouldReceiveMessageValueLz4() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/message.value.distinct/client",
-        "${server}/message.value.distinct/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/message.value.distinct/client",
+        "${net}/message.value.distinct/server"})
     public void shouldReceiveMessageValueDistinct() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/message.header/client",
-        "${server}/message.header/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/message.header/client",
+        "${net}/message.header/server"})
     public void shouldReceiveMessageHeader() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/message.header.null/client",
-        "${server}/message.header.null/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/message.header.null/client",
+        "${net}/message.header.null/server"})
     public void shouldReceiveMessageHeaderNull() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/message.headers.distinct/client",
-        "${server}/message.headers.distinct/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/message.headers.distinct/client",
+        "${net}/message.headers.distinct/server"})
     public void shouldReceiveMessageHeadersDistinct() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/message.headers.repeated/client",
-        "${server}/message.headers.repeated/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/message.headers.repeated/client",
+        "${net}/message.headers.repeated/server"})
     public void shouldReceiveMessageHeadersRepeated() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/filter.none/client",
-        "${server}/filter.none/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/filter.none/client",
+        "${net}/filter.none/server"})
     public void shouldReceiveMessagesWithNoFilter() throws Exception
     {
         k3po.finish();
@@ -350,11 +324,10 @@ public class ClientFetchIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/filter.key/client",
-        "${server}/filter.key/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/filter.key/client",
+        "${net}/filter.key/server"})
     public void shouldReceiveMessagesWithKeyFilter() throws Exception
     {
         k3po.finish();
@@ -362,11 +335,10 @@ public class ClientFetchIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/filter.key.and.header/client",
-        "${server}/filter.key.and.header/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/filter.key.and.header/client",
+        "${net}/filter.key.and.header/server"})
     public void shouldReceiveMessagesWithKeyAndHeaderFilter() throws Exception
     {
         k3po.finish();
@@ -374,11 +346,10 @@ public class ClientFetchIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/filter.key.or.header/client",
-        "${server}/filter.key.or.header/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/filter.key.or.header/client",
+        "${net}/filter.key.or.header/server"})
     public void shouldReceiveMessagesWithKeyOrHeaderFilter() throws Exception
     {
         k3po.finish();
@@ -386,11 +357,10 @@ public class ClientFetchIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/filter.header/client",
-        "${server}/filter.header/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/filter.header/client",
+        "${net}/filter.header/server"})
     public void shouldReceiveMessagesWithHeaderFilter() throws Exception
     {
         k3po.finish();
@@ -398,11 +368,10 @@ public class ClientFetchIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/filter.header.and.header/client",
-        "${server}/filter.header.and.header/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/filter.header.and.header/client",
+        "${net}/filter.header.and.header/server"})
     public void shouldReceiveMessagesWithHeaderAndHeaderFilter() throws Exception
     {
         k3po.finish();
@@ -410,11 +379,10 @@ public class ClientFetchIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/filter.header.or.header/client",
-        "${server}/filter.header.or.header/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/filter.header.or.header/client",
+        "${net}/filter.header.or.header/server"})
     public void shouldReceiveMessagesWithHeaderOrHeaderFilter() throws Exception
     {
         k3po.finish();
@@ -422,11 +390,10 @@ public class ClientFetchIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/filter.not.header/client",
-        "${server}/filter.not.header/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/filter.not.header/client",
+        "${net}/filter.not.header/server"})
     public void shouldReceiveMessagesWithNotHeaderFilter() throws Exception
     {
         k3po.finish();
@@ -434,11 +401,10 @@ public class ClientFetchIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/filter.not.key/client",
-        "${server}/filter.not.key/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/filter.not.key/client",
+        "${net}/filter.not.key/server"})
     public void shouldReceiveMessagesWithNotKeyFilter() throws Exception
     {
         k3po.finish();
@@ -446,11 +412,10 @@ public class ClientFetchIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/filter.key.and.not.header/client",
-        "${server}/filter.key.and.not.header/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/filter.key.and.not.header/client",
+        "${net}/filter.key.and.not.header/server"})
     public void shouldReceiveMessagesWithKeyAndNotHeaderFilter() throws Exception
     {
         k3po.finish();
@@ -458,11 +423,10 @@ public class ClientFetchIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/filter.headers.one/client",
-        "${server}/filter.headers.one/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/filter.headers.one/client",
+        "${net}/filter.headers.one/server"})
     public void shouldReceiveMessagesWithHeadersOneFilter() throws Exception
     {
         k3po.finish();
@@ -470,11 +434,10 @@ public class ClientFetchIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/filter.headers.one.empty/client",
-        "${server}/filter.headers.one.empty/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/filter.headers.one.empty/client",
+        "${net}/filter.headers.one.empty/server"})
     public void shouldReceiveMessagesWithHeadersOneEmptyFilter() throws Exception
     {
         k3po.finish();
@@ -482,11 +445,10 @@ public class ClientFetchIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/filter.headers.many/client",
-        "${server}/filter.headers.many/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/filter.headers.many/client",
+        "${net}/filter.headers.many/server"})
     public void shouldReceiveMessagesWithHeadersManyFilter() throws Exception
     {
         k3po.finish();
@@ -494,11 +456,10 @@ public class ClientFetchIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/filter.headers.many.empty/client",
-        "${server}/filter.headers.many.empty/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/filter.headers.many.empty/client",
+        "${net}/filter.headers.many.empty/server"})
     public void shouldReceiveMessagesWithHeadersManyEmptyFilter() throws Exception
     {
         k3po.finish();
@@ -506,11 +467,10 @@ public class ClientFetchIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/filter.headers.skip.one/client",
-        "${server}/filter.headers.skip.one/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/filter.headers.skip.one/client",
+        "${net}/filter.headers.skip.one/server"})
     public void shouldReceiveMessagesWithHeadersSkipOneFilter() throws Exception
     {
         k3po.finish();
@@ -518,11 +478,10 @@ public class ClientFetchIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/filter.headers.skip.two/client",
-        "${server}/filter.headers.skip.two/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/filter.headers.skip.two/client",
+        "${net}/filter.headers.skip.two/server"})
     public void shouldReceiveMessagesWithHeadersSkipTwoFilter() throws Exception
     {
         k3po.finish();
@@ -530,11 +489,10 @@ public class ClientFetchIT
 
     @Ignore("TODO")
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/filter.headers.skip.many/client",
-        "${server}/filter.headers.skip.many/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/filter.headers.skip.many/client",
+        "${net}/filter.headers.skip.many/server"})
     public void shouldReceiveMessagesWithHeadersSkipManyFilter() throws Exception
     {
         k3po.finish();

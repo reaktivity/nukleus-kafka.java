@@ -13,14 +13,16 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-module org.reaktivity.nukleus.kafka
+package org.reaktivity.nukleus.kafka.internal.stream;
+
+import org.reaktivity.reaktor.config.Binding;
+import org.reaktivity.reaktor.nukleus.stream.StreamFactory;
+
+public interface KafkaStreamFactory extends StreamFactory
 {
-    requires org.reaktivity.nukleus;
-    requires com.google.gson;
+    void attach(
+        Binding binding);
 
-    provides org.reaktivity.nukleus.NukleusFactorySpi
-        with org.reaktivity.nukleus.kafka.internal.KafkaNukleusFactorySpi;
-
-    provides org.reaktivity.nukleus.ControllerFactorySpi
-        with org.reaktivity.nukleus.kafka.internal.KafkaControllerFactorySpi;
+    void detach(
+        long bindingId);
 }
