@@ -13,15 +13,25 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.kafka.internal.stream;
+package org.reaktivity.nukleus.kafka.internal.config;
 
-import org.reaktivity.nukleus.route.AddressFactoryBuilder;
-import org.reaktivity.nukleus.stream.StreamFactoryBuilder;
+import java.util.List;
 
-public interface KafkaStreamFactoryBuilder extends StreamFactoryBuilder
+import org.reaktivity.reaktor.config.Options;
+
+public final class KafkaOptions extends Options
 {
-    default AddressFactoryBuilder addressFactoryBuilder()
+    public final List<String> merged;
+    public final List<String> bootstrap;
+    public final List<KafkaTopic> topics;
+
+    public KafkaOptions(
+        List<String> merged,
+        List<String> bootstrap,
+        List<KafkaTopic> topics)
     {
-        return null;
+        this.merged = merged;
+        this.bootstrap = bootstrap;
+        this.topics = topics;
     }
 }

@@ -18,65 +18,62 @@ package org.reaktivity.nukleus.kafka.internal.stream;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.rules.RuleChain.outerRule;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CLIENT_DESCRIBE_MAX_AGE_MILLIS;
-import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.DisableOnDebug;
 import org.junit.rules.TestRule;
 import org.junit.rules.Timeout;
-import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.reaktor.test.ReaktorRule;
+import org.reaktivity.reaktor.test.annotation.Configuration;
 
 public class ClientDescribeIT
 {
     private final K3poRule k3po = new K3poRule()
-            .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
-            .addScriptRoot("server", "org/reaktivity/specification/kafka/describe.configs.v0")
-            .addScriptRoot("client", "org/reaktivity/specification/nukleus/kafka/streams/describe");
+        .addScriptRoot("net", "org/reaktivity/specification/nukleus/kafka/streams/network/describe.configs.v0")
+        .addScriptRoot("app", "org/reaktivity/specification/nukleus/kafka/streams/application/describe");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(15, SECONDS));
 
     private final ReaktorRule reaktor = new ReaktorRule()
-        .nukleus("kafka"::equals)
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
         .counterValuesBufferCapacity(8192)
         .configure(KAFKA_CLIENT_DESCRIBE_MAX_AGE_MILLIS, 0)
-        .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
+        .configurationRoot("org/reaktivity/specification/nukleus/kafka/config")
+        .external("net#0")
         .clean();
 
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller" })
+        "${app}/topic.unknown/client"})
     public void shouldRejectWhenTopicUnknown() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/topic.config.info/client",
-        "${server}/topic.config.info/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/topic.config.info/client",
+        "${net}/topic.config.info/server"})
     public void shouldReceiveTopicConfigInfo() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("client.when.topic.json")
     @Specification({
-        "${route}/client/controller",
-        "${client}/topic.config.info.changed/client",
-        "${server}/topic.config.info.changed/server"})
-    @ScriptProperty("networkAccept \"nukleus://streams/target#0\"")
+        "${app}/topic.config.info.changed/client",
+        "${net}/topic.config.info.changed/server"})
     public void shouldReceiveTopicConfigInfoChanged() throws Exception
     {
         k3po.start();

@@ -19,9 +19,9 @@ import static org.reaktivity.reaktor.ReaktorConfiguration.REAKTOR_CACHE_DIRECTOR
 
 import java.nio.file.Path;
 
-import org.reaktivity.nukleus.Configuration;
 import org.reaktivity.nukleus.kafka.internal.cache.KafkaCacheCleanupPolicy;
 import org.reaktivity.nukleus.kafka.internal.types.codec.produce.ProduceAck;
+import org.reaktivity.reaktor.nukleus.Configuration;
 
 public class KafkaConfiguration extends Configuration
 {

@@ -13,23 +13,17 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.reaktivity.nukleus.kafka.internal;
+package org.reaktivity.nukleus.kafka.internal.config;
 
-import org.reaktivity.reaktor.nukleus.Configuration;
-import org.reaktivity.reaktor.nukleus.NukleusFactorySpi;
+import org.reaktivity.reaktor.config.Condition;
 
-public final class KafkaNukleusFactorySpi implements NukleusFactorySpi
+public final class KafkaCondition extends Condition
 {
-    @Override
-    public String name()
-    {
-        return KafkaNukleus.NAME;
-    }
+    public final String topic;
 
-    @Override
-    public KafkaNukleus create(
-        Configuration config)
+    public KafkaCondition(
+        String topic)
     {
-        return new KafkaNukleus(new KafkaConfiguration(config));
+        this.topic = topic;
     }
 }

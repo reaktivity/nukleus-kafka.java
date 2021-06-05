@@ -21,7 +21,6 @@ import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CAC
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SEGMENT_INDEX_BYTES;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_BOOTSTRAP;
 import static org.reaktivity.nukleus.kafka.internal.KafkaConfiguration.KAFKA_CACHE_SERVER_RECONNECT_DELAY;
-import static org.reaktivity.reaktor.test.ReaktorRule.EXTERNAL_AFFINITY_MASK;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -32,19 +31,16 @@ import org.kaazing.k3po.junit.annotation.ScriptProperty;
 import org.kaazing.k3po.junit.annotation.Specification;
 import org.kaazing.k3po.junit.rules.K3poRule;
 import org.reaktivity.reaktor.test.ReaktorRule;
+import org.reaktivity.reaktor.test.annotation.Configuration;
 
 public class CacheMetaIT
 {
     private final K3poRule k3po = new K3poRule()
-            .addScriptRoot("route", "org/reaktivity/specification/nukleus/kafka/control/route")
-            .addScriptRoot("routeEx", "org/reaktivity/specification/nukleus/kafka/control/route.ext")
-            .addScriptRoot("server", "org/reaktivity/specification/nukleus/kafka/streams/meta")
-            .addScriptRoot("client", "org/reaktivity/specification/nukleus/kafka/streams/meta");
+        .addScriptRoot("app", "org/reaktivity/specification/nukleus/kafka/streams/application/meta");
 
     private final TestRule timeout = new DisableOnDebug(new Timeout(15, SECONDS));
 
     private final ReaktorRule reaktor = new ReaktorRule()
-        .nukleus("kafka"::equals)
         .directory("target/nukleus-itests")
         .commandBufferCapacity(1024)
         .responseBufferCapacity(1024)
@@ -53,48 +49,49 @@ public class CacheMetaIT
         .configure(KAFKA_CACHE_SERVER_RECONNECT_DELAY, 0)
         .configure(KAFKA_CACHE_SEGMENT_BYTES, 1 * 1024 * 1024)
         .configure(KAFKA_CACHE_SEGMENT_INDEX_BYTES, 256 * 1024)
-        .affinityMask("target#0", EXTERNAL_AFFINITY_MASK)
+        .configurationRoot("org/reaktivity/specification/nukleus/kafka/config")
+        .external("app#1")
         .clean();
 
     @Rule
     public final TestRule chain = outerRule(reaktor).around(k3po).around(timeout);
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/topic.unknown/client" })
+        "${app}/topic.unknown/client" })
     public void shouldRejectWhenTopicUnknown() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.json")
     @Specification({
-        "${route}/cache/controller",
-        "${client}/topic.invalid/client"})
+        "${app}/topic.invalid/client"})
     public void shouldRejectWhenTopicInvalid() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.when.topic.json")
     @Specification({
-        "${routeEx}/cache/controller",
-        "${client}/topic.partition.info/client",
-        "${server}/topic.partition.info/server"})
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+        "${app}/topic.partition.info/client",
+        "${app}/topic.partition.info/server"})
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldReceiveTopicPartitionInfo() throws Exception
     {
         k3po.finish();
     }
 
     @Test
+    @Configuration("cache.when.topic.json")
     @Specification({
-        "${routeEx}/cache/controller",
-        "${client}/topic.partition.info.changed/client",
-        "${server}/topic.partition.info.changed/server"
+        "${app}/topic.partition.info.changed/client",
+        "${app}/topic.partition.info.changed/server"
         })
-    @ScriptProperty("serverAddress \"nukleus://streams/target#0\"")
+    @ScriptProperty("serverAddress \"nukleus://streams/app#1\"")
     public void shouldReceiveTopicPartitionInfoChanged() throws Exception
     {
         k3po.start();
